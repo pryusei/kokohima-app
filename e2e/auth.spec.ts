@@ -1,10 +1,10 @@
 import { expect, test } from "./fixtures";
 
-test("ログイン済みでアプリを開くと「ログイン中」になり、再読み込みしても続く", async ({ loggedInPage: page }) => {
+test("ログイン済みでアプリを開くとホーム（みんな）になり、再読み込みしても続く", async ({ loggedInPage: page }) => {
   await page.goto("/");
-  await expect(page.getByText("ログイン中")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "みんな" })).toBeVisible();
   await page.reload();
-  await expect(page.getByText("ログイン中")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "みんな" })).toBeVisible();
 });
 
 test("ログイン中、localStorage・sessionStorage にアクセストークンがない", async ({ loggedInPage: page }) => {
@@ -15,14 +15,17 @@ test("ログイン中、localStorage・sessionStorage にアクセストーク�
     }
   });
   await page.goto("/");
-  await expect(page.getByText("ログイン中")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "みんな" })).toBeVisible();
   expect(tokens.length).toBeGreaterThan(0);
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
   for (const token of tokens) expect(stored).not.toContain(token);
 });
 
-test("ログアウトするとログイン画面になり、再読み込みしてもログアウトのまま", async ({ loggedInPage: page }) => {
-  await page.goto("/");
+test("友達タブの「アカウント」からログアウトするとログイン画面になり、再読み込みしてもログアウトのまま", async ({
+  loggedInPage: page,
+}) => {
+  await page.goto("/friends");
+  await expect(page.getByRole("heading", { name: "アカウント" })).toBeVisible();
   await page.getByRole("button", { name: "ログアウト", exact: true }).click();
   await expect(page.getByRole("link", { name: "Googleでログイン" })).toBeVisible();
   await page.reload();
