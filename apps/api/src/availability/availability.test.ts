@@ -462,6 +462,30 @@ describe("ルートの振り分けと他人のID", () => {
     expect(await mine(a, 14)).toHaveLength(0);
   });
 
+  it("他人のルール・外した日・プリセットは自分の一覧に出ず、変更も及ばない", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    await u.befriend(a, b);
+    const rule = (await (
+      await u.call("POST", "/api/v1/recurrence-rules", { token: b.token, body: { weekday: 6, preset: "night" } })
+    ).json()) as { id: string };
+    await u.call("POST", `/api/v1/recurrence-rules/${rule.id}/exceptions`, { token: b.token, body: { date: "2026-10-17" } });
+    const rulesA = recurrenceRuleListSchema.parse(await (await u.call("GET", "/api/v1/recurrence-rules", { token: a.token })).json());
+    expect(rulesA.items).toHaveLength(0);
+
+    await u.call("PUT", "/api/v1/me/presets", {
+      token: b.token,
+      body: {
+        day: { start: "10:00", end: "12:00" },
+        evening: { start: "16:00", end: "19:00" },
+        night: { start: "20:00", end: "24:00" },
+      },
+    });
+    const presetsA = presetsSchema.parse(await (await u.call("GET", "/api/v1/me/presets", { token: a.token })).json());
+    expect(presetsA.night).toEqual({ start: "19:00", end: "23:00" });
+    expect(presetsA.day).toEqual({ start: "11:00", end: "15:00" });
+  });
+
   it("認証がなければ401", async () => {
     expect((await u.call("GET", `/api/v1/friend-availabilities?${range(h.clock.now, 7)}`)).status).toBe(401);
     expect((await u.call("POST", "/api/v1/availabilities", { body: { date: "2026-10-10", preset: "night" } })).status).toBe(401);
