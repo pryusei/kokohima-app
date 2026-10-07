@@ -27,7 +27,8 @@ jobs:
       - run: pnpm --filter api build:prod
       - name: 本番ビルドにE2E用の経路がないことを確認
         run: |
-          if grep -rq "__e2e__" apps/api/dist; then
+          # 経路の文字列だけでなく、テスト用ログインの関数名も確認する
+          if grep -rqE "__e2e__|e2eLogin" apps/api/dist; then
             echo "::error::本番のビルドにE2E用の経路が含まれています"
             exit 1
           fi

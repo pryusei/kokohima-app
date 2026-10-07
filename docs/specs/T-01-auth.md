@@ -1,6 +1,6 @@
 # T-01 仕様書：認証（Google／Sign in with Apple、セッション）
 
-- 状態：合意済み
+- 状態：実装済み
 - タスク票：docs/tasks/T-01-auth.md
 - 関係する要件：F-01、NF-04、要求定義書「セキュリティ設計 › 認証とセッション」「テスト環境の認証」
 
@@ -26,7 +26,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | POST | `/api/v1/auth/refresh` | 更新用トークンCookie＋Origin | なし | 200：`refreshResponseSchema` `{ accessToken, expiresAt }` | 401 `unauthenticated` |
 | POST | `/api/v1/auth/logout` | 更新用トークンCookie＋Origin | なし | 204（Cookieを消す） | 401 `unauthenticated`（Origin不一致のみ。Cookieがない・無効でも204） |
 | POST | `/api/v1/auth/logout-all` | Bearer＋Origin | なし | 204（Cookieを消す） | 401 `unauthenticated` |
-| GET | `/api/v1/me` | Bearer | なし | 200：`meResponseSchema` `{ id, displayName, avatarUrl }` | 401 `unauthenticated` |
+| GET | `/api/v1/me` | Bearer | なし | 200：`meResponseSchema` `{ id, displayName, avatarUrl }` | 401 `unauthenticated`、404 `not_found`（トークンは有効だがユーザーの行がない。退会の直後など） |
 | POST | `/__e2e__/login` | E2E環境のみ（下記） | JSON：`{ user: string }`（`^[a-z0-9-]{1,64}$`） | 204（更新用トークンCookieを発行） | 404 `not_found`（E2E環境以外）、400 `validation_failed` |
 
 - スキーマは `packages/shared/src/schemas/identity.ts`。`/__e2e__/login` の入力スキーマは `apps/api/src/e2e/` に置き、sharedには置かない
@@ -34,7 +34,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
   - 長さ512以下で、`/` で始まり、`//` や `/\` で始まらない
   - 制御文字（U+0000〜U+001F、U+007F）、空白、`\` を含まない（`/\t/evil.com` などがURLの解釈で `//evil.com` になるのを防ぐ）
   - `new URL(returnTo, APP_ORIGIN).origin === APP_ORIGIN`
-  - `/api/` と `/__e2e__/` で始まらない（ログインの開始へ戻ってループするのを防ぐ）
+  - `/api/` と `/__` で始まらない（ログインの開始へ戻ってループするのを防ぐ。`/__` はテスト用の経路などの予約済みのパス。本番のビルドに `__e2e__` の文字列を含めないため、前方一致は `/__` で行う）
   - 保存時（`/start`）と、完了時の応答の前の2回検証する
 - `displayName` と `avatarUrl` は、初回設定（別タスク）までは `null`
 - 例外：コールバックは利用者のブラウザが画面遷移で開くため、Problem DetailsのJSONではなく画面へのリダイレクトで失敗を伝える。失敗の理由は区別せず、すべて `error=login_failed`（キャンセルも含む）
@@ -50,7 +50,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `users` | `id`（UUID、PK）、`display_name`（null可）、`avatar_url`（null可）、`email`（null可）、`timezone`（既定 `Asia/Tokyo`）、`created_at`、`updated_at` | `email` は通知用（決定事項4） |
 | `user_identities` | `id`（UUID、PK）、`user_id`（FK）、`provider`（`google` ／ `apple` ／ `e2e`）、`subject`（IDトークンの `sub`）、`created_at` | UNIQUE(`provider`, `subject`)。ユーザーの特定は `sub` で行い、メールアドレスでは行わない |
 | `sessions` | `id`（UUID、PK＝更新用トークンの系列）、`user_id`（FK）、`created_at`、`last_used_at`、`expires_at`（系列の絶対期限）、`revoked_at`（null可） | INDEX(`user_id`) |
-| `refresh_tokens` | `id`（UUID、PK）、`session_id`（FK）、`token_hash`（SHA-256、base64url、UNIQUE）、`created_at`、`expires_at`、`used_at`（null可）、`replaced_by`（null可。交換で作った次のトークンの `id`） | INDEX(`session_id`)。生の値は保存しない |
+| `refresh_tokens` | `id`（UUID、PK）、`session_id`（FK）、`token_hash`（SHA-256、base64url、UNIQUE）、`created_at`、`expires_at`、`used_at`（null可）、`replaced_by`（null可。交換で作った次のトークンの `id`）、`rescued_at`（null可。救済で使用済みにした時刻） | INDEX(`session_id`)。生の値は保存しない |
 | `oauth_transactions` | `state_hash`（PK）、`provider`、`nonce`、`code_verifier`、`binding_hash`、`return_to`、`expires_at` | 認可の開始からコールバックまでの一時データ。10分で失効。使ったら削除 |
 | `login_codes` | `code_hash`（PK）、`user_id`（FK）、`provider`、`binding_hash`、`return_to`、`expires_at` | コールバックから完了までの一時データ。60秒で失効。使ったら削除 |
 | `outbox` | `id`（UUID、PK）、`type`、`payload`（JSON）、`created_at`、`processed_at`（null可） | 外部連携の共通の箱。今回は書き込みのみ |
@@ -68,7 +68,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 4. プロバイダの認可画面へ302でリダイレクトする
 - 結びつけCookieは1つの名前なので、同じブラウザの2つのタブで同時にログインを始めると、先に始めたほうは失敗する（`login_failed`）。やり直せば済むため許容する
    - Google：`scope=openid email`、`code_challenge_method=S256`、`nonce`、`state`、`prompt=select_account`
-   - Apple：`scope=email`、`response_mode=form_post`、`response_type=code`、`code_challenge_method=S256`、`nonce`、`state`
+   - Apple：`scope=email`、`response_mode=form_post`、`response_type=code`、`nonce`、`state`（PKCEは送らない。決定事項9）
 
 ### コールバック
 1. `state` のハッシュで `oauth_transactions` を条件付きで削除して取り出す（`DELETE ... RETURNING`。同じ `state` は2回使えない）。ない・期限切れ・プロバイダ違いは失敗
@@ -97,19 +97,30 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - セッションを作るとき、`outbox` に `SessionStarted`（`userId`、`sessionId`、`provider`、`deviceSummary`、`occurredAt`）を書く。新端末ログインのメール通知は通知タスクでこれを使う
   - `deviceSummary`：User-Agentから作る「ブラウザ名 / OS名」の要約（例：`Safari / iOS`、64字以内、判別できなければ `unknown`）。User-Agentの全文とIPアドレスは保存しない
   - `outbox` のDrizzleスキーマは、全コンテキストで共有するため `apps/api/src/shared/outbox/schema.ts` に置く
-- D1のバッチは文の結果で後続を止められない。そのため、条件つきの消費（`login_codes` の `DELETE ... RETURNING`、`refresh_tokens` の条件付きUPDATE）は先に単独で実行し、返った行や `meta.changes` を確かめてから、残りの書き込み（セッション・更新用トークン・`outbox` の作成）をバッチで行う
+- D1のバッチは文の結果で後続を止められない。そのため、条件つきの消費（`login_codes` の `DELETE ... RETURNING`、`refresh_tokens` の条件付きUPDATE）は単独で実行し、返った行や `meta.changes` を確かめてから残りを書く。完了コードの消費の後のセッション・更新用トークン・`outbox` の作成はバッチで行う。更新用トークンの交換の順序は「更新」の手順6
 
 ### 更新（`POST /api/v1/auth/refresh`）
 1. `Origin` ヘッダーが設定値 `APP_ORIGIN` と完全一致しなければ401（`Origin` がない場合も401）
 2. Cookieのトークンのハッシュで `refresh_tokens` とその `sessions` を取得する
 3. 次のどれかなら401にしてCookieを消す：見つからない、トークンの期限切れ、セッションの失効・期限切れ
-4. `used_at` が空なら、`UPDATE refresh_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL` を単独で実行して使用済みにする。`meta.changes` が1なら6へ。0なら（同時に使われた）5へ
-5. 使用済みのトークンが来たとき（4で0行だった場合を含む）は、次のトークン（`replaced_by`）の状態で判断する
-   - 次のトークンがまだ一度も使われていない（`used_at` が空）：前回の交換の応答が届かなかったとみなす（回線が切れた、送信中にPWAが閉じられた、2つのタブが同時に更新した）。次のトークンを `UPDATE ... WHERE id = ? AND used_at IS NULL` で使用済みにし、`meta.changes` が1なら6へ。0なら下の「再利用」として扱う
-   - 次のトークンも使用済み：再利用とみなし、そのセッションを失効させ、Cookieを消して401
-   - 時間の制限は設けない。PWAを閉じて数時間後に開いた場合も救うため
-6. 同じセッションに新しいトークンを作り、使用済みにしたトークンの `replaced_by` に新しい `id` を入れ（バッチで `sessions.last_used_at` も更新）、Cookieを差し替えて、新しいアクセストークンを返す
-- この救済で受け入れるリスク：トークンを盗んだ人が、正規の利用者が次のトークンを使う前に古いトークンを使うと、新しいトークンを得られる。その後に正規の利用者が更新すると、盗んだ側の得たトークンが「次のトークン」として使用済みになり、そこで再利用として系列ごと失効する（検知が1回分遅れる）。更新用トークンはHttpOnlyのCookieでスクリプトから読めないため、このリスクを受け入れる（決定事項5）
+4. 判定（`apps/api/src/identity/domain/refresh.ts` の `decideRefresh`）
+   - 未使用：このトークンを交換する（6へ）
+   - 使用済みで、救済で使用済みにされた印（`rescued_at`）がある：再利用（下記）
+   - 使用済みで、次のトークン（`replaced_by`）がまだ一度も使われていない：前回の交換の応答が届かなかったとみなし（回線が切れた、送信中にPWAが閉じられた）、次のトークンを交換する（救済。6へ）。次のトークンが期限切れなら401。時間の制限は設けない。PWAを閉じて数時間後に開いた場合も救うため
+   - 使用済みで、次のトークンも使用済み：再利用（下記）
+5. 再利用：そのセッションを失効させ、Cookieを消して401
+6. 交換（`tryRotate`）：
+   1. 新しいトークンの行を作る
+   2. `UPDATE refresh_tokens SET used_at = ?, replaced_by = <新しいid>, rescued_at = <救済なら今。交換に負けたやり直しでの救済は除く> WHERE id = ? AND used_at IS NULL AND <セッションが失効していない>` を実行する（セッションの条件は、`logout-all` と同時に走ったときに失効直後のセッションで交換しないため）。「使用済みにする」と「次のトークンの記録」を1つの文で行うので、同時に来たリクエストは、使用済みのトークンには必ず次のトークンが記録された状態を見る
+   3. `meta.changes` が0なら（同時に使われた）、1の行を消して、最新の状態で4からやり直す（最大3回）
+   4. 1なら `sessions.last_used_at` を更新し、Cookieを差し替えて、新しいアクセストークンを返す
+   - 条件付きUPDATEより先に新しい行を作るのは、2の時点で `replaced_by` の行が必ず存在するようにするため。3の削除の前に処理が落ちた場合に残る行は、誰も値を知らないので使われず、期限切れの掃除（Cron）で消える
+- 救済で受け入れるリスクと、その対策：
+  - 盗んだ人が正規の利用者より先に古いトークンを使うと、新しいトークンを得られる。正規の利用者が次に更新すると救済され、盗んだ人の得たトークンには救済の印（`rescued_at`）が付く
+  - 印の付いたトークンは正規の利用者には届いていないはずなので、提示されたら再利用として系列ごと失効させる。これで、盗んだ人と正規の利用者が交互に更新しても、盗んだ人の次の更新で必ず検知できる（検知が1回分遅れる）
+  - 同じトークンで同時に2つの更新が来た場合（Web Locksがないブラウザの複数タブなど）、交換に負けたリクエストは最新の状態でやり直し、勝った側が作った次のトークンを救済で交換する。このやり直しでの救済には印を付けない。同時に使われたことを同じリクエストの中で確かめているので「応答が届かなかった」場合とは区別でき、付けると勝った側の応答のトークンが「提示されたら再利用」になってしまうため。どちらの応答のCookieが残っても続けられる
+  - この例外で受け入れるリスク：盗んだ人が正規の利用者と同じ瞬間に同じトークンを送った場合に限り、検知が1回分遅れる
+  - 同じブラウザの複数タブは、さらにWeb Locksでも直列化する
 - 新しいトークンの期限は `min(今＋30日, sessions.expires_at)`。Cookieの `Max-Age` もこれに合わせる
 
 ### アクセストークン
@@ -133,7 +144,10 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - 起動時に `POST /api/v1/auth/refresh` を呼ぶ。成功すればログイン状態、401ならログアウト状態
 - ネットワークエラーや5xxはログアウトとして扱わない。「確認中」の状態のまま静かな文言で再試行を促し、オンラインに戻ったとき（`online` イベント）に自動で再試行する
 - APIクライアント（`apps/web/src/api/client.ts`）は、401を受けたら1回だけ更新して再送し、失敗したらログアウト状態にする（`data-fetching` スキル）
-- 複数タブでの無駄な更新を減らすため、Web Locks API（`navigator.locks.request("kh-refresh", ...)`）で直列化する。ロックを取った後、他のタブが直前に更新していれば（`BroadcastChannel` で新しいトークンを受け取っていれば）それを使う。同時に更新が走っても、サーバー側の救済（更新の手順5）でログアウトにはならない
+- 複数タブでの無駄な更新を減らすため、Web Locks API（`navigator.locks.request("kh-refresh", ...)`）で直列化する。ロックを取った後、他のタブが直前に更新していれば（`BroadcastChannel` で新しいトークンを受け取っていれば）それを使う。Web Locksがなく同時に更新が走っても、サーバー側の救済（更新の手順4）で、どちらの応答のCookieが残っても続けられる
+- 他のタブへの知らせ（`BroadcastChannel`、名前 `kh-auth`）：更新したタブは新しいアクセストークンを、ログアウトしたタブはログアウトを知らせる。受け取ったタブはそれぞれ、そのトークンを使う・ログアウト状態になる。内容はメモリの間で渡すだけで、保存はしない
+- ログアウトの失敗：`logout` は204、`logout-all` は204（または、すでに失効していて401）を受け取ったときだけログアウト状態にする。通信できない・5xxのときはログイン状態のまま「ログアウトできませんでした」を静かに表示する（Cookieやセッションが残っているのに、ログアウトしたと思わせない）。`logout-all` はAPIクライアントを通し、アクセストークンが切れていれば更新してから送る
+- APIクライアントで、401の後の更新が通信エラー・5xxだったときも、ログアウトにはしない（失敗として返す）
 - 画面（仮）：
   - ログイン画面（`/login`）：「Googleでログイン」「Appleでログイン」のボタン（`/api/v1/auth/<provider>/start?returnTo=...` への画面遷移）。`error=login_failed` のときは静かな文言で「ログインできませんでした。もう一度お試しください」を表示する（赤を使わない）
   - ログイン後の仮のホーム（`/`）：「ログイン中」の表示、「ログアウト」「すべての端末からログアウト」のボタン
@@ -160,7 +174,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
   - これに合わせて、実装PRで `e2e-testing` スキルの「認証」（setupプロジェクトで `storageState` を保存して使い回す方針）と、タスク票 `docs/tasks/T-01-auth.md` のスコープ（「setupプロジェクト、ユーザーA・B・Cの認証状態」）を書き換える（決定事項8）
 - viteの中継に、環境変数 `E2E=1` で起動したときだけ `/__e2e__` を追加する（Cookieを `localhost:5173` で発行するため）。`playwright.config.ts` のwebServerは `E2E=1 pnpm --filter web dev` で起動するように変える
 - wranglerの `env.e2e` はトップレベルの `vars` を引き継がないため、`APP_ORIGIN` などの設定値と、`JWT_SIGNING_KEYS` のE2E用の値を `env.e2e` 側にも置く
-- E2E用の秘密情報（`JWT_SIGNING_KEYS` など）はコミットしない。`apps/api/scripts/write-e2e-dev-vars.ts` が、`.dev.vars.e2e` がなければその場でランダムな鍵を生成して書き出す。Playwrightのwebserverの起動コマンドとCI（`e2e.yml`）はこれを先に実行する。Google／AppleのクライアントIDなどは、E2Eでは使わないダミー値を入れる
+- E2E用の秘密情報（`JWT_SIGNING_KEYS` など）はコミットしない。`apps/api/scripts/write-e2e-dev-vars.mjs` が、`.dev.vars.e2e` がなければその場でランダムな鍵を生成して書き出す。Playwrightのwebserverの起動コマンドとCI（`e2e.yml`）はこれを先に実行する。Google／AppleのクライアントIDなどは、E2Eでは使わないダミー値を入れる
 - 実装PRで、`.gitignore` を `.dev.vars*` に、`.claude/hooks/protect-files.sh` の対象を `*.dev.vars*` に広げる（本物の秘密情報を `.dev.vars.<env>` に入れたままコミットするのを防ぐ）
 - CIで本番のビルド成果物に `__e2e__` が含まれないことを引き続き確認する。加えて、テスト用ログインの関数名（`e2eLogin`）が含まれないことも確認する
 
@@ -185,7 +199,9 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - [ ] 完了：結びつけCookieがない・別のブラウザの値なら401（ログインCSRF）
 - [ ] `returnTo` の検証：外部URL、`//evil`、`/\evil`、`/\t/evil.com`、`/%0a/evil.com` に相当する制御文字入り、512字超、`/api/` や `/__e2e__/` で始まるものは `/` に置き換える
 - [ ] 更新：正常にローテーションし、古いトークンは使えない
-- [ ] 更新：盗まれた古いトークンが使われた後に正規の利用者が更新すると、その系列のすべてのトークンが使えなくなる
+- [ ] 更新：2世代前のトークンが使われたら、その系列のすべてのトークンが使えなくなる
+- [ ] 更新：盗んだ側が先に更新し、正規の利用者（救済される）、盗んだ側の順に更新すると、盗んだ側の2回目で系列ごと失効する
+- [ ] 更新：期限切れの使用済みトークンは、救済も再利用の判定もせず401
 - [ ] 更新：使用済みのトークンが来ても、次のトークンが未使用なら新しいトークンを返す（応答が届かなかった場合・同時に2回使われた場合）。時間がたっていても救う
 - [ ] 更新：使用済みのトークンが来て、次のトークンも使用済みなら、系列ごと失効する
 - [ ] 更新：Originなし・別のOriginは401
@@ -198,7 +214,8 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - [ ] 他人のIDでは取得・更新できない：`GET /me` はBearerの本人だけを返し、queryやbodyのIDは無視される。ユーザーAの `logout-all` でユーザーBのセッションは失効しない
 - [ ] `SessionStarted` が `outbox` に書かれる。ペイロードにメールアドレスやトークンを含まない
 - [ ] E2E用：`E2E_MODE` が `1` 以外なら `/__e2e__/login` は404
-- [ ] フロント：起動時の更新がネットワークエラー・5xxのときはログアウト状態にしない
+- [ ] フロント：起動時の更新や、401の後の更新がネットワークエラー・5xxのときはログアウト状態にしない
+- [ ] フロント：ログアウト・全端末ログアウトが通信できなければ、ログイン中のまま再試行を促す。全端末ログアウトはアクセストークンが切れていれば更新してから送る
 - [ ] Appleの `email_verified` が文字列 `"true"` でも確認済みとして扱い、`false` なら保存しない
 - [ ] `SessionStarted` の `deviceSummary` がUser-Agentの全文を含まない
 - [ ] フロント：アクセストークンをlocalStorage・sessionStorageに保存しない。401で1回だけ更新して再送し、2回目の401でログアウト状態になる
@@ -224,11 +241,11 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 2. 更新用トークンの有効期限は、1本30日（使わなければ失効）、系列90日（再ログインが必要）
 3. アクセストークンの有効期限は10分
 4. メールアドレスは `users.email` に平文で保存する（通知の送信先に必要。NF-04の暗号化はカレンダーの認証情報が対象）
-5. 更新の応答が届かなかった場合は、次のトークンが未使用なら時間の制限なく救済する（更新の手順5）。複数タブはクライアント側のWeb Locksでも直列化する
+5. 更新の応答が届かなかった場合は、次のトークンが未使用なら時間の制限なく救済する（更新の手順4）。救済で使用済みにしたトークンには印を残し、提示されたら再利用として系列ごと失効させる（交互に更新されても検知するため）。複数タブはクライアント側のWeb Locksで直列化する
 6. 監査ログ（ログインの記録）は、監査ログの仕組みと一緒に別タスクで行う
 7. ログイン・更新のレート制限は、インフラ（WAF・レート制限）のタスクで行う
 8. E2Eの認証状態はテストごとに作る。実装PRで、タスク票と `e2e-testing` スキルを合わせて直す
-9. Sign in with AppleがPKCE（`code_challenge`・`code_verifier`）を受け付けるかを、実装の最初に公式の資料と実機で確かめる。受け付けない場合は、AppleではPKCEを送らず、`state`・`nonce`・結びつけCookieとクライアントシークレットで守ることを、実装PRの中で仕様書に追記する
+9. Sign in with AppleのPKCE：実装の最初に確認したが、Appleの公式の資料（Sign in with Apple REST API）に `code_challenge`・`code_verifier` の記載がなく、対応を確認できなかった。そのため、AppleではPKCEを送らず、`state`・`nonce`・結びつけCookieとクライアントシークレット（機密クライアント）で守る。Googleは従来どおりPKCE（S256）を使う。Appleが公式に対応を明記したら、`apps/api/src/identity/infra/oidc.ts` の `usePkce` を有効にする
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
@@ -237,3 +254,6 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | 2026-10-07 | 完了コードを経由する流れ、ログインCSRF対策、`returnTo` の検証の強化、D1の条件付き処理の順序、E2Eの認証状態をテストごとに作る方針を追加 | 仕様レビューの指摘 |
 | 2026-10-07 | レビューの指摘を反映：Appleのメール確認、`SessionStarted` の端末の要約、`outbox` の置き場所、規約からの例外、ローカルとSafari・Appleの確認方法、起動時の更新の失敗の扱い、E2Eの秘密情報の用意、`returnTo` のループ防止 | 仕様書PRのレビュー |
 | 2026-10-07 | 確認事項を決定事項にし、状態を合意済みにした。更新の応答が届かなかった場合の救済（次のトークンが未使用なら新しいトークンを返す）を追加 | 仕様書PRのレビュー（指摘1・3） |
+| 2026-10-07 | 状態を実装済みにした。AppleではPKCEを送らないことにした（公式の資料で対応を確認できなかったため）。`returnTo` の予約済みパスの拒否を `/__` の前方一致にした。E2E用の秘密情報を作るスクリプトを `.mjs` にした。E2Eの起動時にローカルのD1へマイグレーションを適用する | 実装PR |
+| 2026-10-07 | 救済で使用済みにしたトークンに印（`rescued_at`）を残し、提示されたら再利用とする（盗んだ側と正規の利用者が交互に更新すると救済が続き、再利用を検知できなかったため）。期限切れの使用済みトークンは先に拒否する。交換の書き込み順、他のタブへの知らせ、ログアウトの失敗の扱い、`GET /me` の404を明記 | 実装PRのレビュー（セキュリティ・仕様） |
+| 2026-10-07 | 交換に負けたやり直しでの救済には印を付けない（同時の更新で、勝った側のCookieが残ると次の更新でログアウトになっていた）。交換の条件にセッションが失効していないことを加えた | 実装PRのレビュー（pryusei/kokohima-app#8） |

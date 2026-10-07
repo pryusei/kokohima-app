@@ -3,7 +3,7 @@
 path=$(jq -r '.tool_input.file_path // empty')
 [ -z "$path" ] && exit 0
 case "$path" in
-  *.dev.vars|*/.env|*/.env.*)
+  *.dev.vars|*.dev.vars.*|*/.env|*/.env.*)
     echo "秘密情報のファイルは編集できません。wrangler secret を使ってください" >&2; exit 2 ;;
 esac
 if [[ "$path" == */migrations/* ]] && [ -f "$path" ]; then

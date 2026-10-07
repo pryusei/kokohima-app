@@ -1,0 +1,5 @@
+# ローカル開発用の秘密情報のひな形。apps/api/.dev.vars にコピーして値を入れる（.dev.vars はコミットしない）
+# JWT_SIGNING_KEYS の鍵は `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` で作る
+JWT_SIGNING_KEYS='{"local-1":"<base64urlの32バイト>"}'
+GOOGLE_CLIENT_SECRET=
+APPLE_PRIVATE_KEY=

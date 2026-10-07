@@ -35,7 +35,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.{js,ts}", "e2e/**/*.ts", "**/vitest.config.ts", "**/vite.config.ts"],
+    files: ["*.{js,ts}", "**/scripts/**/*.{js,mjs}", "e2e/**/*.ts", "**/vitest.config.ts", "**/vite.config.ts"],
     languageOptions: { globals: globals.node },
   },
 );

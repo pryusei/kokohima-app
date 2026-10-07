@@ -22,7 +22,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: "pnpm --filter web dev",
+      command: "E2E=1 pnpm --filter web dev",
       url: "http://localhost:5173",
       reuseExistingServer: !isCI,
       timeout: 120_000,

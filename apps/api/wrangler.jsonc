@@ -8,6 +8,17 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
+  // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS）は
+  // wrangler secret で設定する（ローカルは .dev.vars、E2Eは scripts/write-e2e-dev-vars.mjs が生成）
+  "vars": {
+    "APP_ORIGIN": "http://localhost:5173",
+    "GOOGLE_CLIENT_ID": "",
+    "APPLE_CLIENT_ID": "",
+    "APPLE_TEAM_ID": "",
+    "APPLE_KEY_ID": "",
+    "JWT_CURRENT_KID": "local-1"
+  },
+
   // ローカル開発（wrangler dev）。D1はローカルのSQLiteなのでIDは何でもよい
   "d1_databases": [
     {
@@ -22,7 +33,15 @@
     // E2E用（ローカルでのみ使う）。テスト用ログインの経路を含むエントリを使う
     "e2e": {
       "main": "src/e2e/entry.ts",
-      "vars": { "E2E_MODE": "1" },
+      "vars": {
+        "E2E_MODE": "1",
+        "APP_ORIGIN": "http://localhost:5173",
+        "GOOGLE_CLIENT_ID": "e2e-unused",
+        "APPLE_CLIENT_ID": "e2e-unused",
+        "APPLE_TEAM_ID": "e2e-unused",
+        "APPLE_KEY_ID": "e2e-unused",
+        "JWT_CURRENT_KID": "e2e-1"
+      },
       "d1_databases": [
         {
           "binding": "DB",
@@ -33,6 +52,15 @@
       ]
     },
     "staging": {
+      // TODO: 本番の値に置き換える（ドメイン、Google／AppleのクライアントID）
+      "vars": {
+        "APP_ORIGIN": "https://staging.example.invalid",
+        "GOOGLE_CLIENT_ID": "",
+        "APPLE_CLIENT_ID": "",
+        "APPLE_TEAM_ID": "",
+        "APPLE_KEY_ID": "",
+        "JWT_CURRENT_KID": "staging-1"
+      },
       "d1_databases": [
         {
           "binding": "DB",
@@ -44,6 +72,15 @@
       ]
     },
     "prod": {
+      // TODO: 本番の値に置き換える（ドメイン、Google／AppleのクライアントID）
+      "vars": {
+        "APP_ORIGIN": "https://prod.example.invalid",
+        "GOOGLE_CLIENT_ID": "",
+        "APPLE_CLIENT_ID": "",
+        "APPLE_TEAM_ID": "",
+        "APPLE_KEY_ID": "",
+        "JWT_CURRENT_KID": "prod-1"
+      },
       "d1_databases": [
         {
           "binding": "DB",
