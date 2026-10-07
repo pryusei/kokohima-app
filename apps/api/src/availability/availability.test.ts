@@ -132,6 +132,23 @@ describe("ここ暇の追加・一覧・取り消し", () => {
     expect(await res.json()).toMatchObject({ startsAt: "2026-11-01T05:00:00.000Z", endsAt: "2026-11-01T09:00:00.000Z" });
   });
 
+  it("プリセット指定で、変換後に終了が開始以前になる日は400（New York の 2026-03-08 2:30〜3:00）", async () => {
+    const a = await u.user();
+    await env.DB.prepare("UPDATE users SET timezone = 'America/New_York' WHERE id = ?").bind(a.id).run();
+    h.clock.now = Date.parse("2026-03-01T00:00:00Z");
+    await u.advance(0, a);
+    await u.call("PUT", "/api/v1/me/presets", {
+      token: a.token,
+      body: {
+        day: { start: "02:30", end: "03:00" },
+        evening: { start: "16:00", end: "19:00" },
+        night: { start: "19:00", end: "23:00" },
+      },
+    });
+    expect((await addPreset(a, "2026-03-08", "day")).status).toBe(400);
+    expect((await addPreset(a, "2026-03-15", "day")).status).toBe(201);
+  });
+
   it("開始〜終了指定。過去・60日より先・15分単位でない・30分未満・24時間超は400", async () => {
     const a = await u.user();
     expect((await addRange(a, "2026-10-10T10:00:00Z", "2026-10-10T12:00:00Z")).status).toBe(201);
@@ -297,6 +314,9 @@ describe("みんな", () => {
     );
     expect(none.items).toHaveLength(0);
     expect((await u.call("GET", `/api/v1/friend-availabilities?${range(h.clock.now, 15)}`, { token: b.token })).status).toBe(400);
+    for (const q of [`from=${iso(h.clock.now)}&to=${iso(h.clock.now)}`, `from=${iso(h.clock.now + DAY_MS)}&to=${iso(h.clock.now)}`]) {
+      expect((await u.call("GET", `/api/v1/friend-availabilities?${q}`, { token: b.token })).status).toBe(400);
+    }
   });
 
   it("見せない相手・ここ暇がない相手・友達でない人・片方向の行しかない相手は、どれも結果に出ない", async () => {

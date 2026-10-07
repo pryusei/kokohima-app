@@ -77,11 +77,14 @@ describe("expandRule", () => {
     expect(iso(slot?.endsAt ?? 0)).toBe("2026-11-01T08:00:00.000Z");
   });
 
-  it("変換後に終了が開始以前になる枠は作らない（存在しない時刻だけの枠）", () => {
-    const gap = rule({ weekday: 0, startMinute: 120, endMinute: 150, timezone: "America/New_York" });
-    // 2:00〜2:30 は存在しない → どちらも 3:00/3:30 に… 開始 3:00、終了 3:30 なので作られる
-    const slots = expandRule(gap, at("2026-03-08T00:00:00Z"), at("2026-03-09T00:00:00Z"), at("2026-03-01T00:00:00Z"));
-    expect(slots.every((s) => s.endsAt > s.startsAt)).toBe(true);
+  it("変換後に終了が開始以前になる枠は作らない（New York の 2026-03-08 2:30〜3:00）", () => {
+    // 開始 2:30 は存在しないので 3:30 EDT（07:30Z）にずれ、終了 3:00 EDT は 07:00Z。終了が開始より前になる
+    const gap = rule({ weekday: 0, startMinute: 150, endMinute: 180, timezone: "America/New_York" });
+    const range = [at("2026-03-08T00:00:00Z"), at("2026-03-09T00:00:00Z"), at("2026-03-01T00:00:00Z")] as const;
+    expect(expandRule(gap, ...range)).toEqual([]);
+    // 2:00〜2:30 は 3:00〜3:30 にずれ、終了が開始より後なので作られる
+    const shifted = expandRule(rule({ weekday: 0, startMinute: 120, endMinute: 150, timezone: "America/New_York" }), ...range);
+    expect(shifted.map((x) => [iso(x.startsAt), iso(x.endsAt)])).toEqual([["2026-03-08T07:00:00.000Z", "2026-03-08T07:30:00.000Z"]]);
   });
 });
 

@@ -52,6 +52,8 @@ test("AがBに「見せない」にすると、Bの「みんな」と友達の�
 
   await b.page.goto("/");
   await expect(b.page.getByRole("link", { name: a.displayName })).toBeVisible();
+  await openFriendDetail(b.page, a.displayName);
+  await expect(b.page.getByRole("list", { name: "友達のここ暇" })).toContainText("夜 19:00〜23:00");
 
   await a.page.goto("/friends");
   const row = friendList(a.page).getByRole("listitem").filter({ hasText: b.displayName });
