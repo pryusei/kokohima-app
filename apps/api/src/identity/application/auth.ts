@@ -203,3 +203,14 @@ export async function getMe(ctx: Ctx, viewerId: string) {
 export async function isSessionActive(ctx: Ctx, viewer: Viewer) {
   return repo.isSessionActive(repo.db(ctx.env.DB), viewer, ctx.deps.now());
 }
+
+export async function updateDisplayName(ctx: Ctx, viewerId: string, displayName: string) {
+  const db = repo.db(ctx.env.DB);
+  await repo.updateDisplayName(db, viewerId, displayName, ctx.deps.now());
+  return repo.findMe(db, viewerId);
+}
+
+/** 他のコンテキスト向け：公開プロフィール（ID・表示名・アイコン） */
+export async function getPublicProfiles(env: Bindings, userIds: string[]) {
+  return repo.findPublicProfiles(repo.db(env.DB), userIds);
+}

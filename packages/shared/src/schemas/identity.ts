@@ -32,3 +32,16 @@ export const meResponseSchema = z.object({
   avatarUrl: z.string().nullable(),
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
+
+// 表示名（docs/specs/T-02-friends.md「表示名」）。前後の空白を除いて1〜20文字、制御文字は不可
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f]/;
+export const displayNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(20)
+  .refine((v) => !CONTROL.test(v), { message: "control_characters" });
+
+export const updateMeRequestSchema = z.object({ displayName: displayNameSchema });
+export type UpdateMeRequest = z.infer<typeof updateMeRequestSchema>;

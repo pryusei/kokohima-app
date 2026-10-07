@@ -7,6 +7,7 @@ export const errorCodeSchema = z.enum([
   "not_found",
   "invalid_state",
   "expired",
+  "rate_limited",
   "internal_error",
 ]);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
