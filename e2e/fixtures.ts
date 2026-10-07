@@ -4,9 +4,9 @@ import { test as base, expect, type BrowserContext, type Page } from "@playwrigh
 // 同じトークンを別のテストが送ると再利用として系列ごと失効するため（docs/specs/T-01-auth.md）
 
 /** テスト用ログインで、このコンテキスト専用の新しいセッションを作る */
-export async function loginAs(context: BrowserContext, name: string): Promise<string> {
+export async function loginAs(context: BrowserContext, name: string, displayName?: string): Promise<string> {
   const user = `${name}-${crypto.randomUUID()}`;
-  const res = await context.request.post("/__e2e__/login", { data: { user } });
+  const res = await context.request.post("/__e2e__/login", { data: { user, displayName } });
   expect(res.status()).toBe(204);
   return user;
 }

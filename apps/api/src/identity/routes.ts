@@ -1,7 +1,9 @@
-import { authCompleteRequestSchema, authStartQuerySchema } from "@kokohima/shared";
+import { authCompleteRequestSchema, authStartQuerySchema, updateMeRequestSchema } from "@kokohima/shared";
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../env";
+import { clearInviteCookie } from "../http/inviteCookie";
 import { problem, problemFrom } from "../http/problem";
+import { validationFailed } from "../http/validation";
 import * as auth from "./application/auth";
 import {
   clearBindingCookie,
@@ -81,13 +83,25 @@ export function identityRoutes() {
   app.post("/auth/logout", requireSameOrigin, async (c) => {
     await auth.logout(ctx(c), getRefreshCookie(c));
     clearRefreshCookie(c);
+    // 共有の端末で、次の人に前の人の招待を引き継がない（T-02）
+    clearInviteCookie(c);
     return c.body(null, 204);
   });
 
   app.post("/auth/logout-all", requireSameOrigin, requireAuth, requireActiveSession, async (c) => {
     await auth.logoutAll(ctx(c), c.var.viewer);
     clearRefreshCookie(c);
+    clearInviteCookie(c);
     return c.body(null, 204);
+  });
+
+  // 表示名の設定（T-02）。閲覧者自身の行だけを更新する
+  app.patch("/me", requireAuth, async (c) => {
+    const body = updateMeRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return validationFailed(c, body.error);
+    const me = await auth.updateDisplayName(ctx(c), c.var.viewer.userId, body.data.displayName);
+    if (!me) return problem(c.get("requestId"), 404, "not_found", "Not Found");
+    return c.json(me);
   });
 
   app.get("/me", requireAuth, async (c) => {

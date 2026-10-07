@@ -203,3 +203,18 @@ export async function getMe(ctx: Ctx, viewerId: string) {
 export async function isSessionActive(ctx: Ctx, viewer: Viewer) {
   return repo.isSessionActive(repo.db(ctx.env.DB), viewer, ctx.deps.now());
 }
+
+export async function updateDisplayName(ctx: Ctx, viewerId: string, displayName: string) {
+  const db = repo.db(ctx.env.DB);
+  await repo.updateDisplayName(db, viewerId, displayName, ctx.deps.now());
+  return repo.findMe(db, viewerId);
+}
+
+/**
+ * 他のコンテキスト向け：公開プロフィール（ID・表示名・アイコン）。
+ * 閲覧者の条件を持たないので、閲覧者で絞ったSQLの結果のID（友達一覧の相手、招待リンクの発行者など）だけを渡すこと。
+ * パスやbodyのIDをそのまま渡してはいけない（docs/specs/T-02-friends.md「前提」）
+ */
+export async function getPublicProfiles(env: Bindings, userIds: string[]) {
+  return repo.findPublicProfiles(repo.db(env.DB), userIds);
+}

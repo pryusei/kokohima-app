@@ -21,6 +21,9 @@ export function HomePage() {
       <h1 className="text-2xl font-bold">ここ暇</h1>
       <p role="status">ログイン中</p>
       {me.data && <p className="text-slate-600">{me.data.displayName ?? "表示名は未設定です"}</p>}
+      <a className="rounded-lg border border-slate-300 px-4 py-3 text-center" href="/friends">
+        友達
+      </a>
       {failed && (
         <p role="status" className="text-slate-600">
           ログアウトできませんでした。通信状態を確認して、もう一度お試しください。

@@ -4,6 +4,7 @@ import { createRemoteJWKSet } from "jose";
 import type { AppDeps, AppEnv } from "./env";
 import { problem } from "./http/problem";
 import { identityRoutes } from "./identity/routes";
+import { socialRoutes } from "./social/routes";
 
 export { problem };
 
@@ -31,6 +32,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
 
   app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
   app.route("/api/v1", identityRoutes());
+  app.route("/api/v1", socialRoutes());
 
   app.notFound((c) => problem(c.get("requestId"), 404, "not_found", "Not Found"));
 

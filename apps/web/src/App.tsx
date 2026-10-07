@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { useAuth } from "./auth/AuthProvider";
 import { AuthCompletePage } from "./pages/AuthCompletePage";
+import { FriendsPage } from "./pages/FriendsPage";
 import { HomePage } from "./pages/HomePage";
+import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { navigate, useLocation } from "./router";
 
@@ -15,6 +17,8 @@ export function App() {
   const { status, retry } = useAuth();
 
   if (pathname === "/auth/complete") return <AuthCompletePage />;
+  // 招待リンクの受け口は未ログインでも描画する（振り分けると、フラグメントのトークンを失う）
+  if (pathname === "/invite") return <InvitePage />;
 
   if (status === "checking") {
     return (
@@ -47,5 +51,6 @@ export function App() {
     return <Redirect to={returnTo === "/" ? "/login" : `/login?returnTo=${encodeURIComponent(returnTo)}`} />;
   }
 
+  if (pathname === "/friends") return <FriendsPage />;
   return <HomePage />;
 }

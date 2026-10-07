@@ -69,3 +69,15 @@ export async function apiGet<T>(path: string, schema: ZodType<T>): Promise<T> {
   const res = await apiFetch(path);
   return schema.parse(await res.json());
 }
+
+/** JSON を送り、レスポンスを検証して返す（本文のない 204 なら undefined） */
+export async function apiSend<T>(
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  body: unknown,
+  schema?: ZodType<T>,
+): Promise<T | undefined> {
+  const res = await apiFetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!schema || res.status === 204) return undefined;
+  return schema.parse(await res.json());
+}

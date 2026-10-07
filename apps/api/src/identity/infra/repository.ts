@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, isNull } from "drizzle-orm";
+import { and, eq, exists, gt, inArray, isNull } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { outbox, outboxRow } from "../../shared/outbox/schema";
 import type { Provider } from "../domain/idTokenClaims";
@@ -228,3 +228,18 @@ export async function findMe(db: Db, viewerId: string) {
   return row ?? null;
 }
 
+
+/** 公開プロフィール（ID・表示名・アイコン）。他のコンテキストはこの関数を通してだけ users を読む */
+export async function findPublicProfiles(db: Db, userIds: string[]) {
+  if (userIds.length === 0) return new Map<string, { id: string; displayName: string | null; avatarUrl: string | null }>();
+  const rows = await db
+    .select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(inArray(users.id, userIds));
+  return new Map(rows.map((r) => [r.id, r]));
+}
+
+/** 閲覧者自身の表示名だけを更新する */
+export async function updateDisplayName(db: Db, viewerId: string, displayName: string, now: number) {
+  await db.update(users).set({ displayName, updatedAt: now }).where(eq(users.id, viewerId));
+}
