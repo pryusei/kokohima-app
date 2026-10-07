@@ -10,6 +10,10 @@
 
 ## 前提
 - コンテキスト：友達関係と招待リンクは `social`（`apps/api/src/social/`）、公開設定は `availability`（`apps/api/src/availability/`）に置く。公開設定の保存と切り替えのAPIは今回作り、ここ暇への適用はT-03で行う
+  - `/friends` のルートと application 層（一覧の組み立て、`PATCH` の流れ）は `social` が持つ
+  - `sharing_policies` の読み書きは `availability` の application 層の関数（`getSharingFor(ownerId, targetIds)`、`setSharing(ownerId, targetId, visible)`）だけが行う。`social` は表を直接読まず、これらの関数を呼ぶ
+  - 友達かどうかの確認は `social` が先に行い、友達のときだけ `setSharing` を呼ぶ
+  - 一覧は、`social` が友達を1ページ分取得したあと、その相手IDの範囲で `getSharingFor` を1回呼んで合わせる（SQLのJOINはしない）
 - 認証は T-01 の `requireAuth` を使い、閲覧者IDは `c.var.viewer.userId` からだけ得る
 - 他人の情報は公開プロフィール（`id`、`displayName`、`avatarUrl`）だけを返す（api-conventions）
 
@@ -18,11 +22,12 @@
 
 | メソッド | パス | 認証 | 入力（Zodスキーマ名） | 出力 | 主なエラー |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/api/v1/invite-links` | Bearer | JSON：`createInviteLinkRequestSchema` `{ expiresInDays: 1 \| 3 \| 7, maxUses: 1〜10 }` | 201：`createdInviteLinkSchema` `{ id, url, expiresAt, maxUses, uses }` | 400 `validation_failed`、429 `rate_limited` |
+| POST | `/api/v1/invite-links` | Bearer | JSON：`createInviteLinkRequestSchema` `{ expiresInDays: 1 \| 3 \| 7, maxUses: 1〜10 }` | 201：`createdInviteLinkSchema` `{ id, url, expiresAt, maxUses, uses }` | 400 `validation_failed`、409 `invalid_state`（表示名が未設定）、429 `rate_limited` |
 | GET | `/api/v1/invite-links` | Bearer | query：`limit`、`cursor` | 200：`{ items: inviteLinkSchema[], nextCursor }`（`url` は含まない） | 400 |
-| DELETE | `/api/v1/invite-links/{id}` | Bearer | なし | 204（自分のリンクなら、無効化済み・期限切れでも204） | 404 `not_found`（他人のリンク・存在しない） |
-| POST | `/api/v1/invite-links/lookup` | なし（Origin） | JSON：`inviteLookupRequestSchema` `{ token? }`（省略時は招待Cookieのトークン） | 200：`inviteLookupResponseSchema` `{ inviter: { displayName, avatarUrl } }`（招待Cookieを発行） | 404 `not_found`、401（Origin不一致） |
-| POST | `/api/v1/invite-links/accept` | Bearer＋Origin | なし（招待Cookieのトークンを使う） | 201（友達になった）／200（すでに友達）：`acceptInviteResponseSchema` `{ friend: publicProfile, alreadyFriends }` | 404 `not_found`、409 `invalid_state`（自分のリンク） |
+| POST | `/api/v1/invite-links/{id}/revoke` | Bearer | なし | 204（自分のリンクなら、無効化済み・期限切れでも204） | 404 `not_found`（他人のリンク・存在しない） |
+| POST | `/api/v1/invite-links/lookup` | なし（Origin） | JSON：`inviteLookupRequestSchema` `{ token? }`（省略時は招待Cookieのトークン） | 200：`inviteLookupResponseSchema` `{ linkId, inviter: { displayName, avatarUrl } }`（招待Cookieを発行） | 404 `not_found`、401（Origin不一致） |
+| POST | `/api/v1/invite-links/accept` | Bearer＋Origin | JSON：`acceptInviteRequestSchema` `{ linkId }`（`lookup` で表示したリンク。トークンは招待Cookieのものを使う） | 201（友達になった）／200（すでに友達）：`acceptInviteResponseSchema` `{ friend: publicProfile, alreadyFriends }` | 404 `not_found`、409 `invalid_state`（自分のリンク） |
+| PATCH | `/api/v1/me` | Bearer | JSON：`updateMeRequestSchema` `{ displayName }`（1〜20文字） | 200：`meResponseSchema` | 400 |
 | GET | `/api/v1/friends` | Bearer | query：`limit`、`cursor` | 200：`{ items: friendSchema[], nextCursor }` | 400 |
 | PATCH | `/api/v1/friends/{friendId}` | Bearer | JSON：`updateFriendRequestSchema` `{ sharesMyAvailability: boolean }` | 200：`friendSchema` | 400、404 `not_found` |
 | DELETE | `/api/v1/friends/{friendId}` | Bearer | なし | 204 | 404 `not_found` |
@@ -35,7 +40,8 @@
 - 例外：
   - 使えないリンク（存在しない・期限切れ・人数上限・無効化）は、`lookup`・`accept` とも、すべて404 `not_found` にする。409 `expired` と区別しない。リンクを持っている人に、発行者が無効化したのか期限が切れたのかを推測させないため。画面では「このリンクは使えません。発行した人に新しいリンクをもらってください」と1種類だけ表示する
   - `lookup` はトークンを本文で受け取るため `POST` にする（パスやqueryに入れるとログに残る）。データは変えず、招待Cookieを発行するだけ
-  - `accept` は本文を取らず、招待Cookieのトークンを使う
+  - `accept` のトークンは本文ではなく招待Cookieのものを使う。本文の `linkId` は「画面に表示したリンクと同じか」の照合にだけ使う
+  - 招待リンクの無効化は、行を消さずに `revoked_at` を入れる状態遷移なので、規約どおり動詞のサブリソースへの `POST /invite-links/{id}/revoke` にする（何度送っても204）
   - 作成の201に `Location` を付けない。招待リンクにも友達にも1件を取得するAPIがないため（指す先がない）
   - 作成・状態遷移の `POST` で `Idempotency-Key` を受け付ける規約は、今回は実装しない（決定事項6）。代わりに次のように扱う
     - `accept`：同じ人が同時に2回送っても、友達関係の行で1回分だけが人数を消費する（「友達になる」の手順）。成功の応答が届かずに再送した場合は、招待Cookieが消えているので404になる。フロントは「友達になる」を送信中は押せなくし、通信エラーのときは再送せず「友達一覧で確認してください」と友達タブへの導線を出す
@@ -58,6 +64,7 @@
 
 ### 招待リンクの発行
 - 期限は1・3・7日から選ぶ（既定3日）。人数上限は1〜10人（既定5人）（決定事項1）
+- 発行者の表示名が未設定（`null`）なら409 `invalid_state`。受け口で発行者の名前を見せて確かめてもらうため（「表示名」の節）
 - 1人が24時間に発行できるのは20本まで。無効化したリンクも数える。発行の前に、閲覧者が直近24時間に作った行をD1で数え、20以上なら429 `rate_limited` と、その中で一番古い発行から24時間たつまでの秒数を `Retry-After` に入れる（決定事項4）。数えてから作るまでの間に同時に送られた分は、上限をわずかに超えることを許容する
 - 応答の `url` は発行時だけ返す
 
@@ -79,11 +86,19 @@
 
 ### 友達になる（`accept`）
 1. 招待Cookieのトークンのハッシュでリンクを取得する。Cookieがない・リンクがない・期限切れ・無効化・上限に達している、のどれでも404
-2. 発行者が閲覧者自身なら409 `invalid_state`
-3. 閲覧者側の友達関係の行（`user_id = 閲覧者, friend_id = 発行者`）を `INSERT OR IGNORE` で単独で書く。`meta.changes` が0なら、すでに友達なので人数を消費せず200（`alreadyFriends: true`）。同じ人が同時に2回送っても、ここで1回分だけが先へ進む
-4. `UPDATE invite_links SET uses = uses + 1 WHERE id = ? AND uses < max_uses AND revoked_at IS NULL AND expires_at > ?` を単独で実行する。`meta.changes` が0なら（同時に使われて上限に達した、無効化された）、3で書いた行を消して404
-5. 発行者側の友達関係の行（`INSERT OR IGNORE`）と、`outbox` の `FriendshipEstablished` 2件（発行者あて・参加者あて）をバッチで書いて201
-- 3から5の間、閲覧者側の行だけがある瞬間がある。この間に閲覧者自身の友達一覧を取ると発行者が一瞬見えることがあるが、4で失敗すれば消えるので許容する
+2. 取得したリンクの `id` が本文の `linkId` と一致しなければ404。別のタブで別のリンクを開いて招待Cookieが上書きされたときに、画面に出ていない相手と友達になるのを防ぐ（Cookieは消さない。正しいタブから開き直せば続けられる）
+3. 発行者が閲覧者自身なら409 `invalid_state`
+4. 閲覧者側の友達関係の行（`user_id = 閲覧者, friend_id = 発行者`）を `INSERT OR IGNORE` で単独で書く
+   - `meta.changes` が0なら、すでに友達。人数を消費せず、7へ（発行者側の行の修復）
+   - 同じ人が同時に2回送っても、ここで1回分だけが5へ進む
+5. `UPDATE invite_links SET uses = uses + 1 WHERE id = ? AND uses < max_uses AND revoked_at IS NULL AND expires_at > ?` を単独で実行する。`meta.changes` が0なら（同時に使われて上限に達した、無効化された）、4で書いた行を消して404
+6. 発行者側の友達関係の行（`INSERT OR IGNORE`）と、`outbox` の `FriendshipEstablished` 2件（発行者あて・参加者あて）をバッチで書いて201
+7. すでに友達だったとき：発行者側の行を `INSERT OR IGNORE` で書く。行が増えた（＝前回の `accept` が5と6の間で落ちて片方向だけが残っていた）ときは、6と同じ `FriendshipEstablished` 2件も書く。どちらでも200（`alreadyFriends: true`）
+- 途中で落ちた場合の扱い：
+  - 5と6の間で落ちる：閲覧者側の行だけが残り、人数は消費済み。次の `accept` が7で修復する（人数は再び消費しない）。修復されるまでの間、友達一覧は片方にだけ相手が出る
+  - 5で失敗したあと4の行を消す前に落ちる：閲覧者側の行だけが残り、人数は消費していない。次の `accept` が7で発行者側の行を書くので、人数を消費せずに友達になる。上限を1人分超えうるが、障害時に限られるので許容する
+- 4から6の間、閲覧者側の行だけがある瞬間がある。この間に閲覧者自身の友達一覧を取ると発行者が一瞬見えることがあるが、5で失敗すれば消えるので許容する
+- 同じ人が同時に2回送り、1回目が5で失敗した場合、2回目は4で「すでに友達」と判断して200を返すが、実際には友達になっていない。二重押しと上限ちょうどが重なったときだけなので許容する（フロントは送信中に押せなくする）
 - `FriendshipEstablished` のペイロード：`{ userId（通知の受け取り手）, friendId, occurredAt }`。メールアドレスや表示名は入れない。通知と「公開をオフにする」導線は通知タスクで作る
 - 解除した相手が同じリンクを再び開いた場合も、通常どおり人数を1消費して友達に戻る（F-09）
 
@@ -97,8 +112,12 @@
 - 応答は更新後の `friendSchema`
 - 友達一覧の `sharesMyAvailability` は `sharing_policies.visible`（行がなければ `true`）
 
-### 表示名が未設定の相手
-- T-01では、表示名は初回設定（別のタスク）まで全員 `null`。APIは `null` のまま返し、画面では「名前未設定の友達」と表示する（受け口では「友達」）
+### 表示名
+- T-01では、表示名は初回設定（別のタスク）まで全員 `null`。このままでは、受け口で「誰と友達になるのか」を確かめられない（決定事項8）
+- そのため、このタスクで表示名の設定だけを先に作る：`PATCH /api/v1/me` `{ displayName }`（前後の空白を除いて1〜20文字、制御文字は不可）。identity コンテキストに置く。アイコンや初回設定の流れは別タスク
+- 招待リンクは、表示名を設定した人だけが発行できる（未設定なら409）。友達タブで「招待リンクを作る」を押したときに未設定なら、先に表示名の入力を出す
+- それでも友達一覧には、表示名が未設定の相手（リンクを受けただけの人）が出うる。APIは `null` のまま返し、画面では「名前未設定の友達」と表示する
+- 表示名は本人が自由に決められる値なので、「偽の招待ページ」（なりすまし）への対策としては弱い。受け口の表示は「この名前の人のリンク」以上を保証しないことを受け入れる（決定事項9）。取り違えたときは、友達追加の通知から公開をオフにでき、静かに解除もできる（要求定義書の受容したリスク）
 - E2Eで相手を見分けるため、`/__e2e__/login` に任意の `displayName`（1〜32文字）を受け付けさせ、テスト用ユーザーに表示名を入れる（E2E用のエントリだけの変更）
 
 ### 画面（仮。最終的なデザインはデザインのタスクで差し替える）
@@ -127,11 +146,15 @@
 - [ ] 発行：期限・人数の入力検証（範囲外は400）、既定値
 - [ ] 発行：24時間に20本を超えると429と `Retry-After`
 - [ ] 一覧：有効なリンクだけを、作成日時の新しい順で返す。カーソルで続きを取れる
-- [ ] 無効化：自分のリンクは204（無効化済み・期限切れでも204）、他人のリンク・存在しないIDは同じ404
+- [ ] 無効化（`POST /invite-links/{id}/revoke`）：自分のリンクは204（無効化済み・期限切れでも204）、他人のリンク・存在しないIDは同じ404
+- [ ] 発行：表示名が未設定なら409
+- [ ] 表示名の設定：1〜20文字（前後の空白を除く）、制御文字は400。他人の表示名は変えられない（閲覧者自身の行だけを更新する）
 - [ ] lookup：有効なら発行者の表示名とアイコン（IDは含まない）。存在しない・期限切れ・上限・無効化は、すべて同じ404（本文も同じ）
 - [ ] accept：友達になると両方向の行と `FriendshipEstablished` 2件ができ、人数が1増える
 - [ ] accept：すでに友達なら200で、人数が増えない
 - [ ] accept：同じ人が同時に2回送ると、人数は1だけ増え、`FriendshipEstablished` は2件だけ
+- [ ] accept：本文の `linkId` が招待Cookieのリンクと違えば404で、友達にならない（別のタブで招待Cookieが上書きされた場合）
+- [ ] accept：閲覧者側の行だけが残った状態（途中で落ちた）から `accept` すると、人数を消費せずに発行者側の行と `FriendshipEstablished` 2件を書いて修復する
 - [ ] accept：401（アクセストークンの失効）では招待Cookieを消さない
 - [ ] lookup：本文なしなら招待Cookieのトークンで発行者を返す。Cookieもなければ404
 - [ ] logout・logout-all：招待Cookieも消す
@@ -146,7 +169,7 @@
 - [ ] `lookup`・`accept` は Origin がない・別のOriginなら401
 - [ ] フロント：受け口でトークンをURLから消し、localStorage・sessionStorage に置かない
 - [ ] フロント：未ログインで `/invite#t=...` を開いても `/login` へ移さずに受け口を描画する。ログインのボタンは `returnTo=/invite` でログインを始める
-- [ ] フロント：ログイン後の `/invite` では、発行者を表示してから「友達になる」を出す。409では自分のリンクの文言、通信エラーでは友達タブへの導線を出す
+- [ ] フロント：ログイン後の `/invite` では、発行者を表示してから「友達になる」を出し、`lookup` で受け取った `linkId` を送る。409では自分のリンクの文言、通信エラーでは友達タブへの導線を出す
 - [ ] フロント：表示名が `null` の友達を「名前未設定の友達」と表示する
 - [ ] フロント：公開設定のスイッチの楽観的更新（成功時、失敗時に元に戻る）
 
@@ -175,6 +198,7 @@
 6. 規約の `Idempotency-Key`（KVに24時間保存）は、KVのバインディングとまとめて別のタスクで共通の仕組みとして作る
 7. `FriendshipEstablished` は、発行者・参加者の両方あてに書く
 8. F-08の「開いてログインすると即友達」は、「発行者の表示名を見せたうえで『友達になる』を1回押す」と解釈する
+9. 表示名の設定（`PATCH /me`）をこのタスクで先に作り、表示名を設定した人だけが招待リンクを発行できるようにする。表示名は自由に決められるため、なりすましへの対策としては弱いことを受け入れる（仕様書PRのレビューで追加）
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
@@ -182,3 +206,4 @@
 | 2026-10-07 | 初版 | T-02の仕様書PR |
 | 2026-10-07 | 同じ人の同時の `accept` で人数を二重に消費しない手順、招待Cookieからの発行者の表示、表示名が未設定のときの表示、未ログインの `/invite` の扱い、自分のリンク、無効化の冪等性、`Location` の例外、発行の上限の数え方を追加。確認事項8を追加 | 仕様レビュー |
 | 2026-10-07 | 確認事項を決定事項にし、状態を合意済みにした | 仕様書PRのレビュー |
+| 2026-10-07 | `accept` で表示したリンクと一致するかを照合（`linkId`）、すでに友達のときに発行者側の行を修復、表示名の設定（`PATCH /me`）と発行の前提、コンテキストの境界、無効化を `POST .../revoke` に変更、途中で落ちた場合の扱いを追加。決定事項9を追加 | 仕様書PRのレビュー（pryusei/kokohima-app#9） |
