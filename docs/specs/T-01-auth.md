@@ -1,6 +1,6 @@
 # T-01 仕様書：認証（Google／Sign in with Apple、セッション）
 
-- 状態：下書き
+- 状態：合意済み
 - タスク票：docs/tasks/T-01-auth.md
 - 関係する要件：F-01、NF-04、要求定義書「セキュリティ設計 › 認証とセッション」「テスト環境の認証」
 
@@ -10,7 +10,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 以降のすべてのAPIが、認証済みの閲覧者IDを安全に受け取れるミドルウェアを用意する。
 
 ## 前提
-- PWAとAPIは同じオリジンで配信する（例：`https://<アプリのドメイン>` の `/api/*` をAPI Workerにルーティング）。CORSは設定しない。ローカルではviteが `/api` をwrangler devへ中継し、同じオリジンになる（確認事項1）
+- PWAとAPIは同じオリジンで配信する（例：`https://<アプリのドメイン>` の `/api/*` をAPI Workerにルーティング）。CORSは設定しない。ローカルではviteが `/api` をwrangler devへ中継し、同じオリジンになる（決定事項1）
 - コンテキストは `identity`。`apps/api/src/identity/{domain,application,infra}` に置く
 
 ## API
@@ -34,20 +34,23 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
   - 長さ512以下で、`/` で始まり、`//` や `/\` で始まらない
   - 制御文字（U+0000〜U+001F、U+007F）、空白、`\` を含まない（`/\t/evil.com` などがURLの解釈で `//evil.com` になるのを防ぐ）
   - `new URL(returnTo, APP_ORIGIN).origin === APP_ORIGIN`
+  - `/api/` と `/__e2e__/` で始まらない（ログインの開始へ戻ってループするのを防ぐ）
   - 保存時（`/start`）と、完了時の応答の前の2回検証する
 - `displayName` と `avatarUrl` は、初回設定（別タスク）までは `null`
 - 例外：コールバックは利用者のブラウザが画面遷移で開くため、Problem DetailsのJSONではなく画面へのリダイレクトで失敗を伝える。失敗の理由は区別せず、すべて `error=login_failed`（キャンセルも含む）
+- 例外：`POST /api/v1/auth/complete` は、完了コードが期限切れでも409 `expired` ではなく401 `unauthenticated` を返す。認証の失敗理由（ない・使用済み・期限切れ・結びつけ不一致）を区別させないため
+- 例外：認証のエンドポイント（`complete`・`refresh`・`logout`・`logout-all`）は `Idempotency-Key` を受け付けない。`complete` と `refresh` は1回限りの値を消費するため再送で同じ結果を返すべきではなく、`logout`・`logout-all` はもともと何度実行しても同じ結果になるため
 - コールバックで直接セッションを作らず、完了コードを経由する理由：Appleのコールバックはクロスサイトのフォーム送信で届くため、その応答で設定する `SameSite=Strict` のCookieはブラウザに拒否されうる。同じオリジンの `fetch` で完了させれば、GoogleとAppleを同じ流れにでき、Cookieも確実に設定できる
 
 ## データ
-マイグレーション `apps/api/migrations/0001_identity.sql` を追加する（Drizzleのスキーマは `apps/api/src/identity/infra/schema.ts`）。日時はすべてUnixミリ秒の整数。
+マイグレーション `apps/api/migrations/0001_identity.sql` を追加する（Drizzleのスキーマは `apps/api/src/identity/infra/schema.ts`。`outbox` だけは `apps/api/src/shared/outbox/schema.ts`）。日時はすべてUnixミリ秒の整数。
 
 | テーブル | 列 | 備考 |
 | --- | --- | --- |
-| `users` | `id`（UUID、PK）、`display_name`（null可）、`avatar_url`（null可）、`email`（null可）、`timezone`（既定 `Asia/Tokyo`）、`created_at`、`updated_at` | `email` は通知用（確認事項4） |
+| `users` | `id`（UUID、PK）、`display_name`（null可）、`avatar_url`（null可）、`email`（null可）、`timezone`（既定 `Asia/Tokyo`）、`created_at`、`updated_at` | `email` は通知用（決定事項4） |
 | `user_identities` | `id`（UUID、PK）、`user_id`（FK）、`provider`（`google` ／ `apple` ／ `e2e`）、`subject`（IDトークンの `sub`）、`created_at` | UNIQUE(`provider`, `subject`)。ユーザーの特定は `sub` で行い、メールアドレスでは行わない |
 | `sessions` | `id`（UUID、PK＝更新用トークンの系列）、`user_id`（FK）、`created_at`、`last_used_at`、`expires_at`（系列の絶対期限）、`revoked_at`（null可） | INDEX(`user_id`) |
-| `refresh_tokens` | `id`（UUID、PK）、`session_id`（FK）、`token_hash`（SHA-256、base64url、UNIQUE）、`created_at`、`expires_at`、`used_at`（null可） | INDEX(`session_id`)。生の値は保存しない |
+| `refresh_tokens` | `id`（UUID、PK）、`session_id`（FK）、`token_hash`（SHA-256、base64url、UNIQUE）、`created_at`、`expires_at`、`used_at`（null可）、`replaced_by`（null可。交換で作った次のトークンの `id`） | INDEX(`session_id`)。生の値は保存しない |
 | `oauth_transactions` | `state_hash`（PK）、`provider`、`nonce`、`code_verifier`、`binding_hash`、`return_to`、`expires_at` | 認可の開始からコールバックまでの一時データ。10分で失効。使ったら削除 |
 | `login_codes` | `code_hash`（PK）、`user_id`（FK）、`provider`、`binding_hash`、`return_to`、`expires_at` | コールバックから完了までの一時データ。60秒で失効。使ったら削除 |
 | `outbox` | `id`（UUID、PK）、`type`、`payload`（JSON）、`created_at`、`processed_at`（null可） | 外部連携の共通の箱。今回は書き込みのみ |
@@ -63,6 +66,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
    - Google：`SameSite=Lax`
    - Apple：`SameSite=None`（Appleは `response_mode=form_post` でクロスサイトのPOSTを返すため。Laxでは送られない）
 4. プロバイダの認可画面へ302でリダイレクトする
+- 結びつけCookieは1つの名前なので、同じブラウザの2つのタブで同時にログインを始めると、先に始めたほうは失敗する（`login_failed`）。やり直せば済むため許容する
    - Google：`scope=openid email`、`code_challenge_method=S256`、`nonce`、`state`、`prompt=select_account`
    - Apple：`scope=email`、`response_mode=form_post`、`response_type=code`、`code_challenge_method=S256`、`nonce`、`state`
 
@@ -74,7 +78,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
    - フォームで直接届いた `id_token` と `user` は使わない（トークンエンドポイントの応答だけを信用する）
 4. IDトークンを `jose` で検証する：署名（プロバイダのJWKS、`alg` はRS256のみ）、`iss`（Google：`https://accounts.google.com` または `accounts.google.com`、Apple：`https://appleid.apple.com`）、`aud`（自分のクライアントID）、`exp`・`iat`（許容誤差60秒）、`nonce`（保存した値と一致）
 5. `(provider, sub)` で `user_identities` を探す
-   - あれば、そのユーザーでログインする。`users.email` がnullで、IDトークンに確認済みのメールアドレスがあれば保存する（Googleは `email_verified` が真のときのみ）
+   - あれば、そのユーザーでログインする。`users.email` がnullで、IDトークンに確認済みのメールアドレスがあれば保存する（Googleは `email_verified` が `true` のときのみ。Appleは `email_verified` が `true` または文字列 `"true"` のときのみ。Appleの中継メール（`is_private_email` が真）もそのまま保存する。Appleの中継を通して届けるため）
    - なければ、`users` と `user_identities` を1つのバッチで作る（初回。メールアドレスの扱いは上と同じ）
 6. 完了コード（32バイトのランダム値のbase64url）を作り、そのハッシュと、取り出した `binding_hash` を `login_codes` に保存して（60秒）、`/auth/complete#code=<完了コード>` へ303でリダイレクトする。コードはURLのフラグメントに入れ、サーバーのログやRefererに残さない
 7. どこかで失敗したら、完了コードを作らず `/login?error=login_failed` へ303でリダイレクトする。ログには失敗の種類だけを出し、トークン・コード・メールアドレスは出さない
@@ -89,17 +93,23 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 ### セッションと更新用トークン
 - 更新用トークン：32バイトのランダム値のbase64url。D1にはSHA-256のハッシュだけを保存する
 - Cookie：`__Host-kh_rt=<値>`、HttpOnly、Secure、`SameSite=Strict`、Path=/、Max-Age＝トークンの有効期限まで
-- 有効期限：1本のトークンは30日（使われずに30日たつと失効）、系列（セッション）は作成から90日で失効（確認事項2）
-- セッションを作るとき、`outbox` に `SessionStarted`（`userId`、`sessionId`、`provider`、`occurredAt`）を書く。新端末ログインのメール通知は通知タスクでこれを使う
+- 有効期限：1本のトークンは30日（使われずに30日たつと失効）、系列（セッション）は作成から90日で失効（決定事項2）
+- セッションを作るとき、`outbox` に `SessionStarted`（`userId`、`sessionId`、`provider`、`deviceSummary`、`occurredAt`）を書く。新端末ログインのメール通知は通知タスクでこれを使う
+  - `deviceSummary`：User-Agentから作る「ブラウザ名 / OS名」の要約（例：`Safari / iOS`、64字以内、判別できなければ `unknown`）。User-Agentの全文とIPアドレスは保存しない
+  - `outbox` のDrizzleスキーマは、全コンテキストで共有するため `apps/api/src/shared/outbox/schema.ts` に置く
 - D1のバッチは文の結果で後続を止められない。そのため、条件つきの消費（`login_codes` の `DELETE ... RETURNING`、`refresh_tokens` の条件付きUPDATE）は先に単独で実行し、返った行や `meta.changes` を確かめてから、残りの書き込み（セッション・更新用トークン・`outbox` の作成）をバッチで行う
 
 ### 更新（`POST /api/v1/auth/refresh`）
 1. `Origin` ヘッダーが設定値 `APP_ORIGIN` と完全一致しなければ401（`Origin` がない場合も401）
 2. Cookieのトークンのハッシュで `refresh_tokens` とその `sessions` を取得する
 3. 次のどれかなら401にしてCookieを消す：見つからない、トークンの期限切れ、セッションの失効・期限切れ
-4. `used_at` が入っている（使用済み）なら、再利用とみなして、そのセッションを失効させてから401
-5. `UPDATE refresh_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL` を単独で実行して使用済みにする。`meta.changes` が0なら（同時に使われた）、4と同じく再利用として扱い、6には進まない
-6. 5が1行だったときだけ、同じセッションに新しいトークンを作り（バッチで `sessions.last_used_at` も更新）、Cookieを差し替えて、新しいアクセストークンを返す
+4. `used_at` が空なら、`UPDATE refresh_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL` を単独で実行して使用済みにする。`meta.changes` が1なら6へ。0なら（同時に使われた）5へ
+5. 使用済みのトークンが来たとき（4で0行だった場合を含む）は、次のトークン（`replaced_by`）の状態で判断する
+   - 次のトークンがまだ一度も使われていない（`used_at` が空）：前回の交換の応答が届かなかったとみなす（回線が切れた、送信中にPWAが閉じられた、2つのタブが同時に更新した）。次のトークンを `UPDATE ... WHERE id = ? AND used_at IS NULL` で使用済みにし、`meta.changes` が1なら6へ。0なら下の「再利用」として扱う
+   - 次のトークンも使用済み：再利用とみなし、そのセッションを失効させ、Cookieを消して401
+   - 時間の制限は設けない。PWAを閉じて数時間後に開いた場合も救うため
+6. 同じセッションに新しいトークンを作り、使用済みにしたトークンの `replaced_by` に新しい `id` を入れ（バッチで `sessions.last_used_at` も更新）、Cookieを差し替えて、新しいアクセストークンを返す
+- この救済で受け入れるリスク：トークンを盗んだ人が、正規の利用者が次のトークンを使う前に古いトークンを使うと、新しいトークンを得られる。その後に正規の利用者が更新すると、盗んだ側の得たトークンが「次のトークン」として使用済みになり、そこで再利用として系列ごと失効する（検知が1回分遅れる）。更新用トークンはHttpOnlyのCookieでスクリプトから読めないため、このリスクを受け入れる（決定事項5）
 - 新しいトークンの期限は `min(今＋30日, sessions.expires_at)`。Cookieの `Max-Age` もこれに合わせる
 
 ### アクセストークン
@@ -121,8 +131,9 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 ### フロントエンド（apps/web）
 - アクセストークンはモジュール内の変数（メモリ）にだけ持つ。localStorage・sessionStorage・IndexedDB・Cookieには保存しない
 - 起動時に `POST /api/v1/auth/refresh` を呼ぶ。成功すればログイン状態、401ならログアウト状態
+- ネットワークエラーや5xxはログアウトとして扱わない。「確認中」の状態のまま静かな文言で再試行を促し、オンラインに戻ったとき（`online` イベント）に自動で再試行する
 - APIクライアント（`apps/web/src/api/client.ts`）は、401を受けたら1回だけ更新して再送し、失敗したらログアウト状態にする（`data-fetching` スキル）
-- 更新は複数タブで同時に走ると再利用と判定されるため、Web Locks API（`navigator.locks.request("kh-refresh", ...)`）で直列化する。ロックを取った後、他のタブが直前に更新していれば（`BroadcastChannel` で新しいトークンを受け取っていれば）それを使う（確認事項5）
+- 複数タブでの無駄な更新を減らすため、Web Locks API（`navigator.locks.request("kh-refresh", ...)`）で直列化する。ロックを取った後、他のタブが直前に更新していれば（`BroadcastChannel` で新しいトークンを受け取っていれば）それを使う。同時に更新が走っても、サーバー側の救済（更新の手順5）でログアウトにはならない
 - 画面（仮）：
   - ログイン画面（`/login`）：「Googleでログイン」「Appleでログイン」のボタン（`/api/v1/auth/<provider>/start?returnTo=...` への画面遷移）。`error=login_failed` のときは静かな文言で「ログインできませんでした。もう一度お試しください」を表示する（赤を使わない）
   - ログイン後の仮のホーム（`/`）：「ログイン中」の表示、「ログアウト」「すべての端末からログアウト」のボタン
@@ -136,7 +147,8 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `GOOGLE_CLIENT_SECRET`、`APPLE_PRIVATE_KEY`、`JWT_SIGNING_KEYS` | secret | `wrangler secret` でのみ設定。ローカルは `.dev.vars`（コミットしない） |
 | `JWT_CURRENT_KID` | vars | 署名に使う鍵ID |
 
-- ローカルの `http://localhost` では、ブラウザがSecure Cookieと `__Host-` を許可するため、本番と同じCookie設定のまま動かす
+- ローカルの `http://localhost` では、ChromeとFirefoxがSecure Cookieと `__Host-` を許可するため、本番と同じCookie設定のまま動かす。Safari（WebKit）は許可しないため、ローカルの確認とE2EはChromium（とFirefox）で行い、Safariはstagingで確認する
+- Appleはリダイレクト先に `localhost` や `http` を登録できない。Appleのログインはローカルでは確かめられないため、stagingで人が手動で確認する（Googleはローカルでも確認できる）
 
 ### E2E用のテスト用ログイン
 - `POST /__e2e__/login` を `apps/api/src/e2e/` に実装し、`src/e2e/entry.ts` からだけ読み込む（本番のエントリからの読み込みはESLintで禁止済み）
@@ -145,9 +157,11 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - 認証状態はテストの間で使い回さない。更新用トークンはページを開くたびに交換され、同じトークンを別のテストが送ると再利用として系列ごと失効するため
   - Playwrightのfixture（`e2e/fixtures.ts`）で、テストごとに一意なキー（例：`a-<uuid>`）で `/__e2e__/login` を呼び、そのテスト専用のセッションで始める
   - 友達同士の流れでは、同じテストの中でA・B・Cの3人分を別々のブラウザコンテキストで作る
-  - これに合わせて、実装PRで `e2e-testing` スキルの「認証」（setupプロジェクトで `storageState` を保存して使い回す方針）を書き換える（確認事項8）
+  - これに合わせて、実装PRで `e2e-testing` スキルの「認証」（setupプロジェクトで `storageState` を保存して使い回す方針）と、タスク票 `docs/tasks/T-01-auth.md` のスコープ（「setupプロジェクト、ユーザーA・B・Cの認証状態」）を書き換える（決定事項8）
 - viteの中継に、環境変数 `E2E=1` で起動したときだけ `/__e2e__` を追加する（Cookieを `localhost:5173` で発行するため）。`playwright.config.ts` のwebServerは `E2E=1 pnpm --filter web dev` で起動するように変える
-- wranglerの `env.e2e` はトップレベルの `vars` を引き継がないため、`APP_ORIGIN` などの設定値と、`JWT_SIGNING_KEYS` のE2E用の値を `env.e2e` 側にも置く（秘密情報はE2E専用のダミー値に限り、`.dev.vars.e2e` で渡す）
+- wranglerの `env.e2e` はトップレベルの `vars` を引き継がないため、`APP_ORIGIN` などの設定値と、`JWT_SIGNING_KEYS` のE2E用の値を `env.e2e` 側にも置く
+- E2E用の秘密情報（`JWT_SIGNING_KEYS` など）はコミットしない。`apps/api/scripts/write-e2e-dev-vars.ts` が、`.dev.vars.e2e` がなければその場でランダムな鍵を生成して書き出す。Playwrightのwebserverの起動コマンドとCI（`e2e.yml`）はこれを先に実行する。Google／AppleのクライアントIDなどは、E2Eでは使わないダミー値を入れる
+- 実装PRで、`.gitignore` を `.dev.vars*` に、`.claude/hooks/protect-files.sh` の対象を `*.dev.vars*` に広げる（本物の秘密情報を `.dev.vars.<env>` に入れたままコミットするのを防ぐ）
 - CIで本番のビルド成果物に `__e2e__` が含まれないことを引き続き確認する。加えて、テスト用ログインの関数名（`e2eLogin`）が含まれないことも確認する
 
 ## 認可と秘匿
@@ -169,10 +183,11 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - [ ] 失敗時に `error=login_failed` へリダイレクトし、完了コードもセッションも作られない
 - [ ] 完了：完了コードは1回だけ使え、60秒で失効する。Originなし・別のOriginは401
 - [ ] 完了：結びつけCookieがない・別のブラウザの値なら401（ログインCSRF）
-- [ ] `returnTo` の検証：外部URL、`//evil`、`/\evil`、`/\t/evil.com`、`/%0a/evil.com` に相当する制御文字入り、512字超は `/` に置き換える
+- [ ] `returnTo` の検証：外部URL、`//evil`、`/\evil`、`/\t/evil.com`、`/%0a/evil.com` に相当する制御文字入り、512字超、`/api/` や `/__e2e__/` で始まるものは `/` に置き換える
 - [ ] 更新：正常にローテーションし、古いトークンは使えない
-- [ ] 更新：使用済みのトークンを再利用すると、その系列のすべてのトークンが使えなくなる
-- [ ] 更新：同時に2回使われた場合（条件付きUPDATEが0行）も再利用として扱う
+- [ ] 更新：盗まれた古いトークンが使われた後に正規の利用者が更新すると、その系列のすべてのトークンが使えなくなる
+- [ ] 更新：使用済みのトークンが来ても、次のトークンが未使用なら新しいトークンを返す（応答が届かなかった場合・同時に2回使われた場合）。時間がたっていても救う
+- [ ] 更新：使用済みのトークンが来て、次のトークンも使用済みなら、系列ごと失効する
 - [ ] 更新：Originなし・別のOriginは401
 - [ ] 更新：トークンの期限切れ、セッションの絶対期限切れは401
 - [ ] D1の `refresh_tokens` に生の値が保存されていない（ハッシュのみ）
@@ -183,6 +198,9 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - [ ] 他人のIDでは取得・更新できない：`GET /me` はBearerの本人だけを返し、queryやbodyのIDは無視される。ユーザーAの `logout-all` でユーザーBのセッションは失効しない
 - [ ] `SessionStarted` が `outbox` に書かれる。ペイロードにメールアドレスやトークンを含まない
 - [ ] E2E用：`E2E_MODE` が `1` 以外なら `/__e2e__/login` は404
+- [ ] フロント：起動時の更新がネットワークエラー・5xxのときはログアウト状態にしない
+- [ ] Appleの `email_verified` が文字列 `"true"` でも確認済みとして扱い、`false` なら保存しない
+- [ ] `SessionStarted` の `deviceSummary` がUser-Agentの全文を含まない
 - [ ] フロント：アクセストークンをlocalStorage・sessionStorageに保存しない。401で1回だけ更新して再送し、2回目の401でログアウト状態になる
 
 ### E2Eテスト（対象にする利用者の流れ）
@@ -196,24 +214,26 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - アカウント連携（GoogleとAppleの統合）、退会
 - 新端末ログインのメール通知（今回は `SessionStarted` を `outbox` に書くだけ）
 - 初回設定（表示名とアイコン）。今回は `displayName`・`avatarUrl` がnullのまま
-- 監査ログ（ログインの30日保持）。監査ログの仕組みとまとめて別タスクにする（確認事項6）
-- レート制限（ログイン開始・コールバック・更新）。WAFとレート制限のインフラのタスクで行う（確認事項7）
+- 監査ログ（ログインの30日保持）。監査ログの仕組みとまとめて別タスクにする（決定事項6）
+- レート制限（ログイン開始・コールバック・更新）。WAFとレート制限のインフラのタスクで行う（決定事項7）
 - 期限切れデータの掃除（Cron）
 - 最終的な画面デザイン
 
-## 確認事項（合意前に解消する）
-1. PWAとAPIを同じオリジンで配信する前提でよいか（Cookieを `SameSite=Strict`、`__Host-` にでき、CORSが不要になる）。別オリジンにする場合はCookieとCORSの設計をやり直す
-2. 更新用トークンの有効期限：1本30日（使わなければ失効）、系列90日（再ログインが必要）でよいか
-3. アクセストークンの有効期限：10分でよいか（要件は10〜15分）
-4. メールアドレスを `users.email` に平文で保存してよいか（通知の送信先に必要。NF-04の暗号化はカレンダーの認証情報が対象という理解）
-5. 複数タブの同時更新を、サーバー側の猶予ではなく、クライアント側のWeb Locksで直列化する方針でよいか
-6. 監査ログ（ログインの記録）を、このタスクではなく監査ログの仕組みと一緒に別タスクで行ってよいか
-7. ログイン・更新のレート制限を、インフラ（WAF・レート制限）のタスクに回してよいか
-8. E2Eの認証状態をテストごとに作る方針（タスク票の「setupプロジェクトでユーザーA・B・Cの認証状態を用意」と `e2e-testing` スキルからの変更）でよいか。更新用トークンのローテーションと再利用検知を本番どおりに保つため
-9. Sign in with AppleがPKCE（`code_challenge`・`code_verifier`）を受け付けるかを、実装の前に公式の資料と実機で確認する。受け付けない場合、AppleではPKCEを送らず、`state`・`nonce`・結びつけCookieとクライアントシークレットで守ることを仕様書に追記する
+## 決定事項（仕様書PRのレビューで合意）
+1. PWAとAPIは同じオリジンで配信する（Cookieを `SameSite=Strict`、`__Host-` にでき、CORSが不要になる）
+2. 更新用トークンの有効期限は、1本30日（使わなければ失効）、系列90日（再ログインが必要）
+3. アクセストークンの有効期限は10分
+4. メールアドレスは `users.email` に平文で保存する（通知の送信先に必要。NF-04の暗号化はカレンダーの認証情報が対象）
+5. 更新の応答が届かなかった場合は、次のトークンが未使用なら時間の制限なく救済する（更新の手順5）。複数タブはクライアント側のWeb Locksでも直列化する
+6. 監査ログ（ログインの記録）は、監査ログの仕組みと一緒に別タスクで行う
+7. ログイン・更新のレート制限は、インフラ（WAF・レート制限）のタスクで行う
+8. E2Eの認証状態はテストごとに作る。実装PRで、タスク票と `e2e-testing` スキルを合わせて直す
+9. Sign in with AppleがPKCE（`code_challenge`・`code_verifier`）を受け付けるかを、実装の最初に公式の資料と実機で確かめる。受け付けない場合は、AppleではPKCEを送らず、`state`・`nonce`・結びつけCookieとクライアントシークレットで守ることを、実装PRの中で仕様書に追記する
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-10-07 | 初版 | T-01の仕様書PR |
 | 2026-10-07 | 完了コードを経由する流れ、ログインCSRF対策、`returnTo` の検証の強化、D1の条件付き処理の順序、E2Eの認証状態をテストごとに作る方針を追加 | 仕様レビューの指摘 |
+| 2026-10-07 | レビューの指摘を反映：Appleのメール確認、`SessionStarted` の端末の要約、`outbox` の置き場所、規約からの例外、ローカルとSafari・Appleの確認方法、起動時の更新の失敗の扱い、E2Eの秘密情報の用意、`returnTo` のループ防止 | 仕様書PRのレビュー |
+| 2026-10-07 | 確認事項を決定事項にし、状態を合意済みにした。更新の応答が届かなかった場合の救済（次のトークンが未使用なら新しいトークンを返す）を追加 | 仕様書PRのレビュー（指摘1・3） |
