@@ -1,0 +1,49 @@
+# pushごと：型チェック・lint・単体テスト
+name: ci
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      # 本番のビルドにテスト用ログインの経路が含まれていないことを確認する
+      - run: pnpm --filter api build:prod
+      - name: 本番ビルドにE2E用の経路がないことを確認
+        run: |
+          if grep -rq "__e2e__" apps/api/dist; then
+            echo "::error::本番のビルドにE2E用の経路が含まれています"
+            exit 1
+          fi
+
+  # 実装PR（feat/*）に単体テストの追加・変更が含まれているかを確認する
+  require-unit-tests:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 単体テストの追加を確認
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if ! echo "$changed" | grep -Eq '^(apps|packages)/.+\.test\.tsx?$'; then
+            echo "::error::実装PRには単体テスト（*.test.ts）の追加・変更が必要です"
+            exit 1
+          fi

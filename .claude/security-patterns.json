@@ -1,0 +1,36 @@
+{
+  "patterns": [
+    {
+      "rule_name": "token_in_browser_storage",
+      "substrings": ["localStorage", "sessionStorage"],
+      "reminder": "アクセストークンや個人情報をブラウザストレージに保存しないでください。トークンはメモリのみ、更新用トークンはHttpOnly Cookieです。"
+    },
+    {
+      "rule_name": "domain_depends_on_infra",
+      "regex": "from ['\"](hono|@cloudflare/[^'\"]+|cloudflare:[^'\"]+)['\"]|\\bfetch\\(",
+      "paths": ["**/domain/**"],
+      "reminder": "domain層はCloudflare・Hono・fetchに依存させないでください。infra層に移してください。"
+    },
+    {
+      "rule_name": "sql_string_interpolation",
+      "regex": "prepare\\(\\s*`[^`]*\\$\\{",
+      "reminder": "SQLに値を埋め込まず、bindでパラメータを渡してください。"
+    },
+    {
+      "rule_name": "secret_like_literal",
+      "substrings": ["-----BEGIN", "GOCSPX-", "ya29."],
+      "reminder": "秘密情報らしき値がコードにあります。wrangler secretから読み込んでください。"
+    },
+    {
+      "rule_name": "sensitive_value_logged",
+      "regex": "console\\.(log|info|debug|warn|error)\\([^)]*(token|secret|password|refresh|email)",
+      "reminder": "トークンやメールアドレスをログに出さないでください。"
+    },
+    {
+      "rule_name": "calendar_event_content",
+      "regex": "\\.(summary|description|location|attendees)\\b",
+      "paths": ["**/calendar/**"],
+      "reminder": "予定の中身（タイトル・説明・場所・参加者）は読まない・保存しない方針です。空き／埋まりだけを扱ってください。"
+    }
+  ]
+}

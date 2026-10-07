@@ -1,0 +1,16 @@
+node_modules/
+.wrangler/
+dist/
+.dev.vars
+.env
+.env.*
+.claude/settings.local.json
+.claude/claude-security-guidance.local.md
+playwright/.auth/
+playwright-report/
+test-results/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl.bak
