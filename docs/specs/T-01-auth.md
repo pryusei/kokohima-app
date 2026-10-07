@@ -1,6 +1,6 @@
 # T-01 仕様書：認証（Google／Sign in with Apple、セッション）
 
-- 状態：合意済み
+- 状態：実装済み
 - タスク票：docs/tasks/T-01-auth.md
 - 関係する要件：F-01、NF-04、要求定義書「セキュリティ設計 › 認証とセッション」「テスト環境の認証」
 
@@ -34,7 +34,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
   - 長さ512以下で、`/` で始まり、`//` や `/\` で始まらない
   - 制御文字（U+0000〜U+001F、U+007F）、空白、`\` を含まない（`/\t/evil.com` などがURLの解釈で `//evil.com` になるのを防ぐ）
   - `new URL(returnTo, APP_ORIGIN).origin === APP_ORIGIN`
-  - `/api/` と `/__e2e__/` で始まらない（ログインの開始へ戻ってループするのを防ぐ）
+  - `/api/` と `/__` で始まらない（ログインの開始へ戻ってループするのを防ぐ。`/__` はテスト用の経路などの予約済みのパス。本番のビルドに `__e2e__` の文字列を含めないため、前方一致は `/__` で行う）
   - 保存時（`/start`）と、完了時の応答の前の2回検証する
 - `displayName` と `avatarUrl` は、初回設定（別タスク）までは `null`
 - 例外：コールバックは利用者のブラウザが画面遷移で開くため、Problem DetailsのJSONではなく画面へのリダイレクトで失敗を伝える。失敗の理由は区別せず、すべて `error=login_failed`（キャンセルも含む）
@@ -68,7 +68,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 4. プロバイダの認可画面へ302でリダイレクトする
 - 結びつけCookieは1つの名前なので、同じブラウザの2つのタブで同時にログインを始めると、先に始めたほうは失敗する（`login_failed`）。やり直せば済むため許容する
    - Google：`scope=openid email`、`code_challenge_method=S256`、`nonce`、`state`、`prompt=select_account`
-   - Apple：`scope=email`、`response_mode=form_post`、`response_type=code`、`code_challenge_method=S256`、`nonce`、`state`
+   - Apple：`scope=email`、`response_mode=form_post`、`response_type=code`、`nonce`、`state`（PKCEは送らない。決定事項9）
 
 ### コールバック
 1. `state` のハッシュで `oauth_transactions` を条件付きで削除して取り出す（`DELETE ... RETURNING`。同じ `state` は2回使えない）。ない・期限切れ・プロバイダ違いは失敗
@@ -160,7 +160,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
   - これに合わせて、実装PRで `e2e-testing` スキルの「認証」（setupプロジェクトで `storageState` を保存して使い回す方針）と、タスク票 `docs/tasks/T-01-auth.md` のスコープ（「setupプロジェクト、ユーザーA・B・Cの認証状態」）を書き換える（決定事項8）
 - viteの中継に、環境変数 `E2E=1` で起動したときだけ `/__e2e__` を追加する（Cookieを `localhost:5173` で発行するため）。`playwright.config.ts` のwebServerは `E2E=1 pnpm --filter web dev` で起動するように変える
 - wranglerの `env.e2e` はトップレベルの `vars` を引き継がないため、`APP_ORIGIN` などの設定値と、`JWT_SIGNING_KEYS` のE2E用の値を `env.e2e` 側にも置く
-- E2E用の秘密情報（`JWT_SIGNING_KEYS` など）はコミットしない。`apps/api/scripts/write-e2e-dev-vars.ts` が、`.dev.vars.e2e` がなければその場でランダムな鍵を生成して書き出す。Playwrightのwebserverの起動コマンドとCI（`e2e.yml`）はこれを先に実行する。Google／AppleのクライアントIDなどは、E2Eでは使わないダミー値を入れる
+- E2E用の秘密情報（`JWT_SIGNING_KEYS` など）はコミットしない。`apps/api/scripts/write-e2e-dev-vars.mjs` が、`.dev.vars.e2e` がなければその場でランダムな鍵を生成して書き出す。Playwrightのwebserverの起動コマンドとCI（`e2e.yml`）はこれを先に実行する。Google／AppleのクライアントIDなどは、E2Eでは使わないダミー値を入れる
 - 実装PRで、`.gitignore` を `.dev.vars*` に、`.claude/hooks/protect-files.sh` の対象を `*.dev.vars*` に広げる（本物の秘密情報を `.dev.vars.<env>` に入れたままコミットするのを防ぐ）
 - CIで本番のビルド成果物に `__e2e__` が含まれないことを引き続き確認する。加えて、テスト用ログインの関数名（`e2eLogin`）が含まれないことも確認する
 
@@ -228,7 +228,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 6. 監査ログ（ログインの記録）は、監査ログの仕組みと一緒に別タスクで行う
 7. ログイン・更新のレート制限は、インフラ（WAF・レート制限）のタスクで行う
 8. E2Eの認証状態はテストごとに作る。実装PRで、タスク票と `e2e-testing` スキルを合わせて直す
-9. Sign in with AppleがPKCE（`code_challenge`・`code_verifier`）を受け付けるかを、実装の最初に公式の資料と実機で確かめる。受け付けない場合は、AppleではPKCEを送らず、`state`・`nonce`・結びつけCookieとクライアントシークレットで守ることを、実装PRの中で仕様書に追記する
+9. Sign in with AppleのPKCE：実装の最初に確認したが、Appleの公式の資料（Sign in with Apple REST API）に `code_challenge`・`code_verifier` の記載がなく、対応を確認できなかった。そのため、AppleではPKCEを送らず、`state`・`nonce`・結びつけCookieとクライアントシークレット（機密クライアント）で守る。Googleは従来どおりPKCE（S256）を使う。Appleが公式に対応を明記したら、`apps/api/src/identity/infra/oidc.ts` の `usePkce` を有効にする
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
@@ -237,3 +237,4 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | 2026-10-07 | 完了コードを経由する流れ、ログインCSRF対策、`returnTo` の検証の強化、D1の条件付き処理の順序、E2Eの認証状態をテストごとに作る方針を追加 | 仕様レビューの指摘 |
 | 2026-10-07 | レビューの指摘を反映：Appleのメール確認、`SessionStarted` の端末の要約、`outbox` の置き場所、規約からの例外、ローカルとSafari・Appleの確認方法、起動時の更新の失敗の扱い、E2Eの秘密情報の用意、`returnTo` のループ防止 | 仕様書PRのレビュー |
 | 2026-10-07 | 確認事項を決定事項にし、状態を合意済みにした。更新の応答が届かなかった場合の救済（次のトークンが未使用なら新しいトークンを返す）を追加 | 仕様書PRのレビュー（指摘1・3） |
+| 2026-10-07 | 状態を実装済みにした。AppleではPKCEを送らないことにした（公式の資料で対応を確認できなかったため）。`returnTo` の予約済みパスの拒否を `/__` の前方一致にした。E2E用の秘密情報を作るスクリプトを `.mjs` にした。E2Eの起動時にローカルのD1へマイグレーションを適用する | 実装PR |

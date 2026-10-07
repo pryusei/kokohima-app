@@ -1,7 +1,7 @@
 node_modules/
 .wrangler/
 dist/
-.dev.vars
+.dev.vars*
 .env
 .env.*
 .claude/settings.local.json

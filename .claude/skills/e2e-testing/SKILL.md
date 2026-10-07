@@ -13,15 +13,17 @@ Playwright公式のベストプラクティス（playwright.dev/docs/best-practi
 ## 認証
 - 本物のGoogle／Appleにはログインしない（自分たちが管理していない外部サービスはテストしない）
 - E2E環境でのみ有効なテスト用ログイン（`POST /__e2e__/login`）で、テスト用ユーザーの更新用トークンCookieを発行する
-- setupプロジェクト（`e2e/auth.setup.ts`）でAPI経由でログインし、`request.storageState()` で `playwright/.auth/<user>.json` に保存する。各テストは `storageState` を指定して最初からログイン済みで始める
-- 友達同士の流れのために、ユーザーA・B・Cの3人分の状態を用意する
-- `playwright/.auth/` はコミットしない
+- IMPORTANT: 認証状態（`storageState`）をテストの間で使い回さない。更新用トークンはページを開くたびに交換され、同じトークンを別のテストが送ると再利用として系列ごと失効するため
+- `e2e/fixtures.ts` の `loggedInPage`（ユーザーAとしてログイン済みのページ）か `loginAs(context, name)` を使い、テストごとに一意なユーザー（`<name>-<uuid>`）で新しいセッションを作る
+- 友達同士の流れでは、同じテストの中でA・B・Cを別々のブラウザコンテキスト（`browser.newContext()`）で作り、それぞれ `loginAs` する
+- `playwright/.auth/` はコミットしない（使う場合も）
 - アクセストークンはメモリ保持なので、ページを開くと更新用トークンCookieから取り直す。この動き自体が「再読み込みでログインが続く」の確認になる
 
 ## テスト用ログインの安全策（すべて必須）
 - テスト用の経路は `apps/api/src/e2e/` に置き、E2E用のエントリからだけimportする。本番のエントリからはimportしない
 - E2E用のwrangler環境（`env.e2e`）でだけ使い、さらに `E2E_MODE=1` のときだけ有効にする
-- CIで本番のビルド成果物に `__e2e__` が含まれていないことを確認する
+- E2E用の秘密情報は `apps/api/scripts/write-e2e-dev-vars.mjs` がその場で生成する（`.dev.vars.e2e`。コミットしない）
+- CIで本番のビルド成果物に `__e2e__` とテスト用ログインの関数名（`e2eLogin`）が含まれていないことを確認する。本番のコードに `__e2e__` という文字列を書かない
 
 ## 外部サービス
 - Google Calendar、iCloud CalDAV、メール配信、Webプッシュ、OGP取得先は、E2E環境では偽の実装に差し替える（calendarなどのinfra層のアダプターを入れ替える）

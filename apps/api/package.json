@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "dev:e2e": "wrangler dev --env e2e",
+    "dev:e2e": "node scripts/write-e2e-dev-vars.mjs && wrangler d1 migrations apply DB --local --env e2e && wrangler dev --env e2e",
     "build:prod": "wrangler deploy --dry-run --env prod --outdir dist",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "cf-typegen": "wrangler types",
@@ -13,7 +13,10 @@
   },
   "dependencies": {
     "@kokohima/shared": "workspace:*",
-    "hono": "^4.13.13"
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.13",
+    "jose": "^6.2.12",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
