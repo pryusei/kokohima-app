@@ -7,6 +7,11 @@ import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
 import { tokenStore } from "./tokenStore";
 
 const me = { id: "6f1c1f9e-6c2a-4c55-9b7e-2d1f0b0c4a11", displayName: null, avatarUrl: null };
+const empty = json({ items: [], nextCursor: null });
+// ログイン後のホーム（みんな）と、ログアウトのボタンがある友達タブが読むもの
+const home = { "/api/v1/friend-availabilities": empty };
+const friendsTab = { "/api/v1/me": json(me), "/api/v1/friends": empty, "/api/v1/invite-links": empty };
+const loggedIn = () => screen.findByRole("heading", { name: "みんな" });
 
 beforeEach(() => {
   tokenStore.clear();
@@ -61,11 +66,11 @@ describe("APIクライアント", () => {
 });
 
 describe("起動時のログイン状態", () => {
-  it("更新に成功したら「ログイン中」。アクセストークンを localStorage・sessionStorage に保存しない", async () => {
+  it("更新に成功したらホーム（みんな）。アクセストークンを localStorage・sessionStorage に保存しない", async () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
-    mockFetch({ "/api/v1/auth/refresh": json(tokenBody("secret-token")), "/api/v1/me": json(me) });
+    mockFetch({ "/api/v1/auth/refresh": json(tokenBody("secret-token")), ...home });
     renderApp();
-    expect(await screen.findByText("ログイン中")).toBeVisible();
+    expect(await loggedIn()).toBeVisible();
     expect(setItem).not.toHaveBeenCalled();
     expect(JSON.stringify({ ...localStorage })).not.toContain("secret-token");
     expect(JSON.stringify({ ...sessionStorage })).not.toContain("secret-token");
@@ -99,10 +104,11 @@ describe("起動時のログイン状態", () => {
     );
   });
 
-  it("ログアウトするとログイン画面になる", async () => {
+  it("友達タブの「アカウント」からログアウトするとログイン画面になる", async () => {
+    window.history.replaceState(null, "", "/friends");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
-      "/api/v1/me": json(me),
+      ...friendsTab,
       "/api/v1/auth/logout": () => new Response(null, { status: 204 }),
     });
     renderApp();
@@ -115,13 +121,14 @@ describe("起動時のログイン状態", () => {
 
 describe("ログアウトの失敗", () => {
   it("全端末ログアウト：アクセストークンが切れていれば更新してから送る", async () => {
+    window.history.replaceState(null, "", "/friends");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody("fresh")),
-      "/api/v1/me": json(me),
+      ...friendsTab,
       "/api/v1/auth/logout-all": () => new Response(null, { status: 204 }),
     });
     renderApp();
-    await screen.findByText("ログイン中");
+    await screen.findByRole("heading", { name: "アカウント" });
     tokenStore.set("expired", new Date(Date.now() - 1000).toISOString());
     await userEvent.click(screen.getByRole("button", { name: "すべての端末からログアウト" }));
     expect(await screen.findByRole("link", { name: "Googleでログイン" })).toBeVisible();
@@ -133,16 +140,17 @@ describe("ログアウトの失敗", () => {
     ["全端末ログアウト", "すべての端末からログアウト", "/api/v1/auth/logout-all"],
     ["ログアウト", "ログアウト", "/api/v1/auth/logout"],
   ])("%s：通信できなければログイン中のまま、静かに再試行を促す", async (_l, name, path) => {
+    window.history.replaceState(null, "", "/friends");
     mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
-      "/api/v1/me": json(me),
+      ...friendsTab,
       [path]: () => Promise.reject(new TypeError("Failed to fetch")),
     });
     renderApp();
-    await screen.findByText("ログイン中");
+    await screen.findByRole("heading", { name: "アカウント" });
     await userEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}$`) }));
     expect(await screen.findByText(/ログアウトできませんでした/)).toBeVisible();
-    expect(screen.getByText("ログイン中")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "アカウント" })).toBeVisible();
   });
 
   it("APIクライアント：更新が通信エラー・5xxならログアウトにしない", async () => {
@@ -162,14 +170,14 @@ describe("ログインの完了", () => {
     expect(window.location.hash).toBe("");
   });
 
-  it("完了したら returnTo へ移り、ログイン中になる", async () => {
+  it("完了したら returnTo へ移り、ログインした状態になる", async () => {
     window.history.replaceState(null, "", "/auth/complete#code=abc");
     const { calls } = mockFetch({
       "/api/v1/auth/complete": json({ ...tokenBody(), returnTo: "/" }),
-      "/api/v1/me": json(me),
+      ...home,
     });
     renderApp();
-    expect(await screen.findByText("ログイン中")).toBeVisible();
+    expect(await loggedIn()).toBeVisible();
     expect(window.location.pathname).toBe("/");
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ code: "abc" });
   });
