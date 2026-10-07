@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+
+# インストール時のスクリプト実行を許可するパッケージ（ネイティブバイナリの取得に必要）
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
