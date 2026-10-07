@@ -9,8 +9,22 @@ import { friendships, inviteLinks } from "./schema";
 export type Db = DrizzleD1Database;
 export const db = (d1: D1Database): Db => drizzle(d1);
 
-export async function insertInviteLink(db: Db, row: typeof inviteLinks.$inferInsert) {
-  await db.insert(inviteLinks).values(row);
+/**
+ * 直近24時間（since 以降）に作った本数が limit 未満のときだけ、1つの文で追加する。
+ * 数えてから追加するまでの間に同時に送られても、上限を超えない。追加できたら true
+ */
+export async function insertInviteLinkWithinLimit(
+  db: Db,
+  row: Required<Omit<typeof inviteLinks.$inferInsert, "revokedAt">>,
+  since: number,
+  limit: number,
+) {
+  const result = await db.run(sql`
+    INSERT INTO invite_links (id, owner_id, token_hash, max_uses, uses, expires_at, created_at)
+    SELECT ${row.id}, ${row.ownerId}, ${row.tokenHash}, ${row.maxUses}, ${row.uses}, ${row.expiresAt}, ${row.createdAt}
+    WHERE (SELECT COUNT(*) FROM invite_links WHERE owner_id = ${row.ownerId} AND created_at > ${since}) < ${limit}
+  `);
+  return result.meta.changes === 1;
 }
 
 /** 閲覧者が直近（since 以降）に作った招待リンクの作成日時（無効化したものも数える） */

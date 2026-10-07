@@ -170,6 +170,18 @@ describe("招待リンクの発行・一覧・無効化", () => {
     expect((await call("POST", "/api/v1/invite-links", { token: a.token, body: {} })).status).toBe(201);
   });
 
+  it("24時間に20本の上限は、同時に送られても超えない", async () => {
+    const a = await user();
+    for (let i = 0; i < 18; i++) await createLink(a);
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => call("POST", "/api/v1/invite-links", { token: a.token, body: {} })),
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(2);
+    expect(results.filter((r) => r.status === 429)).toHaveLength(3);
+    const rows = await dbAll("SELECT id FROM invite_links WHERE owner_id = ?", a.id);
+    expect(rows).toHaveLength(20);
+  });
+
   it("一覧：有効なリンクだけを新しい順で返し、カーソルで続きを取れる", async () => {
     const a = await user();
     const links = [];
@@ -179,6 +191,11 @@ describe("招待リンクの発行・一覧・無効化", () => {
     }
     const revoked = await createLink(a);
     await call("POST", `/api/v1/invite-links/${revoked.id}/revoke`, { token: a.token });
+    const full = await createLink(a, { maxUses: 1 });
+    await accept(await user(), full.token, full.id);
+    const all = inviteLinkPageSchema.parse(await (await call("GET", "/api/v1/invite-links", { token: a.token })).json());
+    expect(all.items.map((l) => l.id)).not.toContain(revoked.id);
+    expect(all.items.map((l) => l.id)).not.toContain(full.id);
     const page1 = inviteLinkPageSchema.parse(
       await (await call("GET", "/api/v1/invite-links?limit=2", { token: a.token })).json(),
     );
@@ -189,6 +206,32 @@ describe("招待リンクの発行・一覧・無効化", () => {
     expect(page2.items.map((l) => l.id)).toEqual([links[0]?.id]);
     expect(page2.nextCursor).toBeNull();
     expect((await call("GET", "/api/v1/invite-links?cursor=broken", { token: a.token })).status).toBe(400);
+  });
+
+  it("一覧：他人のリンクは含まない（カーソルで続きを取っても）", async () => {
+    const a = await user();
+    const b = await user();
+    await createLink(a);
+    await createLink(a);
+    const bLink = await createLink(b);
+    const p1 = inviteLinkPageSchema.parse(await (await call("GET", "/api/v1/invite-links?limit=1", { token: a.token })).json());
+    const p2 = inviteLinkPageSchema.parse(
+      await (await call("GET", `/api/v1/invite-links?limit=1&cursor=${p1.nextCursor}`, { token: a.token })).json(),
+    );
+    const ids = [...p1.items, ...p2.items].map((l) => l.id);
+    expect(ids).toHaveLength(2);
+    expect(ids).not.toContain(bLink.id);
+    expect(p2.nextCursor).toBeNull();
+  });
+
+  it("一覧：期限切れのリンクは含まない", async () => {
+    const a = await user();
+    const short = await createLink(a, { expiresInDays: 1 });
+    const long = await createLink(a, { expiresInDays: 3 });
+    await advance(DAY_MS, a);
+    const page = inviteLinkPageSchema.parse(await (await call("GET", "/api/v1/invite-links", { token: a.token })).json());
+    expect(page.items.map((l) => l.id)).toEqual([long.id]);
+    expect(page.items.map((l) => l.id)).not.toContain(short.id);
   });
 
   it("無効化：自分のリンクは何度でも204。他人のリンク・存在しないIDは同じ404", async () => {
@@ -226,6 +269,10 @@ describe("受け口（lookup）", () => {
     const res = await lookup(undefined, `__Host-kh_invite=${link.token}`);
     expect(inviteLookupResponseSchema.parse(await res.json()).linkId).toBe(link.id);
     expect((await lookup(undefined)).status).toBe(404);
+  });
+
+  it("長すぎるトークンも400ではなく同じ404", async () => {
+    expect((await lookup("x".repeat(500))).status).toBe(404);
   });
 
   it("存在しない・期限切れ・上限・無効化は、すべて同じ404で、招待Cookieを消す", async () => {
@@ -286,6 +333,7 @@ describe("友達になる（accept）", () => {
     const link = await befriend(a, b);
     const res = await accept(b, link.token, link.id);
     expect(res.status).toBe(200);
+    expect(cookieValue(res, "__Host-kh_invite")).toBe("");
     expect(acceptInviteResponseSchema.parse(await res.json()).alreadyFriends).toBe(true);
     expect((await dbAll<{ uses: number }>("SELECT uses FROM invite_links WHERE id = ?", link.id))[0]?.uses).toBe(1);
   });
@@ -317,12 +365,21 @@ describe("友達になる（accept）", () => {
     const link = await createLink(a);
     const res = await accept(a, link.token, link.id);
     expect(res.status).toBe(409);
+    expect(cookieValue(res, "__Host-kh_invite")).toBe("");
     expect(problemSchema.parse(await res.json()).code).toBe("invalid_state");
   });
 
   it("期限切れ・上限・無効化・招待Cookieなしは404", async () => {
     const a = await user();
     const b = await user();
+    const revoked = await createLink(a);
+    await call("POST", `/api/v1/invite-links/${revoked.id}/revoke`, { token: a.token });
+    const revokedRes = await accept(b, revoked.token, revoked.id);
+    expect(revokedRes.status).toBe(404);
+    expect(cookieValue(revokedRes, "__Host-kh_invite")).toBe("");
+    const full = await createLink(a, { maxUses: 1 });
+    await accept(await user(), full.token, full.id);
+    expect((await accept(b, full.token, full.id)).status).toBe(404);
     const link = await createLink(a, { expiresInDays: 1 });
     expect((await accept(b, undefined, link.id)).status).toBe(404);
     await advance(DAY_MS, b);
@@ -340,6 +397,21 @@ describe("友達になる（accept）", () => {
     const res = await accept(b, linkY.token, linkX.id);
     expect(res.status).toBe(404);
     expect(cookieValue(res, "__Host-kh_invite")).toBeUndefined();
+    expect((await friendsOf(b)).items).toHaveLength(0);
+  });
+
+  it("Origin がない・別のOriginなら401", async () => {
+    const link = await createLink(await user());
+    const b = await user();
+    for (const origin of [null, "https://evil.example"]) {
+      const res = await call("POST", "/api/v1/invite-links/accept", {
+        token: b.token,
+        body: { linkId: link.id },
+        cookie: `__Host-kh_invite=${link.token}`,
+        origin,
+      });
+      expect(res.status).toBe(401);
+    }
     expect((await friendsOf(b)).items).toHaveLength(0);
   });
 

@@ -34,7 +34,8 @@ export type CreatedInviteLink = z.infer<typeof createdInviteLinkSchema>;
 
 export const inviteLinkPageSchema = pageSchema(inviteLinkSchema);
 
-export const inviteLookupRequestSchema = z.object({ token: z.string().min(1).max(128).optional() });
+// 長さの上限はゆるくし、長すぎるトークンは使えないリンクと同じ404にする（400で区別しない）
+export const inviteLookupRequestSchema = z.object({ token: z.string().min(1).max(2048).optional() });
 
 export const inviteLookupResponseSchema = z.object({
   linkId: z.uuid(),

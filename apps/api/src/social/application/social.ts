@@ -4,7 +4,7 @@ import type { AppDeps, Bindings } from "../../env";
 import { getPublicProfiles } from "../../identity/application/auth";
 import { decodeCursor, encodeCursor } from "../../shared/cursor";
 import { randomToken, sha256 } from "../../shared/crypto";
-import { DAY_MS, expiresAt, isUsable, issueRetryAfterSeconds } from "../domain/inviteLink";
+import { DAY_MS, expiresAt, isUsable, ISSUE_LIMIT_PER_DAY, issueRetryAfterSeconds } from "../domain/inviteLink";
 import * as repo from "../infra/repository";
 
 // 友達と招待リンクのユースケース（docs/specs/T-02-friends.md「振る舞い」）
@@ -41,21 +41,24 @@ export async function createInviteLink(
   const me = (await getPublicProfiles(ctx.env, [viewerId])).get(viewerId);
   if (!me?.displayName) return { kind: "display_name_required" };
 
-  const retryAfter = issueRetryAfterSeconds(await repo.recentInviteCreatedAts(db, viewerId, now - DAY_MS), now);
-  if (retryAfter !== null) return { kind: "rate_limited", retryAfterSeconds: retryAfter };
+  const since = now - DAY_MS;
+  const rateLimited = async () => ({
+    kind: "rate_limited" as const,
+    retryAfterSeconds: issueRetryAfterSeconds(await repo.recentInviteCreatedAts(db, viewerId, since), now) ?? 1,
+  });
+  if (issueRetryAfterSeconds(await repo.recentInviteCreatedAts(db, viewerId, since), now) !== null) return rateLimited();
 
   const token = randomToken();
   const id = crypto.randomUUID();
   const exp = expiresAt(now, options.expiresInDays);
-  await repo.insertInviteLink(db, {
-    id,
-    ownerId: viewerId,
-    tokenHash: await sha256(token),
-    maxUses: options.maxUses,
-    uses: 0,
-    expiresAt: exp,
-    createdAt: now,
-  });
+  // 上限の判定と追加は1つの文で行う（同時に送られても20本を超えない）
+  const inserted = await repo.insertInviteLinkWithinLimit(
+    db,
+    { id, ownerId: viewerId, tokenHash: await sha256(token), maxUses: options.maxUses, uses: 0, expiresAt: exp, createdAt: now },
+    since,
+    ISSUE_LIMIT_PER_DAY,
+  );
+  if (!inserted) return rateLimited();
   return {
     kind: "created",
     link: {

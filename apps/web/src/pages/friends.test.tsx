@@ -93,6 +93,17 @@ describe("招待リンクの受け口", () => {
     expect(calls.filter((c) => c.url === "/api/v1/invite-links/accept")).toHaveLength(1);
   });
 
+  it("lookup が通信エラーなら、リンクを開き直すよう促す（友達一覧への導線は出さない）", async () => {
+    window.history.replaceState(null, "", "/invite#t=x");
+    mockFetch({
+      "/api/v1/auth/refresh": json({}, 401),
+      "/api/v1/invite-links/lookup": () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+    renderApp();
+    expect(await screen.findByText(/リンクをもう一度開いてください/)).toBeVisible();
+    expect(screen.queryByRole("link", { name: "友達一覧" })).toBeNull();
+  });
+
   it("使えないリンク（lookup が404）は1種類の文言だけ", async () => {
     window.history.replaceState(null, "", "/invite#t=x");
     mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": json({}, 404) });

@@ -18,6 +18,9 @@ type State =
   | { kind: "ready"; invite: InviteLookupResponse }
   | { kind: "unusable" }
   | { kind: "own" }
+  /** lookup で通信できなかった（まだ友達になっていない） */
+  | { kind: "lookupNetwork" }
+  /** accept で通信できなかった（友達になれている可能性がある） */
   | { kind: "network" };
 
 export function InvitePage() {
@@ -41,7 +44,7 @@ export function InvitePage() {
         const parsed = inviteLookupResponseSchema.safeParse(res.ok ? await res.json() : null);
         setState(parsed.success ? { kind: "ready", invite: parsed.data } : { kind: "unusable" });
       } catch {
-        setState({ kind: "network" });
+        setState({ kind: "lookupNetwork" });
       }
     })();
   }, []);
@@ -76,6 +79,11 @@ export function InvitePage() {
       {state.kind === "own" && (
         <p role="status" className="text-slate-600">
           これはあなたが作ったリンクです。友達に送ってください。
+        </p>
+      )}
+      {state.kind === "lookupNetwork" && (
+        <p role="status" className="text-slate-600">
+          通信できませんでした。通信状態を確認して、リンクをもう一度開いてください。
         </p>
       )}
       {state.kind === "network" && (
