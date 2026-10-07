@@ -36,6 +36,7 @@ export const refreshTokens = sqliteTable("refresh_tokens", {
   expiresAt: integer("expires_at").notNull(),
   usedAt: integer("used_at"),
   replacedBy: text("replaced_by"),
+  rescuedAt: integer("rescued_at"),
 });
 
 export const oauthTransactions = sqliteTable("oauth_transactions", {

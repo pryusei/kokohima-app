@@ -4,6 +4,7 @@ import { tokenStore } from "../auth/tokenStore";
 
 // APIクライアント。アクセストークン（メモリ）を付け、401なら1回だけ更新して再送する
 
+/** status が 0 のときは通信できなかったことを表す */
 export class ApiError extends Error {
   constructor(readonly status: number) {
     super(`API error ${status}`);
@@ -27,14 +28,25 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!tokenStore.get()) await refreshAccessToken();
-  let res = await send(path, init);
+  let res: Response;
+  try {
+    res = await send(path, init);
+  } catch {
+    throw new ApiError(0);
+  }
   if (res.status === 401) {
     const outcome = await refreshAccessToken();
     if (outcome === "unauthenticated") {
       onUnauthenticated();
       throw new ApiError(401);
     }
-    if (outcome === "ok") res = await send(path, init);
+    // 通信できない・5xx はログアウトとして扱わない（ログイン状態を保ったまま失敗を返す）
+    if (outcome === "error") throw new ApiError(0);
+    try {
+      res = await send(path, init);
+    } catch {
+      throw new ApiError(0);
+    }
     if (res.status === 401) {
       tokenStore.clear();
       onUnauthenticated();

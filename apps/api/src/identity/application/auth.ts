@@ -172,6 +172,7 @@ export async function refresh(ctx: Ctx, cookieToken: string | undefined): Promis
       tokenHash: await sha256(refreshToken),
       expiresAt: refreshExpiresAt,
       now,
+      rescue: decision.kind === "rescue",
     });
     if (rotated) {
       const access = await issueAccessToken(ctx.env, { userId: session.userId, sessionId: session.id }, now);

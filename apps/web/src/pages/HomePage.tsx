@@ -1,5 +1,6 @@
 import { meResponseSchema } from "@kokohima/shared";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { apiGet } from "../api/client";
 import { keys } from "../api/keys";
 import { useAuth } from "../auth/AuthProvider";
@@ -8,6 +9,11 @@ import { useAuth } from "../auth/AuthProvider";
 
 export function HomePage() {
   const { logout, logoutAll } = useAuth();
+  const [failed, setFailed] = useState(false);
+  const run = (action: () => Promise<boolean>) => async () => {
+    setFailed(false);
+    if (!(await action())) setFailed(true);
+  };
   const me = useQuery({ queryKey: keys.me(), queryFn: () => apiGet("/api/v1/me", meResponseSchema) });
 
   return (
@@ -15,10 +21,15 @@ export function HomePage() {
       <h1 className="text-2xl font-bold">ここ暇</h1>
       <p role="status">ログイン中</p>
       {me.data && <p className="text-slate-600">{me.data.displayName ?? "表示名は未設定です"}</p>}
-      <button type="button" className="rounded-lg border border-slate-300 px-4 py-3" onClick={() => void logout()}>
+      {failed && (
+        <p role="status" className="text-slate-600">
+          ログアウトできませんでした。通信状態を確認して、もう一度お試しください。
+        </p>
+      )}
+      <button type="button" className="rounded-lg border border-slate-300 px-4 py-3" onClick={run(logout)}>
         ログアウト
       </button>
-      <button type="button" className="rounded-lg border border-slate-300 px-4 py-3" onClick={() => void logoutAll()}>
+      <button type="button" className="rounded-lg border border-slate-300 px-4 py-3" onClick={run(logoutAll)}>
         すべての端末からログアウト
       </button>
     </main>

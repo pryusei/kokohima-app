@@ -37,7 +37,9 @@ CREATE TABLE refresh_tokens (
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   used_at INTEGER,
-  replaced_by TEXT
+  replaced_by TEXT,
+  -- 救済（前回の応答が届かなかったとみなした交換）で使用済みにした時刻。このトークンが提示されたら再利用とみなす
+  rescued_at INTEGER
 );
 CREATE UNIQUE INDEX refresh_tokens_token_hash ON refresh_tokens (token_hash);
 CREATE INDEX refresh_tokens_session_id ON refresh_tokens (session_id);

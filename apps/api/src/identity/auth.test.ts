@@ -178,12 +178,14 @@ describe("ログイン（Apple）", () => {
 describe("コールバックで拒否する", () => {
   async function failsWith(mutate: (s: Awaited<ReturnType<Harness["start"]>>) => Promise<Response>) {
     const before = await dbAll("SELECT * FROM login_codes");
+    const sessionsBefore = await dbAll("SELECT * FROM sessions");
     const s = await h.start("google");
     const res = await mutate(s);
     expect(res.status).toBe(303);
     expect(res.headers.get("Location")).toBe("/login?error=login_failed");
     const after = await dbAll("SELECT * FROM login_codes");
     expect(after.length).toBe(before.length);
+    expect((await dbAll("SELECT * FROM sessions")).length).toBe(sessionsBefore.length);
   }
 
   const ok = (s: { nonce: string }) => h.respondWithIdToken((p) => h.signIdToken(p, { sub: uniq(), nonce: s.nonce }));
@@ -367,6 +369,18 @@ describe("更新", () => {
     expect(stolen.status).toBe(401);
     expect(cookieValue(stolen, "__Host-kh_rt")).toBe("");
     expect((await h.refresh(latest)).status).toBe(401);
+  });
+
+  it("再利用：盗んだ側が先に更新し、正規の利用者・盗んだ側の順に更新すると、系列ごと失効する", async () => {
+    const r = await h.login("google", uniq());
+    const attacker1 = await h.refresh(r.refreshToken); // 盗んだ側が先に使う
+    expect(attacker1.status).toBe(200);
+    const legit = await h.refresh(r.refreshToken); // 正規の利用者は救済される
+    expect(legit.status).toBe(200);
+    // 盗んだ側のトークンは救済で使用済みにされている。提示されたら再利用として失効させる
+    const attacker2 = await h.refresh(cookieValue(attacker1, "__Host-kh_rt"));
+    expect(attacker2.status).toBe(401);
+    expect((await h.refresh(cookieValue(legit, "__Host-kh_rt"))).status).toBe(401);
   });
 
   it("Originなし・別のOriginは401", async () => {

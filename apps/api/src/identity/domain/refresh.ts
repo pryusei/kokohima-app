@@ -3,6 +3,8 @@
 export type TokenState = {
   expiresAt: number;
   usedAt: number | null;
+  /** 救済で使用済みにされた時刻。届かなかったはずのトークンなので、提示されたら盗まれたとみなす */
+  rescuedAt?: number | null;
 };
 
 export type SessionState = {
@@ -26,11 +28,16 @@ export function decideRefresh(
   successor: TokenState | null,
   now: number,
 ): RefreshDecision {
-  if (session.revokedAt !== null || session.expiresAt <= now) return { kind: "reject" };
-  if (token.usedAt === null) {
-    return token.expiresAt <= now ? { kind: "reject" } : { kind: "rotate" };
+  // 期限切れ・失効済みは、使用済みかどうかに関係なく先に拒否する（仕様書「更新」の手順3）
+  if (session.revokedAt !== null || session.expiresAt <= now || token.expiresAt <= now) {
+    return { kind: "reject" };
   }
-  if (successor && successor.usedAt === null) return { kind: "rescue" };
+  if (token.usedAt === null) return { kind: "rotate" };
+  // 救済で使用済みにしたトークンは正規の利用者には届いていない。提示されたら再利用
+  if (token.rescuedAt != null) return { kind: "reuse" };
+  if (successor && successor.usedAt === null) {
+    return successor.expiresAt <= now ? { kind: "reject" } : { kind: "rescue" };
+  }
   return { kind: "reuse" };
 }
 

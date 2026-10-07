@@ -145,7 +145,15 @@ export async function findRefreshTokenById(db: Db, id: string) {
  */
 export async function tryRotate(
   db: Db,
-  params: { usedTokenId: string; sessionId: string; tokenHash: string; expiresAt: number; now: number },
+  params: {
+    usedTokenId: string;
+    sessionId: string;
+    tokenHash: string;
+    expiresAt: number;
+    now: number;
+    /** 救済での交換なら、使用済みにするトークンに印を残す */
+    rescue: boolean;
+  },
 ): Promise<boolean> {
   const newId = crypto.randomUUID();
   await db.insert(refreshTokens).values({
@@ -157,7 +165,7 @@ export async function tryRotate(
   });
   const result = await db
     .update(refreshTokens)
-    .set({ usedAt: params.now, replacedBy: newId })
+    .set({ usedAt: params.now, replacedBy: newId, rescuedAt: params.rescue ? params.now : null })
     .where(and(eq(refreshTokens.id, params.usedTokenId), isNull(refreshTokens.usedAt)))
     .run();
   if (result.meta.changes !== 1) {

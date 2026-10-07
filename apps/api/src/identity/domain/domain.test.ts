@@ -75,6 +75,15 @@ describe("decideRefresh", () => {
     expect(decideRefresh(longAgo, live, unused, now).kind).toBe("rescue");
   });
 
+  it("救済で使用済みにされたトークンが提示されたら再利用（交互の救済で検知を逃さない）", () => {
+    const rescued = { expiresAt: now + 1000, usedAt: now - 10, rescuedAt: now - 10 };
+    expect(decideRefresh(rescued, live, unused, now).kind).toBe("reuse");
+  });
+
+  it("救済で交換する次のトークンが期限切れなら拒否", () => {
+    expect(decideRefresh(used, live, { expiresAt: now, usedAt: null }, now).kind).toBe("reject");
+  });
+
   it("使用済みで次のトークンも使用済みなら再利用", () => {
     expect(decideRefresh(used, live, used, now).kind).toBe("reuse");
     expect(decideRefresh(used, live, null, now).kind).toBe("reuse");
@@ -84,6 +93,9 @@ describe("decideRefresh", () => {
     expect(decideRefresh({ expiresAt: now, usedAt: null }, live, null, now).kind).toBe("reject");
     expect(decideRefresh(unused, { expiresAt: now + 1, revokedAt: now - 1 }, null, now).kind).toBe("reject");
     expect(decideRefresh(unused, { expiresAt: now, revokedAt: null }, null, now).kind).toBe("reject");
+    // 期限切れの使用済みトークンは、救済も再利用の判定もせずに拒否する
+    expect(decideRefresh({ expiresAt: now, usedAt: now - 1 }, live, unused, now).kind).toBe("reject");
+    expect(decideRefresh({ expiresAt: now, usedAt: now - 1 }, live, used, now).kind).toBe("reject");
   });
 
   it("新しいトークンの期限はセッションの絶対期限を超えない", () => {
