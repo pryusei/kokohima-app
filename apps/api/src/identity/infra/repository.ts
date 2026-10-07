@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, exists, gt, isNull } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { outbox, outboxRow } from "../../shared/outbox/schema";
 import type { Provider } from "../domain/idTokenClaims";
@@ -166,7 +166,19 @@ export async function tryRotate(
   const result = await db
     .update(refreshTokens)
     .set({ usedAt: params.now, replacedBy: newId, rescuedAt: params.rescue ? params.now : null })
-    .where(and(eq(refreshTokens.id, params.usedTokenId), isNull(refreshTokens.usedAt)))
+    .where(
+      and(
+        eq(refreshTokens.id, params.usedTokenId),
+        isNull(refreshTokens.usedAt),
+        // logout-all と同時に走っても、失効した直後のセッションでは交換しない
+        exists(
+          db
+            .select({ id: sessions.id })
+            .from(sessions)
+            .where(and(eq(sessions.id, params.sessionId), isNull(sessions.revokedAt))),
+        ),
+      ),
+    )
     .run();
   if (result.meta.changes !== 1) {
     await db.delete(refreshTokens).where(eq(refreshTokens.id, newId));

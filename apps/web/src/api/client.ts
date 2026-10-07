@@ -27,7 +27,14 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 }
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  if (!tokenStore.get()) await refreshAccessToken();
+  if (!tokenStore.get()) {
+    const outcome = await refreshAccessToken();
+    // ログインしていなければ、本来のリクエストを送らずにログアウト状態にする（更新を2回走らせない）
+    if (outcome === "unauthenticated") {
+      onUnauthenticated();
+      throw new ApiError(401);
+    }
+  }
   let res: Response;
   try {
     res = await send(path, init);

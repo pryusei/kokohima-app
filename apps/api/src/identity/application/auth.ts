@@ -172,7 +172,9 @@ export async function refresh(ctx: Ctx, cookieToken: string | undefined): Promis
       tokenHash: await sha256(refreshToken),
       expiresAt: refreshExpiresAt,
       now,
-      rescue: decision.kind === "rescue",
+      // 交換に負けたやり直し（attempt > 0）での救済は、同時に使われたことを確認済みなので印を付けない。
+      // 付けると、交換に勝った側の応答のトークンが「提示されたら再利用」になってしまう
+      rescue: decision.kind === "rescue" && attempt === 0,
     });
     if (rotated) {
       const access = await issueAccessToken(ctx.env, { userId: session.userId, sessionId: session.id }, now);

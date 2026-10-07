@@ -352,10 +352,32 @@ describe("更新", () => {
     expect((await h.refresh(cookieValue(retry, "__Host-kh_rt"))).status).toBe(200);
   });
 
-  it("同時に2回使われても、どちらもログアウトにならない", async () => {
+  it.each([0, 1])(
+    "同時に2回使われても、どちらの応答のCookieが残っても続けられる（残したのは %i 番目）",
+    async (keep) => {
+      const r = await h.login("google", uniq());
+      const responses = await Promise.all([h.refresh(r.refreshToken), h.refresh(r.refreshToken)]);
+      expect(responses.map((res) => res.status)).toEqual([200, 200]);
+      const kept = cookieValue(responses[keep] as Response, "__Host-kh_rt");
+      const next = await h.refresh(kept);
+      expect(next.status).toBe(200);
+      expect((await h.refresh(cookieValue(next, "__Host-kh_rt"))).status).toBe(200);
+    },
+  );
+
+  it("全端末ログアウトの後は、失効前に読んだトークンでも交換しない", async () => {
     const r = await h.login("google", uniq());
-    const [a, b] = await Promise.all([h.refresh(r.refreshToken), h.refresh(r.refreshToken)]);
-    expect([a.status, b.status]).toEqual([200, 200]);
+    const logoutAll = h.request("/api/v1/auth/logout-all", {
+      method: "POST",
+      headers: { Origin: ORIGIN, Authorization: `Bearer ${r.accessToken}` },
+    });
+    const [, refreshed] = await Promise.all([logoutAll, h.refresh(r.refreshToken)]);
+    // 同時に走った更新が先に終わっていても、その後のトークンはもう使えない
+    if (refreshed.status === 200) {
+      expect((await h.refresh(cookieValue(refreshed, "__Host-kh_rt"))).status).toBe(401);
+    } else {
+      expect(refreshed.status).toBe(401);
+    }
   });
 
   it("再利用：盗まれた古いトークンの後に正規の利用者が更新すると、系列のすべてのトークンが使えなくなる", async () => {

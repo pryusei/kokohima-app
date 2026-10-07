@@ -42,6 +42,15 @@ describe("APIクライアント", () => {
     expect(tokenStore.get()).toBeNull();
   });
 
+  it("トークンがなく、最初の更新が401なら、本来のリクエストを送らずにログアウト状態にする", async () => {
+    const { calls } = mockFetch({ "/api/v1/me": json(me), "/api/v1/auth/refresh": json({}, 401) });
+    const handler = vi.fn();
+    setUnauthenticatedHandler(handler);
+    await expect(apiFetch("/api/v1/me")).rejects.toMatchObject({ status: 401 });
+    expect(handler).toHaveBeenCalledOnce();
+    expect(calls.map((c) => c.url)).toEqual(["/api/v1/auth/refresh"]);
+  });
+
   it("再送しても401なら、それ以上は再送しない", async () => {
     tokenStore.set("old", new Date(Date.now() + 60_000).toISOString());
     const { calls } = mockFetch({ "/api/v1/me": json({}, 401), "/api/v1/auth/refresh": json(tokenBody("new")) });
