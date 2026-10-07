@@ -17,6 +17,8 @@ type State =
   | { kind: "loading" }
   | { kind: "ready"; invite: InviteLookupResponse }
   | { kind: "unusable" }
+  /** accept が404：使えないリンクか、別のタブで開いたリンクと違う。どちらにも当てはまる文言にする */
+  | { kind: "acceptFailed" }
   | { kind: "own" }
   /** lookup で通信できなかった（まだ友達になっていない） */
   | { kind: "lookupNetwork" }
@@ -57,7 +59,7 @@ export function InvitePage() {
       navigate("/friends", { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setState({ kind: "own" });
-      else if (err instanceof ApiError && err.status === 404) setState({ kind: "unusable" });
+      else if (err instanceof ApiError && err.status === 404) setState({ kind: "acceptFailed" });
       // 通信エラー：成功していることもあるので再送せず、友達一覧で確かめてもらう
       else setState({ kind: "network" });
     } finally {
@@ -74,6 +76,11 @@ export function InvitePage() {
       {state.kind === "unusable" && (
         <p role="status" className="text-slate-600">
           このリンクは使えません。発行した人に新しいリンクをもらってください。
+        </p>
+      )}
+      {state.kind === "acceptFailed" && (
+        <p role="status" className="text-slate-600">
+          友達になれませんでした。招待リンクをもう一度開いてください。
         </p>
       )}
       {state.kind === "own" && (

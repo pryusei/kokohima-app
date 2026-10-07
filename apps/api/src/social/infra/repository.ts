@@ -1,7 +1,6 @@
 import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import type { Cursor } from "../../shared/cursor";
-import { outbox, outboxRow } from "../../shared/outbox/schema";
 import { friendships, inviteLinks } from "./schema";
 
 // social のD1アクセス。条件つきの消費は単独で実行し、結果を見てから残りを書く
@@ -78,53 +77,55 @@ export async function findInviteLinkByTokenHash(db: Db, tokenHash: string) {
   return (await db.select().from(inviteLinks).where(eq(inviteLinks.tokenHash, tokenHash)).get()) ?? null;
 }
 
-/** 片方向の友達関係の行を書く。新しく書けたら true */
-export async function insertFriendshipRow(db: Db, userId: string, friendId: string, now: number) {
-  const result = await db
-    .insert(friendships)
-    .values({ userId, friendId, createdAt: now })
-    .onConflictDoNothing()
-    .run();
-  return result.meta.changes === 1;
-}
 
-export async function deleteFriendshipRow(db: Db, userId: string, friendId: string) {
-  await db.delete(friendships).where(and(eq(friendships.userId, userId), eq(friendships.friendId, friendId)));
-}
 
-/** 人数を1消費する。使えなくなっていれば false */
-export async function consumeInviteUse(db: Db, id: string, now: number) {
-  const result = await db
-    .update(inviteLinks)
-    .set({ uses: sql`${inviteLinks.uses} + 1` })
-    .where(
-      and(
-        eq(inviteLinks.id, id),
-        lt(inviteLinks.uses, inviteLinks.maxUses),
-        isNull(inviteLinks.revokedAt),
-        gt(inviteLinks.expiresAt, now),
-      ),
-    )
-    .run();
-  return result.meta.changes === 1;
-}
 
-/** 発行者側の行と、両者あての FriendshipEstablished をまとめて書く */
-export async function completeFriendship(db: Db, inviterId: string, acceptorId: string, now: number) {
+
+
+export type AcceptOutcome = "created" | "already_friends" | "unusable";
+
+/**
+ * 「友達になる」の書き込み（人数の消費・両方向の行・FriendshipEstablished 2件）を1つのバッチ
+ * （トランザクション）で行う。途中で落ちれば全部戻るので、片方向の関係は残らない。
+ * D1 は書き込みを直列に処理するので、同じ人の同時の accept もバッチの途中に割り込まない。
+ * 2つめ以降の文は、直前の文が1行を書いたとき（changes() = 1）だけ書く
+ */
+export async function acceptInBatch(
+  d1: D1Database,
+  params: { linkId: string; inviterId: string; acceptorId: string; now: number },
+): Promise<AcceptOutcome> {
+  const { linkId, inviterId, acceptorId, now } = params;
   const occurredAt = new Date(now).toISOString();
-  await db.batch([
-    db.insert(friendships).values({ userId: inviterId, friendId: acceptorId, createdAt: now }).onConflictDoNothing(),
-    db.insert(outbox).values(outboxRow("FriendshipEstablished", { userId: inviterId, friendId: acceptorId, occurredAt }, now)),
-    db.insert(outbox).values(outboxRow("FriendshipEstablished", { userId: acceptorId, friendId: inviterId, occurredAt }, now)),
+  const event = (userId: string, friendId: string) =>
+    d1
+      .prepare(
+        "INSERT INTO outbox (id, type, payload, created_at) SELECT ?, 'FriendshipEstablished', ?, ? WHERE changes() = 1",
+      )
+      .bind(crypto.randomUUID(), JSON.stringify({ userId, friendId, occurredAt }), now);
+  const results = await d1.batch([
+    d1
+      .prepare(
+        `UPDATE invite_links SET uses = uses + 1
+         WHERE id = ? AND uses < max_uses AND revoked_at IS NULL AND expires_at > ?
+           AND NOT EXISTS (SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ?)`,
+      )
+      .bind(linkId, now, acceptorId, inviterId),
+    d1
+      .prepare("INSERT INTO friendships (user_id, friend_id, created_at) SELECT ?, ?, ? WHERE changes() = 1")
+      .bind(acceptorId, inviterId, now),
+    event(inviterId, acceptorId),
+    event(acceptorId, inviterId),
+    // 発行者側の行は最後に書く。万一すでにあっても、バッチ全体を失敗させない
+    d1
+      .prepare("INSERT OR IGNORE INTO friendships (user_id, friend_id, created_at) SELECT ?, ?, ? WHERE changes() = 1")
+      .bind(inviterId, acceptorId, now),
   ]);
-}
-
-export async function writeFriendshipEvents(db: Db, inviterId: string, acceptorId: string, now: number) {
-  const occurredAt = new Date(now).toISOString();
-  await db.batch([
-    db.insert(outbox).values(outboxRow("FriendshipEstablished", { userId: inviterId, friendId: acceptorId, occurredAt }, now)),
-    db.insert(outbox).values(outboxRow("FriendshipEstablished", { userId: acceptorId, friendId: inviterId, occurredAt }, now)),
-  ]);
+  if (results[0]?.meta.changes === 1) return "created";
+  const existing = await d1
+    .prepare("SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ?")
+    .bind(acceptorId, inviterId)
+    .first();
+  return existing ? "already_friends" : "unusable";
 }
 
 /** 閲覧者の友達（友達になった日時の新しい順、同じなら相手IDの降順） */

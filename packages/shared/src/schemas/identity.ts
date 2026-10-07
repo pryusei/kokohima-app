@@ -33,15 +33,19 @@ export const meResponseSchema = z.object({
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 
-// 表示名（docs/specs/T-02-friends.md「表示名」）。前後の空白を除いて1〜20文字、制御文字は不可
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001f\u007f]/;
+// 表示名（docs/specs/T-02-friends.md「表示名」）。受け口で発行者を確かめる手がかりなので、見た目を偽装できる文字は拒否する
+// NFC で正規化して前後の空白を除き、コードポイントで1〜20文字。
+// 制御文字（C0・C1）、書式文字（書字方向の上書き、幅のない文字など）、私用領域、孤立サロゲート、行・段落の区切りは不可
+const INVISIBLE_OR_CONTROL = /[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Zl}\p{Zp}]/u;
 export const displayNameSchema = z
   .string()
-  .trim()
-  .min(1)
-  .max(20)
-  .refine((v) => !CONTROL.test(v), { message: "control_characters" });
+  .max(200)
+  .transform((v) => v.normalize("NFC").trim())
+  .refine((v) => {
+    const length = Array.from(v).length;
+    return length >= 1 && length <= 20;
+  }, { message: "length" })
+  .refine((v) => !INVISIBLE_OR_CONTROL.test(v), { message: "invalid_characters" });
 
 export const updateMeRequestSchema = z.object({ displayName: displayNameSchema });
 export type UpdateMeRequest = z.infer<typeof updateMeRequestSchema>;

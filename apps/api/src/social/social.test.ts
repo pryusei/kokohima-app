@@ -9,7 +9,6 @@ import {
 } from "@kokohima/shared";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cookieHeader, cookieValue, createHarness, ORIGIN } from "../../test/identity-harness";
-import { REPAIR_AFTER_MS } from "./application/social";
 import { DAY_MS, isUsable, issueRetryAfterSeconds } from "./domain/inviteLink";
 
 type Harness = Awaited<ReturnType<typeof createHarness>>;
@@ -113,10 +112,30 @@ describe("表示名", () => {
     const r = await h.login("google", `sub-${crypto.randomUUID()}`);
     const ok = await call("PATCH", "/api/v1/me", { token: r.accessToken, body: { displayName: "  ゆうせい  " } });
     expect(((await ok.json()) as { displayName: string }).displayName).toBe("ゆうせい");
-    for (const displayName of ["", "   ", "a".repeat(21), "a\u0007b"]) {
+    for (const displayName of [
+      "",
+      "   ",
+      "a".repeat(21),
+      "a\u0007b",
+      "あき\u202Eまさ", // 書字方向の上書き
+      "\u2066あき\u2069",
+      "あ\u200Bき", // 幅のない空白
+      "あ\uFEFFき", // 先頭・末尾の U+FEFF は trim で消えるので、途中に入れる
+      "あ\u0085き", // C1制御文字
+      "\u200B",
+    ]) {
       const res = await call("PATCH", "/api/v1/me", { token: r.accessToken, body: { displayName } });
       expect(res.status).toBe(400);
     }
+  });
+
+  it("長さはコードポイントで数え、NFCで正規化して保存する", async () => {
+    const r = await h.login("google", `sub-${crypto.randomUUID()}`);
+    const emoji = await call("PATCH", "/api/v1/me", { token: r.accessToken, body: { displayName: "😀".repeat(20) } });
+    expect(emoji.status).toBe(200);
+    const nfd = "\u304B\u3099"; // 「か」＋濁点（NFD）
+    const res = await call("PATCH", "/api/v1/me", { token: r.accessToken, body: { displayName: nfd } });
+    expect(((await res.json()) as { displayName: string }).displayName).toBe("\u304C");
   });
 
   it("閲覧者自身の行だけを更新する（body の id は無視される）", async () => {
@@ -425,23 +444,40 @@ describe("友達になる（accept）", () => {
     expect(cookieValue(res, "__Host-kh_invite")).toBeUndefined();
   });
 
-  it("途中で落ちて閲覧者側の行だけが残った状態から、人数を消費せずに修復する", async () => {
+  it("人数の消費・両方向の行・イベントは1つのバッチで書かれ、片方向の行は残らない", async () => {
+    const a = await user();
+    const b = await user();
+    const link = await createLink(a, { maxUses: 1 });
+    expect((await accept(b, link.token, link.id)).status).toBe(201);
+    const rows = await dbAll<{ user_id: string }>(
+      "SELECT user_id FROM friendships WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)",
+      a.id,
+      b.id,
+      b.id,
+      a.id,
+    );
+    expect(rows.map((r) => r.user_id).sort()).toEqual([a.id, b.id].sort());
+    // 上限1のリンクは使い切ったので、再び開いても404（すでに友達の200にはならない）
+    expect((await accept(b, link.token, link.id)).status).toBe(404);
+  });
+
+  it("バッチの途中で失敗すると、人数の消費も友達関係も残らない", async () => {
     const a = await user();
     const b = await user();
     const link = await createLink(a);
-    // 手順5と6の間で落ちた状態を作る（閲覧者側の行と人数の消費だけ）
-    await env.DB.prepare("INSERT INTO friendships (user_id, friend_id, created_at) VALUES (?, ?, ?)")
-      .bind(b.id, a.id, h.clock.now - REPAIR_AFTER_MS)
-      .run();
-    await env.DB.prepare("UPDATE invite_links SET uses = 1 WHERE id = ?").bind(link.id).run();
-    expect((await friendsOf(a)).items).toHaveLength(0);
-
-    const res = await accept(b, link.token, link.id);
-    expect(res.status).toBe(200);
-    expect((await friendsOf(a)).items.map((f) => f.id)).toEqual([b.id]);
-    expect((await dbAll<{ uses: number }>("SELECT uses FROM invite_links WHERE id = ?", link.id))[0]?.uses).toBe(1);
-    const events = await dbAll("SELECT id FROM outbox WHERE type = 'FriendshipEstablished' AND payload LIKE ?", `%${b.id}%`);
-    expect(events).toHaveLength(2);
+    // outbox への書き込みが必ず失敗するようにする（バッチの4文目）
+    await env.DB.prepare(
+      "CREATE TRIGGER fail_outbox BEFORE INSERT ON outbox WHEN NEW.type = 'FriendshipEstablished' BEGIN SELECT RAISE(ABORT, 'boom'); END",
+    ).run();
+    try {
+      expect((await accept(b, link.token, link.id)).status).toBe(500);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_outbox").run();
+    }
+    expect((await dbAll<{ uses: number }>("SELECT uses FROM invite_links WHERE id = ?", link.id))[0]?.uses).toBe(0);
+    expect(await dbAll("SELECT * FROM friendships WHERE user_id IN (?, ?)", a.id, b.id)).toHaveLength(0);
+    // 失敗のあとでも、同じリンクで友達になれる
+    expect((await accept(b, link.token, link.id)).status).toBe(201);
   });
 
   it("解除した相手が同じリンクで友達に戻れる（人数を消費する）", async () => {

@@ -12,8 +12,6 @@ import * as repo from "../infra/repository";
 
 type Ctx = { env: Bindings; deps: AppDeps };
 
-/** 片方向だけの友達関係を「途中で落ちた」とみなすまでの時間。これより新しければ処理中の別のリクエストのもの */
-export const REPAIR_AFTER_MS = 60 * 1000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -109,7 +107,7 @@ export type AcceptResult =
   | { kind: "not_found"; keepCookie?: boolean }
   | { kind: "own_link" };
 
-/** 「友達になる」の手順（仕様書の手順1〜7） */
+/** 「友達になる」の手順（仕様書の手順1〜4） */
 export async function acceptInvite(
   ctx: Ctx,
   viewerId: string,
@@ -131,26 +129,15 @@ export async function acceptInvite(
   const inviter = (await getPublicProfiles(ctx.env, [link.ownerId])).get(link.ownerId);
   if (!inviter) return { kind: "not_found" };
 
-  // 4. 閲覧者側の行。書けなければすでに友達
-  if (!(await repo.insertFriendshipRow(db, viewerId, link.ownerId, now))) {
-    // 7. 発行者側の行を修復する。行が増えた（前回が途中で落ちていた）ときはイベントも書く。
-    //    閲覧者側の行が新しい（REPAIR_AFTER_MS 以内）ときは、同時に送られた別のリクエストが処理中なので触らない
-    const own = await repo.findFriendship(db, viewerId, link.ownerId);
-    if (own && own.createdAt <= now - REPAIR_AFTER_MS && (await repo.insertFriendshipRow(db, link.ownerId, viewerId, now))) {
-      await repo.writeFriendshipEvents(db, link.ownerId, viewerId, now);
-    }
-    return { kind: "already_friends", friend: inviter };
-  }
-
-  // 5. 人数を消費する。同時に使われて上限に達したなどで失敗したら、4の行を戻す
-  if (!(await repo.consumeInviteUse(db, link.id, now))) {
-    await repo.deleteFriendshipRow(db, viewerId, link.ownerId);
-    return { kind: "not_found" };
-  }
-
-  // 6. 発行者側の行と FriendshipEstablished 2件
-  await repo.completeFriendship(db, link.ownerId, viewerId, now);
-  return { kind: "created", friend: inviter };
+  // 4. 人数の消費・両方向の行・イベントを1つのバッチで書く
+  const outcome = await repo.acceptInBatch(ctx.env.DB, {
+    linkId: link.id,
+    inviterId: link.ownerId,
+    acceptorId: viewerId,
+    now,
+  });
+  if (outcome === "unusable") return { kind: "not_found" };
+  return { kind: outcome === "created" ? "created" : "already_friends", friend: inviter };
 }
 
 export async function listFriends(ctx: Ctx, viewerId: string, limit: number, cursor: string | undefined) {

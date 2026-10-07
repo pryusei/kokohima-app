@@ -66,7 +66,7 @@ describe("招待リンクの受け口", () => {
   });
 
   it.each([
-    [404, /このリンクは使えません/],
+    [404, /友達になれませんでした。招待リンクをもう一度開いてください/],
     [409, /これはあなたが作ったリンクです/],
   ])("accept が %i なら静かな文言を出す", async (status, text) => {
     window.history.replaceState(null, "", "/invite");
