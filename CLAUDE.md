@@ -4,12 +4,13 @@
 スタック：pnpmモノレポ（apps/web＝React＋Vite、apps/api＝Hono、packages/shared＝Zodスキーマと型）、D1＋Drizzle、TanStack Query、Vitest（単体）、Playwright（E2E）、jose。
 仕様の正は `docs/requirements.md` と `docs/specs/`。仕様書とコードは常に一致させる。
 
-## コマンド（スキャフォールド後に実際の値へ更新）
-- `pnpm dev`：ローカル起動（wrangler dev）
-- `pnpm test <path>`：単体テスト。全体ではなく関係するファイルだけ実行する
-- `pnpm e2e`：E2Eテスト（Playwright）
-- `pnpm typecheck` / `pnpm lint`
-- `pnpm db:migrate:local`：D1マイグレーションをローカルに適用
+## コマンド
+- `pnpm dev`：ローカル起動（API＝wrangler dev :8787、Web＝vite :5173。`/api` はviteがAPIへ中継）
+- `pnpm test <path>`：単体テスト（Vitest。apiはWorkersのランタイム上で動く）。全体ではなく関係するファイルだけ実行する
+- `pnpm e2e`：E2Eテスト（Playwright。APIを `--env e2e` で、Webをviteで自動起動する）
+- `pnpm typecheck` / `pnpm lint`（ESLint。`pnpm lint --fix` で自動修正）
+- `pnpm db:migrate:local`：D1マイグレーション（`apps/api/migrations/`）をローカルに適用
+- `pnpm --filter api build:prod`：本番のビルド（`wrangler deploy --dry-run`。デプロイはしない）
 
 ## アーキテクチャ
 - `apps/api/src/<context>/{domain,application,infra}`。contextは invitation / availability / social / calendar / notification / link-preview / identity

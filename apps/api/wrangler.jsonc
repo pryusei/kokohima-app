@@ -1,0 +1,58 @@
+// Workers の設定。リソース本体（D1など）は infra/terraform で作り、出力されたIDをここに転記する
+// 秘密情報はここに書かない（wrangler secret を使う）
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "kokohima-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // ローカル開発（wrangler dev）。D1はローカルのSQLiteなのでIDは何でもよい
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kokohima-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "env": {
+    // E2E用（ローカルでのみ使う）。テスト用ログインの経路を含むエントリを使う
+    "e2e": {
+      "main": "src/e2e/entry.ts",
+      "vars": { "E2E_MODE": "1" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "kokohima-e2e",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    "staging": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "kokohima-staging",
+          // TODO: terraform output の D1 ID を転記する（infra/README.md の初回の手順6）
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    "prod": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "kokohima-prod",
+          // TODO: terraform output の D1 ID を転記する（infra/README.md の初回の手順6）
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}
