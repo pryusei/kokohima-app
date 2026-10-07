@@ -12,6 +12,7 @@
 - コンテキスト：友達関係と招待リンクは `social`（`apps/api/src/social/`）、公開設定は `availability`（`apps/api/src/availability/`）に置く。公開設定の保存と切り替えのAPIは今回作り、ここ暇への適用はT-03で行う
   - `/friends` のルートと application 層（一覧の組み立て、`PATCH` の流れ）は `social` が持つ
   - `sharing_policies` の読み書きは `availability` の application 層の関数（`getSharingFor(ownerId, targetIds)`、`setSharing(ownerId, targetId, visible)`）だけが行う。`social` は表を直接読まず、これらの関数を呼ぶ
+  - 例外（T-03）：ここ暇を友達に見せてよいかの判定では、`availability` のSQLが `friendships` を読み取りだけで使う。条件を取得後に絞り込まず、SQLに入れるため（docs/specs/T-03-availability.md「前提」）
   - 友達かどうかの確認は `social` が先に行い、友達のときだけ `setSharing` を呼ぶ
   - 一覧は、`social` が友達を1ページ分取得したあと、その相手IDの範囲で `getSharingFor` を1回呼んで合わせる（SQLのJOINはしない）
   - 他人の表示名とアイコンは、`identity` の `getPublicProfiles(ids)` で取る。この関数は閲覧者の条件を持たないので、閲覧者で絞ったSQLの結果のID（友達一覧の相手、招待リンクの発行者）だけを渡す。パスやbodyのIDをそのまま渡さない（「データ取得は閲覧者IDを引数に取る」の例外。users を読むのは identity だけにするため）

@@ -16,6 +16,8 @@
   2. `friendships` に 相手→閲覧者 の行がある（T-02の申し送り：両方向がそろっていること）
   3. `sharing_policies` に (owner=相手, target=閲覧者, visible=0) の行がない
   - SQLは `availability/infra` に置き、`friendships` は読み取りだけで使う（書き込みは `social` だけ）
+  - これはT-02の「前提」（`social` の表を直接読まない）の例外。見せてよいかの条件を取得後に絞り込まず、SQLに入れるため（CLAUDE.mdのセキュリティの規則が優先）。T-02の仕様書の「前提」にも、この例外を書き足す
+  - 友達の表示名とアイコンは `identity` の `getPublicProfiles` で取る。渡すのは、上の3条件で絞ったSQLの結果に出た相手のIDだけ（T-02の制約）
 - ユーザーのタイムゾーンは `users.timezone`（T-01で作成、全員 `Asia/Tokyo`）。変更のAPIは作らないが、計算はタイムゾーンを引数に取って作る
 - 他人の情報は公開プロフィール（`id`、`displayName`、`avatarUrl`）だけを返す
 
@@ -34,16 +36,17 @@
 | --- | --- | --- | --- | --- | --- |
 | GET | `/api/v1/me/presets` | Bearer | なし | 200：`presetsSchema` `{ day, evening, night }`（各 `{ start: "HH:MM", end: "HH:MM" }`） | 401 |
 | PUT | `/api/v1/me/presets` | Bearer | JSON：`presetsSchema` | 200：`presetsSchema` | 400 |
-| POST | `/api/v1/availabilities` | Bearer | JSON：`createAvailabilityRequestSchema`（下記） | 201：`availabilitySchema` | 400、409 `invalid_state`（自分の別の枠と重なる）、429 `rate_limited`（未来の枠が上限） |
+| POST | `/api/v1/availabilities` | Bearer | JSON：`createAvailabilityRequestSchema`（下記） | 201：`myAvailabilitySchema` | 400、409 `invalid_state`（自分の別の枠と重なる、未来の枠が上限） |
 | GET | `/api/v1/availabilities` | Bearer | query：`from`、`to`（ISO 8601。最長31日） | 200：`{ items: myAvailabilitySchema[], nextCursor: null }` | 400 |
 | DELETE | `/api/v1/availabilities/{id}` | Bearer | なし | 204（取り消し） | 404 |
-| POST | `/api/v1/recurrence-rules` | Bearer | JSON：`createRecurrenceRuleRequestSchema` `{ weekday, preset? , start?, end? }` | 201：`recurrenceRuleSchema` | 400、409（自分の別のルールと重なる）、429（ルールが上限） |
+| POST | `/api/v1/recurrence-rules` | Bearer | JSON：`createRecurrenceRuleRequestSchema` `{ weekday, preset? , start?, end? }` | 201：`recurrenceRuleSchema` | 400、409 `invalid_state`（自分の別のルールと重なる、ルールが上限） |
 | GET | `/api/v1/recurrence-rules` | Bearer | なし | 200：`{ items: recurrenceRuleSchema[], nextCursor: null }` | — |
 | DELETE | `/api/v1/recurrence-rules/{id}` | Bearer | なし | 204 | 404 |
-| POST | `/api/v1/recurrence-rules/{id}/exceptions` | Bearer | JSON：`{ date: "YYYY-MM-DD" }`（現地の日付） | 204（その日だけ外す） | 400、404 |
+| POST | `/api/v1/recurrence-rules/{id}/exceptions` | Bearer | JSON：`{ date: "YYYY-MM-DD" }`（ルールのタイムゾーンでの日付） | 204（その日だけ外す） | 400（ルールの曜日でない、過去、60日より先）、404 |
 | DELETE | `/api/v1/recurrence-rules/{id}/exceptions/{date}` | Bearer | なし | 204（外したのを戻す） | 404 |
-| GET | `/api/v1/friends/availabilities` | Bearer | query：`from`、`to`（最長14日） | 200：`{ items: friendAvailabilitySchema[], nextCursor: null }` | 400 |
-| GET | `/api/v1/friends/{friendId}/availabilities` | Bearer | query：`from`、`to`（最長31日） | 200：`{ items: slotSchema[], nextCursor: null }` | 400、404（友達でない） |
+| GET | `/api/v1/friends/availabilities` | Bearer | query：`from`、`to`（最長14日）、`cursor` | 200：`{ items: friendAvailabilitySchema[], nextCursor }`（500件ずつ） | 400 |
+| GET | `/api/v1/friends/{friendId}` | Bearer | なし | 200：`friendSchema`（T-02と同じ形） | 404（友達でない） |
+| GET | `/api/v1/friends/{friendId}/availabilities` | Bearer | query：`from`、`to`（最長31日） | 200：`{ items: slotSchema[], nextCursor: null }` | 400、404（友達でない。片方向の行しかない場合も） |
 
 ### 入力
 - `createAvailabilityRequestSchema`：次のどちらか
@@ -51,28 +54,33 @@
   - `{ startsAt, endsAt }`（ISO 8601 UTC）：開始〜終了を指定する
 - `createRecurrenceRuleRequestSchema`：`weekday`（0＝日〜6＝土）と、`preset` か `start`・`end`（現地の `"HH:MM"`）のどちらか
 - 時刻は15分単位（`HH:MM` の分は 00・15・30・45、`startsAt`・`endsAt` も15分の倍数）。長さは30分以上、24時間以下。プリセットとくり返しは同じ日の中（`00:00`〜`24:00`）で、日をまたがない（確認事項3）
+- `HH:MM` は `00:00`〜`23:45`。終了だけは `24:00` も受け付ける（現地の0時からの分で1440）
+- 範囲の `from`・`to`：ISO 8601 UTC、`from < to` でなければ400。範囲に入る枠は「`[from, to)` と1分以上重なる枠」。返す枠は範囲で切り詰めず、元の開始・終了のまま返す
 
 ### 出力
 - `slotSchema`：`{ startsAt, endsAt, label }`。`label` はプリセット名（`day`・`evening`・`night`）か `null`（開始〜終了で作った枠）
-- `myAvailabilitySchema`：`slotSchema` ＋ `{ source: "manual" | "recurrence", id }`。`manual` の `id` は枠のUUID、`recurrence` の `id` はルールのUUID（取り消すには `exceptions` を使う）、さらに `recurrence` には `date`（現地の日付）を付ける
-- `friendAvailabilitySchema`：`{ friend: publicProfile, startsAt, endsAt, label, overlapsMine }`。`overlapsMine` は閲覧者の自分の枠（手動とくり返しの展開の両方）と1分以上重なるか
+- `myAvailabilitySchema`：`slotSchema` ＋ `{ source: "manual" | "recurrence", id, date }`。`manual` の `id` は枠のUUIDで `date` は `null`。`recurrence` の `id` はルールのUUID（取り消すには `exceptions` を使う）で、`date` はルールのタイムゾーンでの日付
+- `friendAvailabilitySchema`：`{ friend: publicProfile, startsAt, endsAt, label, overlapsMine }`。`overlapsMine` は、まとめた後の枠が、閲覧者の自分の枠（手動とくり返しの展開の両方）と1分以上重なるか
 - 友達の枠には、枠やルールのIDを返さない（相手の内部の構成を見せない。誘いはT-04で時刻を指定して作る）
-- `recurrenceRuleSchema`：`{ id, weekday, start, end, label, timezone, createdAt }`
+- `recurrenceRuleSchema`：`{ id, weekday, start, end, label, timezone, exceptions, createdAt }`。`exceptions` は今日以降の外した日付（`YYYY-MM-DD`）の一覧（画面で「戻す」に使う）
 - `presetsSchema`：`{ day: { start, end }, evening: {…}, night: {…} }`
 
 ### 例外
-- 一覧はページングの代わりに、日付の範囲（`from`・`to`、`from` を含み `to` を含まない）で区切る。範囲の上限（自分は31日、みんなは14日）と、ユーザーあたりの枠・ルールの上限で件数が抑えられるので、`nextCursor` は常に `null`。並び順は開始日時の古い順、同じなら（友達の一覧では）友達の `id`、自分の一覧では `id` の昇順（api-conventions の「時間の流れで見る一覧」）
+- 自分の一覧・友達の詳細・くり返しの一覧はページングの代わりに、日付の範囲で区切る。範囲の上限（31日）と、ユーザーあたりの枠・ルールの上限で件数が抑えられるので、`nextCursor` は常に `null`。「みんな」は友達の数に比例して増えるので、500件ずつのカーソル（開始日時と友達の `id`）で続きを取る。並び順は開始日時の古い順、同じなら（友達の一覧では）友達の `id`、自分の一覧では `id` の昇順（api-conventions の「時間の流れで見る一覧」）
 - `PUT /me/presets` は3つのプリセットを丸ごと置き換える（部分更新ではないので `PATCH` にしない）
 - くり返しの例外は、日付をキーにした子リソースとして `POST`／`DELETE` する
+- 自分の枠どうし・ルールどうしの重なりと、件数の上限（手動の未来の枠100個、ルール20個）は、どちらも409 `invalid_state` にする。規約の409は「状態遷移できない」だが、「今の自分の枠の状態では、これ以上作れない」として扱う。429 `rate_limited` は時間がたてば解ける制限に限るので使わない（`Retry-After` を付けられないため）
+- 作成の201に `Location` を付けない。枠もルールも1件を取得するAPIがないため（T-02と同じ）
+- `Idempotency-Key` は受け付けない（T-02の決定事項6のとおり、KVとまとめて別タスク）。二重送信は、重なりの判定（同じ枠は必ず重なる）で2つめが409になるので、重複した枠はできない
 
 ## データ
 マイグレーション `apps/api/migrations/0003_availability.sql`。日時はUnixミリ秒、現地の時刻は0時からの分（0〜1440）。
 
 | テーブル | 列 | 備考 |
 | --- | --- | --- |
-| `presets` | `user_id`（PK、FK users）、`day_start`、`day_end`、`evening_start`、`evening_end`、`night_start`、`night_end`、`updated_at` | 行がなければ初期値（昼11:00〜15:00、夕方16:00〜19:00、夜19:00〜23:00） |
-| `availabilities` | `id`（UUID、PK）、`user_id`（FK）、`starts_at`、`ends_at`、`label`（null可）、`created_at` | INDEX(`user_id`, `starts_at`, `id`)、INDEX(`starts_at`) |
-| `recurrence_rules` | `id`（UUID、PK）、`user_id`（FK）、`weekday`、`start_minute`、`end_minute`、`label`（null可）、`timezone`、`created_at` | INDEX(`user_id`)。`timezone` は作成時のユーザーのタイムゾーン（あとで変わっても、ルールの意味は変えない） |
+| `presets` | `user_id`（PK、FK users、`ON DELETE CASCADE`）、`day_start`、`day_end`、`evening_start`、`evening_end`、`night_start`、`night_end`、`updated_at` | 行がなければ初期値（昼11:00〜15:00、夕方16:00〜19:00、夜19:00〜23:00） |
+| `availabilities` | `id`（UUID、PK）、`user_id`（FK、`ON DELETE CASCADE`）、`starts_at`、`ends_at`、`label`（null可）、`created_at` | INDEX(`user_id`, `starts_at`, `id`)、INDEX(`starts_at`) |
+| `recurrence_rules` | `id`（UUID、PK）、`user_id`（FK、`ON DELETE CASCADE`）、`weekday`、`start_minute`、`end_minute`、`label`（null可）、`timezone`、`created_at` | INDEX(`user_id`)。`timezone` は作成時のユーザーのタイムゾーン（あとで変わっても、ルールの意味は変えない） |
 | `recurrence_exceptions` | `rule_id`（FK、削除時は一緒に消す）、`local_date`（`YYYY-MM-DD`）、`created_at` | PK(`rule_id`, `local_date`) |
 
 - ここ暇の取り消しは行を消す（履歴は持たない。行動の情報を残さないため）
@@ -86,46 +94,50 @@
 - 変更しても、すでにあるここ暇の枠と、くり返しのルールの時刻は変わらない（どちらも作ったときの時刻で保存しているため）。ルールの `label` も作ったときのまま
 
 ### ここ暇の追加
-- プリセット指定：`date`（閲覧者のタイムゾーンでの日付）と、閲覧者の現在のプリセットの現地時刻から、開始・終了の瞬間（UTC）を計算して保存する。`label` はプリセット名
+- プリセット指定：`date`（閲覧者のタイムゾーンでの日付）と、閲覧者の現在のプリセットの現地時刻から、開始・終了の瞬間（UTC）を計算して保存する。`label` はプリセット名。現地の時刻からUTCへの変換は、くり返しと同じ規則（夏時間で存在しない時刻は後ろにずらし、二重の時刻は早いほう）。変換後に終了が開始以前になったら400
 - 開始〜終了指定：そのまま保存する。`label` は `null`
 - 終了が現在より前の枠は作れない（400）。開始は現在より前でもよい（「今から暇」）
-- 作れるのは今日から60日先まで（開始が60日以内）（確認事項4）
+- 作れるのは、開始が現在時刻から60日（60×24時間）以内の枠（確認事項4）
 - 自分の手動の枠と1分以上重なる場合は409 `invalid_state`（重複した枠を作らせない）。くり返しの展開とは重なってもよい（友達に返すときに1つにまとめる）
-- 未来の手動の枠は1人100個まで。超えたら429 `rate_limited`（`Retry-After` は付けない。枠を消せば作れる）
+- 未来の手動の枠は1人100個まで。超えたら409 `invalid_state`（枠を消せば作れる）
+- 重なりの判定と上限の判定は、追加と同じ1つの文（`INSERT ... SELECT ... WHERE NOT EXISTS (重なる自分の枠) AND (未来の自分の枠の数) < 100`）で行う。二重押しや同時の送信でも、重複した枠や上限を超える枠はできない。`meta.changes` が0なら409
 
 ### くり返し
 - ルールは「曜日＋現地の開始・終了時刻」。作るときのタイムゾーンをルールに保存する
 - 自分の別のルールと、同じ曜日で時刻が重なる場合は409
-- ルールは1人20個まで。超えたら429
-- 展開：範囲の各日について、ルールの曜日に一致し、例外に入っていない日の枠を作る。現地の時刻からUTCへの変換は api-conventions の規則に従う
+- ルールは1人20個まで。超えたら409
+- 重なりと上限の判定は、手動の枠と同じく追加と1つの文で行う
+- 展開：UTCの範囲 `[from, to)` を、ルールのタイムゾーン（`recurrence_rules.timezone`）での日付に直し、前後1日を足した各日について、ルールの曜日に一致し、例外に入っていない日の枠を作る。作った枠のうち `[from, to)` と1分以上重なるものだけを返す。現地の時刻からUTCへの変換は api-conventions の規則に従う
   - 存在しない時刻（夏時間で時計が進む日の 2:30 など）：ずれた分だけ後ろにずらす
   - 二重に存在する時刻（時計が戻る日の 1:30 など）：早いほうを使う
   - 変換後に終了が開始以前になった枠は作らない
   - 変換は `domain` の純粋な関数（`Intl.DateTimeFormat` だけを使う）で行い、`America/New_York` の夏時間の切り替え日でテストする
-- 展開は今日より前の日は作らず、過去になった枠（終了が現在より前）は返さない
-- 例外：`POST .../exceptions` でその日だけ外す（すでに外していても204）。`DELETE .../exceptions/{date}` で戻す（外していなくても204）。どちらもルールが閲覧者のものでなければ404
+- 過去になった枠（終了が現在時刻より前）は返さない（「今日」の判定に日付は使わず、現在時刻と比べる）
+- 例外：`POST .../exceptions` でその日だけ外す（すでに外していても204）。日付は、ルールの曜日に一致し、ルールのタイムゾーンで今日以降、60日以内でなければ400（行が際限なく増えないように）。`DELETE .../exceptions/{date}` で戻す（外していなくても204）。どちらもルールが閲覧者のものでなければ404
 - ルールを消すと例外も消える
 
 ### 友達のここ暇（みんな）
 - 閲覧者に見せてよい相手（「前提」の3条件）の、範囲内の手動の枠とくり返しの展開を返す
-- 同じ友達の枠が重なる・接する場合は1つにまとめて返す（手動とくり返しが重なった場合など）。まとめた枠の `label` は、元の枠の `label` がすべて同じならその値、違えば `null`
+- 同じ友達の枠が重なる・接する場合は1つにまとめて返す（手動とくり返しが重なった場合など）。まとめた枠の `label` は、元の枠の `label` がすべて同じならその値、違えば `null`。まとめるのは範囲に入った枠どうしで、まとめた枠は範囲で切り詰めない
 - 見せない相手・ここ暇がない相手・友達でない人は、どれも単に結果に含まれない（「暇がない」と区別できない）
 - `overlapsMine`：閲覧者自身の枠（手動とくり返しの展開）と1分以上重なれば `true`
-- 範囲は最長14日。返すのは最大500件（範囲の上限と枠の上限から、通常は届かない。届いたら開始の早い順に500件で切る）
+- 範囲は最長14日。まとめた後の枠を、開始日時の古い順（同じなら友達の `id` の昇順）に500件ずつ返し、続きがあれば `nextCursor` を返す（黙って切らない）
 
 ### 友達ひとりのここ暇（友達の詳細）
-- `friendId` が閲覧者の友達（両方向の行）でなければ404
+- `friendId` が閲覧者の友達（両方向の行）でなければ404。片方向の行しかない場合も404
 - 友達だが「見せない」にされている場合は、空の一覧（200）。ここ暇がない場合と同じ応答
 - 中身は「みんな」と同じ（`friend` と `overlapsMine` は含めず `slotSchema` だけ）。範囲は最長31日
 
 ### 画面（仮。最終的なデザインはデザインのタスクで差し替える）
+- ログアウト・全端末ログアウトのボタンは、T-01の仮のホームから友達タブの下（「アカウント」の節）に移す
 - ホーム（`/`）を「みんな」にする：今日から7日分を日付ごとに並べ、友達の表示名と「夜 19:00〜23:00」のような表示（プリセット名がなければ時刻だけ）。自分と重なる枠は目立たせる（ここ暇・重なりの色。赤は使わない）。空のときは「まだ友達のここ暇はありません」
 - ここ暇タブ（`/availability`）：
   - 追加：日付を選び、「昼」「夕方」「夜」のボタン（押すとすぐ作る）か、開始・終了を指定
-  - 自分のここ暇の一覧（今日から14日）。手動は「取り消す」、くり返しは「この日だけ外す」
+  - 自分のここ暇の一覧（今日から14日）。手動は「取り消す」、くり返しは「この日だけ外す」。どちらも楽観的更新（押したらすぐ消し、失敗したら元に戻して静かな文言を出す）
   - くり返し：曜日とプリセット（または時刻）で追加、一覧と削除、外した日を戻す
   - プリセットの境界の変更
-- 友達の詳細（`/friends/{id}`）：表示名、見えているここ暇（14日）、友達の解除（T-02の解除をここからも使えるようにする）。「ここどう？と誘う」はT-04
+- 友達の詳細（`/friends/{id}`）：`GET /friends/{friendId}` で表示名と「自分の暇を見せる」を取り、見えているここ暇（14日）を表示する。友達の解除（T-02の解除をここからも使えるようにする）。「ここどう？と誘う」はT-04
+- `GET /friends/{friendId}`：友達（両方向の行）なら T-02 の `friendSchema` を返す。友達でなければ404（social に追加する）
 - 表示は閲覧者のタイムゾーンで行う（今は `Asia/Tokyo`）。時刻の表示は `HH:MM`
 
 ## 認可と秘匿
@@ -147,21 +159,27 @@
 - [ ] domain：くり返しの展開（曜日、例外の日、範囲の端、過去の枠を出さない）
 - [ ] domain：重なり（1分以上）、同じ友達の枠をまとめる（重なり・接する・`label` の扱い）
 - [ ] プリセット：初期値、変更、入力検証（15分単位、30分以上、日をまたがない）。変更しても既存の枠とルールの時刻が変わらない
-- [ ] ここ暇の追加：プリセット指定で閲覧者のプリセットの時刻になる。開始〜終了指定。終了が過去・60日より先・15分単位でない・30分未満・24時間超は400。自分の枠と重なれば409。未来の枠が100個で429
+- [ ] ここ暇の追加：同じ枠を同時に2回送っても1つしかできない。上限ちょうどで同時に送っても100個を超えない
+- [ ] ここ暇の追加：プリセット指定で、`America/New_York` の夏時間の切り替え日にも規則どおりの時刻になる
+- [ ] ここ暇の追加：プリセット指定で閲覧者のプリセットの時刻になる。開始〜終了指定。終了が過去・60日より先・15分単位でない・30分未満・24時間超は400。自分の枠と重なれば409。未来の枠が100個で409
 - [ ] 自分の一覧：手動とくり返しの展開を、開始日時の順で返す。過去の枠を含まない。範囲の検証（31日超は400）
 - [ ] 取り消し：自分の枠は204、他人の枠・存在しないIDは同じ404
-- [ ] くり返し：追加・一覧・削除、同じ曜日で重なれば409、20個で429。例外で外す・戻す（冪等）。他人のルールは404。ルールを消すと例外も消える
-- [ ] みんな：友達の手動の枠とくり返しの展開が出る。範囲外は出ない。14日超は400
+- [ ] くり返し：例外の日付が、ルールの曜日でない・過去・60日より先なら400。一覧に今日以降の例外が出る
+- [ ] くり返し：追加・一覧・削除、同じ曜日で重なれば409、20個で409。例外で外す・戻す（冪等）。他人のルールは404。ルールを消すと例外も消える
+- [ ] みんな：友達の手動の枠とくり返しの展開が出る。範囲と重なる枠は、はみ出していても切り詰めずに出る。範囲と重ならない枠は出ない。`from >= to`・14日超は400
+- [ ] みんな：500件を超えると `nextCursor` で続きが取れる
 - [ ] みんな：見せない相手・ここ暇がない相手・友達でない人・片方向の行しかない相手は、どれも結果に出ない（応答の形が同じ）
 - [ ] みんな：`overlapsMine` の判定（自分の手動の枠・くり返しの展開との重なり）。同じ友達の重なる枠がまとまる
 - [ ] みんな：友達の枠に、IDや作成日時、手動かくり返しかが含まれない（項目の一覧で確かめる）
-- [ ] 友達の詳細：友達でなければ404。見せない相手は空の一覧で、ここ暇がない相手と同じ応答
+- [ ] 友達の詳細：友達でなければ404。片方向の行しかない場合も404。見せない相手は空の一覧で、ここ暇がない相手と同じ応答
+- [ ] `GET /friends/{friendId}`：友達なら表示名と公開設定、友達でない・片方向なら404
 - [ ] 他人のIDでは取得・更新できない：Aのトークンで、Bの枠の取り消し、Bのルールの削除・例外の操作ができない。BがAに見せていない枠は、Aのどの一覧にも出ない
 - [ ] フロント：プリセットのボタンで作る、自分の一覧の取り消し（楽観的更新、失敗時に元に戻る）、「みんな」の時刻の表示（「夜 19:00〜23:00」）、重なりの印
 
 ### E2Eテスト（対象にする利用者の流れ）
 - [ ] ユーザーAが「夜」のボタンでここ暇を作ると、友達のBの「みんな」に「夜 19:00〜23:00」とAの表示名が出る
-- [ ] AがBを「見せない」にすると、Bの「みんな」と「友達の詳細」からAの枠が消え、ここ暇がない友達と同じ表示になる
+- [ ] AがBを「見せない」にすると、Bの「みんな」と「友達の詳細」からAの枠が消え、ここ暇がない友達Cの「友達の詳細」と同じ表示（「見えているここ暇はありません」）になる
+- [ ] 既存の `e2e/auth.spec.ts` のログアウトの流れを、友達タブの「アカウント」から押すように直す
 - [ ] Aが毎週のくり返しを作ると自分の一覧に出て、「この日だけ外す」とその日だけ消える
 
 ## スコープ外
@@ -178,7 +196,7 @@
 1. 「みんな」と「友達の詳細」で、友達の枠に作った方法（手動かくり返しか）を返さない方針でよいか。くり返しの有無から生活のパターンを推測させないため。`label`（昼・夕方・夜）は表示に必要なので返す
 2. 自分の手動の枠どうしの重なりは409で拒否し、手動とくり返しの重なりは許して友達に返すときにまとめる、でよいか
 3. プリセットとくり返しは日をまたがない（0:00〜24:00の中）でよいか。夜を「22:00〜翌2:00」のようにしたい場合は、開始〜終了指定の手動の枠で作る
-4. ここ暇を作れる範囲は今日から60日先まで、手動の未来の枠は1人100個、くり返しのルールは1人20個、でよいか
+4. ここ暇を作れる範囲は現在から60日先まで、手動の未来の枠は1人100個、くり返しのルールは1人20個（どちらも超えたら409）、でよいか
 5. 時刻は15分単位、長さは30分以上24時間以下でよいか
 6. 「みんな」の表示範囲は今日から7日分（APIは最長14日）でよいか
 7. ホーム（`/`）を「みんな」に置き換え、T-01の仮のホームのログアウトのボタンは友達タブの下（または設定）に移す、でよいか
@@ -187,3 +205,4 @@
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-10-07 | 初版 | T-03の仕様書PR |
+| 2026-10-07 | 仕様レビューを反映：規約からの例外（件数の上限と重なりは409、Location、Idempotency-Key）、コンテキストの境界の例外、範囲の判定、展開のタイムゾーン、`24:00`、例外の日付の検証と一覧、`GET /friends/{friendId}`、追加の原子性、「みんな」のカーソル、削除時のCASCADE、ログアウトのボタンの移動、テストの追加 | 仕様レビュー |

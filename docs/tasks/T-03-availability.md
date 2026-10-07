@@ -44,6 +44,6 @@
 - docs/specs/T-03-availability.md（仕様書PRとして先に追加し、マージ後に実装PRを作る）
 
 ## 参考
-- 画面：docs/design/ の「ここ暇」「みんな」「友達の詳細」
+- 画面：docs/design/README.md の画面一覧（モックはリンク先）の「ここ暇」「みんな」「友達の詳細」
 - 関係するスキル：invitation-domain（用語）、api-conventions（日時・タイムゾーン・ページング）、new-api-endpoint、data-fetching、e2e-testing
 - T-02の仕様書の申し送り：見せてよいかの判定は、友達関係の両方向の行がそろっていることを条件にする
