@@ -15,6 +15,17 @@ export const keys = {
     everyone: (from: string) => ["availability", "everyone", from] as const,
     friend: (id: string, from: string) => ["availability", "friend", id, from] as const,
   },
+  // 誘いと成立した予定。返答で両方が変わるので、まとめて無効にできるよう all を持つ
+  invites: {
+    all: () => ["invites"] as const,
+    list: (box: "received" | "sent") => ["invites", "list", box] as const,
+    detail: (id: string) => ["invites", "detail", id] as const,
+  },
+  meetups: {
+    all: () => ["meetups"] as const,
+    list: () => ["meetups", "list"] as const,
+    detail: (id: string) => ["meetups", "detail", id] as const,
+  },
   inviteLinks: {
     list: () => ["invite-links", "list"] as const,
   },

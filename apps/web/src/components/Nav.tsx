@@ -21,6 +21,7 @@ export function Link({ to, className, current, children }: LinkProps) {
 const TABS = [
   { to: "/", label: "みんな" },
   { to: "/availability", label: "ここ暇" },
+  { to: "/invites", label: "誘い" },
   { to: "/friends", label: "友達" },
 ];
 

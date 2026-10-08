@@ -51,7 +51,8 @@ export function formatDate(date: string) {
   return `${m}/${d}（${weekday}）`;
 }
 
-const formatTime = (instant: string) => timeFormat.format(new Date(instant));
+/** 瞬間 → 現地の時刻（HH:MM） */
+export const formatTime = (instant: string | number) => timeFormat.format(new Date(instant));
 
 /** 「夜 19:00〜23:00」。プリセット名がなければ時刻だけ。終了が翌日の 0:00 なら 24:00、それ以外で日をまたぐなら日付を添える */
 export function formatSlot(slot: { startsAt: string; endsAt: string; label: PresetName | null }) {

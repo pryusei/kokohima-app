@@ -5,6 +5,10 @@ import { AvailabilityPage } from "./pages/AvailabilityPage";
 import { EveryonePage } from "./pages/EveryonePage";
 import { FriendDetailPage } from "./pages/FriendDetailPage";
 import { FriendsPage } from "./pages/FriendsPage";
+import { InviteDetailPage } from "./pages/InviteDetailPage";
+import { InviteNewPage } from "./pages/InviteNewPage";
+import { InvitesPage } from "./pages/InvitesPage";
+import { MeetupDetailPage } from "./pages/MeetupDetailPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { navigate, useLocation } from "./router";
@@ -55,6 +59,12 @@ export function App() {
 
   if (pathname === "/friends") return <FriendsPage />;
   if (pathname === "/availability") return <AvailabilityPage />;
+  if (pathname === "/invites") return <InvitesPage />;
+  if (pathname === "/invites/new") return <InviteNewPage key={search} />;
+  const invite = /^\/invites\/([^/]+)$/.exec(pathname);
+  if (invite?.[1]) return <InviteDetailPage key={invite[1]} inviteId={decodeURIComponent(invite[1])} />;
+  const meetup = /^\/meetups\/([^/]+)$/.exec(pathname);
+  if (meetup?.[1]) return <MeetupDetailPage key={meetup[1]} meetupId={decodeURIComponent(meetup[1])} />;
   const friend = /^\/friends\/([^/]+)$/.exec(pathname);
   if (friend?.[1]) return <FriendDetailPage key={friend[1]} friendId={decodeURIComponent(friend[1])} />;
   return <EveryonePage />;
