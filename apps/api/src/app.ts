@@ -5,6 +5,7 @@ import type { AppDeps, AppEnv } from "./env";
 import { problem } from "./http/problem";
 import { availabilityRoutes } from "./availability/routes";
 import { identityRoutes } from "./identity/routes";
+import { invitationRoutes } from "./invitation/routes";
 import { socialRoutes } from "./social/routes";
 
 export { problem };
@@ -35,6 +36,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
   app.route("/api/v1", identityRoutes());
   app.route("/api/v1", socialRoutes());
   app.route("/api/v1", availabilityRoutes());
+  app.route("/api/v1", invitationRoutes());
 
   app.notFound((c) => problem(c.get("requestId"), 404, "not_found", "Not Found"));
 
