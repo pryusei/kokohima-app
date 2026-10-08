@@ -6,6 +6,7 @@ import { formatDate, formatSlot, localDateOf } from "../availability/format";
 
 const QUARTER_MS = 15 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_LENGTH_MS = 30 * 60 * 1000;
 
 export const KIND_LABELS: Record<InviteKind, string> = { asobo: "あそぼ", kokodou: "ここどう？" };
 
@@ -49,10 +50,12 @@ export const nextQuarter = (now: number) => Math.floor(now / QUARTER_MS) * QUART
 
 /**
  * 「みんな」の枠から誘うときの初期値。開始は次の15分の区切りと枠の開始の遅いほう、
- * 終了は枠の終了と開始から24時間の早いほう（「今から暇」の枠や24時間を超える枠でも、そのまま送れる時間にする）
+ * 終了は枠の終了と開始から24時間の早いほう（「今から暇」の枠や24時間を超える枠でも、そのまま送れる時間にする）。
+ * 調整した時間が30分未満になる（終わりかけの）枠は、送れる時間を作れないので null（「この時間に誘う」を出さない）
  */
 export function initialRange(slot: { startsAt: string; endsAt: string }, now: number) {
   const startsAt = Math.max(nextQuarter(now), Date.parse(slot.startsAt));
   const endsAt = Math.min(Date.parse(slot.endsAt), startsAt + DAY_MS);
+  if (endsAt - startsAt < MIN_LENGTH_MS) return null;
   return { startsAt: new Date(startsAt).toISOString(), endsAt: new Date(endsAt).toISOString() };
 }

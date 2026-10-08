@@ -61,6 +61,14 @@ describe("表示の関数", () => {
       startsAt: "2026-10-10T00:15:00.000Z",
       endsAt: "2026-10-10T02:00:00.000Z",
     });
+    // 終わりかけの枠：調整すると30分未満（15分・長さ0）になるので null
+    const late = Date.parse("2026-10-10T01:50:00Z");
+    expect(initialRange({ startsAt: "2026-10-10T00:00:00Z", endsAt: "2026-10-10T02:15:00Z" }, late)).toBeNull();
+    expect(initialRange({ startsAt: "2026-10-10T00:00:00Z", endsAt: "2026-10-10T02:00:00Z" }, late)).toBeNull();
+    expect(initialRange({ startsAt: "2026-10-10T00:00:00Z", endsAt: "2026-10-10T02:30:00Z" }, late)).toEqual({
+      startsAt: "2026-10-10T02:00:00.000Z",
+      endsAt: "2026-10-10T02:30:00.000Z",
+    });
     // まとめて24時間を超えた枠
     expect(initialRange({ startsAt: "2026-10-10T10:00:00Z", endsAt: "2026-10-11T14:00:00Z" }, now)).toEqual({
       startsAt: "2026-10-10T10:00:00.000Z",
@@ -88,6 +96,31 @@ describe("表示の関数", () => {
     for (const s of ["declined", "expired", "skipped", "cancelled", "pending"] as const) {
       expect(statusClass(s)).not.toMatch(/red|rose/);
     }
+  });
+});
+
+describe("「みんな」から誘う", () => {
+  it("枠ごとに「この時間に誘う」を出し、終わりかけ（30分未満しか残らない）の枠には出さない", async () => {
+    window.history.replaceState(null, "", "/");
+    const slot = (startsAt: string, endsAt: string) => ({ friend, startsAt, endsAt, label: null, overlapsMine: false });
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/friend-availabilities": json({
+        items: [
+          slot("2026-10-09T23:00:00.000Z", "2026-10-10T00:15:00.000Z"),
+          slot("2026-10-10T10:00:00.000Z", "2026-10-10T14:00:00.000Z"),
+        ],
+        nextCursor: null,
+      }),
+    });
+    renderApp();
+    const ending = (await screen.findByText(/08:00〜09:15/)).closest("li") as HTMLElement;
+    expect(within(ending).queryByRole("link", { name: "この時間に誘う" })).toBeNull();
+    const later = screen.getByText("19:00〜23:00").closest("li") as HTMLElement;
+    expect(within(later).getByRole("link", { name: "この時間に誘う" })).toHaveAttribute(
+      "href",
+      `/invites/new?friend=${FRIEND_ID}&startsAt=2026-10-10T10%3A00%3A00.000Z&endsAt=2026-10-10T14%3A00%3A00.000Z`,
+    );
   });
 });
 
