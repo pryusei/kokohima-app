@@ -13,6 +13,7 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 | 誘い（個別） | DirectInvite | 枠と重なれば kind=asobo（あそぼ）、重ならなければ kind=kokodou（ここどう？） |
 | 募集 | Broadcast | 複数人への「暇な人いる？」 |
 | 行く／今回は難しい／この時間なら | Accept / Decline / CounterProposal | 返答は3種のみ |
+| 決める／見送る（この時間なら） | Decide（accept）/ Skip | 「この時間なら」への送信者の決定（docs/specs/T-04-direct-invite.md） |
 | 決める | Decide | 募集の締め |
 | 成立 | Meetup | 会うことが決まった予定 |
 | やっぱり難しい | MeetupCancel | 成立後の定型キャンセル |
@@ -20,9 +21,11 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 
 ## DirectInvite の状態
 pending →（Accept）confirmed → cancelled（やっぱり難しい）
-pending →（CounterProposal）countered →（送信者が決める）confirmed ／（見送る）skipped
+pending →（CounterProposal）counter_proposed →（送信者が決める）confirmed ／（見送る）skipped ／（決めないまま代わりの時間の開始）expired
 pending →（Decline、またはここ暇の自動取り消し）declined
 pending →（期限）expired
+
+- `expired` は保存せず、読むときに決める（期限と代わりの時間の開始で判定する）
 
 不変条件：
 - 送れるのは友達だけ。自分には送れない
@@ -41,6 +44,9 @@ open →（期限）expired（誰にも通知しない。再募集できる）
 ## ドメインイベント
 | イベント | 受け取る側 |
 | --- | --- |
+| DirectInviteSent | 受信者に通知（T-07） |
+| DirectInviteDeclined・DirectInviteCounterProposed | 送信者に通知（T-07） |
+| DirectInviteSkipped | 受信者に通知（T-07） |
 | AvailabilityCancelledByCalendar | 未返答の誘いを自動で declined にし、本人に通知 |
 | MeetupConfirmed | カレンダーへ書き込み、通知 |
 | BroadcastDecided | Meetup作成、参加者全員に名前を開示して通知 |

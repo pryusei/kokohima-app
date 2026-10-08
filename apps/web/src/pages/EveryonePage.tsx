@@ -3,9 +3,28 @@ import { useQuery } from "@tanstack/react-query";
 import { formatDate, formatSlot, localDateOf } from "../availability/format";
 import { everyoneQuery, today } from "../availability/queries";
 import { Link, Nav } from "../components/Nav";
+import { initialRange } from "../invitations/format";
 import { displayNameOf } from "./FriendsPage";
 
 // ホーム＝「みんな」（仮。docs/specs/T-03-availability.md「画面」）
+
+/** 枠の時間を入れた誘いの作成へ（開始は次の15分の区切り以降、長さは24時間まで）。終わりかけの枠は null */
+function inviteLink(item: FriendAvailability) {
+  const range = initialRange(item, Date.now());
+  if (!range) return null;
+  const params = new URLSearchParams({ friend: item.friend.id, startsAt: range.startsAt, endsAt: range.endsAt });
+  return `/invites/new?${params.toString()}`;
+}
+
+function InviteFromSlot({ item }: { item: FriendAvailability }) {
+  const to = inviteLink(item);
+  if (!to) return null;
+  return (
+    <Link to={to} className="self-start text-sm underline">
+      この時間に誘う
+    </Link>
+  );
+}
 
 function groupByDate(items: FriendAvailability[]) {
   const groups = new Map<string, FriendAvailability[]>();
@@ -51,6 +70,7 @@ export function EveryonePage() {
                   </Link>
                   <span>{formatSlot(item)}</span>
                   {item.overlapsMine && <span className="text-sm text-amber-800">自分のここ暇と重なっています</span>}
+                  <InviteFromSlot item={item} />
                 </li>
               ))}
             </ul>

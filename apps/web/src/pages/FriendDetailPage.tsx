@@ -122,6 +122,11 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
           ))}
         </ul>
       </section>
+      {friend.data && (
+        <Link to={`/invites/new?friend=${encodeURIComponent(friendId)}`} className="self-start rounded-lg bg-amber-300 px-4 py-2">
+          ここどう？と誘う
+        </Link>
+      )}
       {friend.data && <Settings friend={friend.data} />}
     </main>
   );
