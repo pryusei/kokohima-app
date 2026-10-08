@@ -1,6 +1,6 @@
 # T-04 仕様書：個別の誘い（送信・返答・成立）
 
-- 状態：合意済み
+- 状態：実装済み
 - タスク票：docs/tasks/T-04-direct-invite.md
 - 関係する要件：F-10、F-12、F-13、F-14、F-15（URLの保存とドメインの表示まで）、要求定義書「状態遷移とビジネスルール」「ドメイン設計」「悪用対策と運用」、NF-03
 
@@ -82,8 +82,8 @@
 
 | テーブル | 列 | 備考 |
 | --- | --- | --- |
-| `direct_invites` | `id`（UUID、PK）、`sender_id`（FK users、`ON DELETE CASCADE`）、`recipient_id`（同）、`kind`、`starts_at`、`ends_at`、`area`、`message`、`url`（いずれも null可）、`status`、`expires_at`、`counter_starts_at`・`counter_ends_at`（null可）、`responded_at`・`decided_at`（null可）、`created_at` | INDEX(`sender_id`, `created_at`, `id`)、INDEX(`recipient_id`, `created_at`, `id`)、INDEX(`sender_id`, `recipient_id`, `starts_at`)（同じ誘いの判定）。`status` は `pending`・`counter_proposed`・`confirmed`・`declined`・`skipped`・`cancelled` |
-| `meetups` | `id`（UUID、PK）、`direct_invite_id`（FK direct_invites、`ON DELETE CASCADE`、UNIQUE。募集の予定のため null可）、`starts_at`、`ends_at`、`status`（`confirmed`・`cancelled`）、`created_at`、`cancelled_at`（null可） | INDEX(`starts_at`, `id`) |
+| `direct_invites` | `id`（UUID、PK）、`sender_id`（FK users、`ON DELETE CASCADE`）、`recipient_id`（同）、`kind`、`starts_at`、`ends_at`、`area`、`message`、`url`（いずれも null可）、`status`、`expires_at`、`counter_starts_at`・`counter_ends_at`（null可）、`responded_at`・`decided_at`（null可）、`transition_id`（null可。直近の遷移の値）、`created_at` | INDEX(`sender_id`, `created_at`, `id`)、INDEX(`recipient_id`, `created_at`, `id`)、INDEX(`sender_id`, `recipient_id`, `starts_at`)（同じ誘いの判定）。`status` は `pending`・`counter_proposed`・`confirmed`・`declined`・`skipped`・`cancelled` |
+| `meetups` | `id`（UUID、PK）、`direct_invite_id`（FK direct_invites、`ON DELETE CASCADE`、UNIQUE。募集の予定のため null可）、`starts_at`、`ends_at`、`status`（`confirmed`・`cancelled`）、`transition_id`（null可）、`created_at`、`cancelled_at`（null可） | INDEX(`starts_at`, `id`) |
 | `meetup_participants` | `meetup_id`（FK、`ON DELETE CASCADE`）、`user_id`（FK users、`ON DELETE CASCADE`） | PK(`meetup_id`, `user_id`)、INDEX(`user_id`, `meetup_id`) |
 
 - 断りの理由の列は作らない
@@ -117,8 +117,8 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
   - 保存した `status` が、その操作に必要な状態（返答は `pending`、決定は `counter_proposed`、キャンセルは `confirmed`）でなければ409 `invalid_state`（例：`pending` への決定、`counter_proposed` への返答）
   - 必要な状態のままで、時間の条件を過ぎていれば409 `expired`
 - batch の後続の文（予定・参加者・outbox の INSERT、元の誘いの UPDATE）は、`changes()` ではなく「この遷移で書いた状態が今そこにあるか」を `EXISTS` で判定して書く。`changes()` は直前の1つの文の行数だけを返すので、参加者2人を1つの INSERT で書くと次の文の `changes() = 1` が偽になるなど、文の並びと行数に依存して壊れるため
-  - 例（返答の `accept`）：`WHERE EXISTS (SELECT 1 FROM direct_invites WHERE id = :inviteId AND status = 'confirmed' AND responded_at = :now)`。同じ batch（トランザクション）の中なので、最初の UPDATE が効いたかどうかを確実に判定できる
-  - 決定は `decided_at = :now`、キャンセルは `meetups.cancelled_at = :now` を条件に含める（同じ時刻の別の遷移と取り違えないよう、遷移ごとに書き込む時刻の列で見分ける）
+  - 遷移ごとにランダムな `transition_id` を UPDATE で書き、後続の文はそれを条件にする。例（返答の `accept`）：`WHERE EXISTS (SELECT 1 FROM direct_invites WHERE id = :inviteId AND status = 'confirmed' AND transition_id = :tid)`。同じ batch（トランザクション）の中なので、最初の UPDATE が効いたかどうかを確実に判定できる
+  - 時刻の列（`responded_at = :now` など）で見分けると、同じミリ秒に届いた2つのリクエスト（同時の「行く」）を取り違え、予定が2つできかけるため、遷移ごとの値にした
   - 失敗した遷移では、後続の文はどれも何も書かない
 - `accept`（返答）・`accept`（決定）：誘いを `confirmed` にし、成立した予定（`meetups`）と参加者2人（`meetup_participants`）を作り、outbox に `MeetupConfirmed`（`meetupId`・`inviteId`・参加者のID）を書く。これを1つの batch で行い、誘いの更新が0行なら後続の文も何もしない（上の `EXISTS` の書き方）
   - 予定の時間は、返答の `accept` なら誘いの時間、決定の `accept` なら代わりの時間
@@ -178,32 +178,32 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] domain：状態遷移の表（許される遷移と、許されない遷移すべて。`pending` への決定、`counter_proposed` への返答を含む）、期限から `expired` を決める関数、`expiresAt` の計算（開始日時で頭打ち）、時刻の検証、`kind` の判定（1分以上の重なり、接するだけは `kokodou`）
-- [ ] 送信：友達に送れる。201 と `Location`、`counterProposal`・`meetupId` などが `null` でも項目が省かれない。`kind` が見えている枠で決まる（接するだけは `kokodou`）。相手が「見せない」のときは、ここ暇がない相手と同じ `kokodou`。送った後に相手がここ暇を変えても `kind` は変わらない
-- [ ] 送信の入力検証：過去・60日より先・15分単位でない・30分未満・24時間超、文字数の上限（コードポイント）、`http`・`https` 以外や認証情報つきのURL、制御文字、ひとことの改行（5個まで可、6個で400）、`expiresIn` の省略で `until_start`、`expiresAt` が開始日時で頭打ち
-- [ ] 送信の404：友達でない・存在しない・自分・片方向の行しかない相手が、どれも同じ応答。解除した元友達に、残っている同じ誘いと同じ時間で送っても409でなく404（判定の順番）
-- [ ] 送信上限：20件目まで送れ、21件目が429と `Retry-After`（いちばん古い送信が24時間を過ぎるまでの秒数）。断られた・期限切れの誘いも数える。24時間たてば送れる。同時に送っても20件を超えない
-- [ ] 同じ相手・同じ時間の生きている誘いは409。同時に2回送っても1つしかできない。期限切れになった同じ誘いがあっても送り直せる
-- [ ] 一覧：受信・送信の振り分け、作成日時の新しい順とカーソル、他人の誘いが出ない
-- [ ] 返答：`accept` で予定と参加者ができる、`decline`（`reason` を付けると400）、`counter`（時間の検証、元と同じ時間は400、2回目はできない）
-- [ ] 決定：`accept` で代わりの時間の予定ができる、`skip`
-- [ ] 期限：期限後の返答は409 `expired`、一覧と詳細で `expired`。代わりの時間の開始後の決定は409 `expired`
-- [ ] 状態が変わった後の返答・決定・キャンセルは409 `invalid_state`（`expired` より先に判定する）
-- [ ] 同時に返答（`accept` と `decline` など）しても、状態は1回だけ進み、予定は1つしかできない
-- [ ] 成立した予定：一覧（これからのものだけ、開始日時と `id` の順、カーソル）、詳細、「やっぱり難しい」（元の誘いも `cancelled`）、開始後は409 `expired`、2回目は409 `invalid_state`
-- [ ] batch の後続の文：成立で参加者が2行・outbox が1行書かれる。誘いの UPDATE が0行なら、予定・参加者・outbox はどれも0行。キャンセルで元の誘いと outbox が書かれ、2回目は何も書かれない
-- [ ] 送信の読み直しでどの条件にも当てはまらないとき、1回だけやり直す（やり直しで書ければ201、だめなら409 `invalid_state`）
-- [ ] フロント：リンクのドメインを punycode の `hostname` で表示する
-- [ ] outbox：遷移ごとのイベントが状態の更新と同じ batch で書かれ、payload が上の形で、ひとこと・エリア・URL・時刻を含めない。期限切れでは書かない。失敗した送信・遷移（404・409・429）では書かない
-- [ ] 友達を解除しても、既存の誘いの詳細が見られ、返答できる
-- [ ] 他人のIDでは取得・更新できない：参加者でない人の詳細・返答・決定・予定の詳細・キャンセルは404。受信者が決定、送信者が返答しても404
-- [ ] フロント：誘いの作成（「みんな」の枠からの初期値（開始が過去の枠・24時間を超える枠の丸め）、友達の詳細から相手だけが入る、「あそぼ」／「ここどう？」の表示、送れなかったときの文言）、返答の楽観的更新と失敗時の戻し、状態の静かな表示（赤を使わない）
+- [x] domain：状態遷移の表（許される遷移と、許されない遷移すべて。`pending` への決定、`counter_proposed` への返答を含む）、期限から `expired` を決める関数、`expiresAt` の計算（開始日時で頭打ち）、時刻の検証、`kind` の判定（1分以上の重なり、接するだけは `kokodou`）
+- [x] 送信：友達に送れる。201 と `Location`、`counterProposal`・`meetupId` などが `null` でも項目が省かれない。`kind` が見えている枠で決まる（接するだけは `kokodou`）。相手が「見せない」のときは、ここ暇がない相手と同じ `kokodou`。送った後に相手がここ暇を変えても `kind` は変わらない
+- [x] 送信の入力検証：過去・60日より先・15分単位でない・30分未満・24時間超、文字数の上限（コードポイント）、`http`・`https` 以外や認証情報つきのURL、制御文字、ひとことの改行（5個まで可、6個で400）、`expiresIn` の省略で `until_start`、`expiresAt` が開始日時で頭打ち
+- [x] 送信の404：友達でない・存在しない・自分・片方向の行しかない相手が、どれも同じ応答。解除した元友達に、残っている同じ誘いと同じ時間で送っても409でなく404（判定の順番）
+- [x] 送信上限：20件目まで送れ、21件目が429と `Retry-After`（いちばん古い送信が24時間を過ぎるまでの秒数）。断られた・期限切れの誘いも数える。24時間たてば送れる。同時に送っても20件を超えない
+- [x] 同じ相手・同じ時間の生きている誘いは409。同時に2回送っても1つしかできない。期限切れになった同じ誘いがあっても送り直せる
+- [x] 一覧：受信・送信の振り分け、作成日時の新しい順とカーソル、他人の誘いが出ない
+- [x] 返答：`accept` で予定と参加者ができる、`decline`（`reason` を付けると400）、`counter`（時間の検証、元と同じ時間は400、2回目はできない）
+- [x] 決定：`accept` で代わりの時間の予定ができる、`skip`
+- [x] 期限：期限後の返答は409 `expired`、一覧と詳細で `expired`。代わりの時間の開始後の決定は409 `expired`
+- [x] 状態が変わった後の返答・決定・キャンセルは409 `invalid_state`（`expired` より先に判定する）
+- [x] 同時に返答（`accept` と `decline` など）しても、状態は1回だけ進み、予定は1つしかできない
+- [x] 成立した予定：一覧（これからのものだけ、開始日時と `id` の順、カーソル）、詳細、「やっぱり難しい」（元の誘いも `cancelled`）、開始後は409 `expired`、2回目は409 `invalid_state`
+- [x] batch の後続の文：成立で参加者が2行・outbox が1行書かれる。誘いの UPDATE が0行なら、予定・参加者・outbox はどれも0行。キャンセルで元の誘いと outbox が書かれ、2回目は何も書かれない
+- [x] 送信の読み直しでどの条件にも当てはまらないとき、1回だけやり直す（やり直しで書ければ201、だめなら409 `invalid_state`）
+- [x] フロント：リンクのドメインを punycode の `hostname` で表示する
+- [x] outbox：遷移ごとのイベントが状態の更新と同じ batch で書かれ、payload が上の形で、ひとこと・エリア・URL・時刻を含めない。期限切れでは書かない。失敗した送信・遷移（404・409・429）では書かない
+- [x] 友達を解除しても、既存の誘いの詳細が見られ、返答できる
+- [x] 他人のIDでは取得・更新できない：参加者でない人の詳細・返答・決定・予定の詳細・キャンセルは404。受信者が決定、送信者が返答しても404
+- [x] フロント：誘いの作成（「みんな」の枠からの初期値（開始が過去の枠・24時間を超える枠の丸め）、友達の詳細から相手だけが入る、「あそぼ」／「ここどう？」の表示、送れなかったときの文言）、返答の楽観的更新と失敗時の戻し、状態の静かな表示（赤を使わない）
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] AがBの見えている枠から誘う（「あそぼ」）→ Bが「行く」→ AとBの「成立」に予定が出る
-- [ ] AがCに、Cのここ暇がない時間で誘う（「ここどう？」）→ Cが「この時間なら」→ Aが「決める」→ 双方に成立
-- [ ] AがBに誘う → Bが「今回は難しい」→ Aの送信の一覧に「今回は難しいみたい」と静かに出る
-- [ ] 成立した予定で「やっぱり難しい」→ 双方の「成立」から消え、誘いの詳細に「やっぱり難しくなりました」
+- [x] AがBの見えている枠から誘う（「あそぼ」）→ Bが「行く」→ AとBの「成立」に予定が出る
+- [x] AがCに、Cのここ暇がない時間で誘う（「ここどう？」）→ Cが「この時間なら」→ Aが「決める」→ 双方に成立
+- [x] AがBに誘う → Bが「今回は難しい」→ Aの送信の一覧に「今回は難しいみたい」と静かに出る
+- [x] 成立した予定で「やっぱり難しい」→ 双方の「成立」から消え、誘いの詳細に「やっぱり難しくなりました」
 
 ## スコープ外
 - 募集（T-05）。送信上限への募集の算入は T-05 で行う
@@ -233,3 +233,4 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
 | 2026-10-08 | 初版 | T-04の仕様書PR |
 | 2026-10-08 | 仕様レビューを反映：同じ誘いの判定から期限切れを除く、送信の判定の順番、outbox の条件付きの書き込みと payload、FK の CASCADE、`counter_proposed` への名前の変更、保存した状態での409の判定、URLに http を許す、ひとことの改行、作成画面の初期値と文言、テストの追加。確認事項を決定事項にした（8を追加） | 仕様レビュー、確認事項への回答 |
 | 2026-10-08 | batch の後続の文を `changes()` でなく `EXISTS` で判定する、送信の読み直しで当てはまらないときの1回のやり直し、リンクのドメインを punycode で表示。決定事項8を合意。状態を合意済みにした | 仕様書PRのレビュー（pryusei/kokohima-app#13） |
+| 2026-10-08 | batch の後続の文の判定を、時刻の列でなく遷移ごとの `transition_id` にした（同じミリ秒の同時の返答を取り違えないため）。状態を実装済みにした | 実装PR |

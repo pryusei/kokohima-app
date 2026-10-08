@@ -74,7 +74,7 @@ function KindPreview({ friendId, date, startsAt, endsAt }: { friendId: string; d
   );
   return (
     <p className={overlaps ? "font-bold text-amber-800" : "font-bold text-slate-700"}>
-      {KIND_LABELS[overlaps ? "asobo" : "kokodou"]}
+      <span>{KIND_LABELS[overlaps ? "asobo" : "kokodou"]}</span>
       <span className="ml-2 text-sm font-normal text-slate-600">
         {overlaps ? "相手のここ暇と重なっています" : "相手のここ暇とは重なっていません"}
       </span>
