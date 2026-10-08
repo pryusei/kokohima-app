@@ -193,3 +193,26 @@ export async function unfriend(ctx: Ctx, viewerId: string, friendId: string) {
   await repo.deleteFriendship(db, viewerId, friendId);
   return true;
 }
+
+/** 友達ひとり（両方向の行があるときだけ）。友達でなければ null */
+export async function getFriend(ctx: Ctx, viewerId: string, friendId: string) {
+  const db = repo.db(ctx.env.DB);
+  const [mine, theirs] = await Promise.all([
+    repo.findFriendship(db, viewerId, friendId),
+    repo.findFriendship(db, friendId, viewerId),
+  ]);
+  if (!mine || !theirs) return null;
+  const [profiles, sharing] = await Promise.all([
+    getPublicProfiles(ctx.env, [friendId]),
+    getSharingFor(ctx.env.DB, viewerId, [friendId]),
+  ]);
+  const profile = profiles.get(friendId);
+  if (!profile) return null;
+  return {
+    id: profile.id,
+    displayName: profile.displayName,
+    avatarUrl: profile.avatarUrl,
+    sharesMyAvailability: sharing.get(friendId) ?? true,
+    friendsSince: iso(mine.createdAt),
+  };
+}

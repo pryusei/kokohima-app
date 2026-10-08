@@ -11,6 +11,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, apiSend } from "../api/client";
 import { keys } from "../api/keys";
+import { useAuth } from "../auth/AuthProvider";
+import { Link, Nav } from "../components/Nav";
 
 // 友達タブ（仮。最終的なデザインはデザインのタスクで差し替える）
 // docs/specs/T-02-friends.md「画面」
@@ -56,7 +58,9 @@ function FriendRow({ friend }: { friend: Friend }) {
   const name = displayNameOf(friend.displayName);
   return (
     <li className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
-      <span className="font-bold">{name}</span>
+      <Link to={`/friends/${friend.id}`} className="font-bold underline">
+        {name}
+      </Link>
       <label className="flex items-center gap-2">
         <input
           type="checkbox"
@@ -218,17 +222,41 @@ function InviteLinks() {
   );
 }
 
+/** ログアウト（T-03でホームから移した。docs/specs/T-03-availability.md「画面」） */
+function Account() {
+  const { logout, logoutAll } = useAuth();
+  const [failed, setFailed] = useState(false);
+  const me = useQuery({ queryKey: keys.me(), queryFn: () => apiGet("/api/v1/me", meResponseSchema) });
+  const run = (action: () => Promise<boolean>) => async () => {
+    setFailed(false);
+    if (!(await action())) setFailed(true);
+  };
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-bold">アカウント</h2>
+      {me.data && <p className="text-slate-600">{me.data.displayName ?? "表示名は未設定です"}</p>}
+      {failed && (
+        <p role="status" className="text-slate-600">
+          ログアウトできませんでした。通信状態を確認して、もう一度お試しください。
+        </p>
+      )}
+      <button type="button" className="rounded-lg border border-slate-300 px-4 py-3" onClick={run(logout)}>
+        ログアウト
+      </button>
+      <button type="button" className="rounded-lg border border-slate-300 px-4 py-3" onClick={run(logoutAll)}>
+        すべての端末からログアウト
+      </button>
+    </section>
+  );
+}
+
 export function FriendsPage() {
   const friends = useQuery({ queryKey: keys.friends.list(), queryFn: () => apiGet("/api/v1/friends", friendPageSchema) });
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">友達</h1>
-        <a className="underline" href="/">
-          ホーム
-        </a>
-      </div>
+      <h1 className="text-2xl font-bold">友達</h1>
+      <Nav />
       <InviteLinks />
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-bold">友達一覧</h2>
@@ -237,6 +265,7 @@ export function FriendsPage() {
           {friends.data?.items.map((f) => <FriendRow key={f.id} friend={f} />)}
         </ul>
       </section>
+      <Account />
     </main>
   );
 }

@@ -72,7 +72,7 @@ export async function apiGet<T>(path: string, schema: ZodType<T>): Promise<T> {
 
 /** JSON を送り、レスポンスを検証して返す（本文のない 204 なら undefined） */
 export async function apiSend<T>(
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body: unknown,
   schema?: ZodType<T>,

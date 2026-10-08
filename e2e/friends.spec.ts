@@ -1,27 +1,7 @@
-import type { Browser, Page } from "@playwright/test";
-import { expect, loginAs, test } from "./fixtures";
+import { createInviteUrl, expect, friendList, loginAs, newUser, test, uniqueName } from "./fixtures";
 
 // T-02 友達と招待リンク（docs/specs/T-02-friends.md「E2Eテスト」）
 // 相手を見分けるため、テスト用ユーザーに一意な表示名を付ける
-
-const uniqueName = (prefix: string) => `${prefix}${crypto.randomUUID().slice(0, 6)}`;
-
-async function newUser(browser: Browser, prefix: string) {
-  const context = await browser.newContext();
-  const displayName = uniqueName(prefix);
-  await loginAs(context, prefix.toLowerCase(), displayName);
-  return { context, page: await context.newPage(), displayName };
-}
-
-async function createInviteUrl(page: Page) {
-  await page.goto("/friends");
-  await page.getByRole("button", { name: "招待リンクを作る" }).click();
-  const url = await page.getByLabel("招待リンクのURL").inputValue();
-  expect(url).toMatch(/\/invite#t=/);
-  return url;
-}
-
-const friendList = (page: Page) => page.getByRole("list", { name: "友達一覧" });
 
 test("リンクを開いて「友達になる」と、双方の友達一覧に相手が出る", async ({ browser }) => {
   const a = await newUser(browser, "A");

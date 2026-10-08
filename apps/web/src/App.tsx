@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { useAuth } from "./auth/AuthProvider";
 import { AuthCompletePage } from "./pages/AuthCompletePage";
+import { AvailabilityPage } from "./pages/AvailabilityPage";
+import { EveryonePage } from "./pages/EveryonePage";
+import { FriendDetailPage } from "./pages/FriendDetailPage";
 import { FriendsPage } from "./pages/FriendsPage";
-import { HomePage } from "./pages/HomePage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { navigate, useLocation } from "./router";
@@ -52,5 +54,8 @@ export function App() {
   }
 
   if (pathname === "/friends") return <FriendsPage />;
-  return <HomePage />;
+  if (pathname === "/availability") return <AvailabilityPage />;
+  const friend = /^\/friends\/([^/]+)$/.exec(pathname);
+  if (friend?.[1]) return <FriendDetailPage key={friend[1]} friendId={decodeURIComponent(friend[1])} />;
+  return <EveryonePage />;
 }

@@ -104,6 +104,13 @@ export function socialRoutes() {
     }
   });
 
+  app.get("/friends/:friendId", requireAuth, async (c) => {
+    const friendId = uuid.safeParse(c.req.param("friendId"));
+    if (!friendId.success) return notFound(c);
+    const friend = await social.getFriend(ctx(c), c.var.viewer.userId, friendId.data);
+    return friend ? c.json(friend) : notFound(c);
+  });
+
   app.patch("/friends/:friendId", requireAuth, async (c) => {
     const friendId = uuid.safeParse(c.req.param("friendId"));
     if (!friendId.success) return notFound(c);

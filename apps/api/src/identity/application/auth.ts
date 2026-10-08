@@ -218,3 +218,8 @@ export async function updateDisplayName(ctx: Ctx, viewerId: string, displayName:
 export async function getPublicProfiles(env: Bindings, userIds: string[]) {
   return repo.findPublicProfiles(repo.db(env.DB), userIds);
 }
+
+/** 他のコンテキスト向け：閲覧者自身のタイムゾーン（IANA）。行がなければ初期値 */
+export async function getUserTimezone(env: Bindings, userId: string) {
+  return (await repo.findTimezone(repo.db(env.DB), userId)) ?? "Asia/Tokyo";
+}
