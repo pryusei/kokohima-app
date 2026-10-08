@@ -2,6 +2,8 @@ import type { PresetName } from "@kokohima/shared";
 
 // ここ暇の表示（docs/specs/T-03-availability.md「画面」）
 // 表示は閲覧者のタイムゾーンで行う。タイムゾーンの変更はスコープ外で、全員 Asia/Tokyo（夏時間なし）
+// TODO(タイムゾーンの変更): サーバーは users.timezone で計算する。変更を入れるときは、閲覧者のタイムゾーンを
+// API から受け取り、+09:00 の固定（localInstant・startOfLocalDay）を夏時間に対応した変換に作り直す
 
 export const TIME_ZONE = "Asia/Tokyo";
 const OFFSET = "+09:00";

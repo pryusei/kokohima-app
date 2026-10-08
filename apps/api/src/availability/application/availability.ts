@@ -304,7 +304,11 @@ async function collectVisible(ctx: Ctx, viewerId: string, range: Range, friendId
   ]);
   const rules = await rulesWithExceptions(ctx, ruleRows, exceptionSince(range.from));
   const byFriend = new Map<string, Slot[]>();
-  const push = (owner: string, slot: Slot) => byFriend.set(owner, [...(byFriend.get(owner) ?? []), slot]);
+  const push = (owner: string, slot: Slot) => {
+    const slots = byFriend.get(owner) ?? [];
+    slots.push(slot);
+    byFriend.set(owner, slots);
+  };
   for (const m of manual) push(m.user_id, { startsAt: m.starts_at, endsAt: m.ends_at, label: asLabel(m.label) });
   ruleRows.forEach((row, i) => {
     const rule = rules[i];

@@ -174,6 +174,17 @@ describe("ここ暇の追加・一覧・取り消し", () => {
     expect((await addPreset(a, "2026-10-11", "night")).status).toBe(201);
   });
 
+  it("終了した手動の枠とは重なってもよい（今から暇）", async () => {
+    const a = await u.user();
+    expect((await addRange(a, "2026-10-10T00:00:00Z", "2026-10-10T01:00:00Z")).status).toBe(201);
+    h.clock.now = Date.parse("2026-10-10T01:30:00Z");
+    await u.advance(0, a);
+    expect(await mine(a, 1)).toHaveLength(0);
+    expect((await addRange(a, "2026-10-10T00:30:00Z", "2026-10-10T03:00:00Z")).status).toBe(201);
+    // 終了していない枠との重なりは、これまでどおり409
+    expect((await addRange(a, "2026-10-10T02:00:00Z", "2026-10-10T04:00:00Z")).status).toBe(409);
+  });
+
   it("同じ枠を同時に2回送っても1つしかできない", async () => {
     const a = await u.user();
     const results = await Promise.all([addPreset(a, "2026-10-10", "night"), addPreset(a, "2026-10-10", "night")]);

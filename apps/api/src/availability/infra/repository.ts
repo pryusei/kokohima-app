@@ -54,7 +54,7 @@ export async function putPresets(d1: D1Database, userId: string, p: PresetRow, n
 }
 
 /**
- * 自分の手動の枠と1分以上重ならず、未来の手動の枠が limit 未満のときだけ、1つの文で追加する。追加できたら true
+ * 終了していない自分の手動の枠と1分以上重ならず、未来の手動の枠が limit 未満のときだけ、1つの文で追加する。追加できたら true
  */
 export async function insertManualWithinLimits(
   d1: D1Database,
@@ -67,7 +67,7 @@ export async function insertManualWithinLimits(
        SELECT ?1, ?2, ?3, ?4, ?5, ?6
        WHERE NOT EXISTS (
            SELECT 1 FROM availabilities
-           WHERE user_id = ?2 AND MIN(ends_at, ?4) - MAX(starts_at, ?3) >= ?7
+           WHERE user_id = ?2 AND ends_at > ?6 AND MIN(ends_at, ?4) - MAX(starts_at, ?3) >= ?7
          )
          AND (SELECT COUNT(*) FROM availabilities WHERE user_id = ?2 AND ends_at > ?6) < ?8`,
     )
@@ -157,7 +157,11 @@ export async function exceptionsFor(d1: D1Database, ruleIds: string[], sinceDate
   );
   const results = await d1.batch<{ rule_id: string; local_date: string }>(statements);
   const rows = results.flatMap((r) => r.results).sort((a, b) => a.local_date.localeCompare(b.local_date));
-  for (const r of rows) map.set(r.rule_id, [...(map.get(r.rule_id) ?? []), r.local_date]);
+  for (const r of rows) {
+    const dates = map.get(r.rule_id) ?? [];
+    dates.push(r.local_date);
+    map.set(r.rule_id, dates);
+  }
   return map;
 }
 

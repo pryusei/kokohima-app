@@ -11,7 +11,9 @@ function groupByDate(items: FriendAvailability[]) {
   const groups = new Map<string, FriendAvailability[]>();
   for (const item of items) {
     const date = localDateOf(item.startsAt);
-    groups.set(date, [...(groups.get(date) ?? []), item]);
+    const list = groups.get(date) ?? [];
+    list.push(item);
+    groups.set(date, list);
   }
   return [...groups.entries()];
 }
