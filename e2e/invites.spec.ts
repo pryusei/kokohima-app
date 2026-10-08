@@ -112,8 +112,10 @@ test("成立した予定で「やっぱり難しい」→ 双方の「成立」�
   await b.page.getByRole("button", { name: "やっぱり難しい" }).click();
   await expect(b.page.getByText("やっぱり難しくなりました")).toBeVisible();
 
-  await expect((await meetupsOf(a.page)).getByRole("listitem")).toHaveCount(0);
-  await expect((await meetupsOf(b.page)).getByRole("listitem")).toHaveCount(0);
+  for (const page of [a.page, b.page]) {
+    await page.goto("/invites?tab=meetups");
+    await expect(page.getByText("これからの成立した予定はありません")).toBeVisible();
+  }
   await a.page.goto(inviteUrl);
   await expect(a.page.getByText("やっぱり難しくなりました")).toBeVisible();
 });

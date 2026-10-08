@@ -204,9 +204,10 @@ async function failure(
   ctx: Ctx,
   viewerId: string,
   id: string,
+  as: "recipient" | "sender",
   check: (row: repo.InviteRow, now: number) => TransitionError | null,
 ): Promise<TransitionResult> {
-  const row = await repo.findInviteFor(ctx.env.DB, viewerId, id);
+  const row = await repo.findInviteAs(ctx.env.DB, viewerId, id, as);
   if (!row) return { kind: "not_found" };
   return { kind: "conflict", reason: check(row, ctx.deps.now()) ?? "invalid_state" };
 }
@@ -222,9 +223,9 @@ export async function respond(
   id: string,
   input: RespondDirectInviteRequest,
 ): Promise<TransitionResult> {
-  const row = await repo.findInviteFor(ctx.env.DB, viewerId, id);
-  // 返答できるのは受信者だけ。送信者・参加者でない人には、存在しない場合と同じ404
-  if (!row || row.recipient_id !== viewerId) return { kind: "not_found" };
+  // 返答できるのは受信者だけ。SQL で受信者として絞り、送信者・参加者でない人には存在しない場合と同じ404
+  const row = await repo.findInviteAs(ctx.env.DB, viewerId, id, "recipient");
+  if (!row) return { kind: "not_found" };
   const now = ctx.deps.now();
   const recheck = (r: repo.InviteRow, t: number) => respondError(times(r), t);
 
@@ -243,7 +244,7 @@ export async function respond(
       confirmed,
       now,
     );
-    return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, recheck);
+    return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, "recipient", recheck);
   }
 
   if (input.response === "decline") {
@@ -254,7 +255,7 @@ export async function respond(
       occurredAt: iso(now),
     });
     const ok = await repo.respondInvite(ctx.env.DB, ref(row), { status: "declined" }, declined, now);
-    return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, recheck);
+    return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, "recipient", recheck);
   }
 
   const counter = { startsAt: Date.parse(input.startsAt), endsAt: Date.parse(input.endsAt) };
@@ -273,7 +274,7 @@ export async function respond(
     proposed,
     now,
   );
-  return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, recheck);
+  return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, "recipient", recheck);
 }
 
 export async function decide(
@@ -282,9 +283,9 @@ export async function decide(
   id: string,
   decision: "accept" | "skip",
 ): Promise<TransitionResult> {
-  const row = await repo.findInviteFor(ctx.env.DB, viewerId, id);
-  // 決められるのは送信者だけ
-  if (!row || row.sender_id !== viewerId) return { kind: "not_found" };
+  // 決められるのは送信者だけ。SQL で送信者として絞る
+  const row = await repo.findInviteAs(ctx.env.DB, viewerId, id, "sender");
+  if (!row) return { kind: "not_found" };
   const now = ctx.deps.now();
   const recheck = (r: repo.InviteRow, t: number) => decideError(times(r), t);
 
@@ -296,11 +297,11 @@ export async function decide(
       occurredAt: iso(now),
     });
     const ok = await repo.decideSkip(ctx.env.DB, ref(row), skipped, now);
-    return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, recheck);
+    return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, "sender", recheck);
   }
 
   // counter_proposed でなければ代わりの時間がない。状態の判定は failure で行う
-  if (row.counter_starts_at === null || row.counter_ends_at === null) return failure(ctx, viewerId, id, recheck);
+  if (row.counter_starts_at === null || row.counter_ends_at === null) return failure(ctx, viewerId, id, "sender", recheck);
   const meetupId = crypto.randomUUID();
   const confirmed = event("MeetupConfirmed", {
     meetupId,
@@ -315,7 +316,7 @@ export async function decide(
     confirmed,
     now,
   );
-  return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, recheck);
+  return ok ? done(ctx, viewerId, id) : failure(ctx, viewerId, id, "sender", recheck);
 }
 
 // ---- 成立した予定 ----

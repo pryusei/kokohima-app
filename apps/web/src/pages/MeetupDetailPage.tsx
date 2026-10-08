@@ -19,7 +19,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
   const key = keys.meetups.detail(meetupId);
 
   const cancel = useMutation({
-    mutationFn: () => apiSend("POST", `/api/v1/meetups/${meetupId}/cancel`, undefined, meetupSchema),
+    mutationFn: () => apiSend("POST", `/api/v1/meetups/${encodeURIComponent(meetupId)}/cancel`, undefined, meetupSchema),
     onMutate: async () => {
       setFailed(false);
       await queryClient.cancelQueries({ queryKey: key });

@@ -38,7 +38,7 @@ export const areaSchema = freeText(AREA_MAX, 0);
 export const messageSchema = freeText(MESSAGE_MAX, MESSAGE_MAX_NEWLINES);
 
 // shared は DOM の型を読まないので、Workers とブラウザの両方にある WHATWG URL を最小の型で使う
-type ParsedUrl = { protocol: string; username: string; password: string; hostname: string };
+type ParsedUrl = { protocol: string; username: string; password: string; hostname: string; href: string };
 const UrlCtor = (globalThis as unknown as { URL: new (input: string) => ParsedUrl }).URL;
 
 /** リンクの表示用のドメイン。国際化ドメインは punycode（xn--…）になり、見た目による偽装を防ぐ。解釈できなければ null */
@@ -50,24 +50,35 @@ export function linkHostname(url: string): string | null {
   }
 }
 
-/** http・https だけ。認証情報（user:pass@）を含む URL は不可 */
+/**
+ * http・https だけ。認証情報（user:pass@）を含む URL、制御文字・書式文字・空白を含む値は不可。
+ * URL の解析は前後の制御文字やタブを黙って取り除くので、生の値を先に検査し、保存するのは正規化した href にする
+ */
 export const linkUrlSchema = z
   .string()
   .max(URL_MAX)
   .nullish()
-  .transform((v) => v ?? null)
-  .refine(
-    (v) => {
-      if (v === null) return true;
-      try {
-        const url = new UrlCtor(v);
-        return (url.protocol === "http:" || url.protocol === "https:") && url.username === "" && url.password === "";
-      } catch {
-        return false;
-      }
-    },
-    { message: "invalid_url" },
-  );
+  .transform((v, ctx) => {
+    if (v == null) return null;
+    let url: ParsedUrl;
+    try {
+      url = new UrlCtor(v);
+    } catch {
+      url = { protocol: "", username: "", password: "", hostname: "", href: "" };
+    }
+    const ok =
+      !INVISIBLE_OR_CONTROL.test(v) &&
+      !/\s/u.test(v) &&
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username === "" &&
+      url.password === "" &&
+      url.href.length <= URL_MAX;
+    if (!ok) {
+      ctx.addIssue({ code: "custom", message: "invalid_url" });
+      return z.NEVER;
+    }
+    return url.href;
+  });
 
 /** 15分単位、長さ30分以上24時間以下 */
 export function isValidInviteRange(startsAt: string, endsAt: string) {

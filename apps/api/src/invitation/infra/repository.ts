@@ -140,6 +140,15 @@ export async function findInviteFor(d1: D1Database, viewerId: string, id: string
     .first<InviteRow>();
 }
 
+/** 閲覧者が受信者（as = "recipient"）または送信者（as = "sender"）の誘いだけ。返答・決定で使う */
+export async function findInviteAs(d1: D1Database, viewerId: string, id: string, as: "recipient" | "sender") {
+  const owner = as === "recipient" ? "i.recipient_id" : "i.sender_id";
+  return d1
+    .prepare(`SELECT ${INVITE_COLUMNS} FROM direct_invites i WHERE i.id = ?1 AND ${owner} = ?2`)
+    .bind(id, viewerId)
+    .first<InviteRow>();
+}
+
 /** 受信・送信の一覧。作成日時の新しい順、同じなら id の降順。limit + 1 件読む */
 export async function listInvites(
   d1: D1Database,

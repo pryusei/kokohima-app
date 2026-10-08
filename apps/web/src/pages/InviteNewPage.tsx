@@ -26,10 +26,10 @@ import { displayNameOf } from "./FriendsPage";
 // 誘いの作成（仮。docs/specs/T-04-direct-invite.md「画面」）
 
 const EXPIRES: { value: ExpiresIn; label: string }[] = [
-  { value: "until_start", label: "開始まで" },
   { value: "1h", label: "1時間" },
   { value: "3h", label: "3時間" },
   { value: "24h", label: "24時間" },
+  { value: "until_start", label: "開始まで" },
 ];
 const MINUTE_MS = 60 * 1000;
 
@@ -178,11 +178,11 @@ export function InviteNewPage() {
         )}
         <label className="flex flex-col gap-1">
           エリア（任意）
-          <input className="rounded border px-2 py-1" maxLength={30} value={area} onChange={(e) => setArea(e.target.value)} />
+          <input className="rounded border px-2 py-1" value={area} onChange={(e) => setArea(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1">
           ひとこと（任意）
-          <textarea className="rounded border px-2 py-1" maxLength={100} value={message} onChange={(e) => setMessage(e.target.value)} />
+          <textarea className="rounded border px-2 py-1" value={message} onChange={(e) => setMessage(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1">
           リンク（任意）

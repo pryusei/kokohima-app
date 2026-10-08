@@ -146,12 +146,17 @@ describe("誘いの作成", () => {
     expect(screen.getByLabelText("開始")).toHaveValue("10:15");
   });
 
-  it("送信上限なら静かな文言を出す", async () => {
-    newPage(`?friend=${FRIEND_ID}`, { "/api/v1/direct-invites": json({ code: "rate_limited" }, 429) });
+  it.each([
+    [429, "今日はたくさん誘ったので、少し時間をおいてください"],
+    [409, "同じ時間の誘いをもう送っています"],
+    [404, "この友達には送れませんでした"],
+    [400, "送れませんでした。これからの時間で、15分単位、30分以上24時間以内にしてください。文字数も確かめてください"],
+  ])("送れなかったとき（%i）は静かな文言を出す", async (status, text) => {
+    newPage(`?friend=${FRIEND_ID}`, { "/api/v1/direct-invites": json({}, status) });
     renderApp();
     await screen.findByText("ここどう？");
     await userEvent.click(screen.getByRole("button", { name: "誘う" }));
-    const message = await screen.findByText("今日はたくさん誘ったので、少し時間をおいてください");
+    const message = await screen.findByText(text);
     expect(message.className).not.toMatch(/red|rose/);
   });
 });

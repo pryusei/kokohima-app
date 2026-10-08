@@ -66,7 +66,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
   // 返答・決定は押したらすぐ表示を変え、失敗したら戻して静かな文言を出す。409 なら最新の状態を読み直す
   const act = useMutation({
     mutationFn: (action: Action) =>
-      apiSend("POST", `/api/v1/direct-invites/${inviteId}/${action.path}`, action.body, directInviteSchema),
+      apiSend("POST", `/api/v1/direct-invites/${encodeURIComponent(inviteId)}/${action.path}`, action.body, directInviteSchema),
     onMutate: async (action) => {
       setFailed(null);
       setCountering(false);

@@ -141,6 +141,9 @@ describe("送信", () => {
     ["書字方向の上書き", { area: "a‮b" }],
     ["http・https 以外の URL", { url: "javascript:alert(1)" }],
     ["認証情報つきの URL", { url: "https://user:pass@example.com/" }],
+    ["先頭に制御文字と空白がある URL", { url: "\u0000 https://example.com/" }],
+    ["タブを含む URL", { url: "https://exa\tmple.com/" }],
+    ["書字方向の上書きを含む URL", { url: "https://example.com/\u202Eabc" }],
     ["余分な項目", { senderId: crypto.randomUUID() }],
     ["期限の値", { expiresIn: "2h" }],
   ])("入力の検証：%s は400", async (_label, over) => {
@@ -150,8 +153,10 @@ describe("送信", () => {
 
   it("ひとことの改行は5個まで、文字数はコードポイントで数える。http も可", async () => {
     const { a, b } = await pair();
-    const invite = await sent(a, b, { message: `${"😀".repeat(95)}\n\n\n\n\n`, url: "http://example.com" });
+    const invite = await sent(a, b, { message: `${"😀".repeat(95)}\n\n\n\n\n`, url: "http://Example.COM" });
     expect(invite.message).toBe("😀".repeat(95));
+    // 保存するのは正規化した URL
+    expect(invite.url).toBe("http://example.com/");
     const five = await sent(a, b, { startsAt: T("14:00"), endsAt: T("15:00"), message: "1\n2\n3\n4\n5\n6", area: "" });
     expect(five.message).toBe("1\n2\n3\n4\n5\n6");
     expect(five.area).toBeNull();
@@ -207,6 +212,20 @@ describe("送信", () => {
     expect(res.headers.get("Retry-After")).toBe(String(23.5 * 3600));
     await u.advance(23.5 * HOUR_MS, a, b);
     expect((await send(a, b, { startsAt: "2026-10-12T01:00:00Z", endsAt: "2026-10-12T02:00:00Z" })).status).toBe(201);
+  });
+
+  it("送信上限：期限切れの誘いも数え、429 では outbox に書かない", async () => {
+    const { a, b } = await pair();
+    for (let i = 0; i < 20; i++) {
+      const start = Date.parse(T("02:00")) + i * HOUR_MS;
+      await sent(a, b, { startsAt: iso(start), endsAt: iso(start + HOUR_MS), expiresIn: "1h" });
+    }
+    await u.advance(HOUR_MS, a, b);
+    expect((await box(a, "sent")).items.every((i) => i.status === "expired")).toBe(true);
+    const before = (await outbox("DirectInviteSent", a.id)).length;
+    const res = await send(a, b, { startsAt: "2026-10-12T01:00:00Z", endsAt: "2026-10-12T02:00:00Z" });
+    expect(res.status).toBe(429);
+    expect(await outbox("DirectInviteSent", a.id)).toHaveLength(before);
   });
 
   it("送信上限：同時に送っても20件を超えない", async () => {
@@ -317,7 +336,12 @@ describe("返答と決定", () => {
     expect(decided.status).toBe("confirmed");
     const meetup = meetupSchema.parse(await (await u.call("GET", `/api/v1/meetups/${decided.meetupId}`, { token: b.token })).json());
     expect(meetup).toMatchObject({ startsAt: T("12:00"), endsAt: T("14:00") });
-    expect(await outbox("DirectInviteCounterProposed", invite.id)).toHaveLength(1);
+    expect(await outbox("DirectInviteCounterProposed", invite.id)).toEqual([
+      { userId: a.id, inviteId: invite.id, actorId: b.id, occurredAt: T("00:00") },
+    ]);
+    expect(await outbox("MeetupConfirmed", invite.id)).toEqual([
+      { meetupId: decided.meetupId, inviteId: invite.id, participantIds: [a.id, b.id], occurredAt: T("00:00") },
+    ]);
   });
 
   it("見送る：skipped と DirectInviteSkipped", async () => {
