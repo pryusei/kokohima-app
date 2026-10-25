@@ -25,6 +25,9 @@ export type InviteRow = {
 export type MeetupRow = {
   id: string;
   direct_invite_id: string | null;
+  broadcast_id: string | null;
+  /** 閲覧者が募集の予定から抜けた時刻（抜けていなければ null） */
+  my_left_at: number | null;
   starts_at: number;
   ends_at: number;
   status: MeetupStatus;
@@ -48,6 +51,17 @@ const LIVE_SAME_INVITE = `EXISTS (
   WHERE sender_id = ?1 AND recipient_id = ?2 AND starts_at = ?3 AND ends_at = ?4
     AND ((status = 'pending' AND expires_at > ?5) OR (status = 'counter_proposed' AND counter_starts_at > ?5))
 )`;
+
+/** 誘いと募集あわせた直近の送信数（?S 送信者、?X この時刻より後）。送信上限は合計で数える（T-05） */
+export const sentCountSql = (s: number, x: number) =>
+  `((SELECT COUNT(*) FROM direct_invites WHERE sender_id = ?${s} AND created_at > ?${x})
+    + (SELECT COUNT(*) FROM broadcasts WHERE owner_id = ?${s} AND created_at > ?${x}))`;
+
+/** 誘いと募集のうち、直近でいちばん古い送信の時刻（Retry-After の元） */
+export const oldestSentSql = (s: number, x: number) =>
+  `(SELECT MIN(c) FROM (
+      SELECT created_at AS c FROM direct_invites WHERE sender_id = ?${s} AND created_at > ?${x}
+      UNION ALL SELECT created_at FROM broadcasts WHERE owner_id = ?${s} AND created_at > ?${x}))`;
 
 export type NewInvite = {
   id: string;
@@ -81,7 +95,7 @@ export async function insertInvite(
          SELECT ?6, ?1, ?2, ?7, ?3, ?4, ?8, ?9, ?10, 'pending', ?11, ?5
          WHERE ${MUTUAL_FRIENDS}
            AND NOT ${LIVE_SAME_INVITE}
-           AND (SELECT COUNT(*) FROM direct_invites WHERE sender_id = ?1 AND created_at > ?12) < ?13`,
+           AND ${sentCountSql(1, 12)} < ?13`,
       )
       .bind(
         row.senderId,
@@ -119,8 +133,8 @@ export async function diagnoseSend(
       `SELECT
          (${MUTUAL_FRIENDS}) AS friends,
          (${LIVE_SAME_INVITE}) AS duplicate,
-         (SELECT COUNT(*) FROM direct_invites WHERE sender_id = ?1 AND created_at > ?6) AS sent,
-         (SELECT MIN(created_at) FROM direct_invites WHERE sender_id = ?1 AND created_at > ?6) AS oldest`,
+         ${sentCountSql(1, 6)} AS sent,
+         ${oldestSentSql(1, 6)} AS oldest`,
     )
     .bind(row.senderId, row.recipientId, row.startsAt, row.endsAt, row.now, since)
     .first<{ friends: number; duplicate: number; sent: number; oldest: number | null }>();
@@ -302,16 +316,20 @@ export async function decideSkip(d1: D1Database, invite: InviteRef, event: Event
   return updated?.meta.changes === 1;
 }
 
-const MEETUP_COLUMNS = `m.id, m.direct_invite_id, m.starts_at, m.ends_at, m.status, m.created_at,
-  i.area, i.message, i.url`;
+// 誘いの予定は誘いの、募集の予定は募集のエリア・ひとこと・リンクを返す
+const MEETUP_COLUMNS = `m.id, m.direct_invite_id, m.broadcast_id, m.starts_at, m.ends_at, m.status, m.created_at,
+  COALESCE(i.area, b.area) AS area, COALESCE(i.message, b.message) AS message, COALESCE(i.url, b.url) AS url,
+  p.left_at AS my_left_at`;
+const MEETUP_SOURCES = `LEFT JOIN direct_invites i ON i.id = m.direct_invite_id
+       LEFT JOIN broadcasts b ON b.id = m.broadcast_id`;
 
-/** 閲覧者が参加者の予定だけ */
+/** 閲覧者が参加者の予定だけ（募集の予定から抜けた人も読める。状態は application で cancelled にする） */
 export async function findMeetupFor(d1: D1Database, viewerId: string, id: string) {
   return d1
     .prepare(
       `SELECT ${MEETUP_COLUMNS} FROM meetups m
        JOIN meetup_participants p ON p.meetup_id = m.id AND p.user_id = ?2
-       LEFT JOIN direct_invites i ON i.id = m.direct_invite_id
+       ${MEETUP_SOURCES}
        WHERE m.id = ?1`,
     )
     .bind(id, viewerId)
@@ -329,8 +347,8 @@ export async function listMeetups(
   const { results } = await d1
     .prepare(
       `SELECT ${MEETUP_COLUMNS} FROM meetups m
-       JOIN meetup_participants p ON p.meetup_id = m.id AND p.user_id = ?1
-       LEFT JOIN direct_invites i ON i.id = m.direct_invite_id
+       JOIN meetup_participants p ON p.meetup_id = m.id AND p.user_id = ?1 AND p.left_at IS NULL
+       ${MEETUP_SOURCES}
        WHERE m.status = 'confirmed' AND m.ends_at > ?2
          AND (?3 IS NULL OR m.starts_at > ?3 OR (m.starts_at = ?3 AND m.id > ?4))
        ORDER BY m.starts_at, m.id LIMIT ?5`,
@@ -340,7 +358,7 @@ export async function listMeetups(
   return results;
 }
 
-/** 予定ごとの参加者のID */
+/** 予定ごとの参加者のID（募集の予定から抜けた人を除く） */
 export async function participantsOf(d1: D1Database, meetupIds: string[]) {
   const map = new Map<string, string[]>();
   for (let i = 0; i < meetupIds.length; i += 90) {
@@ -348,7 +366,7 @@ export async function participantsOf(d1: D1Database, meetupIds: string[]) {
     const { results } = await d1
       .prepare(
         `SELECT meetup_id, user_id FROM meetup_participants
-         WHERE meetup_id IN (${ids.map((_, j) => `?${j + 1}`).join(", ")})`,
+         WHERE left_at IS NULL AND meetup_id IN (${ids.map((_, j) => `?${j + 1}`).join(", ")})`,
       )
       .bind(...ids)
       .all<{ meetup_id: string; user_id: string }>();
@@ -369,7 +387,7 @@ export async function cancelMeetup(d1: D1Database, viewerId: string, meetupId: s
       .prepare(
         `UPDATE meetups SET status = 'cancelled', cancelled_at = ?1, transition_id = ?2
          WHERE id = ?3 AND status = 'confirmed' AND starts_at > ?1
-           AND EXISTS (SELECT 1 FROM meetup_participants WHERE meetup_id = ?3 AND user_id = ?4)`,
+           AND EXISTS (SELECT 1 FROM meetup_participants WHERE meetup_id = ?3 AND user_id = ?4 AND left_at IS NULL)`,
       )
       .bind(now, tid, meetupId, viewerId),
     d1
@@ -382,4 +400,62 @@ export async function cancelMeetup(d1: D1Database, viewerId: string, meetupId: s
     outboxIfTransition(d1, "meetups", meetupId, tid, event, now),
   ]);
   return updated?.meta.changes === 1;
+}
+
+/**
+ * 募集の予定の「やっぱり難しい」（T-05 決定事項3）。押した人だけが抜け、募集者が抜けたとき、または残りが
+ * 1人以下になったときは予定ごと取り消す。後続の文は left_transition_id／transition_id を EXISTS で確かめて書く
+ */
+export async function leaveMeetup(
+  d1: D1Database,
+  viewerId: string,
+  meetupId: string,
+  events: { cancelledId: string; leftId: string },
+  now: number,
+) {
+  const tid = crypto.randomUUID();
+  const occurredAt = new Date(now).toISOString();
+  const [left] = await d1.batch([
+    d1
+      .prepare(
+        `UPDATE meetup_participants SET left_at = ?1, left_transition_id = ?2
+         WHERE meetup_id = ?3 AND user_id = ?4 AND left_at IS NULL
+           AND EXISTS (SELECT 1 FROM meetups WHERE id = ?3 AND status = 'confirmed' AND starts_at > ?1
+                       AND broadcast_id IS NOT NULL)`,
+      )
+      .bind(now, tid, meetupId, viewerId),
+    d1
+      .prepare(
+        `UPDATE meetups SET status = 'cancelled', cancelled_at = ?1, transition_id = ?2
+         WHERE id = ?3 AND status = 'confirmed'
+           AND EXISTS (SELECT 1 FROM meetup_participants WHERE meetup_id = ?3 AND left_transition_id = ?2)
+           AND ((SELECT owner_id FROM broadcasts WHERE id = meetups.broadcast_id) = ?4
+                OR (SELECT COUNT(*) FROM meetup_participants WHERE meetup_id = ?3 AND left_at IS NULL) <= 1)`,
+      )
+      .bind(now, tid, meetupId, viewerId),
+    // 予定ごと取り消したとき：この遷移の前に抜けていなかった人全員（押した人を含む）
+    d1
+      .prepare(
+        `INSERT INTO outbox (id, type, payload, created_at)
+         SELECT ?1, 'MeetupCancelled', json_object('meetupId', ?2, 'actorId', ?3,
+           'participantIds', json((SELECT json_group_array(user_id) FROM meetup_participants
+                                   WHERE meetup_id = ?2 AND (left_at IS NULL OR left_transition_id = ?4))),
+           'occurredAt', ?5), ?6
+         WHERE EXISTS (SELECT 1 FROM meetups WHERE id = ?2 AND transition_id = ?4)`,
+      )
+      .bind(events.cancelledId, meetupId, viewerId, tid, occurredAt, now),
+    // 抜けただけのとき：残った人
+    d1
+      .prepare(
+        `INSERT INTO outbox (id, type, payload, created_at)
+         SELECT ?1, 'MeetupLeft', json_object('meetupId', ?2, 'actorId', ?3,
+           'participantIds', json((SELECT json_group_array(user_id) FROM meetup_participants
+                                   WHERE meetup_id = ?2 AND left_at IS NULL)),
+           'occurredAt', ?5), ?6
+         WHERE EXISTS (SELECT 1 FROM meetup_participants WHERE meetup_id = ?2 AND left_transition_id = ?4)
+           AND NOT EXISTS (SELECT 1 FROM meetups WHERE id = ?2 AND transition_id = ?4)`,
+      )
+      .bind(events.leftId, meetupId, viewerId, tid, occurredAt, now),
+  ]);
+  return left?.meta.changes === 1;
 }
