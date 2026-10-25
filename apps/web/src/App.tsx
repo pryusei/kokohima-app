@@ -4,6 +4,8 @@ import { AuthCompletePage } from "./pages/AuthCompletePage";
 import { AvailabilityPage } from "./pages/AvailabilityPage";
 import { EveryonePage } from "./pages/EveryonePage";
 import { FriendDetailPage } from "./pages/FriendDetailPage";
+import { BroadcastDetailPage } from "./pages/BroadcastDetailPage";
+import { BroadcastNewPage } from "./pages/BroadcastNewPage";
 import { FriendsPage } from "./pages/FriendsPage";
 import { InviteDetailPage } from "./pages/InviteDetailPage";
 import { InviteNewPage } from "./pages/InviteNewPage";
@@ -61,6 +63,9 @@ export function App() {
   if (pathname === "/availability") return <AvailabilityPage />;
   if (pathname === "/invites") return <InvitesPage />;
   if (pathname === "/invites/new") return <InviteNewPage key={search} />;
+  if (pathname === "/broadcasts/new") return <BroadcastNewPage key={search} />;
+  const broadcast = /^\/broadcasts\/([^/]+)$/.exec(pathname);
+  if (broadcast?.[1]) return <BroadcastDetailPage key={broadcast[1]} broadcastId={decodeURIComponent(broadcast[1])} />;
   const invite = /^\/invites\/([^/]+)$/.exec(pathname);
   if (invite?.[1]) return <InviteDetailPage key={invite[1]} inviteId={decodeURIComponent(invite[1])} />;
   const meetup = /^\/meetups\/([^/]+)$/.exec(pathname);

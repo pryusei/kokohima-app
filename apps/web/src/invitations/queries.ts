@@ -1,4 +1,11 @@
-import { directInvitePageSchema, directInviteSchema, meetupPageSchema, meetupSchema } from "@kokohima/shared";
+import {
+  broadcastPageSchema,
+  broadcastSchema,
+  directInvitePageSchema,
+  directInviteSchema,
+  meetupPageSchema,
+  meetupSchema,
+} from "@kokohima/shared";
 import { apiGet } from "../api/client";
 import { keys } from "../api/keys";
 
@@ -22,4 +29,14 @@ export const meetupsQuery = () => ({
 export const meetupQuery = (id: string) => ({
   queryKey: keys.meetups.detail(id),
   queryFn: () => apiGet(`/api/v1/meetups/${encodeURIComponent(id)}`, meetupSchema),
+});
+
+export const broadcastsQuery = (box: "received" | "sent") => ({
+  queryKey: keys.broadcasts.list(box),
+  queryFn: () => apiGet(`/api/v1/broadcasts?box=${box}&limit=50`, broadcastPageSchema),
+});
+
+export const broadcastQuery = (id: string) => ({
+  queryKey: keys.broadcasts.detail(id),
+  queryFn: () => apiGet(`/api/v1/broadcasts/${encodeURIComponent(id)}`, broadcastSchema),
 });

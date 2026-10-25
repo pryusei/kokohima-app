@@ -23,6 +23,7 @@ import {
   SEND_WINDOW_MS,
   type TransitionError,
 } from "../domain/directInvite";
+import { leaveError } from "../domain/broadcast";
 import * as repo from "../infra/repository";
 
 // 個別の誘いのユースケース（docs/specs/T-04-direct-invite.md「振る舞い」）
@@ -333,14 +334,17 @@ async function meetupDtos(ctx: Ctx, viewerId: string, rows: repo.MeetupRow[]): P
     id: r.id,
     startsAt: iso(r.starts_at),
     endsAt: iso(r.ends_at),
-    status: r.status,
-    participants: (participants.get(r.id) ?? [])
+    // 募集の予定から抜けた人には、閲覧者から見た状態として cancelled を返す（T-05）
+    status: r.my_left_at !== null ? "cancelled" : r.status,
+    // 抜けた人には、抜けた後の参加者の変化を見せない
+    participants: (r.my_left_at !== null ? [] : (participants.get(r.id) ?? []))
       .filter((id) => id !== viewerId)
       .map((id) => profiles.get(id) ?? unknownProfile(id)),
     area: r.area,
     message: r.message,
     url: r.url,
     directInviteId: r.direct_invite_id,
+    broadcastId: r.broadcast_id,
     createdAt: iso(r.created_at),
   }));
 }
@@ -370,6 +374,7 @@ export type CancelResult =
 export async function cancelMeetup(ctx: Ctx, viewerId: string, id: string): Promise<CancelResult> {
   const row = await repo.findMeetupFor(ctx.env.DB, viewerId, id);
   if (!row) return { kind: "not_found" };
+  if (row.broadcast_id !== null) return leaveMeetup(ctx, viewerId, id);
   const now = ctx.deps.now();
   const participants = (await repo.participantsOf(ctx.env.DB, [id])).get(id) ?? [];
   const cancelled = event("MeetupCancelled", { meetupId: id, actorId: viewerId, participantIds: participants, occurredAt: iso(now) });
@@ -383,4 +388,27 @@ export async function cancelMeetup(ctx: Ctx, viewerId: string, id: string): Prom
     kind: "conflict",
     reason: cancelError({ status: latest.status, startsAt: latest.starts_at }, ctx.deps.now()) ?? "invalid_state",
   };
+}
+
+/** 募集の予定の「やっぱり難しい」：押した人だけが抜ける（T-05 決定事項3） */
+async function leaveMeetup(ctx: Ctx, viewerId: string, id: string): Promise<CancelResult> {
+  const now = ctx.deps.now();
+  const ok = await repo.leaveMeetup(
+    ctx.env.DB,
+    viewerId,
+    id,
+    { cancelledId: crypto.randomUUID(), leftId: crypto.randomUUID() },
+    now,
+  );
+  if (ok) {
+    const meetup = await getMeetup(ctx, viewerId, id);
+    return meetup ? { kind: "ok", meetup } : { kind: "not_found" };
+  }
+  const latest = await repo.findMeetupFor(ctx.env.DB, viewerId, id);
+  if (!latest) return { kind: "not_found" };
+  const reason = leaveError(
+    { left: latest.my_left_at !== null, status: latest.status, startsAt: latest.starts_at },
+    ctx.deps.now(),
+  );
+  return { kind: "conflict", reason: reason ?? "invalid_state" };
 }

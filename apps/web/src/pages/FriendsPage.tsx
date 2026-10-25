@@ -257,6 +257,9 @@ export function FriendsPage() {
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
       <h1 className="text-2xl font-bold">友達</h1>
       <Nav />
+      <Link to="/broadcasts/new" className="self-start rounded-lg bg-amber-300 px-4 py-2">
+        暇な人いる？と募集する
+      </Link>
       <InviteLinks />
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-bold">友達一覧</h2>

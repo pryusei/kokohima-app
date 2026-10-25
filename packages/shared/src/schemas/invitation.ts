@@ -171,7 +171,53 @@ export const meetupSchema = z.object({
   message: z.string().nullable(),
   url: z.string().nullable(),
   directInviteId: z.uuid().nullable(),
+  broadcastId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
 });
 export type Meetup = z.infer<typeof meetupSchema>;
 export const meetupPageSchema = pageSchema(meetupSchema);
+
+// 募集（docs/specs/T-05-broadcast.md「API」）
+export const BROADCAST_MIN_RECIPIENTS = 2;
+export const BROADCAST_MAX_RECIPIENTS = 100;
+
+export const createBroadcastRequestSchema = z
+  .object({
+    recipientIds: z
+      .array(z.uuid())
+      .min(BROADCAST_MIN_RECIPIENTS)
+      .max(BROADCAST_MAX_RECIPIENTS)
+      .refine((ids) => new Set(ids).size === ids.length, { message: "duplicate" }),
+    ...rangeShape,
+    area: areaSchema,
+    message: messageSchema,
+    url: linkUrlSchema,
+    expiresIn: expiresInSchema.default("until_start"),
+  })
+  .strict()
+  .refine(validRange, rangeIssue);
+export type CreateBroadcastRequest = z.infer<typeof createBroadcastRequestSchema>;
+
+/** 閲覧者から見た状態。closed は宛先の人に、決まったか期限切れかを区別させずに出す */
+export const broadcastStatusSchema = z.enum(["open", "expired", "decided", "closed"]);
+export type BroadcastStatus = z.infer<typeof broadcastStatusSchema>;
+
+export const broadcastSchema = z.object({
+  id: z.uuid(),
+  direction: inviteBoxSchema,
+  owner: publicProfileSchema,
+  status: broadcastStatusSchema,
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
+  area: z.string().nullable(),
+  message: z.string().nullable(),
+  url: z.string().nullable(),
+  expiresAt: z.iso.datetime(),
+  createdAt: z.iso.datetime(),
+  recipients: z.array(publicProfileSchema).nullable(),
+  responseCount: z.number().int().nullable(),
+  respondedByMe: z.boolean().nullable(),
+  meetupId: z.uuid().nullable(),
+});
+export type Broadcast = z.infer<typeof broadcastSchema>;
+export const broadcastPageSchema = pageSchema(broadcastSchema);

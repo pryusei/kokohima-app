@@ -39,7 +39,7 @@
 | この時間なら | CounterProposal | 代替の時間の提案 |
 | 決める | Decide | 募集の締め。応じた人全員に名前を開示する |
 | 成立した予定 | Meetup | 会うことが決まった予定 |
-| やっぱり難しい | MeetupCancel | 成立後の定型のキャンセル |
+| やっぱり難しい | MeetupCancel ／ MeetupLeave | 成立後の定型のキャンセル。募集の予定では押した人だけが抜ける（MeetupLeave） |
 | 見せる／見せない | SharingPolicy | 自分のここ暇を友達ごとに見せるかどうか |
 | 招待リンク | InviteLink | 期限と人数上限つきの友達追加リンク |
 
@@ -85,9 +85,11 @@ stateDiagram-v2
   }
   state "募集" as B {
     [*] --> 募集中
-    募集中 --> 募集中: 応じる（人数+1）
+    募集中 --> 募集中: 応じる（人数+1）／応じるのをやめる（人数-1）
     募集中 --> 成立_名前を開示: 募集者が決める（1人以上）
     募集中 --> 期限切れ_静かに終了: 期限
+    成立_名前を開示 --> 成立_名前を開示: やっぱり難しい（押した人だけ抜ける）
+    成立_名前を開示 --> キャンセル_募集: やっぱり難しい（募集者、または残り1人以下）
   }
 ```
 
@@ -168,7 +170,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | Identity | 汎用 | ログイン、退会 |
 
 - **DirectInvite**：友達にしか送れず、自分には送れない。期限後は返答できない。状態は定められた順にしか進まない。
-- **Broadcast**：「決める」まで応じた人の名前を誰にも開示しない（募集者本人にも人数のみ）。決められるのは募集者だけで、応じた人が1人以上のとき。決定後と期限後は応答できない。
+- **Broadcast**：「決める」まで応じた人の名前を誰にも開示しない（募集者本人にも人数のみ）。決められるのは募集者だけで、応じた人が1人以上のとき。予定の参加者（決めた時点で応じていた人）は決定後に応答を変えられず、期限後は誰も応答できない（参加者でない宛先の人は、決まったことを伝えないため期限までは応じられる。docs/specs/T-05-broadcast.md 決定事項6）。
 - 共通の値オブジェクト：TimeSlot、Area、Link（http/httpsのみ）、Expiry。
 
 | イベント | 発生元 | 受け取る側の動き |
@@ -176,8 +178,10 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | CalendarBusyDetected | Calendar | Availabilityが該当のここ暇を取り消す |
 | AvailabilityCancelledByCalendar | Availability | 未返答の誘いを「今回は難しい」にする／本人に通知 |
 | MeetupConfirmed | Invitation | Calendarが双方に書き込む／通知 |
-| BroadcastDecided | Invitation | Meetupを作成し、参加者全員に名前を開示して通知 |
-| BroadcastExpired | Invitation | 状態のみ更新。通知は送らない |
+| BroadcastSent | Invitation | 宛先ごとに通知 |
+| BroadcastDecided | Invitation | Meetupを作成し、参加者全員に名前を開示して通知（カレンダーへの書き込みは同時に書く MeetupConfirmed で行う） |
+| （期限切れ） | Invitation | 状態を保存せず、読むときに期限で決める。通知しないので、イベントは作らない（docs/specs/T-05-broadcast.md） |
+| MeetupLeft | Invitation | 募集の予定から1人が抜けた。残った参加者に定型文で通知 |
 | MeetupCancelled | Invitation | カレンダーから削除し、定型文で通知 |
 | FriendshipEstablished | Social | 本人に通知し、公開オフの導線を出す |
 | UserWithdrew | Identity | 本人データを削除し、相手側は表示を置換 |
@@ -211,7 +215,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 - [ ] 招待リンクの有効期限と人数上限のデフォルト値（モックでは3日間・5人）
 - [ ] 表示名・アイコン・プロフィール項目、居住エリアの持ち方
 - [ ] ひとことの不適切利用への対策
-- [ ] 募集で名前が開示された後の「やっぱり行けない」の扱い
+- [x] 募集で名前が開示された後の「やっぱり行けない」の扱い（押した人だけが抜け、募集者が抜けるか残り1人以下で予定ごと取り消す。docs/specs/T-05-broadcast.md 決定事項3）
 - [ ] タイムゾーンと言語（海外在住の友達がいる場合）
 - [ ] Apple CalDAVのWorkersからの接続性の技術検証
 - [ ] IaCツールの選定（Alchemy／Terraform）の技術検証（T-00）

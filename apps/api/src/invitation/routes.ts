@@ -1,4 +1,5 @@
 import {
+  createBroadcastRequestSchema,
   createDirectInviteRequestSchema,
   decideDirectInviteRequestSchema,
   inviteBoxSchema,
@@ -12,6 +13,7 @@ import { problem } from "../http/problem";
 import { validationFailed } from "../http/validation";
 import { requireAuth } from "../identity/middleware";
 import { decodeCursor, encodeCursor } from "../shared/cursor";
+import * as broadcasts from "./application/broadcasts";
 import * as invites from "./application/directInvites";
 import type { TransitionError } from "./domain/directInvite";
 
@@ -52,6 +54,8 @@ export function invitationRoutes() {
   const app = new Hono<AppEnv>();
   app.use("/direct-invites", requireAuth);
   app.use("/direct-invites/*", requireAuth);
+  app.use("/broadcasts", requireAuth);
+  app.use("/broadcasts/*", requireAuth);
   app.use("/meetups", requireAuth);
   app.use("/meetups/*", requireAuth);
 
@@ -100,6 +104,63 @@ export function invitationRoutes() {
     const body = decideDirectInviteRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
     return transition(c, await invites.decide(ctx(c), c.var.viewer.userId, id.data, body.data.decision));
+  });
+
+  // ---- 募集（docs/specs/T-05-broadcast.md「API」） ----
+
+  const broadcastTransition = (c: Context<AppEnv>, result: broadcasts.TransitionResult) => {
+    if (result.kind === "ok") return c.json(result.broadcast);
+    if (result.kind === "not_found") return notFound(c);
+    return conflict(c, result.reason);
+  };
+
+  app.post("/broadcasts", async (c) => {
+    const body = createBroadcastRequestSchema.safeParse(await json(c));
+    if (!body.success) return validationFailed(c, body.error);
+    const result = await broadcasts.createBroadcast(ctx(c), c.var.viewer.userId, body.data);
+    if (result.kind === "invalid") return validationFailed(c, null);
+    if (result.kind === "not_found") return notFound(c);
+    if (result.kind === "conflict") return conflict(c, "invalid_state");
+    if (result.kind === "rate_limited") {
+      const res = problem(c.get("requestId"), 429, "rate_limited", "Too Many Requests");
+      res.headers.set("Retry-After", String(result.retryAfterSeconds));
+      return res;
+    }
+    c.header("Location", `/api/v1/broadcasts/${result.broadcast.id}`);
+    return c.json(result.broadcast, 201);
+  });
+
+  app.get("/broadcasts", async (c) => {
+    const box = inviteBoxSchema.safeParse(c.req.query("box"));
+    if (!box.success) return validationFailed(c, box.error);
+    const list = parseList(c);
+    if (list.error !== undefined) return validationFailed(c, list.error);
+    return c.json(page(await broadcasts.listBroadcasts(ctx(c), c.var.viewer.userId, box.data, list.limit, list.cursor)));
+  });
+
+  app.get("/broadcasts/:id", async (c) => {
+    const id = uuid.safeParse(c.req.param("id"));
+    if (!id.success) return notFound(c);
+    const broadcast = await broadcasts.getBroadcast(ctx(c), c.var.viewer.userId, id.data);
+    return broadcast ? c.json(broadcast) : notFound(c);
+  });
+
+  app.post("/broadcasts/:id/responses", async (c) => {
+    const id = uuid.safeParse(c.req.param("id"));
+    if (!id.success) return notFound(c);
+    return broadcastTransition(c, await broadcasts.setResponse(ctx(c), c.var.viewer.userId, id.data, true));
+  });
+
+  app.delete("/broadcasts/:id/responses/me", async (c) => {
+    const id = uuid.safeParse(c.req.param("id"));
+    if (!id.success) return notFound(c);
+    return broadcastTransition(c, await broadcasts.setResponse(ctx(c), c.var.viewer.userId, id.data, false));
+  });
+
+  app.post("/broadcasts/:id/decide", async (c) => {
+    const id = uuid.safeParse(c.req.param("id"));
+    if (!id.success) return notFound(c);
+    return broadcastTransition(c, await broadcasts.decide(ctx(c), c.var.viewer.userId, id.data));
   });
 
   app.get("/meetups", async (c) => {

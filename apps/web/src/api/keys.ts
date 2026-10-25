@@ -5,6 +5,8 @@ export const keys = {
     all: () => ["friends"] as const,
     list: () => ["friends", "list"] as const,
     detail: (id: string) => ["friends", "detail", id] as const,
+    /** 友達全員（募集の宛先を選ぶため、続きのページも読む） */
+    everyone: () => ["friends", "everyone"] as const,
   },
   // ここ暇。自分の枠が変わると「みんな」の重なりの印も変わるので、まとめて無効にできるよう all の下に置く
   availability: {
@@ -20,6 +22,12 @@ export const keys = {
     all: () => ["invites"] as const,
     list: (box: "received" | "sent") => ["invites", "list", box] as const,
     detail: (id: string) => ["invites", "detail", id] as const,
+  },
+  // 募集。応じる・決めるで一覧と詳細が変わるので、まとめて無効にできるよう all を持つ
+  broadcasts: {
+    all: () => ["broadcasts"] as const,
+    list: (box: "received" | "sent") => ["broadcasts", "list", box] as const,
+    detail: (id: string) => ["broadcasts", "detail", id] as const,
   },
   meetups: {
     all: () => ["meetups"] as const,
