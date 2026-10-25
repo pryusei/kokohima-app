@@ -1,4 +1,4 @@
-import type { DirectInvite, InviteKind } from "@kokohima/shared";
+import type { Broadcast, DirectInvite, InviteKind } from "@kokohima/shared";
 import { linkHostname } from "@kokohima/shared";
 import { formatDate, formatSlot, localDateOf } from "../availability/format";
 
@@ -59,3 +59,23 @@ export function initialRange(slot: { startsAt: string; endsAt: string }, now: nu
   if (endsAt - startsAt < MIN_LENGTH_MS) return null;
   return { startsAt: new Date(startsAt).toISOString(), endsAt: new Date(endsAt).toISOString() };
 }
+
+/** 募集の状態の文言（docs/specs/T-05-broadcast.md「画面」）。宛先の人には人数を出さない */
+export function broadcastStatusText(b: Pick<Broadcast, "status" | "direction" | "responseCount" | "respondedByMe">) {
+  switch (b.status) {
+    case "open":
+      if (b.direction === "sent") {
+        return b.responseCount ? `${b.responseCount}人が応じています` : "まだ応じた人はいません";
+      }
+      return b.respondedByMe ? "応じました" : "募集中";
+    case "decided":
+      return "成立";
+    case "expired":
+      return "期限が過ぎました";
+    case "closed":
+      return "締め切りました";
+  }
+}
+
+export const broadcastStatusClass = (status: Broadcast["status"]) =>
+  status === "decided" ? "text-emerald-800" : "text-slate-600";
