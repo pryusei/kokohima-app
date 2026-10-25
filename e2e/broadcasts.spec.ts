@@ -69,6 +69,17 @@ test("AがB・C・Dに募集 → BとCが応じる → Aには人数だけ → �
   await expect(b.page.getByText(a.displayName)).toBeVisible();
   await expect(b.page.getByText(c.displayName)).toBeVisible();
 
+  await openReceived(c.page, a);
+  await c.page.getByRole("link", { name: "成立した予定を見る" }).click();
+  await expect(c.page.getByText(a.displayName)).toBeVisible();
+  await expect(c.page.getByText(b.displayName)).toBeVisible();
+
+  // A・B・C の「成立」に予定が出る
+  for (const p of [a.page, b.page, c.page]) {
+    await meetupsOf(p);
+    await expect(p.getByRole("list", { name: "成立した予定" }).getByRole("listitem")).toHaveCount(1);
+  }
+
   await openReceived(d.page, a);
   await expect(d.page.getByText("募集中")).toBeVisible();
   await expect(d.page.getByRole("button", { name: "応じる" })).toBeVisible();

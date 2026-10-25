@@ -385,7 +385,11 @@ describe("決める", () => {
     await respond(b, late.id);
     await u.advance(HOUR_MS, owner, a, b);
     expect(await (await decide(owner, late.id)).json()).toMatchObject({ code: "expired" });
-    expect(await outbox("BroadcastDecided", late.id)).toHaveLength(0);
+    // 期限切れでは、作成時の BroadcastSent のほかに何も書かない
+    const { results } = await env.DB.prepare("SELECT type FROM outbox WHERE payload LIKE ? AND type <> 'BroadcastSent'")
+      .bind(`%${late.id}%`)
+      .all();
+    expect(results).toHaveLength(0);
   });
 
   it("同時に決める・応じる・やめる：決定は1回だけ、予定は1つ、参加者はイベントと一致する", async () => {
