@@ -22,7 +22,7 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       # Playwrightの設定（webServer）でローカルのWorkersとPWAを起動してから実行する
       - run: pnpm e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-report
