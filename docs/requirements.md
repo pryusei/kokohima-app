@@ -85,9 +85,11 @@ stateDiagram-v2
   }
   state "募集" as B {
     [*] --> 募集中
-    募集中 --> 募集中: 応じる（人数+1）
+    募集中 --> 募集中: 応じる（人数+1）／応じるのをやめる（人数-1）
     募集中 --> 成立_名前を開示: 募集者が決める（1人以上）
     募集中 --> 期限切れ_静かに終了: 期限
+    成立_名前を開示 --> 成立_名前を開示: やっぱり難しい（押した人だけ抜ける）
+    成立_名前を開示 --> キャンセル_募集: やっぱり難しい（募集者、または残り1人以下）
   }
 ```
 
@@ -176,8 +178,10 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | CalendarBusyDetected | Calendar | Availabilityが該当のここ暇を取り消す |
 | AvailabilityCancelledByCalendar | Availability | 未返答の誘いを「今回は難しい」にする／本人に通知 |
 | MeetupConfirmed | Invitation | Calendarが双方に書き込む／通知 |
-| BroadcastDecided | Invitation | Meetupを作成し、参加者全員に名前を開示して通知 |
-| BroadcastExpired | Invitation | 状態のみ更新。通知は送らない |
+| BroadcastSent | Invitation | 宛先ごとに通知 |
+| BroadcastDecided | Invitation | Meetupを作成し、参加者全員に名前を開示して通知（カレンダーへの書き込みは同時に書く MeetupConfirmed で行う） |
+| （期限切れ） | Invitation | 状態を保存せず、読むときに期限で決める。通知しないので、イベントは作らない（docs/specs/T-05-broadcast.md） |
+| MeetupLeft | Invitation | 募集の予定から1人が抜けた。残った参加者に定型文で通知 |
 | MeetupCancelled | Invitation | カレンダーから削除し、定型文で通知 |
 | FriendshipEstablished | Social | 本人に通知し、公開オフの導線を出す |
 | UserWithdrew | Identity | 本人データを削除し、相手側は表示を置換 |
@@ -211,7 +215,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 - [ ] 招待リンクの有効期限と人数上限のデフォルト値（モックでは3日間・5人）
 - [ ] 表示名・アイコン・プロフィール項目、居住エリアの持ち方
 - [ ] ひとことの不適切利用への対策
-- [ ] 募集で名前が開示された後の「やっぱり行けない」の扱い
+- [x] 募集で名前が開示された後の「やっぱり行けない」の扱い（押した人だけが抜け、募集者が抜けるか残り1人以下で予定ごと取り消す。docs/specs/T-05-broadcast.md 決定事項3）
 - [ ] タイムゾーンと言語（海外在住の友達がいる場合）
 - [ ] Apple CalDAVのWorkersからの接続性の技術検証
 - [ ] IaCツールの選定（Alchemy／Terraform）の技術検証（T-00）

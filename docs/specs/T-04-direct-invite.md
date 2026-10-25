@@ -66,8 +66,8 @@
   - `counterProposal`：`{ startsAt, endsAt }` か `null`
   - `meetupId`：成立していればその予定の `id`、なければ `null`
   - `createdAt`
-- `meetupSchema`：`{ id, startsAt, endsAt, status, participants, area, message, url, directInviteId, createdAt }`
-  - `status`：`confirmed`・`cancelled`
+- `meetupSchema`：`{ id, startsAt, endsAt, status, participants, area, message, url, directInviteId, broadcastId, createdAt }`（`broadcastId` は T-05 で追加）
+  - `status`：`confirmed`・`cancelled`。閲覧者から見た値で、募集の予定から抜けた人には `cancelled`（T-05）
   - `participants`：閲覧者以外の参加者の公開プロフィール
   - `area`・`message`・`url`：元の誘いのもの
 - 値がない項目も省かず `null` を入れる（api-conventions）
@@ -236,3 +236,4 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
 | 2026-10-08 | batch の後続の文の判定を、時刻の列でなく遷移ごとの `transition_id` にした（同じミリ秒の同時の返答を取り違えないため）。状態を実装済みにした | 実装PR |
 | 2026-10-08 | 実装PRのレビューを反映：URL は制御文字・空白を拒否し、正規化した href を保存する。返答・決定は受信者・送信者として SQL で絞って取得する。キャンセルの説明を `transition_id` に合わせ、作成画面の400の文言を1つにまとめ、「この時間に誘う」を明記 | 実装PRのレビュー（security-reviewer・spec-reviewer） |
 | 2026-10-08 | 調整した時間が30分未満になる終わりかけの枠には「この時間に誘う」を出さない | 実装PRのレビュー（pryusei/kokohima-app#14） |
+| 2026-10-25 | `meetupSchema` に `broadcastId` を足し、`status` を閲覧者から見た値にした。送信上限を誘いと募集の合計にした | T-05 の実装PR |
