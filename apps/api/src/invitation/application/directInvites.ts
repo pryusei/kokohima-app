@@ -336,7 +336,8 @@ async function meetupDtos(ctx: Ctx, viewerId: string, rows: repo.MeetupRow[]): P
     endsAt: iso(r.ends_at),
     // 募集の予定から抜けた人には、閲覧者から見た状態として cancelled を返す（T-05）
     status: r.my_left_at !== null ? "cancelled" : r.status,
-    participants: (participants.get(r.id) ?? [])
+    // 抜けた人には、抜けた後の参加者の変化を見せない
+    participants: (r.my_left_at !== null ? [] : (participants.get(r.id) ?? []))
       .filter((id) => id !== viewerId)
       .map((id) => profiles.get(id) ?? unknownProfile(id)),
     area: r.area,

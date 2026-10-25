@@ -156,16 +156,17 @@ export async function listBroadcasts(
   return results;
 }
 
-/** 募集ごとの宛先のID（募集者の一覧・詳細だけで使う） */
-export async function recipientsOf(d1: D1Database, broadcastIds: string[]) {
+/** 募集ごとの宛先のID。閲覧者が募集者の募集だけを返す（宛先の人の行を渡しても空） */
+export async function recipientsOf(d1: D1Database, viewerId: string, broadcastIds: string[]) {
   const map = new Map<string, string[]>();
   if (broadcastIds.length === 0) return map;
   const { results } = await d1
     .prepare(
-      `SELECT broadcast_id, user_id FROM broadcast_recipients
-       WHERE broadcast_id IN (SELECT value FROM json_each(?1)) ORDER BY created_at, user_id`,
+      `SELECT r.broadcast_id, r.user_id FROM broadcast_recipients r
+       JOIN broadcasts b ON b.id = r.broadcast_id AND b.owner_id = ?2
+       WHERE r.broadcast_id IN (SELECT value FROM json_each(?1)) ORDER BY r.created_at, r.user_id`,
     )
-    .bind(JSON.stringify(broadcastIds))
+    .bind(JSON.stringify(broadcastIds), viewerId)
     .all<{ broadcast_id: string; user_id: string }>();
   for (const r of results) {
     const list = map.get(r.broadcast_id) ?? [];

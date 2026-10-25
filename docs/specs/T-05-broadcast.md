@@ -108,7 +108,7 @@
 | `decided` | 期限後 | `decided` | `decided` | `closed` |
 
 - 参加者でない宛先の人に返す状態と値は、自分の応答と時間だけで決まり、ほかの人の応答や決定で変わらない（`responseCount`・`recipients`・`meetupId` は `null`、`respondedByMe` は自分の応答）
-- 予定から抜けた参加者（決定事項3）にも `decided` と `meetupId` を返す（すでに決定と名前を知っているため）。予定の詳細は `cancelled` として返す
+- 予定から抜けた参加者（決定事項3）にも `decided` と `meetupId` を返す（すでに決定と名前を知っているため）。予定の詳細は `cancelled` として返し、`participants` は空にする（抜けた後の参加者の変化を見せない）
 - 募集者が予定から抜けて予定が取り消されても、募集は `decided` のまま
 
 ### 応じる・やめる

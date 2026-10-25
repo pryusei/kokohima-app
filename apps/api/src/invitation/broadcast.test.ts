@@ -216,6 +216,15 @@ describe("一覧と詳細", () => {
 });
 
 describe("秘匿", () => {
+  it("宛先の一覧は、閲覧者が募集者の募集についてだけ返す（宛先の人の ID で読んでも空）", async () => {
+    const { owner, friends } = await group(2);
+    const [a] = friends as [User, User];
+    const bc = await created(owner, friends);
+    const { recipientsOf } = await import("./infra/broadcastRepository");
+    expect((await recipientsOf(env.DB, a.id, [bc.id])).size).toBe(0);
+    expect((await recipientsOf(env.DB, owner.id, [bc.id])).get(bc.id)).toHaveLength(2);
+  });
+
   it("決める前、募集者には人数だけで名前も ID も返さない。宛先の人には人数を返さない", async () => {
     const { owner, friends } = await group(3);
     const [a, b] = friends as [User, User, User];
@@ -240,6 +249,13 @@ describe("秘匿", () => {
     await respond(c, decided.id);
     expect((await decide(owner, decided.id)).status).toBe(200);
     const shape = (x: Record<string, unknown>) => JSON.stringify({ ...x, id: null, createdAt: null, owner: null });
+    // 期限前の応じる・やめるの応答も、決まった募集と決まっていない募集で同じ
+    for (const op of [respond, withdraw]) {
+      const rb = await op(b, quiet.id);
+      const rd = await op(d, decided.id);
+      expect([rb.status, rd.status]).toEqual([200, 200]);
+      expect(shape((await rb.json()) as Record<string, unknown>)).toBe(shape((await rd.json()) as Record<string, unknown>));
+    }
     const vb = (await get(b, quiet.id)).json() as Promise<Record<string, unknown>>;
     const vd = (await get(d, decided.id)).json() as Promise<Record<string, unknown>>;
     expect(shape(await vb)).toBe(shape(await vd));
@@ -282,6 +298,8 @@ describe("応じる・やめる", () => {
     expect((await view(a, bc.id)).respondedByMe).toBe(false);
     expect((await respond(owner, bc.id)).status).toBe(404);
     expect((await respond(c, bc.id)).status).toBe(404);
+    expect((await withdraw(owner, bc.id)).status).toBe(404);
+    expect((await withdraw(c, bc.id)).status).toBe(404);
     const { results } = await env.DB.prepare("SELECT type FROM outbox WHERE payload LIKE ? AND type <> 'BroadcastSent'")
       .bind(`%${bc.id}%`)
       .all();
@@ -331,6 +349,19 @@ describe("決める", () => {
     expect(fromA.participants.map((p) => p.id).sort()).toEqual([owner.id, b.id].sort());
     expect(await view(a, bc.id)).toMatchObject({ status: "decided", meetupId: id });
     expect(await view(c, bc.id)).toMatchObject({ status: "open", meetupId: null });
+    // 参加者でない宛先の人と無関係の人は、予定の ID を知っても、存在しない予定と同じ404
+    const stranger = await u.user();
+    const missing = crypto.randomUUID();
+    for (const who of [c, stranger]) {
+      for (const path of [`/api/v1/meetups/${id}`, `/api/v1/meetups/${missing}`]) {
+        expect((await u.call("GET", path, { token: who.token })).status).toBe(404);
+      }
+      const cancelled = await leave(who, id);
+      expect(cancelled.status).toBe(404);
+      expect(await body(cancelled)).toBe(await body(await leave(who, missing)));
+    }
+    expect((await decide(stranger, bc.id)).status).toBe(404);
+    expect((await get(stranger, bc.id)).status).toBe(404);
     const rows = await env.DB.prepare("SELECT user_id FROM meetup_participants WHERE meetup_id = ?").bind(id).all<{ user_id: string }>();
     const expected = rows.results.map((r) => r.user_id).sort();
     expect(expected).toEqual([owner.id, a.id, b.id].sort());
@@ -390,7 +421,9 @@ describe("やっぱり難しい（募集の予定）", () => {
     const [a, b] = friends as [User, User];
     const res = await leave(a, id);
     expect(res.status).toBe(200);
-    expect(meetupSchema.parse(await res.json()).status).toBe("cancelled");
+    const left = meetupSchema.parse(await res.json());
+    expect(left.status).toBe("cancelled");
+    expect(left.participants).toEqual([]);
     const fromB = await meetup(b, id);
     expect(fromB.status).toBe("confirmed");
     expect(fromB.participants.map((p) => p.id)).toEqual([owner.id]);
@@ -398,9 +431,9 @@ describe("やっぱり難しい（募集の予定）", () => {
     expect(list.items).toHaveLength(0);
     expect(await view(a, bc.id)).toMatchObject({ status: "decided", meetupId: id });
     expect(await (await leave(a, id)).json()).toMatchObject({ code: "invalid_state" });
-    const [left] = await outbox("MeetupLeft", id);
-    expect(left).toMatchObject({ meetupId: id, actorId: a.id });
-    expect((left?.participantIds as string[]).sort()).toEqual([owner.id, b.id].sort());
+    const [leftEvent] = await outbox("MeetupLeft", id);
+    expect(leftEvent).toMatchObject({ meetupId: id, actorId: a.id });
+    expect((leftEvent?.participantIds as string[]).sort()).toEqual([owner.id, b.id].sort());
     expect(await outbox("MeetupCancelled", id)).toHaveLength(0);
   });
 

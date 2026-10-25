@@ -56,9 +56,12 @@ function toDto(
 }
 
 async function dtos(ctx: Ctx, viewerId: string, rows: repo.BroadcastRow[]) {
-  // 宛先は募集者の行についてだけ読む（自分で選んだ相手）
-  const ownRows = rows.filter((r) => r.owner_id === viewerId).map((r) => r.id);
-  const recipients = await repo.recipientsOf(ctx.env.DB, ownRows);
+  // 宛先は、閲覧者が募集者の募集についてだけ SQL で読む（自分で選んだ相手）
+  const recipients = await repo.recipientsOf(
+    ctx.env.DB,
+    viewerId,
+    rows.map((r) => r.id),
+  );
   const ids = new Set(rows.map((r) => r.owner_id));
   for (const list of recipients.values()) for (const id of list) ids.add(id);
   const profiles = await getPublicProfiles(ctx.env, [...ids]);
