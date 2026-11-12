@@ -1,6 +1,6 @@
 # T-06 仕様書：カレンダー連携（Google）と .ics
 
-- 状態：合意済み
+- 状態：実装済み
 - タスク票：docs/tasks/T-06-calendar.md
 - 関係する要件：F-02、F-03、F-06、F-13、NF-02、NF-03、NF-04、NF-06、要求定義書「状態遷移とビジネスルール」「セキュリティ設計（カレンダーの認証情報、残りの論点のGoogleのスコープ）」
 
@@ -64,12 +64,11 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - 埋まりは `primary`（メインのカレンダー）だけで確かめる（決定事項2）。
   - カレンダーの一覧を読むスコープを取らないため。
   - 「ここ暇」カレンダーは確かめる対象に入らない。そのため、書き込んだ予定で自分のここ暇が取り消されることはない。
-- 実装の最初に、Googleの公式ドキュメントで次のことを確かめる。食い違いがあれば実装PRで仕様書を直す。
-  - スコープの名前と範囲
-  - freeBusy.query の範囲の上限と、カレンダーごとのエラーの形
-  - 予定IDに使える文字
-  - revoke が同じクライアントの許可全体を失効させるか
-- このPRを書いた環境からは公式のページに接続できず、スコープは検索の結果で確かめた。
+- 実装PRで、Googleの公式ドキュメント（developers.google.com）で次のことを確かめた。
+  - スコープ：`calendar.freebusy` は「カレンダーの空きを見る」、`calendar.app.created` は「セカンダリカレンダーを作り、その中の予定を見る・作る・変える・消す」。仕様どおり
+  - freeBusy.query：応答の `calendars.<id>.errors`（`notFound`・`internalError` など）があるとき、そのカレンダーの `busy` は使えない。範囲の上限は書かれていないので、範囲が長すぎて400になったときも一時的な失敗（`unavailable`・再試行）として扱う
+  - 予定ID：base32hex（a〜v と 0〜9）の5〜1024文字。`kh` ＋ UUID の16進は収まる
+  - revoke：「プロジェクトに与えた許可全体を失効させ、そのプロジェクトのすべてのクライアントに出したアクセストークン・更新用トークンを使えなくする」。決定事項13（使っている連携があるときは失効させない）の前提どおり
 
 ## API
 `api-conventions` スキルに従う。例外は「例外」の欄に書く。スキーマは `packages/shared/src/schemas/calendar.ts` に置く。
@@ -169,7 +168,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - インデックス：`(created_at)`。
 
 ### 既存の表とトークン
-- `outbox` は列を足さない。`processed_at` は「Queue に渡し終えた日時」として使う（「outbox を Queues に流す」）。
+- `outbox` は列を足さない。`processed_at` は「Queue に渡し終えた日時」として使う（「outbox を Queues に流す」）。型で絞って古い順に読むため、インデックス `(type, processed_at, created_at)` を足す。
 - アクセストークンは保存しない。使うたびに更新用トークンで取る。
 
 ### トークンの暗号化（NF-04）
@@ -415,8 +414,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | Cron | triggers | `* * * * *`（outbox と掃除）、`*/15 * * * *`（確認の割り当て） |
 
 - `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET` は T-01 のものを使う。リダイレクト先 `/api/v1/calendar/google/callback` を Google Cloud のクライアントに登録する（人が行う）。
-- Queue は `infra/terraform` に足す（本体と退避キュー、staging・prod）。
-  - wrangler の各環境（ローカル・e2e・staging・prod）に、バインディングと Cron を書く。
+- Queue の本体と退避キューは、`infra/terraform` にすでにある `cloudflare_queue.outbox`・`outbox_dlq`（`kokohima-<env>-outbox`・`kokohima-<env>-outbox-dlq`）を使う（Terraform の変更はない）。
+  - wrangler の各環境（ローカル・e2e・staging・prod）に、バインディング（`JOBS`）と Cron を書く。`max_retries` は5、`dead_letter_queue` は退避キュー。
   - `infra-change` スキルに従い、apply・deploy はしない。
 - 本番のエントリ（`src/index.ts`）と E2E のエントリは、どちらも `fetch`・`scheduled`・`queue` を export する。
 - E2E とローカルの `CALENDAR_TOKEN_KEYS` は、`scripts/write-e2e-dev-vars.mjs` で作る。`CALENDAR_TOKEN_CURRENT_KID` は `env.e2e` の vars に置く。
@@ -426,13 +425,13 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - E2E のエントリ（`src/e2e/entry.ts`）で、`AppDeps` の `google.endpoints` を偽の経路に向ける。認可の画面遷移の URL もこれに含める。
   - 偽の実装は `src/e2e/` に置き、本番のエントリから import しない。
 - 偽の経路：
-  - 偽の認可画面 `/__e2e__/calendar/google/authorize`：同意したことにして、コールバックへリダイレクトする。
-  - 偽のトークン・freeBusy・カレンダー・予定の経路。
+  - 偽の認可画面 `/__e2e__/calendar/google/authorize`（API の `http://localhost:8787` に置く）：`state` から利用者を引き、同意したことにして、コールバックへリダイレクトする。
+  - 偽のトークン・freeBusy・カレンダー・予定は、E2E のエントリの `fetch` が `google.e2e.invalid` 宛てだけを受ける（ネットワークに出ない）。
   - 偽の埋まりを設定する `/__e2e__/calendar/busy`。
   - すぐに処理する経路：確認を実行する `/__e2e__/calendar/sync`、outbox を処理する `/__e2e__/outbox/drain`。
   - どれも `E2E_MODE=1` のときだけ有効。
 - 偽の実装の状態は、E2E のエントリだけが作る表に置く。本番のマイグレーションには入れない。
-- CI の本番ビルドの検査（`__e2e__|e2eLogin|e2eExpireBroadcast`）に、新しい関数名（`e2eCalendar`・`e2eOutbox`）を足す。
+- CI の本番ビルドの検査（`__e2e__|e2eLogin|e2eExpireBroadcast`）に、新しい名前（`e2eCalendar`・`e2eOutbox`・`e2eFetch`・`google.e2e.invalid`）を足す。
 
 ## 認可と秘匿
 
@@ -632,3 +631,4 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | --- | --- | --- |
 | 2026-10-25 | 初版 | |
 | 2026-11-12 | スコープ不足のときの失効を `active` 以外に限る、自動の断りを取り消し前に作った誘いに限る、20件を超える取り消しを保留にして次の確認で判定し直す、.ics のトークンのログの例外、確認の上限と推測されうるリスクを追記。確認事項を決定事項にし、合意済みにした | 仕様書PRのレビュー |
+| 2026-11-12 | 実装PR：Google の公式ドキュメントで確かめた結果を書いた。Queue は Terraform の既存の outbox・outbox_dlq を使う。outbox のインデックスを足す。E2E の偽の認可画面の置き場所と、偽の Google の受け方を書いた | 実装 |

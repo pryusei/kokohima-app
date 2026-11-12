@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import type { AppDeps, AppEnv } from "../env";
 import { e2eExpireBroadcast } from "./broadcasts";
-import app from "./entry";
+import { e2eApp as app } from "./entry";
 
 // E2E用：募集の期限を過ぎた状態にする経路（docs/specs/T-05-broadcast.md 決定事項5）
 

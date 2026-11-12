@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import app from "./entry";
+import { e2eApp as app } from "./entry";
 
 const login = (bindings: typeof env, user = `t-${crypto.randomUUID()}`) =>
   app.request(

@@ -57,10 +57,10 @@ open →（期限）expired（保存しない。誰にも通知しない。再�
 | DirectInviteSent | 受信者に通知（T-07） |
 | DirectInviteDeclined・DirectInviteCounterProposed | 送信者に通知（T-07） |
 | DirectInviteSkipped | 受信者に通知（T-07） |
-| AvailabilityCancelledByCalendar | 未返答の誘いを自動で declined にし、本人に通知 |
-| MeetupConfirmed | カレンダーへ書き込み、通知 |
+| AvailabilityCancelledByCalendar | 取り消しの前に作られた pending の誘いを、手で断ったときと同じ遷移で declined にする（T-06）。本人に通知（T-07） |
+| MeetupConfirmed | カレンダーへ書き込み（T-06）、通知 |
 | BroadcastSent | 宛先ごとに通知（T-07） |
 | BroadcastDecided | Meetup作成、参加者全員に名前を開示して通知（同時に MeetupConfirmed も書く） |
 | （期限切れ） | 保存せず読むときに決める。通知しないのでイベントは作らない |
-| MeetupLeft | 募集の予定から1人が抜けた。残った参加者に通知（T-07） |
-| MeetupCancelled | カレンダーから削除、定型文で通知 |
+| MeetupLeft | 募集の予定から1人が抜けた。抜けた人のカレンダーから消し、残りの人のタイトルを直す（T-06）。残った参加者に通知（T-07） |
+| MeetupCancelled | カレンダーから削除（T-06）、定型文で通知 |
