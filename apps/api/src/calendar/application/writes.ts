@@ -4,7 +4,7 @@ import {
   upcomingMeetupIdsOf,
   type MeetupForCalendar,
 } from "../../invitation/application/calendarFacing";
-import { externalEventId, ReauthRequired } from "../domain/provider";
+import { externalEventId, ProviderUnavailable, ReauthRequired } from "../domain/provider";
 import * as repo from "../infra/repository";
 import { accessTokenFor, providerFor, type Ctx } from "./connections";
 import { eventContent } from "./eventContent";
@@ -18,14 +18,21 @@ export const UPCOMING_PAGE = 100;
 const shouldExist = (m: MeetupForCalendar, userId: string, now: number) =>
   m.status === "confirmed" && m.endsAt > now && m.participants.some((p) => p.userId === userId && !p.left);
 
-/** 「ここ暇」カレンダーの ID。なければ作る。同時に作られていたら、作った方を消して保存されている方を使う */
-async function ensureCalendar(ctx: Ctx, conn: repo.ConnectionRow, accessToken: string): Promise<string | null> {
-  if (conn.calendar_id) return conn.calendar_id;
+/**
+ * 「ここ暇」カレンダーの ID。なければ作る（created: true）。同時に作られていたら、作った方を消して保存されている方を使う
+ */
+async function ensureCalendar(
+  ctx: Ctx,
+  conn: repo.ConnectionRow,
+  accessToken: string,
+): Promise<{ id: string; created: boolean } | null> {
+  if (conn.calendar_id) return { id: conn.calendar_id, created: false };
   const provider = providerFor(ctx);
   const created = await provider.createCalendar(accessToken, CALENDAR_NAME, await getUserTimezone(ctx.env, conn.user_id));
-  if (await repo.setCalendarIdIfEmpty(ctx.env.DB, conn.user_id, conn.provider, created)) return created;
+  if (await repo.setCalendarIdIfEmpty(ctx.env.DB, conn.user_id, conn.provider, created)) return { id: created, created: true };
   await provider.deleteCalendar(accessToken, created);
-  return (await repo.findConnection(ctx.env.DB, conn.user_id, conn.provider))?.calendar_id ?? null;
+  const saved = (await repo.findConnection(ctx.env.DB, conn.user_id, conn.provider))?.calendar_id ?? null;
+  return saved ? { id: saved, created: false } : null;
 }
 
 /** カレンダーが使えなかった（利用者が消した・別のアカウント）。外して、これからの予定を書き直す */
@@ -58,8 +65,9 @@ async function reconcileFor(ctx: Ctx, meetup: MeetupForCalendar, conn: repo.Conn
     return;
   }
 
-  const calendarId = await ensureCalendar(ctx, conn, accessToken);
-  if (!calendarId) return;
+  const calendar = await ensureCalendar(ctx, conn, accessToken);
+  if (!calendar) return;
+  const calendarId = calendar.id;
   const content = await eventContent(ctx, meetup, conn.user_id);
   const result = await provider.putEvent(accessToken, calendarId, {
     id: eventId,
@@ -69,6 +77,9 @@ async function reconcileFor(ctx: Ctx, meetup: MeetupForCalendar, conn: repo.Conn
     timezone: await getUserTimezone(ctx.env, conn.user_id),
   });
   if (result === "calendar_missing") {
+    // 作ったばかりのカレンダーにも書けないなら、作り直しをくり返さない（カレンダーが増え続けるのを防ぐ）。
+    // 一時的な失敗として Queue の再試行に任せ、続けば退避キューへ送る
+    if (calendar.created) throw new ProviderUnavailable("calendar_unwritable");
     await recreateCalendar(ctx, conn, calendarId);
     return;
   }

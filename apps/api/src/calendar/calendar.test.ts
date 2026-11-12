@@ -322,6 +322,21 @@ describe("カレンダーの空き（候補）", () => {
     expect(freeSlotsSchema.parse(await (await get(a)).json()).status).toBe("unavailable");
   });
 
+  it("他人の連携は使われない（連携していない人は none、freeBusy を呼ばない）", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    h.google.state.busy = [busy(T("08:00"), T("08:30"))];
+    const before = h.google.state.requests.length;
+    expect(freeSlotsSchema.parse(await (await get(b)).json())).toEqual({ status: "none", items: [], nextCursor: null });
+    expect(h.google.state.requests.length).toBe(before);
+    // A が needs_reauth になっても B の応答は変わらない
+    await env.DB.prepare("UPDATE calendar_connections SET status = 'needs_reauth', refresh_token_enc = NULL WHERE user_id = ?1")
+      .bind(a.id)
+      .run();
+    expect(freeSlotsSchema.parse(await (await get(b)).json()).status).toBe("none");
+  });
+
   it("14日を超える範囲・壊れた範囲は400。未ログインは401", async () => {
     const a = await authenticated();
     expect((await get(a, `from=${T("00:00")}&to=${T("00:01", "24")}`)).status).toBe(400);
@@ -681,6 +696,28 @@ describe("成立した予定の書き込み", () => {
     expect(rewrite).toBeDefined();
     if (rewrite) await handleJob(h.ctx, rewrite);
     expect(h.google.liveEvents().filter((e) => e.calendarId !== calendarId)).toHaveLength(1);
+  });
+
+  it("作ったばかりのカレンダーにも書けなければ投げ、カレンダーを作り直し続けない", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    const meetupIds = [await meetupOf(a, b)];
+    const c = await authenticated("ちさ");
+    meetupIds.push(await meetupOf(a, c, T("11:00", "12"), T("13:00", "12")));
+    await deliver("MeetupConfirmed", meetupIds[0] ?? "");
+    expect(h.google.state.calendars.size).toBe(1);
+    // 書けなくなる（上限以外の 403）
+    h.google.state.forbidEventWrites = true;
+    h.jobs.length = 0;
+    await deliver("MeetupConfirmed", meetupIds[1] ?? "");
+    const rewrite = h.jobs.find((j) => j.kind === "outbox" && j.type === "CalendarConnected");
+    expect(rewrite).toBeDefined();
+    h.jobs.length = 0;
+    if (rewrite) await expect(handleJob(h.ctx, rewrite)).rejects.toThrow();
+    // 作り直しは1回だけで、新しいメッセージも送らない
+    expect(h.google.state.calendarCounter).toBe(2);
+    expect(h.jobs).toHaveLength(0);
   });
 
   it("募集の予定で抜けた人の予定を消し、残りの人のタイトルを直す", async () => {

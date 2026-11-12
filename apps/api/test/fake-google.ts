@@ -24,6 +24,8 @@ export function createFakeGoogle() {
     calendarCounter: 0,
     /** 次の応答を失敗させる経路（例："POST /calendars/x/events"）→ ステータス */
     failNext: new Map<string, number>(),
+    /** 予定の書き込みを上限以外の理由の403で断り続ける（Workspace の管理者の制限など） */
+    forbidEventWrites: false,
     requests: [] as GoogleRequest[],
   };
 
@@ -92,6 +94,9 @@ export function createFakeGoogle() {
     }
     if (!state.calendars.has(calendarId)) return json({ error: { errors: [{ reason: "notFound" }] } }, 404);
     const eventId = calMatch[3] ? decodeURIComponent(calMatch[3]) : null;
+    if (state.forbidEventWrites && (method === "POST" || method === "PUT")) {
+      return json({ error: { errors: [{ reason: "forbiddenForNonOrganizer" }] } }, 403);
+    }
     if (method === "POST" && !eventId) {
       const req = JSON.parse(body) as Record<string, unknown> & { id: string };
       const existing = state.events.get(eventKey(calendarId, req.id));
