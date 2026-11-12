@@ -4,7 +4,13 @@ updates:
     directory: /
     schedule:
       interval: daily
-    open-pull-requests-limit: 10
+    # 上限に達すると新しい更新（脆弱性の修正を含む）のPRが作られなくなるので、余裕を持たせる
+    open-pull-requests-limit: 20
+    # マイナー・パッチの更新は1つのPRにまとめ、溜まらないようにする（メジャーとセキュリティ更新は個別のPR）
+    groups:
+      npm-minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
