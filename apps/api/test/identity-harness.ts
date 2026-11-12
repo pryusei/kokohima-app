@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
 import { createLocalJWKSet, exportJWK, exportPKCS8, generateKeyPair, type JWK, SignJWT } from "jose";
-import { createApp } from "../src/app";
-import type { Bindings } from "../src/env";
+import { createApp, defaultDeps } from "../src/app";
+import type { AppDeps, Bindings, JobMessage } from "../src/env";
+import { createFakeGoogle } from "./fake-google";
 
 // identity のテスト用の道具。本番のコードからは読み込まない（*.test.ts からだけ使う）
 
@@ -20,7 +21,22 @@ export async function createHarness() {
     alg: "RS256",
   });
   const appleSigningKey = await generateKeyPair("ES256", { extractable: true });
-  const bindings: Bindings = { ...env, APPLE_PRIVATE_KEY: await exportPKCS8(appleSigningKey.privateKey) };
+  /** Queue に送ったメッセージ（本物の Queue には送らない） */
+  const jobs: JobMessage[] = [];
+  const fakeQueue = {
+    send: async (body: JobMessage) => {
+      jobs.push(body);
+    },
+    sendBatch: async (messages: Iterable<{ body: JobMessage }>) => {
+      for (const m of messages) jobs.push(m.body);
+    },
+  } as unknown as Queue<JobMessage>;
+  const bindings: Bindings = {
+    ...env,
+    APPLE_PRIVATE_KEY: await exportPKCS8(appleSigningKey.privateKey),
+    JOBS: fakeQueue,
+  };
+  const google = createFakeGoogle();
 
   /** 次にトークンエンドポイントが返すIDトークンの作り方。テストごとに差し替える */
   let tokenResponder: (req: { provider: ProviderName; body: URLSearchParams }) => Promise<Response> = async () =>
@@ -29,6 +45,7 @@ export async function createHarness() {
 
   const fakeFetch: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (google.handles(new URL(url), init)) return google.handle(new URL(url), init);
     const provider: ProviderName | null = url.startsWith("https://oauth2.googleapis.com/token")
       ? "google"
       : url.startsWith("https://appleid.apple.com/auth/token")
@@ -40,14 +57,16 @@ export async function createHarness() {
     return tokenResponder({ provider, body });
   };
 
-  const app = createApp({
+  const deps: AppDeps = {
+    ...defaultDeps(),
     fetch: fakeFetch,
     jwks: {
       google: createLocalJWKSet({ keys: [await jwk("google")] }),
       apple: createLocalJWKSet({ keys: [await jwk("apple")] }),
     },
     now: () => clock.now,
-  });
+  };
+  const app = createApp(deps);
 
   const request = (path: string, init: RequestInit = {}) => app.request(path, init, bindings);
 
@@ -134,6 +153,11 @@ export async function createHarness() {
   return {
     app,
     bindings,
+    google,
+    jobs,
+    deps,
+    /** consumer・Cron の処理を呼ぶときの ctx */
+    ctx: { env: bindings, deps },
     clock,
     request,
     tokenRequests,

@@ -8,7 +8,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS）は
+  // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS）は
   // wrangler secret で設定する（ローカルは .dev.vars、E2Eは scripts/write-e2e-dev-vars.mjs が生成）
   "vars": {
     "APP_ORIGIN": "http://localhost:5173",
@@ -16,8 +16,17 @@
     "APPLE_CLIENT_ID": "",
     "APPLE_TEAM_ID": "",
     "APPLE_KEY_ID": "",
-    "JWT_CURRENT_KID": "local-1"
+    "JWT_CURRENT_KID": "local-1",
+    "CALENDAR_TOKEN_CURRENT_KID": "local-1"
   },
+
+  // outbox と定期の確認（docs/specs/T-06-calendar.md）。staging・prod の Queue の本体と退避キューは infra/terraform で作る（cloudflare_queue.outbox・outbox_dlq）
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "kokohima-local-outbox" }],
+    "consumers": [{ "queue": "kokohima-local-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-local-outbox-dlq" }]
+  },
+  // 1分ごと：outbox を Queue に流す・掃除。15分ごと：カレンダーの確認の割り当て
+  "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
 
   // ローカル開発（wrangler dev）。D1はローカルのSQLiteなのでIDは何でもよい
   "d1_databases": [
@@ -40,8 +49,14 @@
         "APPLE_CLIENT_ID": "e2e-unused",
         "APPLE_TEAM_ID": "e2e-unused",
         "APPLE_KEY_ID": "e2e-unused",
-        "JWT_CURRENT_KID": "e2e-1"
+        "JWT_CURRENT_KID": "e2e-1",
+        "CALENDAR_TOKEN_CURRENT_KID": "e2e-1"
       },
+      "queues": {
+        "producers": [{ "binding": "JOBS", "queue": "kokohima-e2e-outbox" }],
+        "consumers": [{ "queue": "kokohima-e2e-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-e2e-outbox-dlq" }]
+      },
+      "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
       "d1_databases": [
         {
           "binding": "DB",
@@ -59,8 +74,14 @@
         "APPLE_CLIENT_ID": "",
         "APPLE_TEAM_ID": "",
         "APPLE_KEY_ID": "",
-        "JWT_CURRENT_KID": "staging-1"
+        "JWT_CURRENT_KID": "staging-1",
+        "CALENDAR_TOKEN_CURRENT_KID": "staging-1"
       },
+      "queues": {
+        "producers": [{ "binding": "JOBS", "queue": "kokohima-staging-outbox" }],
+        "consumers": [{ "queue": "kokohima-staging-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-staging-outbox-dlq" }]
+      },
+      "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
       "d1_databases": [
         {
           "binding": "DB",
@@ -79,8 +100,14 @@
         "APPLE_CLIENT_ID": "",
         "APPLE_TEAM_ID": "",
         "APPLE_KEY_ID": "",
-        "JWT_CURRENT_KID": "prod-1"
+        "JWT_CURRENT_KID": "prod-1",
+        "CALENDAR_TOKEN_CURRENT_KID": "prod-1"
       },
+      "queues": {
+        "producers": [{ "binding": "JOBS", "queue": "kokohima-prod-outbox" }],
+        "consumers": [{ "queue": "kokohima-prod-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-prod-outbox-dlq" }]
+      },
+      "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
       "d1_databases": [
         {
           "binding": "DB",

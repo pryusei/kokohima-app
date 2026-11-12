@@ -23,6 +23,11 @@ export default defineProject({
             "test-old": "b2xkLWtleS1vbGQta2V5LW9sZC1rZXktb2xkLWtleS1vbGQ",
           }),
           JWT_CURRENT_KID: "test-1",
+          CALENDAR_TOKEN_KEYS: JSON.stringify({
+            "cal-1": "Y2FsLWtleS0xLWNhbC1rZXktMS1jYWwta2V5LTEtY2E",
+            "cal-old": "b2xkLWNhbC1rZXktb2xkLWNhbC1rZXktb2xkLWNhbCE",
+          }),
+          CALENDAR_TOKEN_CURRENT_KID: "cal-1",
         },
       },
     })),

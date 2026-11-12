@@ -1,16 +1,17 @@
 import { Hono } from "hono";
 import { requestId } from "hono/request-id";
 import { createRemoteJWKSet } from "jose";
-import type { AppDeps, AppEnv } from "./env";
+import { GOOGLE_ENDPOINTS, type AppDeps, type AppEnv } from "./env";
 import { problem } from "./http/problem";
 import { availabilityRoutes } from "./availability/routes";
+import { calendarRoutes } from "./calendar/routes";
 import { identityRoutes } from "./identity/routes";
 import { invitationRoutes } from "./invitation/routes";
 import { socialRoutes } from "./social/routes";
 
 export { problem };
 
-function defaultDeps(): AppDeps {
+export function defaultDeps(): AppDeps {
   return {
     fetch: (input, init) => fetch(input, init),
     jwks: {
@@ -18,6 +19,7 @@ function defaultDeps(): AppDeps {
       apple: createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys")),
     },
     now: () => Date.now(),
+    google: { endpoints: GOOGLE_ENDPOINTS },
   };
 }
 
@@ -37,6 +39,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
   app.route("/api/v1", socialRoutes());
   app.route("/api/v1", availabilityRoutes());
   app.route("/api/v1", invitationRoutes());
+  app.route("/api/v1", calendarRoutes());
 
   app.notFound((c) => problem(c.get("requestId"), 404, "not_found", "Not Found"));
 

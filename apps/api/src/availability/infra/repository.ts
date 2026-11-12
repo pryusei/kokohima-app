@@ -216,3 +216,72 @@ export async function isMutualFriend(d1: D1Database, viewerId: string, friendId:
     .first();
   return row !== null;
 }
+
+// ---- カレンダーの自動取り消し（T-06） ----
+
+/** 自分の手動の枠のうち、[from, to) と1分以上重なり、終了が now より後のもの（作成日時つき） */
+export async function myManualWithCreatedAt(d1: D1Database, userId: string, from: number, to: number, now: number) {
+  const { results } = await d1
+    .prepare(
+      `SELECT id, starts_at, ends_at, created_at FROM availabilities
+       WHERE user_id = ?1 AND MIN(ends_at, ?3) - MAX(starts_at, ?2) >= ?5 AND ends_at > ?4
+       ORDER BY starts_at, id`,
+    )
+    .bind(userId, from, to, now, MINUTE_MS)
+    .all<{ id: string; starts_at: number; ends_at: number; created_at: number }>();
+  return results;
+}
+
+/** 条件（guard）。?n から始まる値を使う SQL と、その値 */
+export type Guard = { sql: (n: number) => string; binds: readonly unknown[] };
+
+/**
+ * 取り消しの文。どの文にも guard を付け、guard が偽なら何もしない（docs/specs/T-06-calendar.md の手順7）。
+ * 手動の枠は削除、くり返しはその日を例外に足し、取り消しがあれば AvailabilityCancelledByCalendar を書く
+ */
+export function calendarCancelStatements(
+  d1: D1Database,
+  input: {
+    userId: string;
+    manualIds: string[];
+    exceptions: { ruleId: string; date: string }[];
+    event: { id: string; payload: string } | null;
+    now: number;
+  },
+  guard: Guard,
+): D1PreparedStatement[] {
+  const statements: D1PreparedStatement[] = [];
+  if (input.manualIds.length > 0) {
+    statements.push(
+      d1
+        .prepare(
+          `DELETE FROM availabilities
+           WHERE user_id = ?1 AND id IN (SELECT value FROM json_each(?2)) AND ${guard.sql(3)}`,
+        )
+        .bind(input.userId, JSON.stringify(input.manualIds), ...guard.binds),
+    );
+  }
+  if (input.exceptions.length > 0) {
+    statements.push(
+      d1
+        .prepare(
+          `INSERT OR IGNORE INTO recurrence_exceptions (rule_id, local_date, created_at)
+           SELECT json_extract(e.value, '$.ruleId'), json_extract(e.value, '$.date'), ?3 FROM json_each(?2) e
+           WHERE EXISTS (SELECT 1 FROM recurrence_rules r WHERE r.id = json_extract(e.value, '$.ruleId') AND r.user_id = ?1)
+             AND ${guard.sql(4)}`,
+        )
+        .bind(input.userId, JSON.stringify(input.exceptions), input.now, ...guard.binds),
+    );
+  }
+  if (input.event) {
+    statements.push(
+      d1
+        .prepare(
+          `INSERT INTO outbox (id, type, payload, created_at)
+           SELECT ?1, 'AvailabilityCancelledByCalendar', ?2, ?3 WHERE ${guard.sql(4)}`,
+        )
+        .bind(input.event.id, input.event.payload, input.now, ...guard.binds),
+    );
+  }
+  return statements;
+}
