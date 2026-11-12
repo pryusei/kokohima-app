@@ -25,6 +25,7 @@ beforeEach(async () => {
 const tick = (ms: number) => u.advance(ms, ...people);
 
 const MIN = 60 * 1000;
+const HOUR = 60 * MIN;
 const T = (s: string, day = "10") => `2026-10-${day}T${s}:00.000Z`;
 const ms = (s: string, day = "10") => Date.parse(T(s, day));
 
@@ -337,6 +338,19 @@ describe("カレンダーの空き（候補）", () => {
     expect(freeSlotsSchema.parse(await (await get(b)).json()).status).toBe("none");
   });
 
+  it("開始が60日より先の枠は出さない。タイムアウトは unavailable", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const horizon = h.clock.now + 60 * 24 * HOUR;
+    const from = new Date(horizon - 2 * 24 * HOUR).toISOString();
+    const to = new Date(horizon + 2 * 24 * HOUR).toISOString();
+    const body = freeSlotsSchema.parse(await (await get(a, `from=${from}&to=${to}`)).json());
+    expect(body.items.length).toBeGreaterThan(0);
+    for (const item of body.items) expect(Date.parse(item.startsAt)).toBeLessThanOrEqual(horizon);
+    h.google.state.throwNext.add("POST /calendar/v3/freeBusy");
+    expect(freeSlotsSchema.parse(await (await get(a)).json()).status).toBe("unavailable");
+  });
+
   it("14日を超える範囲・壊れた範囲は400。未ログインは401", async () => {
     const a = await authenticated();
     expect((await get(a, `from=${T("00:00")}&to=${T("00:01", "24")}`)).status).toBe(400);
@@ -503,6 +517,47 @@ describe("定期の確認と自動取り消し", () => {
     await syncConnection(h.ctx, a.id, "google");
     expect(await myItems(a)).toHaveLength(1);
     expect(await outbox("AvailabilityCancelledByCalendar", a.id)).toHaveLength(0);
+  });
+
+  it("確認の途中で連携し直し・権利切れがあると、batch のどの文も書かない", async () => {
+    for (const interrupt of ["relink", "lease"] as const) {
+      const a = await authenticated();
+      await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { date: "2026-10-11", preset: "night" } });
+      await synced(a);
+      await tick(15 * MIN);
+      h.google.state.busy = [busy(T("11:00", "11"), T("12:00", "11"))];
+      h.google.state.freeBusyOverride = () => {
+        const sql =
+          interrupt === "relink"
+            ? "UPDATE calendar_connections SET busy_snapshot = NULL, snapshot_from = NULL, snapshot_to = NULL, sync_lease_until = NULL WHERE user_id = ?1"
+            : "UPDATE calendar_connections SET sync_lease_until = sync_lease_until + 1 WHERE user_id = ?1";
+        void env.DB.prepare(sql).bind(a.id).run();
+        return Response.json({ calendars: { primary: { busy: h.google.state.busy } } });
+      };
+      await syncConnection(h.ctx, a.id, "google");
+      h.google.state.freeBusyOverride = null;
+      expect(await myItems(a), interrupt).toHaveLength(1);
+      expect(await outbox("AvailabilityCancelledByCalendar", a.id), interrupt).toHaveLength(0);
+    }
+  });
+
+  it("保留しても last_synced_at を進めない（予定を見たうえで作ったここ暇の基準を変えない）", async () => {
+    const a = await authenticated();
+    for (let d = 11; d <= 31; d++) {
+      const date = `2026-10-${String(d).padStart(2, "0")}`;
+      await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { date, preset: "night" } });
+    }
+    await synced(a);
+    const before = await env.DB.prepare("SELECT last_synced_at FROM calendar_connections WHERE user_id = ?1")
+      .bind(a.id)
+      .first<{ last_synced_at: number }>();
+    await tick(15 * MIN);
+    h.google.state.busy = [busy(T("00:00", "11"), "2026-11-01T00:00:00.000Z")];
+    expect(await syncConnection(h.ctx, a.id, "google")).toBe("held");
+    const after = await env.DB.prepare("SELECT last_synced_at FROM calendar_connections WHERE user_id = ?1")
+      .bind(a.id)
+      .first<{ last_synced_at: number }>();
+    expect(after?.last_synced_at).toBe(before?.last_synced_at);
   });
 
   it("友達から見える応答は、手で取り消したときと同じ（ここ暇が消えるだけ）", async () => {
@@ -720,6 +775,43 @@ describe("成立した予定の書き込み", () => {
     expect(h.jobs).toHaveLength(0);
   });
 
+  it("削除済みの予定は「すでにある」から更新で戻る。もうない予定の削除（404・410）は成功", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    const meetupId = await meetupOf(a, b);
+    await deliver("MeetupConfirmed", meetupId);
+    const [event] = h.google.liveEvents();
+    if (event) event.status = "cancelled";
+    expect(h.google.liveEvents()).toHaveLength(0);
+    await deliver("MeetupConfirmed", meetupId);
+    expect(h.google.liveEvents()).toHaveLength(1);
+    expect(h.google.state.requests.some((r) => r.method === "PUT")).toBe(true);
+    // 予定を消してからキャンセルを2回届ける（2回目は 410）。どちらも投げない
+    await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
+    await deliver("MeetupCancelled", meetupId);
+    await deliver("MeetupCancelled", meetupId);
+    h.google.state.events.clear();
+    await expect(deliver("MeetupCancelled", meetupId)).resolves.toBeUndefined();
+    expect(h.google.liveEvents()).toHaveLength(0);
+  });
+
+  it("書き込みが上限以外の403なら、カレンダーを作り直して書き直す。上限の403は一時的な失敗", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    const meetupId = await meetupOf(a, b);
+    await deliver("MeetupConfirmed", meetupId);
+    const calendarId = (await connectionRow(a))?.calendar_id ?? "";
+    const path = `POST /calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+    h.google.state.events.clear();
+    h.google.state.failNext.set(path, 403);
+    h.jobs.length = 0;
+    await deliver("MeetupConfirmed", meetupId);
+    expect((await connectionRow(a))?.calendar_id).toBeNull();
+    expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "CalendarConnected")).toBe(true);
+  });
+
   it("募集の予定で抜けた人の予定を消し、残りの人のタイトルを直す", async () => {
     const owner = await authenticated("あき");
     const f1 = await authenticated("べに");
@@ -780,6 +872,29 @@ describe("outbox を Queue に流す", () => {
       "SELECT COUNT(*) AS n FROM outbox WHERE type NOT IN ('MeetupConfirmed','MeetupCancelled','MeetupLeft','CalendarConnected','AvailabilityCancelledByCalendar') AND processed_at IS NOT NULL",
     ).first<{ n: number }>();
     expect(other?.n).toBe(0);
+  });
+
+  it("1回に最大100件。処理済みにする SQL は値100個の制限に収まる", async () => {
+    const ids = Array.from({ length: 120 }, () => crypto.randomUUID());
+    await env.DB.batch(
+      ids.map((id, n) =>
+        env.DB.prepare("INSERT INTO outbox (id, type, payload, created_at) VALUES (?1, 'MeetupLeft', ?2, ?3)").bind(
+          id,
+          JSON.stringify({ meetupId: crypto.randomUUID() }),
+          -1000 + n,
+        ),
+      ),
+    );
+    h.jobs.length = 0;
+    expect(await dispatchOutbox(h.ctx)).toBe(100);
+    expect(h.jobs).toHaveLength(100);
+    const done = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM outbox WHERE id IN (SELECT value FROM json_each(?1)) AND processed_at IS NOT NULL",
+    )
+      .bind(JSON.stringify(ids))
+      .first<{ n: number }>();
+    expect(done?.n).toBe(100);
+    await dispatchOutbox(h.ctx);
   });
 
   it("送れなければ未処理のまま残り、次の実行で送り直す", async () => {
@@ -909,6 +1024,36 @@ describe(".ics", () => {
     expect((await h.request(path)).status).toBe(404);
     expect((await link(f2, meetupId)).status).toBe(404);
     expect((await link(f1, meetupId)).status).toBe(200);
+  });
+});
+
+describe("ログ", () => {
+  it("確認・書き込み・解除・consumer の失敗のログに、トークン・payload の中身が出ない", async () => {
+    const log = vi.spyOn(console, "log");
+    const err = vi.spyOn(console, "error");
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await u.befriend(a, b);
+    await connect(a);
+    await syncConnection(h.ctx, a.id, "google");
+    h.google.state.failNext.set("POST /calendar/v3/freeBusy", 500);
+    await tick(15 * MIN);
+    await syncConnection(h.ctx, a.id, "google").catch(() => {});
+    const message = {
+      body: { kind: "outbox" as const, id: "m1", type: "AvailabilityCancelledByCalendar", payload: '{"userId":"secret-user"}' },
+      attempts: 6,
+      ack: vi.fn(),
+      retry: vi.fn(),
+    };
+    const { handleBatch } = await import("../jobs/consumer");
+    await handleBatch(h.ctx, { messages: [message] } as unknown as MessageBatch<never>);
+    expect(message.retry).toHaveBeenCalled();
+    await u.call("DELETE", "/api/v1/calendar/connections/google", { token: a.token });
+    const logged = [...log.mock.calls, ...err.mock.calls].flat().join("\n");
+    expect(logged).toContain("job_dead_lettered");
+    expect(logged).not.toMatch(/secret-user|refresh-|access-|v1\.cal-1|Bearer/);
+    log.mockRestore();
+    err.mockRestore();
   });
 });
 

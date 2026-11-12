@@ -70,7 +70,7 @@ export async function syncConnection(ctx: Ctx, userId: string, provider: repo.Pr
 
   // 多すぎる取り消しの1回目は保留にし、記録を進めずに次の確認で判定し直す
   if (count > MAX_CANCEL_PER_SYNC && row.large_change_held !== 1) {
-    await repo.holdLargeChange(ctx.env.DB, userId, provider, lease, now);
+    await repo.holdLargeChange(ctx.env.DB, userId, provider, lease);
     console.log(JSON.stringify({ event: "calendar_sync_held", count }));
     return "held";
   }

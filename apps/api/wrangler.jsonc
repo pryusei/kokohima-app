@@ -7,8 +7,8 @@
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
   // リクエストの URL にトークンが入る経路がある（OAuth のコールバックの code、.ics のパス）ので、
-  // クエリ文字列を伏せ、URL を含む呼び出しのログを出さない（docs/specs/T-06-calendar.md 決定事項14）
-  "observability": { "enabled": true, "redact_query_string": true, "logs": { "invocation_logs": false } },
+  // URL を含む呼び出しのログを出さない（docs/specs/T-06-calendar.md 決定事項14）。アプリの console のログは残る
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
 
   // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS）は
   // wrangler secret で設定する（ローカルは .dev.vars、E2Eは scripts/write-e2e-dev-vars.mjs が生成）

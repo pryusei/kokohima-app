@@ -45,12 +45,13 @@ export function calendarRoutes() {
   // Google からのリダイレクト。成功も失敗も303で画面へ戻す（失敗の理由は区別しない）
   app.get("/calendar/google/callback", async (c) => {
     const q = c.req.query();
-    const ok = await completeConnect(ctx(c), {
-      code: q.code,
-      state: q.state,
-      error: q.error,
-      binding: getBinding(c),
-    });
+    let ok = false;
+    try {
+      ok = await completeConnect(ctx(c), { code: q.code, state: q.state, error: q.error, binding: getBinding(c) });
+    } catch (e) {
+      // 想定外の失敗も、ほかの失敗と同じ ?calendar=failed にする（常に303）
+      console.error(JSON.stringify({ event: "calendar_connect_failed", reason: "unexpected", name: e instanceof Error ? e.name : "unknown" }));
+    }
     clearBinding(c);
     return c.redirect(`${c.env.APP_ORIGIN}/settings/calendar?calendar=${ok ? "connected" : "failed"}`, 303);
   });

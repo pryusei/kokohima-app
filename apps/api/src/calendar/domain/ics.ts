@@ -57,7 +57,6 @@ export function buildIcs(event: IcsEvent): string {
     "VERSION:2.0",
     "PRODID:-//kokohima//kokohima//JA",
     "CALSCALE:GREGORIAN",
-    `METHOD:${event.status === "CANCELLED" ? "CANCEL" : "PUBLISH"}`,
     "BEGIN:VEVENT",
     `UID:${escapeText(event.uid)}`,
     `DTSTAMP:${icsDate(event.stamp)}`,

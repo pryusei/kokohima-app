@@ -219,15 +219,18 @@ export async function releaseSyncLease(d1: D1Database, userId: string, provider:
     .run();
 }
 
-/** 保留（取り消しが多すぎる1回目）：記録を進めず、large_change_held = 1 にする */
-export async function holdLargeChange(d1: D1Database, userId: string, provider: Provider, lease: number, now: number) {
+/**
+ * 保留（取り消しが多すぎる1回目）：記録も last_synced_at も進めず、large_change_held = 1 にする。
+ * last_synced_at を進めると「前回の確認より前に作った」の基準がずれ、予定を見たうえで作ったここ暇まで対象に入るため
+ */
+export async function holdLargeChange(d1: D1Database, userId: string, provider: Provider, lease: number) {
   await d1
     .prepare(
       `UPDATE calendar_connections
-       SET large_change_held = 1, last_synced_at = ?4, sync_id = ?5, sync_lease_until = NULL
+       SET large_change_held = 1, sync_id = ?4, sync_lease_until = NULL
        WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND sync_lease_until = ?3`,
     )
-    .bind(userId, provider, lease, now, crypto.randomUUID())
+    .bind(userId, provider, lease, crypto.randomUUID())
     .run();
 }
 

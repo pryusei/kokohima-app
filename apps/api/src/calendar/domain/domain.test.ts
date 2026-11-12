@@ -82,7 +82,7 @@ describe(".ics", () => {
     expect(ics.endsWith("END:VCALENDAR\r\n")).toBe(true);
   });
 
-  it("キャンセル済みは STATUS:CANCELLED と METHOD:CANCEL、SEQUENCE:1", () => {
+  it("キャンセル済みは STATUS:CANCELLED、SEQUENCE:1。METHOD は付けない（ORGANIZER なしで取り込めるように）", () => {
     const ics = buildIcs({
       uid: "m1@kokohima",
       stamp: 0,
@@ -95,7 +95,7 @@ describe(".ics", () => {
       sequence: 1,
     });
     expect(ics).toContain("STATUS:CANCELLED");
-    expect(ics).toContain("METHOD:CANCEL");
+    expect(ics).not.toContain("METHOD:");
     expect(ics).toContain("SEQUENCE:1");
     expect(ics).not.toContain("LOCATION:");
   });

@@ -24,6 +24,8 @@ export function createFakeGoogle() {
     calendarCounter: 0,
     /** 次の応答を失敗させる経路（例："POST /calendars/x/events"）→ ステータス */
     failNext: new Map<string, number>(),
+    /** 次のリクエストで投げる経路（タイムアウト・通信できない） */
+    throwNext: new Set<string>(),
     /** 予定の書き込みを上限以外の理由の403で断り続ける（Workspace の管理者の制限など） */
     forbidEventWrites: false,
     requests: [] as GoogleRequest[],
@@ -38,6 +40,7 @@ export function createFakeGoogle() {
     const path = url.pathname;
     state.requests.push({ method, url: url.toString(), path, body });
     const failKey = `${method} ${path}`;
+    if (state.throwNext.delete(failKey)) throw new DOMException("The operation timed out.", "TimeoutError");
     const failStatus = state.failNext.get(failKey);
     if (failStatus !== undefined) {
       state.failNext.delete(failKey);

@@ -9,6 +9,7 @@ import { declineForCancelledAvailability } from "../invitation/application/calen
 
 type Ctx = { env: Bindings; deps: AppDeps };
 
+/** wrangler の max_retries（再試行の回数）。最初の1回と合わせて、最大 MAX_ATTEMPTS + 1 回試す */
 export const MAX_ATTEMPTS = 5;
 
 const meetupPayload = z.object({ meetupId: z.string() });
@@ -62,7 +63,7 @@ export async function handleBatch(ctx: Ctx, batch: MessageBatch<JobMessage>) {
       message.ack();
     } catch (e) {
       const fields = { ...describe(message.body), attempts: message.attempts, error: e instanceof Error ? e.name : "unknown" };
-      console.error(JSON.stringify({ event: message.attempts >= MAX_ATTEMPTS ? "job_dead_lettered" : "job_failed", ...fields }));
+      console.error(JSON.stringify({ event: message.attempts > MAX_ATTEMPTS ? "job_dead_lettered" : "job_failed", ...fields }));
       message.retry({ delaySeconds: Math.min(30 * 2 ** (message.attempts - 1), 3600) });
     }
   }
