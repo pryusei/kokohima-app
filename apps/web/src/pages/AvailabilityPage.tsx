@@ -22,6 +22,7 @@ import {
   WEEKDAYS,
 } from "../availability/format";
 import { mineQuery, presetsQuery, rulesQuery, today } from "../availability/queries";
+import { CalendarCandidates } from "../calendar/CalendarCandidates";
 import { Nav } from "../components/Nav";
 
 // ここ暇タブ（仮。docs/specs/T-03-availability.md「画面」）
@@ -350,6 +351,7 @@ export function AvailabilityPage() {
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
       <h1 className="text-2xl font-bold">ここ暇</h1>
       <Nav />
+      <CalendarCandidates />
       <AddAvailability presets={presets.data} />
       <MyAvailabilities />
       <Recurrence />

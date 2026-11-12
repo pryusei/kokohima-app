@@ -235,6 +235,9 @@ function Account() {
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-bold">アカウント</h2>
       {me.data && <p className="text-slate-600">{me.data.displayName ?? "表示名は未設定です"}</p>}
+      <Link to="/settings/calendar" className="self-start underline">
+        カレンダー連携
+      </Link>
       {failed && (
         <p role="status" className="text-slate-600">
           ログアウトできませんでした。通信状態を確認して、もう一度お試しください。

@@ -16,6 +16,11 @@ export const keys = {
     presets: () => ["availability", "presets"] as const,
     everyone: (from: string) => ["availability", "everyone", from] as const,
     friend: (id: string, from: string) => ["availability", "friend", id, from] as const,
+    /** カレンダーの空きの候補。自分の枠が変わると候補も変わるので availability の下に置く */
+    calendarFree: (from: string) => ["availability", "calendar-free", from] as const,
+  },
+  calendar: {
+    connections: () => ["calendar", "connections"] as const,
   },
   // 誘いと成立した予定。返答で両方が変わるので、まとめて無効にできるよう all を持つ
   invites: {

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAuth } from "./auth/AuthProvider";
 import { AuthCompletePage } from "./pages/AuthCompletePage";
 import { AvailabilityPage } from "./pages/AvailabilityPage";
+import { CalendarSettingsPage } from "./pages/CalendarSettingsPage";
 import { EveryonePage } from "./pages/EveryonePage";
 import { FriendDetailPage } from "./pages/FriendDetailPage";
 import { BroadcastDetailPage } from "./pages/BroadcastDetailPage";
@@ -61,6 +62,7 @@ export function App() {
 
   if (pathname === "/friends") return <FriendsPage />;
   if (pathname === "/availability") return <AvailabilityPage />;
+  if (pathname === "/settings/calendar") return <CalendarSettingsPage search={search} />;
   if (pathname === "/invites") return <InvitesPage />;
   if (pathname === "/invites/new") return <InviteNewPage key={search} />;
   if (pathname === "/broadcasts/new") return <BroadcastNewPage key={search} />;
