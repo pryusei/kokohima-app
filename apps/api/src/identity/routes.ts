@@ -4,6 +4,7 @@ import type { AppEnv } from "../env";
 import { clearInviteCookie } from "../http/inviteCookie";
 import { problem, problemFrom } from "../http/problem";
 import { validationFailed } from "../http/validation";
+import * as social from "../social/application/social";
 import * as auth from "./application/auth";
 import {
   clearBindingCookie,
@@ -90,6 +91,8 @@ export function identityRoutes() {
 
   app.post("/auth/logout-all", requireSameOrigin, requireAuth, requireActiveSession, async (c) => {
     await auth.logoutAll(ctx(c), c.var.viewer);
+    // セッションを失効させてから無効にする（盗まれたトークンで、その間に新しいリンクを作らせない）
+    await social.revokeAllInviteLinks(ctx(c), c.var.viewer.userId);
     clearRefreshCookie(c);
     clearInviteCookie(c);
     return c.body(null, 204);

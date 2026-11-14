@@ -58,6 +58,14 @@ export async function listUsableInviteLinks(db: Db, ownerId: string, now: number
     .limit(limit + 1);
 }
 
+/** 閲覧者の未無効のリンクをすべて無効化する（全端末ログアウト用） */
+export async function revokeAllOwnInviteLinks(db: Db, ownerId: string, now: number) {
+  await db
+    .update(inviteLinks)
+    .set({ revokedAt: now })
+    .where(and(eq(inviteLinks.ownerId, ownerId), isNull(inviteLinks.revokedAt)));
+}
+
 /** 閲覧者のリンクだけを無効化する。閲覧者のリンクなら（無効化済みでも）true */
 export async function revokeOwnInviteLink(db: Db, ownerId: string, id: string, now: number) {
   const own = await db

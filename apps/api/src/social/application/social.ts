@@ -91,6 +91,11 @@ export async function revokeInviteLink(ctx: Ctx, viewerId: string, id: string) {
   return repo.revokeOwnInviteLink(repo.db(ctx.env.DB), viewerId, id, ctx.deps.now());
 }
 
+/** 全端末ログアウトのとき、閲覧者の招待リンクをすべて無効にする */
+export async function revokeAllInviteLinks(ctx: Ctx, viewerId: string) {
+  await repo.revokeAllOwnInviteLinks(repo.db(ctx.env.DB), viewerId, ctx.deps.now());
+}
+
 /** 使えるリンクなら発行者の公開プロフィールを返す。理由にかかわらず使えなければ null */
 export async function lookupInvite(ctx: Ctx, token: string | undefined) {
   if (!token || token.length > 128) return null;

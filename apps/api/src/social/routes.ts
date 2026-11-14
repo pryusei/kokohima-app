@@ -8,7 +8,7 @@ import {
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
-import { requireAuth, requireSameOrigin } from "../identity/middleware";
+import { requireActiveSession, requireAuth, requireSameOrigin } from "../identity/middleware";
 import { clearInviteCookie, getInviteCookie, setInviteCookie } from "../http/inviteCookie";
 import { problem, problemFrom } from "../http/problem";
 import { validationFailed } from "../http/validation";
@@ -27,7 +27,7 @@ async function json(c: Context<AppEnv>) {
 export function socialRoutes() {
   const app = new Hono<AppEnv>();
 
-  app.post("/invite-links", requireAuth, async (c) => {
+  app.post("/invite-links", requireAuth, requireActiveSession, async (c) => {
     const body = createInviteLinkRequestSchema.safeParse((await json(c)) ?? {});
     if (!body.success) return validationFailed(c, body.error);
     const result = await social.createInviteLink(ctx(c), c.var.viewer.userId, body.data);
@@ -69,7 +69,7 @@ export function socialRoutes() {
     return c.json(found);
   });
 
-  app.post("/invite-links/accept", requireSameOrigin, requireAuth, async (c) => {
+  app.post("/invite-links/accept", requireSameOrigin, requireAuth, requireActiveSession, async (c) => {
     const body = acceptInviteRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
     const result = await social.acceptInvite(ctx(c), c.var.viewer.userId, getInviteCookie(c), body.data.linkId);
@@ -111,7 +111,7 @@ export function socialRoutes() {
     return friend ? c.json(friend) : notFound(c);
   });
 
-  app.patch("/friends/:friendId", requireAuth, async (c) => {
+  app.patch("/friends/:friendId", requireAuth, requireActiveSession, async (c) => {
     const friendId = uuid.safeParse(c.req.param("friendId"));
     if (!friendId.success) return notFound(c);
     const body = updateFriendRequestSchema.safeParse(await json(c));
