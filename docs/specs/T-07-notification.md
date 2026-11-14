@@ -56,8 +56,9 @@
 - T-07 を有効にした時刻より前に作られた行は、送らない（決定事項5）。本番の運用前の行（もう返事が済んだ誘い、ログインし直しの `SessionStarted` など）が、一度にまとめて届かないようにするため。
 - 対象は、T-07 で新しく取り出す通知だけの型の行。
   - 型：`SessionStarted`・`FriendshipEstablished`・`DirectInvite*`・`BroadcastSent`・`BroadcastDecided`・`AvailabilityCancelledByCalendar`・`CalendarReauthRequired`。
-  - 線は経過日数でなく、「T-07 を有効にした時刻」で引く。この時刻は、マイグレーション（`0007_notification.sql`）で1行の設定の表 `notification_settings`（`started_at`）に、適用した時刻を書く。
-  - `created_at < started_at` の行を、dispatch で Queue に流さずに処理済みにする。
+  - 線は経過日数でなく、「T-07 を有効にした時刻」（vars の `NOTIFICATION_START_AT`、Unixミリ秒）で引く。
+  - `created_at < NOTIFICATION_START_AT` の行を、dispatch で Queue に流さずに処理済みにする。
+  - 経過日数（例：作成から7日）で決めると、デプロイ直前の行（この1週間の `SessionStarted` による「新しい端末でのログイン」のメールなど）がまとめて届き、逆にデプロイ後に処理が止まったときは正当なお知らせを捨ててしまうため。
   - デプロイの後に outbox の処理が長く止まっても、T-07 を有効にした後の行は捨てない（遅れて届く）。
 - T-06 の型の行は、今までどおり流す。
 
@@ -66,6 +67,7 @@
   - ドメインイベントの表
   - 未決事項「通知の種別と頻度…」を閉じる
   - 技術選定の「メール配信（サービスは要選定）」を Resend にする
+- T-01 の仕様書の「更新」の手順：再利用を検知してセッションを失効させたとき、そのセッションの購読を消す（notification の `deleteSubscriptionsOfSession`）。ログアウト・全端末ログアウトの手順にも同じく足す
 - invitation-domain スキル
   - イベントの表（「通知（T-07）」の書き方）
   - 用語表に「お知らせ」を足す
@@ -140,7 +142,7 @@
 
 | メソッド | パス | 認証 | 入力 | 出力 | 主なエラー |
 | --- | --- | --- | --- | --- | --- |
-| GET | `/api/v1/notifications` | Bearer | query：`limit`（1〜50、既定20）、`cursor` | 200：`{ items: notificationSchema[], nextCursor }`（新しい順） | 400、401 |
+| GET | `/api/v1/notifications` | Bearer | query：`limit`（1〜50、既定20）、`cursor` | 200：`{ items: notificationSchema[], nextCursor }`（`inserted_at` の新しい順、同じなら `id` の降順） | 400、401 |
 | GET | `/api/v1/notifications/unread-count` | Bearer | なし | 200：`{ count }`（99で止める） | 401 |
 | POST | `/api/v1/notifications/read` | Bearer | JSON：`{ upTo }`（一覧で見たいちばん新しいお知らせの `id`） | 204（その行以前に作られたお知らせを既読にする） | 400、401 |
 | GET | `/api/v1/me/notification-preferences` | Bearer | なし | 200：`notificationPreferencesSchema` | 401 |
@@ -219,10 +221,6 @@
 ### `notification_preferences`
 - 列：`user_id`（PK、→ users、CASCADE）、`invites`、`broadcasts`、`meetups`、`friends`、`calendar`（0／1）、`updated_at`。
 
-### `notification_settings`
-- 1行だけの設定の表。`started_at`（T-07 を有効にした時刻）。マイグレーションで、適用した時刻（`unixepoch('subsec') * 1000`）を書く。
-- 古い outbox の行の線引き（「古い outbox の行」）に使う。
-
 ### `notification_daily_counts`
 - 列：`user_id`、`day`（利用者のタイムゾーンでの `YYYY-MM-DD`）、`channel`（`push`・`email`）、`count`。PK は `(user_id, day, channel)`。
 - 数を増やすのは、そのチャネルの `counted_push_at`・`counted_email_at` が NULL のときだけ。
@@ -263,7 +261,9 @@
        - 404・410：購読を消す。
        - 429・5xx・タイムアウト：一時的な失敗。
        - 400・401・403・413：その購読だけ一時的でない失敗とし、ログに種類と状態コードを出す。
-   - 送れる購読が1つもなかったとき（すべて消えた・セッションが無効・一時的でない失敗）：同じお知らせをメールに切り替えて送る。メールの上限で数える（`channel` を `email` に書き直す。数え方は `notification_daily_counts`）。
+   - 送れる購読が1つもなかったとき（すべて消えた・セッションが無効・一時的でない失敗）：同じお知らせをメールに切り替えて送る（`channel` を `email` に書き直す）。
+     - メールの上限は、`counted_email_at` が NULL なら数えてから確かめる（手順4と同じ文）。超えていれば送らずに `outcome = 'limited'` を書く。
+     - プッシュで数えた分（`counted_push_at`）は戻さない。
    - メール：Resend に送る（下の「メールの中身」）。
      - 429・5xx・タイムアウト・冪等キーの同時の再送：一時的な失敗。
      - 400・401・403・422（Apple の中継アドレスでドメインが未登録など）：一時的でない失敗。
@@ -350,6 +350,7 @@
 | `VAPID_PUBLIC_KEY` | vars | VAPID の公開鍵（base64url、非圧縮の点） |
 | `VAPID_SUBJECT` | vars | `mailto:` の連絡先 |
 | `MAIL_FROM` | vars | 差出人 |
+| `NOTIFICATION_START_AT` | vars | T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない（「古い outbox の行」） |
 
 - ローカルと E2E の鍵は、`scripts/write-e2e-dev-vars.mjs` で作る（T-06 と同じ）。
 - 送信ドメインの SPF・DKIM・DMARC は、Resend の手順で DNS に設定する（人が行う）。Terraform で管理するなら、`infra-change` スキルに従って別の PR にする。
@@ -419,7 +420,7 @@
 #### 送り先と上限
 - [ ] 止めた種別はプッシュもメールも送らず、一覧には残る。
 - [ ] 購読があればプッシュだけ、なければメールだけ。メールアドレスがなければ送らない。
-- [ ] 購読がすべて 404・410 で消えたら、同じお知らせをメールで送る。切り替えたメールはメールの上限で数えられ、再試行でも二重に数えない。
+- [ ] 購読がすべて 404・410 で消えたら、同じお知らせをメールで送る。切り替えたメールはメールの上限で数えられ、メールの上限に達していれば送らない。再試行でも二重に数えない。
 - [ ] 失効・期限切れのセッションの購読には送らず、その購読を消す（使える購読がなければメールに切り替える）。
 - [ ] 1日の上限は、プッシュ30件・メール10件で止まる。同時に届いても超えない。日付が変われば戻る。
 
@@ -436,7 +437,7 @@
 - [ ] 429・5xx・冪等キーの同時の再送で投げる。400・422 は一時的でない失敗として `failed` にする。
 
 #### outbox と掃除
-- [ ] 古い outbox の行（通知だけの型で、T-07 を有効にした時刻より前）は送らずに処理済みにする。T-06 の型は流す。有効にした後の行は、遅れても流す。
+- [ ] 古い outbox の行（通知だけの型で `NOTIFICATION_START_AT` より前）は送らずに処理済みにする。`NOTIFICATION_START_AT` 以後の行は、作成から7日以上たっていても送る。T-06 の型は流す。
 - [ ] カレンダーの処理が失敗しても、通知は届けたうえで投げる。
 - [ ] 90日を過ぎたお知らせと、2日より前の日ごとの数を Cron で掃除する。
 
@@ -506,7 +507,7 @@
 4. 種別（誘い・募集・予定・友達・カレンダー）ごとに止められる。
    - 1日の上限はプッシュ30件・メール10件。超えた分はお知らせ一覧だけに残す。
    - 新端末のログインは止められず、上限にも数えない。
-5. 通知だけの型の outbox の行のうち、T-07 を有効にした時刻（`notification_settings.started_at`）より前に作られたものは送らない。
+5. 通知だけの型の outbox の行のうち、T-07 を有効にした時刻（`NOTIFICATION_START_AT`）より前に作られたものは送らない。経過日数では決めない。
 6. メールの本文には、お知らせの種類の短い説明だけを書く。相手の名前・ひとこと・エリア・予定の時刻は入れない。新端末のログインは、端末の要約とログインの日時を入れる。
 7. 新端末のログインは、端末を区別せず「その人の2つめ以降のセッション」で判定する。
 
@@ -515,3 +516,4 @@
 | --- | --- | --- |
 | 2026-11-14 | 初版 | |
 | 2026-11-14 | 古い outbox の行の線を「T-07 を有効にした時刻」にする、並びと既読に `inserted_at` を使う、1日の数をチャネルごとに記録する、失効・期限切れのセッションの購読に送らない、endpoint の付け替えのリスクを受け入れる。決定事項5〜7を合意し、合意済みにした | 仕様書PRのレビュー |
+| 2026-11-14 | レビューの提案に合わせ、線引きの時刻を vars の `NOTIFICATION_START_AT` にした（設定の表はやめた）。切り替えたメールがメールの上限に達していれば送らない。一覧の同じ時刻の並びを `id` の降順にした。T-01 の仕様書の更新を「実装PRで直すもの」に足した | 仕様書PRのレビュー（提案） |
