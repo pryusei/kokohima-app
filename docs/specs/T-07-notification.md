@@ -21,6 +21,7 @@
     - 通知を先に呼ぶ。
     - 片方が失敗しても、もう片方は試す。どちらかが失敗していれば、最後に投げる。
     - どちらも冪等なので、再試行で両方をもう一度呼んでよい。
+  - `AvailabilityCancelledByCalendar` は、invitation の自動の「今回は難しい」（T-06）と通知の両方を呼ぶ。規則は上と同じ（通知を先に、片方が失敗してももう片方は試し、最後に投げる）。
 - ほかのコンテキストの表は読まない。それぞれの application の関数を通す。
   - identity：
     - `getPublicProfiles`（相手の表示名）
@@ -55,12 +56,14 @@
 ### 古い outbox の行
 - T-07 を有効にした時刻より前に作られた行は、送らない（決定事項5）。本番の運用前の行（もう返事が済んだ誘い、ログインし直しの `SessionStarted` など）が、一度にまとめて届かないようにするため。
 - 対象は、T-07 で新しく取り出す通知だけの型の行。
-  - 型：`SessionStarted`・`FriendshipEstablished`・`DirectInvite*`・`BroadcastSent`・`BroadcastDecided`・`AvailabilityCancelledByCalendar`・`CalendarReauthRequired`。
+  - 型：`SessionStarted`・`FriendshipEstablished`・`DirectInvite*`・`BroadcastSent`・`BroadcastDecided`・`CalendarReauthRequired`。
   - 線は経過日数でなく、「T-07 を有効にした時刻」（vars の `NOTIFICATION_START_AT`、Unixミリ秒）で引く。
   - `created_at < NOTIFICATION_START_AT` の行を、dispatch で Queue に流さずに処理済みにする。
   - 経過日数（例：作成から7日）で決めると、デプロイ直前の行（この1週間の `SessionStarted` による「新しい端末でのログイン」のメールなど）がまとめて届き、逆にデプロイ後に処理が止まったときは正当なお知らせを捨ててしまうため。
   - デプロイの後に outbox の処理が長く止まっても、T-07 を有効にした後の行は捨てない（遅れて届く）。
-- T-06 の型の行は、今までどおり流す。
+- T-06 の型の行（`MeetupConfirmed`・`MeetupCancelled`・`MeetupLeft`・`CalendarConnected`・`AvailabilityCancelledByCalendar`）は、今までどおり常に流す。
+  - これらは通知のほかに、カレンダーの書き込みや自動の「今回は難しい」も動かすので、捨てない。
+  - `created_at < NOTIFICATION_START_AT` の行は、consumer でお知らせを作らないだけにする（カレンダーの処理と自動の断りは行う）。
 
 ### 実装PRで直すもの
 - 要求定義書
@@ -109,11 +112,12 @@
 - `FriendshipEstablished` は2件書かれる（T-02）。リンクを出した人と開いた人の両方に1件ずつ届く。取り違えて友達になった本人が、お知らせから「見せない」にできるようにするため（T-02 の受容したリスク）。
 - `SessionStarted` は、その人のセッションのうち、このセッションより前に作られたものがあるときだけ送る。
   - 失効・期限切れのセッションも数える。今はセッションの行を消す処理がないので、最初のログインかどうかがこれでわかる。
+  - 掃除のタスクへの申し送り：T-01 は失効・期限切れのセッションを掃除する予定。全部消すと、長く使っていなかったアカウントへのログイン（乗っ取りを知らせたい場面）が「最初のセッション」になり、メールが出なくなる。掃除では利用者ごとに最低1行を残すか、`users` に初回ログイン済みの印を持つこと。
   - 端末は区別しない（決定事項7）。同じ端末でのログインし直しにも送る。
 
 ### お知らせの行に持つもの
 - 相手の ID と対象の ID、数（自動取り消し）、端末の要約（新端末のログイン）だけを持つ。名前・ひとこと・時刻は持たない。
-- 相手は、表示するときに公開プロフィール（`getPublicProfiles`）で読み直す。
+- 相手は、表示するときに公開プロフィール（`getPublicProfiles`）で読み直す。相手が退会していて読めないときは、`actor` を `null` で返し、画面では名前のない文言（「誘いが届きました」など）にする。
 - 対象の中身は、押した先の画面（誘いの詳細など）で、閲覧者の権限で読む。
 - お知らせの `createdAt`（表示する日時）は payload の `occurredAt`。新端末のログインのメールの日時もこれ。
 - 一覧の並びと既読の `upTo` の比較には、行を作った時刻（`inserted_at`）を使う。outbox → Queue を通って遅れて届いたお知らせが、一覧の下に入ったり、見られないまま既読になったりしないようにするため。
@@ -437,7 +441,9 @@
 - [ ] 429・5xx・冪等キーの同時の再送で投げる。400・422 は一時的でない失敗として `failed` にする。
 
 #### outbox と掃除
-- [ ] 古い outbox の行（通知だけの型で `NOTIFICATION_START_AT` より前）は送らずに処理済みにする。`NOTIFICATION_START_AT` 以後の行は、作成から7日以上たっていても送る。T-06 の型は流す。
+- [ ] 古い outbox の行（通知だけの型で `NOTIFICATION_START_AT` より前）は送らずに処理済みにする。`NOTIFICATION_START_AT` 以後の行は、作成から7日以上たっていても送る。
+- [ ] T-06 の型は常に流す。`NOTIFICATION_START_AT` より前の `AvailabilityCancelledByCalendar` でも自動の断りは行い、お知らせだけ作らない。
+- [ ] `AvailabilityCancelledByCalendar` で、自動の断りが失敗しても通知は届けたうえで投げる。
 - [ ] カレンダーの処理が失敗しても、通知は届けたうえで投げる。
 - [ ] 90日を過ぎたお知らせと、2日より前の日ごとの数を Cron で掃除する。
 
@@ -517,3 +523,4 @@
 | 2026-11-14 | 初版 | |
 | 2026-11-14 | 古い outbox の行の線を「T-07 を有効にした時刻」にする、並びと既読に `inserted_at` を使う、1日の数をチャネルごとに記録する、失効・期限切れのセッションの購読に送らない、endpoint の付け替えのリスクを受け入れる。決定事項5〜7を合意し、合意済みにした | 仕様書PRのレビュー |
 | 2026-11-14 | レビューの提案に合わせ、線引きの時刻を vars の `NOTIFICATION_START_AT` にした（設定の表はやめた）。切り替えたメールがメールの上限に達していれば送らない。一覧の同じ時刻の並びを `id` の降順にした。T-01 の仕様書の更新を「実装PRで直すもの」に足した | 仕様書PRのレビュー（提案） |
+| 2026-11-14 | `AvailabilityCancelledByCalendar` を「通知だけの型」から外し、常に流す（自動の断りを捨てない）。セッションの掃除への申し送り、退会した相手の表示を足した | 全体の点検 |
