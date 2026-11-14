@@ -127,6 +127,7 @@
 - 解除は確認を1回だけはさむ（「解除しても相手には通知されません」）
 
 ## 認可と秘匿
+- 友達関係を作る・変える経路（`POST /invite-links`、`POST /invite-links/accept`、`PATCH /friends/:friendId`）は `requireActiveSession` を付け、失効したセッションのアクセストークン（最長10分）では使えない。全端末ログアウト（`POST /auth/logout-all`）は、セッションの失効のあと、その人の未使用の招待リンクもすべて無効にする
 - 閲覧者IDの使い方：すべて `requireAuth` の閲覧者IDだけを使う。パスの `friendId`・`id` は「閲覧者の持ち物の中から探すキー」としてだけ使う
   - 招待リンクの無効化：`WHERE id = :id AND owner_id = :viewerId`
   - 友達一覧：`WHERE user_id = :viewerId`

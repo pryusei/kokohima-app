@@ -266,6 +266,38 @@ describe("招待リンクの発行・一覧・無効化", () => {
   });
 });
 
+describe("全端末ログアウトの後", () => {
+  const logoutAll = (u: User) =>
+    h.request("/api/v1/auth/logout-all", {
+      method: "POST",
+      headers: { Origin: ORIGIN, Authorization: `Bearer ${u.token}` },
+    });
+
+  it("失効したセッションのアクセストークンでは、リンクの発行・友達になる・公開設定の変更ができない", async () => {
+    const a = await user();
+    const b = await user();
+    const stolen = await user();
+    await befriend(a, stolen);
+    const toAccept = await createLink(b);
+    expect((await logoutAll(stolen)).status).toBe(204);
+    expect((await call("POST", "/api/v1/invite-links", { token: stolen.token, body: {} })).status).toBe(401);
+    expect((await accept(stolen, toAccept.token, toAccept.id)).status).toBe(401);
+    const patch = await call("PATCH", `/api/v1/friends/${a.id}`, { token: stolen.token, body: { sharesMyAvailability: false } });
+    expect(patch.status).toBe(401);
+  });
+
+  it("全端末ログアウトで、その人の未使用の招待リンクも使えなくなる。他人のリンクは影響を受けない", async () => {
+    const a = await user();
+    const b = await user();
+    const mine = await createLink(a);
+    const theirs = await createLink(b);
+    expect((await lookup(mine.token)).status).toBe(200);
+    expect((await logoutAll(a)).status).toBe(204);
+    expect((await lookup(mine.token)).status).toBe(404);
+    expect((await lookup(theirs.token)).status).toBe(200);
+  });
+});
+
 describe("受け口（lookup）", () => {
   it("有効なら linkId と発行者の表示名・アイコン（IDは含まない）を返し、招待Cookieを発行する", async () => {
     const a = await user("あき");
