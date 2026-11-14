@@ -78,7 +78,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
    - フォームで直接届いた `id_token` と `user` は使わない（トークンエンドポイントの応答だけを信用する）
 4. IDトークンを `jose` で検証する：署名（プロバイダのJWKS、`alg` はRS256のみ）、`iss`（Google：`https://accounts.google.com` または `accounts.google.com`、Apple：`https://appleid.apple.com`）、`aud`（自分のクライアントID）、`exp`・`iat`（許容誤差60秒）、`nonce`（保存した値と一致）
 5. `(provider, sub)` で `user_identities` を探す
-   - あれば、そのユーザーでログインする。`users.email` がnullで、IDトークンに確認済みのメールアドレスがあれば保存する（Googleは `email_verified` が `true` のときのみ。Appleは `email_verified` が `true` または文字列 `"true"` のときのみ。Appleの中継メール（`is_private_email` が真）もそのまま保存する。Appleの中継を通して届けるため）
+   - あれば、そのユーザーでログインする。IDトークンに確認済みのメールアドレスがあり、`users.email` と違う（nullを含む）ときは更新する。プロバイダ側で変わったアドレスに通知が届き続けないようにするため。確認済みでないときは触らない（Googleは `email_verified` が `true` のときのみ。Appleは `email_verified` が `true` または文字列 `"true"` のときのみ。Appleの中継メール（`is_private_email` が真）もそのまま保存する。Appleの中継を通して届けるため）
    - なければ、`users` と `user_identities` を1つのバッチで作る（初回。メールアドレスの扱いは上と同じ）
 6. 完了コード（32バイトのランダム値のbase64url）を作り、そのハッシュと、取り出した `binding_hash` を `login_codes` に保存して（60秒）、`/auth/complete#code=<完了コード>` へ303でリダイレクトする。コードはURLのフラグメントに入れ、サーバーのログやRefererに残さない
 7. どこかで失敗したら、完了コードを作らず `/login?error=login_failed` へ303でリダイレクトする。ログには失敗の種類だけを出し、トークン・コード・メールアドレスは出さない

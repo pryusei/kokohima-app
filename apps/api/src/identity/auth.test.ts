@@ -75,6 +75,16 @@ describe("ログイン（Google）", () => {
     expect(users[0]?.email).toBe("a@example.com");
   });
 
+  it("2回目以降のログインで確認済みのメールアドレスが変わっていたら更新し、確認されていなければ触らない", async () => {
+    const sub = uniq();
+    const first = await h.login("google", sub, { email: "old@example.com", email_verified: true });
+    const { id } = meResponseSchema.parse(await (await me(first.accessToken)).json());
+    await h.login("google", sub, { email: "new@example.com", email_verified: true });
+    expect((await dbAll<{ email: string }>("SELECT email FROM users WHERE id = ?", id))[0]?.email).toBe("new@example.com");
+    await h.login("google", sub, { email: "unverified@example.com", email_verified: false });
+    expect((await dbAll<{ email: string }>("SELECT email FROM users WHERE id = ?", id))[0]?.email).toBe("new@example.com");
+  });
+
   it("確認されていないメールアドレスは保存しない", async () => {
     const r = await h.login("google", uniq(), { email: "b@example.com", email_verified: false });
     const { id } = meResponseSchema.parse(await (await me(r.accessToken)).json());

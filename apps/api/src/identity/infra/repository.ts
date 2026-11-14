@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, inArray, isNull } from "drizzle-orm";
+import { and, eq, exists, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { outbox, outboxRow } from "../../shared/outbox/schema";
 import type { Provider } from "../domain/idTokenClaims";
@@ -44,7 +44,7 @@ export async function takeLoginCode(db: Db, codeHash: string, now: number) {
   return rows[0] ?? null;
 }
 
-/** (provider, sub) でユーザーを探し、なければ作る。確認済みのメールアドレスは未設定のときだけ保存する */
+/** (provider, sub) でユーザーを探し、なければ作る。確認済みのメールアドレスは、保存している値と違えばログインのたびに更新する */
 export async function findOrCreateUser(
   db: Db,
   provider: Provider,
@@ -62,7 +62,7 @@ export async function findOrCreateUser(
       await db
         .update(users)
         .set({ email, updatedAt: now })
-        .where(and(eq(users.id, existing.userId), isNull(users.email)));
+        .where(and(eq(users.id, existing.userId), or(isNull(users.email), ne(users.email, email))));
     }
     return existing.userId;
   }
