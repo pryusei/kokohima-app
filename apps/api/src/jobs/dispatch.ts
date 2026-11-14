@@ -1,5 +1,6 @@
 import type { AppDeps, Bindings } from "../env";
 import { deleteExpiredIcsTokens, deleteExpiredOauthStates } from "../calendar/infra/repository";
+import { db as identityDb, deleteExpiredLoginRecords } from "../identity/infra/repository";
 import { OAUTH_STATE_TTL_MS } from "../calendar/application/connections";
 
 // outbox を Queues に流す（docs/specs/T-06-calendar.md「outbox を Queues に流す」）
@@ -38,9 +39,10 @@ export async function dispatchOutbox(ctx: Ctx) {
   return results.length;
 }
 
-/** 期限を過ぎた連携の state と .ics のトークンを消す */
+/** 期限を過ぎた連携の state・.ics のトークン・ログイン開始の記録とログインコードを消す */
 export async function cleanupExpired(ctx: Ctx) {
   const now = ctx.deps.now();
   await deleteExpiredOauthStates(ctx.env.DB, now - OAUTH_STATE_TTL_MS);
   await deleteExpiredIcsTokens(ctx.env.DB, now);
+  await deleteExpiredLoginRecords(identityDb(ctx.env.DB), now);
 }

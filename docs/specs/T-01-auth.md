@@ -55,7 +55,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `login_codes` | `code_hash`（PK）、`user_id`（FK）、`provider`、`binding_hash`、`return_to`、`expires_at` | コールバックから完了までの一時データ。60秒で失効。使ったら削除 |
 | `outbox` | `id`（UUID、PK）、`type`、`payload`（JSON）、`created_at`、`processed_at`（null可） | 外部連携の共通の箱。今回は書き込みのみ |
 
-- 期限切れの `oauth_transactions`・`login_codes` と、失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens` の掃除はCronで行う（掃除は別タスク。今回は列とインデックスだけ用意）
+- 期限切れの `oauth_transactions`・`login_codes` は、Cron（毎分の `cleanupExpired`）で消す。失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens` の掃除は別タスク（利用者ごとに1行残す方針と一緒に決める。issue #38）
 
 ## 振る舞い
 
