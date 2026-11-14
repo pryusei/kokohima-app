@@ -52,6 +52,7 @@ const availabilityTab = (over: Record<string, Parameters<typeof mockFetch>[0][st
     "/api/v1/me/presets": presets,
     "/api/v1/availabilities": json({ items: [manual, repeated], nextCursor: null }),
     "/api/v1/recurrence-rules": empty,
+    "/api/v1/calendar/connections": json({ google: { status: "none", connectedAt: null } }),
     ...over,
   });
 };

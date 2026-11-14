@@ -12,8 +12,17 @@ export type Bindings = {
   APPLE_PRIVATE_KEY: string;
   JWT_SIGNING_KEYS: string;
   JWT_CURRENT_KID: string;
+  /** カレンダーの更新用トークンの暗号化の鍵（kid → 32バイトのbase64 の JSON。secret） */
+  CALENDAR_TOKEN_KEYS: string;
+  CALENDAR_TOKEN_CURRENT_KID: string;
+  /** outbox と定期の確認のメッセージ（docs/specs/T-06-calendar.md「outbox を Queues に流す」） */
+  JOBS: Queue<JobMessage>;
   E2E_MODE?: string;
 };
+
+export type JobMessage =
+  | { kind: "outbox"; id: string; type: string; payload: string }
+  | { kind: "calendar_sync"; userId: string; provider: "google" };
 
 export type Viewer = { userId: string; sessionId: string };
 
@@ -27,4 +36,22 @@ export type AppDeps = {
   fetch: typeof fetch;
   jwks: { google: JWTVerifyGetKey; apple: JWTVerifyGetKey };
   now: () => number;
+  google: { endpoints: GoogleEndpoints };
+};
+
+/** Google の各エンドポイント。E2E では偽の経路に向ける（docs/specs/T-06-calendar.md「E2E用の偽のGoogle」） */
+export type GoogleEndpoints = {
+  /** 利用者のブラウザが画面遷移する認可の画面 */
+  authorize: string;
+  token: string;
+  revoke: string;
+  /** Calendar API の基点（末尾の / なし） */
+  calendar: string;
+};
+
+export const GOOGLE_ENDPOINTS: GoogleEndpoints = {
+  authorize: "https://accounts.google.com/o/oauth2/v2/auth",
+  token: "https://oauth2.googleapis.com/token",
+  revoke: "https://oauth2.googleapis.com/revoke",
+  calendar: "https://www.googleapis.com/calendar/v3",
 };

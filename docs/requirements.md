@@ -48,7 +48,7 @@
 | ID | 機能 | 確定した仕様 |
 | --- | --- | --- |
 | F-01 | 認証 | アカウント登録必須。GoogleとSign in with Apple（メールログインはなし）。アカウント連携は設定画面から手動。ログインとカレンダー許可は分ける |
-| F-02 | カレンダー連携 | Google（OAuth）とApple（CalDAV）。空き／埋まりのみ取得し、予定の中身は取得・保存しない |
+| F-02 | カレンダー連携 | Google（OAuth）とApple（CalDAV）。空き／埋まりのみ取得し、予定の中身は取得・保存しない（Google は T-06、Apple CalDAV は T-09） |
 | F-03 | ここ暇の設定 | プリセット（昼・夕方・夜）と開始〜終了の両対応。カレンダーの空きを候補表示し、ワンタップで設定 |
 | F-04 | 時間帯プリセット | 初期値は昼11〜15時、夕方16〜19時、夜19〜23時。ユーザーが境界を変更できる。変更しても既存の枠は変わらない |
 | F-05 | くり返し | 曜日と時間帯で毎週の基本暇を設定。データはルールと例外の2層 |
@@ -59,7 +59,7 @@
 | F-10 | 個別の誘い | 日時、エリア（任意）、ひとこと、リンク（任意）、期限（送信時に選択） |
 | F-11 | 募集 | 応じた人は人数のみ表示。「決める」で応じた人全員へ名前を開示。期限切れは静かに終了し、再募集できる |
 | F-12 | 返答 | 行く／今回は難しい／この時間なら。断りは柔らかい定型表現に統一 |
-| F-13 | 成立 | GoogleとAppleの双方に自動登録。Apple未連携の人は.icsで保存 |
+| F-13 | 成立 | GoogleとAppleの双方に自動登録。Apple未連携の人は.icsで保存（Google への登録と .ics は T-06、Apple への登録は T-09） |
 | F-14 | 成立後のキャンセル | 定型の「やっぱり難しい」を送るのみ。再調整はしない |
 | F-15 | リンクとOGPプレビュー | 誘いにURLを1件添付。送信時にOGPを取得・保存し、カードで表示。失敗時はドメインのみ |
 | F-16 | 通知 | Webプッシュとメール |
@@ -116,7 +116,6 @@ flowchart LR
   C --> WP["Webプッシュ"]
   C --> M["メール配信サービス"]
   C --> S["外部サイト（OGP）"]
-  G -- 変更通知 --> A
 ```
 
 | ID | 要件 |
@@ -175,8 +174,10 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 
 | イベント | 発生元 | 受け取る側の動き |
 | --- | --- | --- |
-| CalendarBusyDetected | Calendar | Availabilityが該当のここ暇を取り消す |
-| AvailabilityCancelledByCalendar | Availability | 未返答の誘いを「今回は難しい」にする／本人に通知 |
+| （実予定の検知） | Calendar | 定期の確認で新しく入った埋まりを見つけ、calendar から availability の関数を呼んで該当のここ暇を取り消す。outbox には書かない（docs/specs/T-06-calendar.md） |
+| AvailabilityCancelledByCalendar | Availability | 取り消しの前に作られた未返答の誘いを「今回は難しい」にする／本人に通知（T-07） |
+| CalendarConnected | Calendar | 連携した人のこれからの成立した予定を、カレンダーに書き直す |
+| CalendarReauthRequired | Calendar | Google 側で連携が失効した。本人に通知（T-07） |
 | MeetupConfirmed | Invitation | Calendarが双方に書き込む／通知 |
 | BroadcastSent | Invitation | 宛先ごとに通知 |
 | BroadcastDecided | Invitation | Meetupを作成し、参加者全員に名前を開示して通知（カレンダーへの書き込みは同時に書く MeetupConfirmed で行う） |
@@ -289,7 +290,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 
 **MVP（友達とのクローズド運用）までに必須**
 - [ ] 開発・運営アカウントのパスキー化とAPIトークンの棚卸し
-- [ ] Googleの具体的なスコープの確定（空き時間の取得と予定の作成）
+- [x] Googleの具体的なスコープの確定（`calendar.freebusy` と `calendar.app.created`。docs/specs/T-06-calendar.md 決定事項1）
 - [ ] 入力のスキーマ検証の方式と、各項目の文字数上限
 - [ ] XSS対策（エスケープ、Content-Security-Policy）
 - [ ] 招待リンクのトークン設計（十分な長さのランダム値、ハッシュでの保存）

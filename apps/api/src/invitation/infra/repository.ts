@@ -459,3 +459,85 @@ export async function leaveMeetup(
   ]);
   return left?.meta.changes === 1;
 }
+
+// ---- カレンダー連携（T-06）から使う読み取り ----
+
+export type MeetupForCalendarRow = {
+  id: string;
+  status: MeetupStatus;
+  starts_at: number;
+  ends_at: number;
+  area: string | null;
+  url: string | null;
+};
+
+/** 予定1つ（閲覧者で絞らない。consumer が payload の予定を読むときだけ使う） */
+export async function findMeetupById(d1: D1Database, meetupId: string) {
+  return d1
+    .prepare(
+      `SELECT m.id, m.status, m.starts_at, m.ends_at, COALESCE(i.area, b.area) AS area, COALESCE(i.url, b.url) AS url
+       FROM meetups m ${MEETUP_SOURCES} WHERE m.id = ?1`,
+    )
+    .bind(meetupId)
+    .first<MeetupForCalendarRow>();
+}
+
+/** 予定の参加者（抜けた人を含む） */
+export async function allParticipantsOf(d1: D1Database, meetupId: string) {
+  const { results } = await d1
+    .prepare("SELECT user_id, left_at FROM meetup_participants WHERE meetup_id = ?1 ORDER BY user_id")
+    .bind(meetupId)
+    .all<{ user_id: string; left_at: number | null }>();
+  return results;
+}
+
+/** その人が参加者（抜けた人を含む）で、終了が now より後の予定の ID。id の昇順で after より後を limit 件 */
+export async function upcomingMeetupIdsOf(d1: D1Database, userId: string, now: number, limit: number, after: string) {
+  const { results } = await d1
+    .prepare(
+      `SELECT m.id FROM meetups m JOIN meetup_participants p ON p.meetup_id = m.id AND p.user_id = ?1
+       WHERE m.ends_at > ?2 AND m.id > ?3 ORDER BY m.id LIMIT ?4`,
+    )
+    .bind(userId, now, after, limit)
+    .all<{ id: string }>();
+  return results.map((r) => r.id);
+}
+
+/** 閲覧者が抜けていない参加者の予定だけ（.ics） */
+export async function findMeetupForActiveParticipant(d1: D1Database, viewerId: string, meetupId: string) {
+  return d1
+    .prepare(
+      `SELECT m.id, m.status, m.starts_at, m.ends_at, COALESCE(i.area, b.area) AS area, COALESCE(i.url, b.url) AS url
+       FROM meetups m
+       JOIN meetup_participants p ON p.meetup_id = m.id AND p.user_id = ?2 AND p.left_at IS NULL
+       ${MEETUP_SOURCES}
+       WHERE m.id = ?1`,
+    )
+    .bind(meetupId, viewerId)
+    .first<MeetupForCalendarRow>();
+}
+
+/**
+ * 自動の「今回は難しい」の対象（docs/specs/T-06-calendar.md）。受信者が userId、pending、返事の期限前、
+ * 取り消しの前（occurredAt より前）に作られ、時間が ranges のどれかと1分以上重なる誘い
+ */
+export async function pendingInvitesOverlapping(
+  d1: D1Database,
+  userId: string,
+  ranges: { startsAt: number; endsAt: number }[],
+  createdBefore: number,
+  now: number,
+) {
+  const { results } = await d1
+    .prepare(
+      `SELECT ${INVITE_COLUMNS} FROM direct_invites i
+       WHERE i.recipient_id = ?1 AND i.status = 'pending' AND i.expires_at > ?3 AND i.created_at < ?4
+         AND EXISTS (
+           SELECT 1 FROM json_each(?2) r
+           WHERE MIN(i.ends_at, json_extract(r.value, '$[1]')) - MAX(i.starts_at, json_extract(r.value, '$[0]')) >= 60000
+         )`,
+    )
+    .bind(userId, JSON.stringify(ranges.map((r) => [r.startsAt, r.endsAt])), now, createdBefore)
+    .all<InviteRow>();
+  return results;
+}

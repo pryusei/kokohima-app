@@ -1,5 +1,7 @@
 # ローカル開発用の秘密情報のひな形。apps/api/.dev.vars にコピーして値を入れる（.dev.vars はコミットしない）
 # JWT_SIGNING_KEYS の鍵は `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` で作る
 JWT_SIGNING_KEYS='{"local-1":"<base64urlの32バイト>"}'
+# カレンダーの更新用トークンの暗号化の鍵（作り方は同じ。JWT の鍵とは別の値にする）
+CALENDAR_TOKEN_KEYS='{"local-1":"<base64urlの32バイト>"}'
 GOOGLE_CLIENT_SECRET=
 APPLE_PRIVATE_KEY=

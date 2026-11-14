@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ApiError, apiSend } from "../api/client";
 import { keys } from "../api/keys";
+import { createIcsLink } from "../calendar/queries";
+import { redirectTo } from "./CalendarSettingsPage";
 import { Nav } from "../components/Nav";
 import { formatRange, linkLabel } from "../invitations/format";
 import { meetupQuery } from "../invitations/queries";
@@ -14,6 +16,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
   const queryClient = useQueryClient();
   const meetup = useQuery(meetupQuery(meetupId));
   const [failed, setFailed] = useState(false);
+  const [icsFailed, setIcsFailed] = useState(false);
   // 表示した時点の時刻で判定する（描画のたびに時計を読まない）
   const [openedAt] = useState(() => Date.now());
   const key = keys.meetups.detail(meetupId);
@@ -35,6 +38,16 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
       await queryClient.invalidateQueries({ queryKey: keys.meetups.all() });
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
     },
+  });
+
+  // .ics は一時的な URL を発行してから画面遷移する（iOS では OS のカレンダーへの追加が開く。決定事項10）
+  const ics = useMutation({
+    mutationFn: () => createIcsLink(meetupId),
+    onMutate: () => setIcsFailed(false),
+    onSuccess: (link) => {
+      if (link) redirectTo.go(link.url);
+    },
+    onError: () => setIcsFailed(true),
   });
 
   if (meetup.error instanceof ApiError && meetup.error.status === 404) {
@@ -69,6 +82,14 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
             <p className="text-slate-600">やっぱり難しくなりました</p>
           ) : (
             <p className="text-emerald-800">成立</p>
+          )}
+          <button type="button" className="self-start rounded-lg border px-4 py-2" onClick={() => ics.mutate()}>
+            カレンダーに追加（.ics）
+          </button>
+          {icsFailed && (
+            <p role="status" className="text-sm text-slate-600">
+              カレンダーに追加できませんでした。もう一度お試しください
+            </p>
           )}
           {cancellable && (
             <button type="button" className="self-start rounded-lg border px-4 py-2" onClick={() => cancel.mutate()}>

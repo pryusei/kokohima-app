@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { selectForCancel } from "./calendarCancel";
 import { expandRule, type RecurrenceRule } from "./recurrence";
 import { buildFriendSlots, inRange, mergeSlots, overlaps, pageAfter, type Slot } from "./slots";
 import { checkLocalRange, checkManualSlot } from "./validation";
@@ -154,5 +155,26 @@ describe("validation", () => {
     expect(checkLocalRange(23 * 60 + 45, 1440)).toBe(false);
     expect(checkLocalRange(10, 120)).toBe(false);
     expect(checkLocalRange(600, 615)).toBe(false);
+  });
+});
+
+describe("カレンダーの自動取り消しの対象（T-06）", () => {
+  const H = 60 * 60 * 1000;
+  const item = (id: string, s: number, e: number, created: number) => ({ id, startsAt: s * H, endsAt: e * H, createdAt: created * H });
+
+  it("終了が現在より後・前回の確認より前に作った・新しい埋まりと1分以上重なる枠だけ", () => {
+    const items = [
+      item("past", 1, 2, 0),
+      item("new", 10, 12, 6),
+      item("hit", 10, 12, 4),
+      item("touch", 12, 13, 4),
+      item("other", 14, 16, 4),
+    ];
+    const picked = selectForCancel(items, [{ startsAt: 11 * H, endsAt: 12 * H }], 5 * H, 3 * H);
+    expect(picked.map((p) => p.id)).toEqual(["hit"]);
+  });
+
+  it("新しい埋まりがなければ何も選ばない", () => {
+    expect(selectForCancel([item("a", 10, 12, 0)], [], 5 * H, 0)).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 # T-06 仕様書：カレンダー連携（Google）と .ics
 
-- 状態：合意済み
+- 状態：実装済み
 - タスク票：docs/tasks/T-06-calendar.md
 - 関係する要件：F-02、F-03、F-06、F-13、NF-02、NF-03、NF-04、NF-06、要求定義書「状態遷移とビジネスルール」「セキュリティ設計（カレンダーの認証情報、残りの論点のGoogleのスコープ）」
 
@@ -21,7 +21,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - インターフェースの中身：埋まりの取得、カレンダーの作成・確認、予定の書き込み・削除、失効。
   - Apple CalDAV は T-09 で `calendar/infra/caldav/` に足す（NF-06。NF-10 の技術検証を先に行う。T-09 のタスク票は実装PRで足す）。
 - ほかのコンテキストの domain は import しない（T-04 と同じ）。
-  - calendar/domain が持つのは、埋まりの区間の計算（新しく入った埋まりの判定）だけ。
+  - calendar/domain が持つのは、埋まりの区間の計算（新しく入った埋まりの判定）、プロバイダの共通インターフェース（`CalendarProvider`）、.ics の組み立て。どれも純粋な TypeScript。
   - プリセットの枠の作成・重なり・くり返しの展開は availability が持つ。calendar の application から、availability の application の関数を呼ぶ。
 - ここ暇（`availabilities`・`recurrence_rules`・`recurrence_exceptions`・`presets`）は `availability` のもの。
   - 自動取り消しの書き込み文は、availability の infra の関数で作る。この関数は、条件（guard）を受け取って `D1PreparedStatement[]` を返す。
@@ -64,12 +64,11 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - 埋まりは `primary`（メインのカレンダー）だけで確かめる（決定事項2）。
   - カレンダーの一覧を読むスコープを取らないため。
   - 「ここ暇」カレンダーは確かめる対象に入らない。そのため、書き込んだ予定で自分のここ暇が取り消されることはない。
-- 実装の最初に、Googleの公式ドキュメントで次のことを確かめる。食い違いがあれば実装PRで仕様書を直す。
-  - スコープの名前と範囲
-  - freeBusy.query の範囲の上限と、カレンダーごとのエラーの形
-  - 予定IDに使える文字
-  - revoke が同じクライアントの許可全体を失効させるか
-- このPRを書いた環境からは公式のページに接続できず、スコープは検索の結果で確かめた。
+- 実装PRで、Googleの公式ドキュメント（developers.google.com）で次のことを確かめた。
+  - スコープ：`calendar.freebusy` は「カレンダーの空きを見る」、`calendar.app.created` は「セカンダリカレンダーを作り、その中の予定を見る・作る・変える・消す」。仕様どおり
+  - freeBusy.query：応答の `calendars.<id>.errors`（`notFound`・`internalError` など）があるとき、そのカレンダーの `busy` は使えない。範囲の上限は書かれていないので、範囲が長すぎて400になったときも一時的な失敗（`unavailable`・再試行）として扱う
+  - 予定ID：base32hex（a〜v と 0〜9）の5〜1024文字。`kh` ＋ UUID の16進は収まる
+  - revoke：「プロジェクトに与えた許可全体を失効させ、そのプロジェクトのすべてのクライアントに出したアクセストークン・更新用トークンを使えなくする」。決定事項13（使っている連携があるときは失効させない）の前提どおり
 
 ## API
 `api-conventions` スキルに従う。例外は「例外」の欄に書く。スキーマは `packages/shared/src/schemas/calendar.ts` に置く。
@@ -136,7 +135,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - T-01 の完了コード・T-02 の招待リンクのようにフラグメントや本文に入れる方法は、OS に画面遷移で開かせる必要があるので使えない。
   - 期限は5分で、使うたびに参加者かどうかを確かめ直す。漏れても、5分を過ぎれば使えず、参加者でなくなった人には返さない。
   - アプリのログ（`console.log` など）には、トークンもパスも出さない。
-  - 実装の最初に、Workers のログに残るリクエストの URL を減らせないか（`observability` の設定でパスを記録しない、など）を確かめる。減らせれば、そうする。
+  - 実装PRで確かめた結果：wrangler の `observability` で `logs.invocation_logs: false`（URL を含む呼び出しのログを出さない）にした。（`redact_query_string` は今の wrangler の設定の検証で知らない項目と警告されたので使わない）。これで、Workers のログに .ics のトークンもコールバックの `code` も残らない。アプリのログ（`console.log`）は `requestId` と種類だけを出す
 - **`Idempotency-Key` は受け付けない**：T-02 の決定事項6のとおり、別タスクで扱う。連携の開始は何度やり直しても害がなく、解除は2回目が404になるだけ。
 
 ## データ
@@ -169,7 +168,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - インデックス：`(created_at)`。
 
 ### 既存の表とトークン
-- `outbox` は列を足さない。`processed_at` は「Queue に渡し終えた日時」として使う（「outbox を Queues に流す」）。
+- `outbox` は列を足さない。`processed_at` は「Queue に渡し終えた日時」として使う（「outbox を Queues に流す」）。型で絞って古い順に読むため、インデックス `(type, processed_at, created_at)` を足す。
 - アクセストークンは保存しない。使うたびに更新用トークンで取る。
 
 ### トークンの暗号化（NF-04）
@@ -236,7 +235,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 ### アクセストークンの取得と失効の検知
 - アクセストークンは、使うたびに更新用トークンで取る。同じ処理の中では使い回す。
 - トークンエンドポイントが `invalid_grant` を返したら、連携が失効したとして扱う。
-  - 書き方：`WHERE status = 'active'` の条件付き UPDATE で、`status = 'needs_reauth'`、`refresh_token_enc = NULL` にする。
+  - 書き方：`WHERE status = 'active'` の条件付き UPDATE で、`status = 'needs_reauth'`、`refresh_token_enc = NULL` にする。埋まりの記録と確認の権利も消す（連携し直すまで使わないため）。
   - outbox に `CalendarReauthRequired`（`{ userId, provider, occurredAt }`）を書く。通知は T-07。
   - それ以外の失敗は一時的な失敗として扱い、再試行する。
 - `active` でない人については、候補・確認・書き込みのどれでもGoogleを呼ばない。
@@ -285,7 +284,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
    - 新しく入った埋まりと1分以上重なる。
 6. 取り消す枠が20を超えたら、1回目は保留にする（決定事項6）。
    - Google側の一時的な不具合で、60日分のここ暇が一度に消えるのを防ぐため。
-   - 保留：何も取り消さず、埋まりの記録（`busy_snapshot`・`snapshot_from`・`snapshot_to`）は進めない。`large_change_held = 1`、`last_synced_at`・`sync_id` を書き、権利を戻す。ログには数だけを出す。
+   - 保留：何も取り消さず、埋まりの記録（`busy_snapshot`・`snapshot_from`・`snapshot_to`）も `last_synced_at` も進めない。`large_change_held = 1` と `sync_id` を書き、権利を戻す。ログには数だけを出す。
+     - `last_synced_at` を進めないのは、「前回の確認より前に作った」の基準を保留した時刻にずらすと、予定を見たうえで作ったここ暇まで対象に入るため。進めないので、次の Cron でまたすぐ確かめる
    - 次の確認は、進めなかった前回の記録と比べ直す。
      - また20を超え、`large_change_held = 1` なら、正当な大きな変更（旅行や出張をまとめて入れたなど）として、すべて取り消す。
      - 20以下なら、ふつうに処理する（一時的な不具合だった）。
@@ -322,7 +322,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - consumer は、次のイベントを受け取ったら、対象の予定ごとに「あるべき状態」にそろえる。同じイベントが何度届いても、結果は同じになる。
   - `MeetupConfirmed`・`MeetupCancelled`・`MeetupLeft`：payload の予定が対象。
   - `CalendarConnected`：その人が参加者（抜けた人を含む）で、終了が現在より後の予定が対象。
-    - 100件ずつ処理し、続きは Queue に送り直す。
+    - 100件ずつ処理し、続きは Queue に送り直す（payload に、続きの位置の `after`（予定の ID）を足したメッセージ。outbox の表は通さない）。
     - 解除していた間のキャンセル・抜けも、ここで消す。
 - 予定ごとの手順：参加者（抜けた人を含む。`CalendarConnected` ではその人だけ）のうち、連携が `active` の人について、書くべきなら書き、書くべきでなければ消す。
   - 書くべき予定：`confirmed`、その人が抜けていない、終了が現在より後。
@@ -335,7 +335,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - 0行なら（同時に別の処理が作った）、作ったカレンダーを消して、保存されている方を使う。
 - `calendar_id` があっても、使えないことがある。
   - 例：利用者が消した、連携し直した Google アカウントが前と違う。
-  - 予定の書き込みが404・403なら、`calendar_id` を NULL に戻してカレンダーを作り直す。その人のこれからの予定は、`CalendarConnected` と同じ処理で書き直す。
+  - 予定の書き込みが404・403（上限以外）なら、`calendar_id` を NULL に戻してカレンダーを作り直す。その人のこれからの予定は、`CalendarConnected` と同じ処理で書き直す（`CalendarConnected` の形のメッセージを Queue に直接送る。outbox の表は通さない）。
+  - 作ったばかりのカレンダーにも書けない（上限以外の403が続く。Workspace の管理者の制限など）ときは、作り直しをくり返さず一時的な失敗として投げる（Queue の再試行、続けば退避キュー）。カレンダーが増え続けるのを防ぐため
 
 #### 予定のID
 - 予定のIDは、予定のIDから決まる値にする：`kh` ＋ UUID のハイフンを除いた16進。Googleの予定IDに使える文字（base32hex の0-9a-v）に収まる。
@@ -343,7 +344,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - 削除が404・410なら、成功として扱う。
 
 #### 書く内容
-- タイトル：「ここ暇：<自分以外の参加者の表示名>」。
+- タイトル：「ここ暇：<自分以外の参加者の表示名>」。自分以外の参加者がいなければ「ここ暇」。
   - 表示名は「、」でつなぐ。抜けた人は除く。
   - 表示名がない人は「名前未設定の友達」（T-02 と同じ）。
 - 開始・終了。
@@ -362,7 +363,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - 途中で止まっても、行は未処理のまま残る。次の実行で送り直すので、イベントは消えない（少なくとも1回は届く）。
   - 二重に届くことは、consumer の冪等性で受ける（どの処理も条件付き更新か、あるべき状態にそろえる処理）。
 - ほかの型の行（`DirectInviteSent`・`FriendshipEstablished` などの通知の対象）は取り出さず、未処理のまま残す。T-07 で型を足して流す。
-- 同じ Cron で、期限を10分過ぎた `calendar_oauth_states` と、期限を過ぎた `ics_tokens` を消す。
+- 同じ Cron で、期限（作成から10分）を過ぎた `calendar_oauth_states` と、期限を過ぎた `ics_tokens` を消す。
 - Queue のメッセージは `{ kind: "outbox", id, type, payload }` か `{ kind: "calendar_sync", userId, provider }`。consumer は `kind` と `type` で処理を振り分ける。
 - 再試行は最大5回で、間隔を広げていく。それでも失敗したら退避キューに送る。
   - 退避キューのメッセージは処理しない。ログには `kind`・`type`・`id` だけを出す。
@@ -375,7 +376,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - 抜けた人に出さないのは、抜けた後は予定の参加者の名前を見せないため（T-05）。
   - 抜けた人が前に取り込んだ予定は、こちらからは消せない。Googleに連携していれば、Google側からは消える。
 - 取得（`/ics/{token}`）：トークンのハッシュで、期限内の行を読む。読むたびに、上と同じ SQL の条件で参加者かを確かめ直す。どちらかが外れたら404。
-- 予定の状態：`confirmed` は `STATUS:CONFIRMED`、`cancelled` は `STATUS:CANCELLED`。同じ `UID` なので、取り込み済みの人のカレンダーで消せる。
+- 予定の状態：`confirmed` は `STATUS:CONFIRMED`、`cancelled` は `STATUS:CANCELLED`。同じ `UID` なので、取り込み済みの人のカレンダーで消せる。`METHOD` は付けない（`METHOD:CANCEL` には `ORGANIZER` が要り、カレンダーのアプリが取り込みを拒むことがあるため）。
 - 中身：
   - `UID:<meetupId>@kokohima`、`DTSTAMP`。
   - `DTSTART`・`DTEND`：UTC。
@@ -395,16 +396,18 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - `?calendar=failed`：「連携できませんでした。もう一度お試しください」。
 - 読むのは空き／埋まりだけで、予定の中身は読まないことを1文で書く。
 - Apple：「Appleカレンダーは準備中です。成立した予定は .ics で追加できます」。
+- 連携の開始・解除が失敗したら「連携を始められませんでした。もう一度お試しください」「連携をやめられませんでした。もう一度お試しください」を静かに出す。
 
 #### ここ暇タブの「カレンダーの空き」
 - 連携している人にだけ出す。
-- 今日から7日分の候補を「6/1（土）夜 19:00〜23:00」の形で並べ、押すとここ暇になる。
-  - 楽観的更新はしない。成功したら、自分の一覧と候補を読み直す。
+- 今日から7日分の候補を「6/1（土） 夜 19:00〜23:00」の形で並べ、押すとここ暇になる。
+  - 楽観的更新はしない。成功したら、自分の一覧と候補を読み直す。失敗したら「作れませんでした。もう一度お試しください」。
+  - 候補がなければ「この先7日間に空いている時間帯はありません」。
 - `unavailable` は「カレンダーを読み込めませんでした」。`needs_reauth` は設定へのリンクを静かに出す。
 
 #### 予定の詳細
 - 「カレンダーに追加（.ics）」のボタンを置く。
-- 押すと `ics-links` を呼び、返った `url` へ画面遷移する。iOS では OS のカレンダーへの追加が開き、ほかではダウンロードになる。
+- 押すと `ics-links` を呼び、返った `url` へ画面遷移する。iOS では OS のカレンダーへの追加が開き、ほかではダウンロードになる。失敗したら「カレンダーに追加できませんでした。もう一度お試しください」。
 
 ### 設定値（Workers）
 | 名前 | 種類 | 内容 |
@@ -415,8 +418,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | Cron | triggers | `* * * * *`（outbox と掃除）、`*/15 * * * *`（確認の割り当て） |
 
 - `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET` は T-01 のものを使う。リダイレクト先 `/api/v1/calendar/google/callback` を Google Cloud のクライアントに登録する（人が行う）。
-- Queue は `infra/terraform` に足す（本体と退避キュー、staging・prod）。
-  - wrangler の各環境（ローカル・e2e・staging・prod）に、バインディングと Cron を書く。
+- Queue の本体と退避キューは、`infra/terraform` にすでにある `cloudflare_queue.outbox`・`outbox_dlq`（`kokohima-<env>-outbox`・`kokohima-<env>-outbox-dlq`）を使う（Terraform の変更はない）。
+  - wrangler の各環境（ローカル・e2e・staging・prod）に、バインディング（`JOBS`）と Cron を書く。`max_retries` は5、`dead_letter_queue` は退避キュー。
   - `infra-change` スキルに従い、apply・deploy はしない。
 - 本番のエントリ（`src/index.ts`）と E2E のエントリは、どちらも `fetch`・`scheduled`・`queue` を export する。
 - E2E とローカルの `CALENDAR_TOKEN_KEYS` は、`scripts/write-e2e-dev-vars.mjs` で作る。`CALENDAR_TOKEN_CURRENT_KID` は `env.e2e` の vars に置く。
@@ -426,13 +429,13 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - E2E のエントリ（`src/e2e/entry.ts`）で、`AppDeps` の `google.endpoints` を偽の経路に向ける。認可の画面遷移の URL もこれに含める。
   - 偽の実装は `src/e2e/` に置き、本番のエントリから import しない。
 - 偽の経路：
-  - 偽の認可画面 `/__e2e__/calendar/google/authorize`：同意したことにして、コールバックへリダイレクトする。
-  - 偽のトークン・freeBusy・カレンダー・予定の経路。
+  - 偽の認可画面 `/__e2e__/calendar/google/authorize`（API の `http://localhost:8787` に置く）：`state` から利用者を引き、同意したことにして、コールバックへリダイレクトする。
+  - 偽のトークン・freeBusy・カレンダー・予定は、E2E のエントリの `fetch` が `google.e2e.invalid` 宛てだけを受ける（ネットワークに出ない）。
   - 偽の埋まりを設定する `/__e2e__/calendar/busy`。
   - すぐに処理する経路：確認を実行する `/__e2e__/calendar/sync`、outbox を処理する `/__e2e__/outbox/drain`。
   - どれも `E2E_MODE=1` のときだけ有効。
 - 偽の実装の状態は、E2E のエントリだけが作る表に置く。本番のマイグレーションには入れない。
-- CI の本番ビルドの検査（`__e2e__|e2eLogin|e2eExpireBroadcast`）に、新しい関数名（`e2eCalendar`・`e2eOutbox`）を足す。
+- CI の本番ビルドの検査（`__e2e__|e2eLogin|e2eExpireBroadcast`）に、新しい名前（`e2eCalendar`・`e2eOutbox`・`e2eFetch`・`google.e2e.invalid`）を足す。
 
 ## 認可と秘匿
 
@@ -625,10 +628,13 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
     - 解除の失効。
 12. `AvailabilityCancelledByCalendar` の payload に、取り消した枠の時刻を入れる（payload は ID だけ、の例外）。
 13. 連携し直したとき、前の更新用トークンは失効させずに捨てる。スコープ不足で受け取ったトークンも、連携が `active` なら失効させずに捨てる。revoke が同じクライアントの許可全体を失効させるおそれがあるため。実装の最初に公式で確かめる。
-14. .ics のトークンは URL のパスに入れ、Workers のログに残ることを「ログにトークンを出さない」の例外にする（期限5分、使うたびに参加者を確かめ直す）。ログに残る URL を減らせるかを実装の最初に確かめる。
+14. .ics のトークンは URL のパスに入れ、Workers のログに残ることを「ログにトークンを出さない」の例外にする（期限5分、使うたびに参加者を確かめ直す）。実装PRで `observability` の設定により、ログに URL のパスとクエリ文字列が残らないようにした。
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-10-25 | 初版 | |
 | 2026-11-12 | スコープ不足のときの失効を `active` 以外に限る、自動の断りを取り消し前に作った誘いに限る、20件を超える取り消しを保留にして次の確認で判定し直す、.ics のトークンのログの例外、確認の上限と推測されうるリスクを追記。確認事項を決定事項にし、合意済みにした | 仕様書PRのレビュー |
+| 2026-11-12 | 実装PR：Google の公式ドキュメントで確かめた結果を書いた。Queue は Terraform の既存の outbox・outbox_dlq を使う。outbox のインデックスを足す。E2E の偽の認可画面の置き場所と、偽の Google の受け方を書いた | 実装 |
+| 2026-11-12 | 実装PRのセキュリティレビュー：`observability` で呼び出しのログを出さない（.ics のトークンとコールバックの `code` を残さない）。作ったばかりのカレンダーにも書けないときは、作り直しをくり返さず一時的な失敗にする | 実装PRのレビュー |
+| 2026-11-12 | 実装PRの仕様レビュー：保留では `last_synced_at` も進めない。.ics に `METHOD` を付けない。calendar/domain の中身、`CalendarConnected` の続きと作り直しのメッセージ、needs_reauth で消すもの、画面の文言を実装に合わせて書いた | 実装PRのレビュー |
