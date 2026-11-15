@@ -35,7 +35,8 @@ export type Bindings = {
 };
 
 export type JobMessage =
-  | { kind: "outbox"; id: string; type: string; payload: string }
+  /** createdAt は outbox の行を作った時刻（T-07 の「古い outbox の行」の線引きに使う） */
+  | { kind: "outbox"; id: string; type: string; payload: string; createdAt?: number }
   | { kind: "calendar_sync"; userId: string; provider: "google" }
   | { kind: "notification_deliver"; notificationId: string };
 

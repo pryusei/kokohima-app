@@ -88,6 +88,27 @@ describe("お知らせ一覧", () => {
     expect(screen.getByRole("link", { name: "予定から1人抜けました" })).toBeVisible();
   });
 
+  it("相手が退会などで読めない（actor が null）ときは、名前のない文言にする", async () => {
+    window.history.replaceState(null, "", "/notifications");
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/notifications/read": noContent,
+      "/api/v1/notifications": page([
+        item(1, "invite_received", { subjectId: "i1" }),
+        item(2, "invite_declined", { subjectId: "i2" }),
+        item(3, "meetup_confirmed", { subjectId: "m1" }),
+        item(4, "friend_added", { subjectId: FRIEND }),
+      ]),
+    });
+    renderApp();
+    expect(await screen.findByRole("link", { name: "誘いが届きました" })).toHaveAttribute("href", "/invites/i1");
+    expect(screen.getByRole("link", { name: "誘いに返事がありました" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "予定が成立しました" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "友達が増えました" })).toBeVisible();
+    expect(screen.queryByText(/名前未設定の友達/)).toBeNull();
+  });
+
   it("ナビに未読の数を出す（赤を使わない）。一覧を開いたら、いちばん新しい id で既読にし、数を読み直す", async () => {
     window.history.replaceState(null, "", "/notifications");
     const { calls } = mockFetch({

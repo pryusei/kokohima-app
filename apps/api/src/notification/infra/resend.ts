@@ -8,7 +8,7 @@ import type { Mail } from "../domain/mail";
 const TIMEOUT_MS = 5000;
 
 /** rejected：一時的でない失敗（宛先が不正、ドメインが未登録など）。一時的な失敗は投げる */
-export type MailResult = "sent" | "rejected";
+export type MailResult = { outcome: "sent" | "rejected"; status: number };
 
 export class MailUnavailable extends Error {
   constructor(readonly status: number) {
@@ -37,11 +37,11 @@ export async function sendMail(
   } catch {
     throw new MailUnavailable(0);
   }
-  if (res.ok) return "sent";
+  if (res.ok) return { outcome: "sent", status: res.status };
   if (res.status === 429 || res.status >= 500) throw new MailUnavailable(res.status);
   if (res.status === 409) {
     const body = (await res.json().catch(() => null)) as { name?: unknown } | null;
     if (body?.name === "concurrent_idempotent_requests") throw new MailUnavailable(409);
   }
-  return "rejected";
+  return { outcome: "rejected", status: res.status };
 }

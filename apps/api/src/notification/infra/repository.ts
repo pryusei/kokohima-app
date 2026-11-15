@@ -79,45 +79,52 @@ export async function markDelivered(d1: D1Database, id: string, channel: Channel
 // ---- 1日の数 ----
 
 /**
- * 利用者の1日の数を1つ増やし、上限に収まったかを返す。お知らせがそのチャネルでまだ数えられていないときだけ
- * 増やす（再試行で二重に数えない）。すでに数えていれば true
+ * 利用者の1日の数（`counter` の行）を1つ増やし、上限に収まったかを返す。
+ * 数えられたときだけ、お知らせにそのチャネルの印（`counted_*_at`）を付ける。印があれば、すでに数えた（再試行）として true。
+ * 上限に達して数えられなかったときは印を付けないので、再試行でももう一度上限で確かめる
  */
 export async function countWithinLimit(
   d1: D1Database,
   n: { id: string; userId: string },
   channel: Channel,
+  counter: string,
   day: string,
   limit: number,
   now: number,
 ): Promise<boolean> {
   // 列の名前は固定の2つから選ぶ（利用者の値は入らない）
   const column = channel === "push" ? "counted_push_at" : "counted_email_at";
-  const already = await d1
-    .prepare(`SELECT ${column} AS counted FROM notifications WHERE id = ?1`)
-    .bind(n.id)
-    .first<{ counted: number | null }>();
-  if (!already) return false;
-  if (already.counted !== null) return true;
-  const [marked, counted] = await d1.batch([
-    d1.prepare(`UPDATE notifications SET ${column} = ?2 WHERE id = ?1 AND ${column} IS NULL`).bind(n.id, now),
+  const readMark = async () =>
+    (
+      await d1
+        .prepare(`SELECT ${column} AS counted FROM notifications WHERE id = ?1`)
+        .bind(n.id)
+        .first<{ counted: number | null }>()
+    )?.counted ?? null;
+  if ((await readMark()) !== null) return true;
+  const [, marked] = await d1.batch([
     d1
       .prepare(
         `INSERT INTO notification_daily_counts (user_id, day, channel, count)
-         SELECT ?1, ?2, ?3, 1 WHERE changes() = 1
+         SELECT ?1, ?2, ?3, 1 WHERE EXISTS (SELECT 1 FROM notifications WHERE id = ?5 AND ${column} IS NULL)
          ON CONFLICT (user_id, day, channel) DO UPDATE SET count = count + 1 WHERE count < ?4`,
       )
-      .bind(n.userId, day, channel, limit),
+      .bind(n.userId, day, counter, limit, n.id),
+    // 直前の文で数えられたときだけ印を付ける
+    d1.prepare(`UPDATE notifications SET ${column} = ?2 WHERE id = ?1 AND ${column} IS NULL AND changes() = 1`).bind(n.id, now),
   ]);
-  // 同時に別の処理が数えた（印が0行）なら、上限の中として扱う
-  if (marked?.meta.changes !== 1) return true;
-  return counted?.meta.changes === 1;
+  if (marked?.meta.changes === 1) return true;
+  // 数えられなかった：上限に達したか、同時に別の処理が数えた（印が付いていれば、そちらで数えた）
+  return (await readMark()) !== null;
 }
 
 /**
- * サービス全体の1日のメールの数（user_id が '' の行）を1つ増やし、上限に収まったかを返す。
- * お知らせごとに1回だけ数える（'n:<id>' の印の行があれば、すでに数えた）
+ * サービス全体の1日のメールの数（user_id が '' の行。day は UTC の日付）を1つ増やし、上限に収まったかを返す。
+ * limit が null なら上限なしで数える（新端末のログイン）。
+ * お知らせごとに1回だけ数える（'n:<id>' の印の行があれば、すでに数えた）。上限で止まったときも印は残すので、
+ * 同じ日のうちの再試行では「数えた」として送る側に倒れない（印を消して数え直す）
  */
-export async function claimGlobalEmailCount(d1: D1Database, id: string, day: string, limit: number): Promise<boolean> {
+export async function claimGlobalEmailCount(d1: D1Database, id: string, day: string, limit: number | null): Promise<boolean> {
   const [claimed, counted] = await d1.batch([
     d1
       .prepare(
@@ -128,13 +135,19 @@ export async function claimGlobalEmailCount(d1: D1Database, id: string, day: str
       .prepare(
         `INSERT INTO notification_daily_counts (user_id, day, channel, count)
          SELECT '', ?1, 'email', 1 WHERE changes() = 1
-         ON CONFLICT (user_id, day, channel) DO UPDATE SET count = count + 1 WHERE count < ?2`,
+         ON CONFLICT (user_id, day, channel) DO UPDATE SET count = count + 1 WHERE ?2 IS NULL OR count < ?2`,
       )
       .bind(day, limit),
   ]);
   // すでに数えていれば（claim が0行）、上限の中として扱う
   if (claimed?.meta.changes !== 1) return true;
-  return counted?.meta.changes === 1;
+  if (counted?.meta.changes === 1) return true;
+  // 上限で止まった：印を消し、再試行でも同じく上限で確かめる
+  await d1
+    .prepare("DELETE FROM notification_daily_counts WHERE user_id = ?1 AND day = ?2 AND channel = 'email_claim'")
+    .bind(`n:${id}`, day)
+    .run();
+  return false;
 }
 
 export async function deleteOldCounts(d1: D1Database, beforeDay: string) {
@@ -226,7 +239,7 @@ export const MAX_SUBSCRIPTIONS = 10;
 export type SubscriptionRow = { id: string; user_id: string; session_id: string; endpoint_enc: string };
 
 /**
- * 購読を登録する。同じ endpoint があれば（別の人の行でも）閲覧者とセッションに付け替える。
+ * 購読を登録する。同じ endpoint があれば（別の人の行でも）閲覧者とセッションに付け替え、登録の時刻を今にする。
  * 上限を超えたら、いちばん古い購読を消して入れ替える
  */
 export async function upsertSubscription(
@@ -238,7 +251,7 @@ export async function upsertSubscription(
       .prepare(
         `INSERT INTO push_subscriptions (id, user_id, session_id, endpoint_hash, endpoint_enc, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-         ON CONFLICT (endpoint_hash) DO UPDATE SET user_id = ?2, session_id = ?3, endpoint_enc = ?5`,
+         ON CONFLICT (endpoint_hash) DO UPDATE SET user_id = ?2, session_id = ?3, endpoint_enc = ?5, created_at = ?6`,
       )
       .bind(crypto.randomUUID(), row.userId, row.sessionId, row.endpointHash, row.endpointEnc, row.now),
     d1

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { localDay } from "./day";
 import { pushEndpointOrigin } from "./endpoint";
 import { draftsFor } from "./events";
-import { CATEGORY_OF, countsTowardDailyLimit } from "./kinds";
+import { CATEGORY_OF, globalEmailLimitFor, limitsFor, parseMailDailyLimit, parseNotificationStartAt } from "./kinds";
 import { mailFor } from "./mail";
 
 // 通知のドメイン（docs/specs/T-07-notification.md「お知らせの作り方」「入力」「メールの中身」）
@@ -73,6 +73,8 @@ describe("イベント → お知らせ", () => {
     expect(draftsFor("SessionStarted", payload, { hasEarlierSession: true })[0]).toMatchObject({
       kind: "new_login",
       device: "Safari / iOS",
+      // セッションの ID はお知らせに持たない
+      subjectId: null,
     });
   });
 
@@ -87,13 +89,36 @@ describe("種別と上限", () => {
     expect(CATEGORY_OF.new_login).toBeNull();
   });
 
-  it("1日の上限に数えるのは誘い・募集・友達だけ（予定・カレンダー・新端末のログインは必ず送る）", () => {
-    expect(countsTowardDailyLimit("invite_received")).toBe(true);
-    expect(countsTowardDailyLimit("broadcast_received")).toBe(true);
-    expect(countsTowardDailyLimit("friend_added")).toBe(true);
-    expect(countsTowardDailyLimit("meetup_cancelled")).toBe(false);
-    expect(countsTowardDailyLimit("calendar_reauth")).toBe(false);
-    expect(countsTowardDailyLimit("new_login")).toBe(false);
+  it("1日の上限の組：誘い・募集・友達はプッシュ30・メール10、予定・カレンダーは各30、新端末のログインはメール5（決定事項8）", () => {
+    for (const kind of ["invite_received", "broadcast_received", "friend_added"] as const) {
+      expect(limitsFor(kind)).toEqual({
+        tier: "normal",
+        push: { counter: "push", limit: 30 },
+        email: { counter: "email", limit: 10 },
+      });
+    }
+    for (const kind of ["meetup_cancelled", "meetup_confirmed", "availability_cancelled", "calendar_reauth"] as const) {
+      expect(limitsFor(kind)).toEqual({
+        tier: "priority",
+        push: { counter: "push_priority", limit: 30 },
+        email: { counter: "email_priority", limit: 30 },
+      });
+    }
+    expect(limitsFor("new_login")).toEqual({ tier: "login", push: null, email: { counter: "email_login", limit: 5 } });
+  });
+
+  it("全体のメール数：誘い・募集・友達は上限の20通手前まで、予定・カレンダーは上限まで、新端末のログインは上限なし", () => {
+    expect(globalEmailLimitFor("normal", 90)).toBe(70);
+    expect(globalEmailLimitFor("priority", 90)).toBe(90);
+    expect(globalEmailLimitFor("login", 90)).toBeNull();
+    expect(globalEmailLimitFor("normal", 10)).toBe(0);
+  });
+
+  it("設定値：MAIL_DAILY_LIMIT は正の整数でなければ90。NOTIFICATION_START_AT は正の整数でなければ未設定（null）", () => {
+    expect(parseMailDailyLimit("120")).toBe(120);
+    for (const raw of [undefined, "", "0", "-1", "abc", "1.5"]) expect(parseMailDailyLimit(raw)).toBe(90);
+    expect(parseNotificationStartAt("1767225600000")).toBe(1767225600000);
+    for (const raw of [undefined, "", " ", "0", "-5", "abc", "1.5"]) expect(parseNotificationStartAt(raw)).toBeNull();
   });
 
   it("日付は利用者のタイムゾーンで区切る", () => {

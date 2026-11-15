@@ -9,7 +9,14 @@ import { broadcastOwnerOf, inviteActorOf } from "../../invitation/application/ca
 import { decryptSecret } from "../../shared/crypto";
 import { localDay } from "../domain/day";
 import { draftsFor, type Lookups } from "../domain/events";
-import { CATEGORY_OF, countsTowardDailyLimit, EMAIL_DAILY_LIMIT, PUSH_DAILY_LIMIT } from "../domain/kinds";
+import {
+  CATEGORY_OF,
+  globalEmailLimitFor,
+  limitsFor,
+  parseMailDailyLimit,
+  parseNotificationStartAt,
+  type DailyLimits,
+} from "../domain/kinds";
 import { mailFor } from "../domain/mail";
 import { sendPush } from "../infra/push";
 import * as repo from "../infra/repository";
@@ -24,17 +31,25 @@ type Ctx = { env: Bindings; deps: AppDeps };
 const log = (event: string, fields: Record<string, unknown>) => console.log(JSON.stringify({ event, ...fields }));
 const str = (v: unknown) => (typeof v === "string" && v.length > 0 ? v : null);
 
-/** T-07 を有効にした時刻。これより前のイベントではお知らせを作らない */
-export const notificationStartAt = (env: Bindings) => Number(env.NOTIFICATION_START_AT) || 0;
+/**
+ * T-07 を有効にした時刻。これより前のイベントではお知らせを作らない。
+ * 未設定・不正な値なら null（お知らせを作らない。dispatch も通知だけの型を流さない）
+ */
+export const notificationStartAt = (env: Bindings) => parseNotificationStartAt(env.NOTIFICATION_START_AT);
 
 /**
  * イベントからお知らせを作り、受け取り手ごとに届けるメッセージを Queue に分ける。
  * 同じイベントが2回届いても、お知らせは1件。届け終えていないものだけを送り直す
  */
-export async function createFromEvent(ctx: Ctx, event: { id: string; type: string; payload: Record<string, unknown> }) {
+export async function createFromEvent(
+  ctx: Ctx,
+  event: { id: string; type: string; payload: Record<string, unknown>; outboxCreatedAt?: number },
+) {
   const occurredAt = Date.parse(str(event.payload.occurredAt) ?? "");
   const createdAt = Number.isFinite(occurredAt) ? occurredAt : ctx.deps.now();
-  if (createdAt < notificationStartAt(ctx.env)) return 0;
+  // 線は outbox の行を作った時刻で引く（Queue のメッセージにないときだけ occurredAt）
+  const startAt = notificationStartAt(ctx.env);
+  if (startAt === null || (event.outboxCreatedAt ?? createdAt) < startAt) return 0;
 
   const lookups: Lookups = {};
   const userId = str(event.payload.userId);
@@ -85,37 +100,43 @@ async function pushToAll(ctx: Ctx, userId: string, kind: string): Promise<SendOu
       continue;
     }
     const result = await sendPush(ctx.env, ctx.deps, endpoint);
-    if (result === "sent") {
+    if (result.outcome === "sent") {
       sent = true;
       await repo.markSubscriptionSuccess(ctx.env.DB, sub.id, now);
-    } else if (result === "gone") {
+    } else if (result.outcome === "gone") {
       await repo.deleteSubscriptionById(ctx.env.DB, sub.id);
     } else {
-      log("notification_push_rejected", { kind });
+      log("notification_push_rejected", { kind, status: result.status });
     }
   }
   return sent ? "sent" : "none_usable";
 }
 
 /** メールで送る。上限・宛先がなければ、送らずに理由を返す。一時的な失敗は投げる */
-async function sendByEmail(ctx: Ctx, n: repo.NotificationRow, day: string, timezone: string): Promise<repo.Outcome> {
+async function sendByEmail(
+  ctx: Ctx,
+  n: repo.NotificationRow,
+  limits: DailyLimits,
+  day: string,
+  timezone: string,
+): Promise<repo.Outcome> {
   const to = await getNotificationAddress(ctx.env, n.user_id);
   if (!to) return "no_address";
   const now = ctx.deps.now();
-  if (
-    countsTowardDailyLimit(n.kind) &&
-    !(await repo.countWithinLimit(ctx.env.DB, { id: n.id, userId: n.user_id }, "email", day, EMAIL_DAILY_LIMIT, now))
-  ) {
+  const user = { id: n.id, userId: n.user_id };
+  if (!(await repo.countWithinLimit(ctx.env.DB, user, "email", limits.email.counter, day, limits.email.limit, now))) {
     return "limited";
   }
-  // サービス全体の1日のメール数。超えていても、新しい端末でのログインだけは送る（安全の通知を優先）
-  const globalLimit = Number(ctx.env.MAIL_DAILY_LIMIT) || 0;
-  const withinGlobal = await repo.claimGlobalEmailCount(ctx.env.DB, n.id, day, globalLimit);
-  if (!withinGlobal && n.kind !== "new_login") return "limited";
+  // サービス全体の1日のメール数（UTC の日付）。組ごとに使える上限が違い、新端末のログインは超えていても送る
+  const globalLimit = globalEmailLimitFor(limits.tier, parseMailDailyLimit(ctx.env.MAIL_DAILY_LIMIT));
+  const utcDay = new Date(now).toISOString().slice(0, 10);
+  if (!(await repo.claimGlobalEmailCount(ctx.env.DB, n.id, utcDay, globalLimit))) return "limited";
 
   const mail = mailFor({ kind: n.kind, device: n.device, createdAt: n.created_at }, { origin: ctx.env.APP_ORIGIN, timezone });
   const result = await sendMail(ctx.env, ctx.deps, { to, mail, idempotencyKey: n.id });
-  return result === "sent" ? "sent" : "failed";
+  if (result.outcome === "sent") return "sent";
+  log("notification_mail_rejected", { kind: n.kind, status: result.status });
+  return "failed";
 }
 
 /** 1件を届ける。二重に届いても、届け終えていれば何もしない */
@@ -137,19 +158,18 @@ export async function deliver(ctx: Ctx, notificationId: string) {
 
   const timezone = await getUserTimezone(ctx.env, n.user_id);
   const day = localDay(now, timezone);
+  const limits = limitsFor(n.kind);
 
   // 新しい端末でのログインはメールだけ。ほかは、購読があればプッシュ、なければメール
-  if (n.kind !== "new_login" && (await repo.hasSubscription(ctx.env.DB, n.user_id))) {
-    if (
-      countsTowardDailyLimit(n.kind) &&
-      !(await repo.countWithinLimit(ctx.env.DB, { id: n.id, userId: n.user_id }, "push", day, PUSH_DAILY_LIMIT, now))
-    ) {
+  if (limits.push && (await repo.hasSubscription(ctx.env.DB, n.user_id))) {
+    const user = { id: n.id, userId: n.user_id };
+    if (!(await repo.countWithinLimit(ctx.env.DB, user, "push", limits.push.counter, day, limits.push.limit, now))) {
       return done("push", "limited");
     }
     if ((await pushToAll(ctx, n.user_id, n.kind)) === "sent") return done("push", "sent");
     // 使える購読が1つもなかった：同じお知らせをメールに切り替える
   }
-  return done("email", await sendByEmail(ctx, n, day, timezone));
+  return done("email", await sendByEmail(ctx, n, limits, day, timezone));
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

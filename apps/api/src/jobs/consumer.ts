@@ -63,7 +63,12 @@ export async function handleJob(ctx: Ctx, job: JobMessage) {
   const errors: unknown[] = [];
   try {
     if (payload && typeof payload === "object") {
-      await createFromEvent(ctx, { id: job.id, type: job.type, payload: payload as Record<string, unknown> });
+      await createFromEvent(ctx, {
+        id: job.id,
+        type: job.type,
+        payload: payload as Record<string, unknown>,
+        outboxCreatedAt: job.createdAt,
+      });
     }
   } catch (e) {
     errors.push(e);

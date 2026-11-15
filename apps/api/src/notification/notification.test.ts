@@ -6,6 +6,7 @@ import { createHarness } from "../../test/identity-harness";
 import { makeUsers, type User } from "../../test/users";
 import { handleBatch, handleJob } from "../jobs/consumer";
 import { dispatchOutbox } from "../jobs/dispatch";
+import { countWithinLimit } from "./infra/repository";
 import { runScheduled } from "../worker";
 
 // 通知（docs/specs/T-07-notification.md）。時計は 2026-10-10T00:00:00Z（土曜、東京は 09:00）
@@ -32,7 +33,7 @@ async function person(name: string, withEmail = true) {
   }
   return who;
 }
-const setCount = (userId: string, channel: "push" | "email", count: number) =>
+const setCount = (userId: string, channel: string, count: number) =>
   env.DB.prepare(
     `INSERT INTO notification_daily_counts (user_id, day, channel, count) VALUES (?1, '2026-10-10', ?2, ?3)
      ON CONFLICT (user_id, day, channel) DO UPDATE SET count = ?3`,
@@ -853,5 +854,251 @@ describe("ログ", () => {
     expect(logged).not.toMatch(/mail\.test|fcm\.googleapis|re_test_key|あき|べに|ひみつ/);
     log.mockRestore();
     err.mockRestore();
+  });
+});
+
+/** 2つめのセッションを作り、その SessionStarted を流す（新端末のログイン） */
+async function secondLogin(who: User, occurredAt = h.clock.now, ctx = h.ctx) {
+  const sessionId = `second-${crypto.randomUUID()}`;
+  await env.DB.prepare("INSERT INTO sessions (id, user_id, created_at, last_used_at, expires_at) VALUES (?1, ?2, ?3, ?3, ?4)")
+    .bind(sessionId, who.id, h.clock.now + 1, h.clock.now + DAY)
+    .run();
+  await handleJob(ctx, {
+    kind: "outbox",
+    id: crypto.randomUUID(),
+    type: "SessionStarted",
+    payload: JSON.stringify({
+      userId: who.id,
+      sessionId,
+      provider: "google",
+      deviceSummary: "Chrome / macOS",
+      occurredAt: new Date(occurredAt).toISOString(),
+    }),
+  });
+  await drain();
+}
+
+describe("上限の組（決定事項8）", () => {
+  it("新端末のログインのメールは1人1日5通まで。超えた分は一覧にだけ残る", async () => {
+    const { b } = await pair();
+    await setCount(b.id, "email_login", 5);
+    await secondLogin(b);
+    expect((await rowsOf(b)).find((r) => r.kind === "new_login")).toMatchObject({ channel: "email", outcome: "limited" });
+    expect(mailsTo(b)).toHaveLength(0);
+    expect((await list(b)).some((n) => n.kind === "new_login")).toBe(true);
+  });
+
+  it("予定・カレンダーは1人1日30通まで（プッシュ・メールそれぞれ）。誘いの上限とは別に数える", async () => {
+    const { a, b } = await pair();
+    await setCount(a.id, "email_priority", 30);
+    const first = await invite(a, b);
+    await respond(b, first, { response: "accept" });
+    await flush(first);
+    expect((await rowsOf(a)).find((r) => r.kind === "meetup_confirmed")).toMatchObject({ channel: "email", outcome: "limited" });
+
+    await setCount(b.id, "email", 10);
+    await subscribe(b);
+    await setCount(b.id, "push_priority", 30);
+    const second = await invite(a, b, T("04:00"), T("05:00"));
+    await respond(b, second, { response: "counter", startsAt: T("06:00"), endsAt: T("07:00") });
+    await flush(second);
+    await u.call("POST", `/api/v1/direct-invites/${second}/decide`, { token: a.token, body: { decision: "accept" } });
+    await flush(second);
+    expect((await rowsOf(b)).find((r) => r.kind === "meetup_confirmed")).toMatchObject({ channel: "push", outcome: "limited" });
+  });
+
+  it("全体のメール数は段階で止める：誘い・募集・友達は70通、予定・カレンダーは90通、新端末のログインは常に送る", async () => {
+    const { a, b } = await pair();
+    await setCount("", "email", 70);
+    await flush(await invite(a, b));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ kind: "invite_received", outcome: "limited" });
+
+    const id = await invite(a, b, T("04:00"), T("05:00"));
+    await respond(b, id, { response: "accept" });
+    await flush(id);
+    expect((await rowsOf(a)).find((r) => r.kind === "meetup_confirmed")).toMatchObject({ outcome: "sent" });
+
+    await setCount("", "email", 90);
+    const meetupId = (
+      await env.DB.prepare("SELECT subject_id FROM notifications WHERE user_id = ?1 AND kind = 'meetup_confirmed'")
+        .bind(a.id)
+        .first<{ subject_id: string }>()
+    )?.subject_id;
+    await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
+    await flush(meetupId ?? "");
+    expect((await rowsOf(b)).find((r) => r.kind === "meetup_cancelled")).toMatchObject({ outcome: "limited" });
+
+    await secondLogin(b);
+    expect((await rowsOf(b)).find((r) => r.kind === "new_login")).toMatchObject({ outcome: "sent" });
+    const total = await env.DB.prepare("SELECT count FROM notification_daily_counts WHERE user_id = '' AND channel = 'email'").first<{
+      count: number;
+    }>();
+    expect(total?.count).toBe(91);
+  });
+
+  it("MAIL_DAILY_LIMIT が正の整数でなければ90として扱う（誘いは70通で止まる）", async () => {
+    const { a, b } = await pair();
+    const broken = { env: { ...h.bindings, MAIL_DAILY_LIMIT: "abc" }, deps: h.deps };
+    await setCount("", "email", 69);
+    const deliverWith = async (inviteId: string) => {
+      h.clock.now += 1;
+      const row = await env.DB.prepare("SELECT id, payload FROM outbox WHERE type = 'DirectInviteSent' AND payload LIKE ?1")
+        .bind(`%${inviteId}%`)
+        .first<{ id: string; payload: string }>();
+      await handleJob(broken, { kind: "outbox", id: row?.id ?? "", type: "DirectInviteSent", payload: row?.payload ?? "{}" });
+      for (const job of h.jobs.splice(0)) if (job.kind === "notification_deliver") await handleJob(broken, job);
+    };
+    await deliverWith(await invite(a, b));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ outcome: "sent" });
+    await deliverWith(await invite(a, b, T("04:00"), T("05:00")));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ outcome: "limited" });
+  });
+
+  it("上限で数えられなかったお知らせには印を付けない（再試行でも、もう一度上限で確かめる）", async () => {
+    const { a, b } = await pair();
+    await flush(await invite(a, b));
+    const row = (await rowsOf(b)).at(-1);
+    await env.DB.prepare("UPDATE notifications SET counted_email_at = NULL WHERE id = ?1").bind(row?.id).run();
+    await setCount(b.id, "email", 10);
+    const n = { id: row?.id ?? "", userId: b.id };
+    expect(await countWithinLimit(env.DB, n, "email", "email", "2026-10-10", 10, h.clock.now)).toBe(false);
+    const mark = await env.DB.prepare("SELECT counted_email_at FROM notifications WHERE id = ?1").bind(row?.id).first<{
+      counted_email_at: number | null;
+    }>();
+    expect(mark?.counted_email_at).toBeNull();
+    await setCount(b.id, "email", 9);
+    expect(await countWithinLimit(env.DB, n, "email", "email", "2026-10-10", 10, h.clock.now)).toBe(true);
+    // 数えたあとの再試行は、もう数えない
+    expect(await countWithinLimit(env.DB, n, "email", "email", "2026-10-10", 10, h.clock.now)).toBe(true);
+    const count = await env.DB.prepare("SELECT count FROM notification_daily_counts WHERE user_id = ?1 AND channel = 'email'")
+      .bind(b.id)
+      .first<{ count: number }>();
+    expect(count?.count).toBe(10);
+  });
+});
+
+describe("NOTIFICATION_START_AT", () => {
+  it.each(["", "0", "abc"])("未設定・不正な値（%j）なら、お知らせを作らず、通知だけの型を流さず処理済みにもしない", async (raw) => {
+    const { a, b } = await pair();
+    const unset = { env: { ...h.bindings, NOTIFICATION_START_AT: raw }, deps: h.deps };
+    const id = await invite(a, b);
+    const row = await env.DB.prepare("SELECT id, payload, created_at FROM outbox WHERE type = 'DirectInviteSent' AND payload LIKE ?1")
+      .bind(`%${id}%`)
+      .first<{ id: string; payload: string; created_at: number }>();
+    await handleJob(unset, { kind: "outbox", id: row?.id ?? "", type: "DirectInviteSent", payload: row?.payload ?? "{}" });
+    expect((await rowsOf(b)).some((r) => r.kind === "invite_received")).toBe(false);
+
+    const calendar = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO outbox (id, type, payload, created_at) VALUES (?1, 'CalendarConnected', '{}', ?2)")
+      .bind(calendar, h.clock.now)
+      .run();
+    h.jobs.length = 0;
+    for (let n = 0; n < 40; n++) if ((await dispatchOutbox(unset)) === 0) break;
+    const sent = new Set(h.jobs.flatMap((j) => (j.kind === "outbox" ? [j.id] : [])));
+    expect(sent.has(row?.id ?? "")).toBe(false);
+    expect(sent.has(calendar)).toBe(true);
+    const left = await env.DB.prepare("SELECT processed_at FROM outbox WHERE id = ?1").bind(row?.id).first<{ processed_at: number | null }>();
+    expect(left?.processed_at).toBeNull();
+    h.jobs.length = 0;
+  });
+
+  it("線は outbox の行を作った時刻で引く（occurredAt が後でも、行が前なら作らない）", async () => {
+    const { a, b } = await pair();
+    const late = { env: { ...h.bindings, NOTIFICATION_START_AT: String(h.clock.now + MIN) }, deps: h.deps };
+    const id = await invite(a, b);
+    const row = await env.DB.prepare("SELECT id, payload FROM outbox WHERE type = 'DirectInviteSent' AND payload LIKE ?1")
+      .bind(`%${id}%`)
+      .first<{ id: string; payload: string }>();
+    const payload = JSON.stringify({ ...(JSON.parse(row?.payload ?? "{}") as object), occurredAt: new Date(h.clock.now + 2 * MIN).toISOString() });
+    await handleJob(late, { kind: "outbox", id: row?.id ?? "", type: "DirectInviteSent", payload, createdAt: h.clock.now });
+    expect((await rowsOf(b)).some((r) => r.kind === "invite_received")).toBe(false);
+  });
+});
+
+describe("指摘への追加の確認", () => {
+  it("他人宛てのお知らせは、自分の未読数に入らない。未認証は401", async () => {
+    const { a, b } = await pair();
+    await u.advance(0, a, b);
+    await u.call("POST", "/api/v1/notifications/read", { token: a.token, body: { upTo: (await list(a))[0]?.id } });
+    await flush(await invite(a, b));
+    expect(await (await u.call("GET", "/api/v1/notifications/unread-count", { token: a.token })).json()).toEqual({ count: 0 });
+    expect(((await (await u.call("GET", "/api/v1/notifications/unread-count", { token: b.token })).json()) as { count: number }).count).toBeGreaterThan(0);
+    for (const [method, path, body] of [
+      ["GET", "/api/v1/notifications/unread-count", undefined],
+      ["POST", "/api/v1/notifications/read", { upTo: crypto.randomUUID() }],
+      ["PATCH", "/api/v1/me/notification-preferences", { invites: false }],
+      ["DELETE", "/api/v1/push/subscriptions", { endpoint: endpointFor("x") }],
+      ["GET", "/api/v1/push/vapid-key", undefined],
+    ] as const) {
+      expect((await u.call(method, path, { body })).status).toBe(401);
+    }
+  });
+
+  it.each([400, 401, 413])("プッシュの %d は、その購読だけ一時的でない失敗としてメールに切り替え、状態コードをログに出す", async (status) => {
+    const log = vi.spyOn(console, "log");
+    const { a, b } = await pair();
+    const endpoint = await subscribe(b);
+    h.delivery.state.pushStatus.set(endpoint, status);
+    await flush(await invite(a, b));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ channel: "email", outcome: "sent" });
+    const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?1").bind(b.id).first<{ n: number }>();
+    expect(left?.n).toBe(1);
+    expect(log.mock.calls.flat().join("\n")).toContain(`"event":"notification_push_rejected","kind":"invite_received","status":${status}`);
+    log.mockRestore();
+  });
+
+  it("メールの一時的でない失敗は、状態コードをログに出す", async () => {
+    const log = vi.spyOn(console, "log");
+    const { a, b } = await pair();
+    h.delivery.state.mailNext.push(422);
+    await flush(await invite(a, b));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ outcome: "failed" });
+    expect(log.mock.calls.flat().join("\n")).toContain('"event":"notification_mail_rejected","kind":"invite_received","status":422');
+    log.mockRestore();
+  });
+
+  it("期限切れのセッションの購読には送らず、その購読を消してメールに切り替える", async () => {
+    const { a, b } = await pair();
+    await subscribe(b);
+    await env.DB.prepare("UPDATE sessions SET expires_at = ?2 WHERE user_id = ?1").bind(b.id, h.clock.now - 1).run();
+    await flush(await invite(a, b));
+    expect(h.delivery.state.pushes).toHaveLength(0);
+    expect(mailsTo(b)).toHaveLength(1);
+    const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?1").bind(b.id).first<{ n: number }>();
+    expect(left?.n).toBe(0);
+  });
+
+  it("「見せない」相手との間でも、誘いのお知らせは同じく届く", async () => {
+    const { a, b } = await pair();
+    expect((await u.call("PATCH", `/api/v1/friends/${b.id}`, { token: a.token, body: { sharesMyAvailability: false } })).status).toBe(200);
+    await flush(await invite(b, a));
+    await flush(await invite(a, b, T("04:00"), T("05:00")));
+    expect((await list(a))[0]).toMatchObject({ kind: "invite_received", actor: { id: b.id } });
+    expect((await list(b))[0]).toMatchObject({ kind: "invite_received", actor: { id: a.id } });
+  });
+
+  it("新端末のログインのメールの日時は、届けた時刻でなくログインの時刻（occurredAt）。セッションの ID は返さない", async () => {
+    const { b } = await pair();
+    await secondLogin(b, Date.parse("2026-10-09T21:30:00Z"));
+    const [mail] = mailsTo(b);
+    expect(mail?.text).toContain("2026/10/10 6:30");
+    expect(mail?.text).not.toContain("9:00");
+    const item = (await list(b)).find((n) => n.kind === "new_login");
+    expect(item).toMatchObject({ subjectId: null, createdAt: "2026-10-09T21:30:00.000Z" });
+  });
+
+  it("日ごとの数は、UTC で3日前より前の日付だけを掃除する", async () => {
+    const a = await person("あき");
+    for (const day of ["2026-10-06", "2026-10-07"]) {
+      await env.DB.prepare("INSERT INTO notification_daily_counts (user_id, day, channel, count) VALUES (?1, ?2, 'email', 1)")
+        .bind(a.id, day)
+        .run();
+    }
+    await runScheduled("* * * * *", h.bindings, h.deps);
+    const { results } = await env.DB.prepare("SELECT day FROM notification_daily_counts WHERE user_id = ?1 ORDER BY day")
+      .bind(a.id)
+      .all<{ day: string }>();
+    expect(results.map((r) => r.day)).toEqual(["2026-10-07"]);
+    h.jobs.length = 0;
   });
 });

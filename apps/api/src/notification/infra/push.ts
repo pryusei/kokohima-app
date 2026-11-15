@@ -10,7 +10,8 @@ const TTL_SECONDS = 86400;
 const JWT_LIFETIME_SECONDS = 12 * 60 * 60;
 
 /** gone：購読を消す。rejected：この購読だけ一時的でない失敗。一時的な失敗は投げる */
-export type PushResult = "sent" | "gone" | "rejected";
+/** rejected は一時的でない失敗。status はログに出す状態コード（宛先の検証で断ったときは0） */
+export type PushResult = { outcome: "sent" | "gone" | "rejected"; status: number };
 
 export class PushUnavailable extends Error {
   constructor(readonly status: number) {
@@ -21,7 +22,7 @@ export class PushUnavailable extends Error {
 export async function sendPush(env: Bindings, deps: AppDeps, endpoint: string): Promise<PushResult> {
   // 保存した値でも、送る直前にもう一度確かめる
   const audience = pushEndpointOrigin(endpoint, deps.notification.extraPushHosts);
-  if (!audience) return "rejected";
+  if (!audience) return { outcome: "rejected", status: 0 };
   const key = await importPKCS8(env.VAPID_PRIVATE_KEY, "ES256");
   const now = Math.floor(deps.now() / 1000);
   const jwt = await new SignJWT({})
@@ -47,9 +48,9 @@ export async function sendPush(env: Bindings, deps: AppDeps, endpoint: string): 
   } catch {
     throw new PushUnavailable(0);
   }
-  if (res.status === 201 || res.status === 202 || res.status === 200) return "sent";
-  if (res.status === 404 || res.status === 410) return "gone";
+  if (res.status === 201 || res.status === 202 || res.status === 200) return { outcome: "sent", status: res.status };
+  if (res.status === 404 || res.status === 410) return { outcome: "gone", status: res.status };
   if (res.status === 429 || res.status >= 500) throw new PushUnavailable(res.status);
   // 3xx（リダイレクトは追わない）・400・401・403・413 など
-  return "rejected";
+  return { outcome: "rejected", status: res.status };
 }

@@ -21,6 +21,13 @@ export const CALENDAR_TYPES = [
 /** 取り出す型（T-06 の型と、T-07 の通知だけの型） */
 export const DISPATCHED_TYPES = [...CALENDAR_TYPES, ...NOTIFICATION_ONLY_TYPES] as const;
 
+/**
+ * いま取り出す型。`NOTIFICATION_START_AT` が未設定なら、通知だけの型は流さず、処理済みにもしない
+ * （設定したあとで、その時刻より後の行から流れる）
+ */
+export const dispatchedTypes = (env: Bindings): readonly string[] =>
+  notificationStartAt(env) === null ? CALENDAR_TYPES : DISPATCHED_TYPES;
+
 export const DISPATCH_BATCH = 100;
 
 /**
@@ -28,26 +35,30 @@ export const DISPATCH_BATCH = 100;
  * （docs/specs/T-07-notification.md「古い outbox の行」決定事項5）
  */
 async function skipOldNotificationRows(ctx: Ctx) {
+  const startAt = notificationStartAt(ctx.env);
+  if (startAt === null) return;
   await ctx.env.DB.prepare(
     `UPDATE outbox SET processed_at = ?1
      WHERE processed_at IS NULL AND created_at < ?2 AND type IN (SELECT value FROM json_each(?3))`,
   )
-    .bind(ctx.deps.now(), notificationStartAt(ctx.env), JSON.stringify(NOTIFICATION_ONLY_TYPES))
+    .bind(ctx.deps.now(), startAt, JSON.stringify(NOTIFICATION_ONLY_TYPES))
     .run();
 }
 
 export async function dispatchOutbox(ctx: Ctx) {
   await skipOldNotificationRows(ctx);
   const { results } = await ctx.env.DB.prepare(
-    `SELECT id, type, payload FROM outbox
+    `SELECT id, type, payload, created_at FROM outbox
      WHERE processed_at IS NULL AND type IN (SELECT value FROM json_each(?1))
      ORDER BY created_at, id LIMIT ?2`,
   )
-    .bind(JSON.stringify(DISPATCHED_TYPES), DISPATCH_BATCH)
-    .all<{ id: string; type: string; payload: string }>();
+    .bind(JSON.stringify(dispatchedTypes(ctx.env)), DISPATCH_BATCH)
+    .all<{ id: string; type: string; payload: string; created_at: number }>();
   if (results.length === 0) return 0;
   await ctx.env.JOBS.sendBatch(
-    results.map((r) => ({ body: { kind: "outbox" as const, id: r.id, type: r.type, payload: r.payload } })),
+    results.map((r) => ({
+      body: { kind: "outbox" as const, id: r.id, type: r.type, payload: r.payload, createdAt: r.created_at },
+    })),
   );
   await ctx.env.DB.prepare(
     "UPDATE outbox SET processed_at = ?1 WHERE processed_at IS NULL AND id IN (SELECT value FROM json_each(?2))",

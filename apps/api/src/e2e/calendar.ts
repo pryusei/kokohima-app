@@ -5,7 +5,7 @@ import { syncConnection } from "../calendar/application/sync";
 import type { AppEnv, GoogleEndpoints } from "../env";
 import { problem } from "../http/problem";
 import { handleJob } from "../jobs/consumer";
-import { DISPATCHED_TYPES } from "../jobs/dispatch";
+import { dispatchedTypes } from "../jobs/dispatch";
 import { sha256 } from "../shared/crypto";
 import { e2eDeliverPending, e2eNotificationFetch } from "./notifications";
 
@@ -128,14 +128,14 @@ export async function e2eOutboxDrain(c: Context<AppEnv>) {
   let processed = 0;
   for (let round = 0; round < 50; round++) {
     const { results } = await c.env.DB.prepare(
-      `SELECT id, type, payload FROM outbox
+      `SELECT id, type, payload, created_at FROM outbox
        WHERE processed_at IS NULL AND type IN (SELECT value FROM json_each(?1)) ORDER BY created_at, id LIMIT 200`,
     )
-      .bind(JSON.stringify(DISPATCHED_TYPES))
-      .all<{ id: string; type: string; payload: string }>();
+      .bind(JSON.stringify(dispatchedTypes(c.env)))
+      .all<{ id: string; type: string; payload: string; created_at: number }>();
     if (results.length === 0) break;
     for (const r of results) {
-      await handleJob(ctx, { kind: "outbox", id: r.id, type: r.type, payload: r.payload });
+      await handleJob(ctx, { kind: "outbox", id: r.id, type: r.type, payload: r.payload, createdAt: r.created_at });
       await c.env.DB.prepare("UPDATE outbox SET processed_at = ?1 WHERE id = ?2").bind(ctx.deps.now(), r.id).run();
     }
     processed += results.length;

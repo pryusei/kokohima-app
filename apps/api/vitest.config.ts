@@ -36,7 +36,7 @@ export default defineProject({
           NOTIFICATION_KEYS: JSON.stringify({ "push-1": "cHVzaC1rZXktMS1wdXNoLWtleS0xLXB1c2gta2V5LTE" }),
           NOTIFICATION_CURRENT_KID: "push-1",
           MAIL_FROM: "ここ暇 <notify@kokohima.test>",
-          NOTIFICATION_START_AT: "0",
+          NOTIFICATION_START_AT: "1",
           MAIL_DAILY_LIMIT: "90",
         },
       },

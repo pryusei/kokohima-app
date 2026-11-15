@@ -71,7 +71,7 @@ export function draftsFor(type: string, payload: Record<string, unknown>, lookup
       return one(userId, "calendar_reauth");
     case "SessionStarted":
       return lookups.hasEarlierSession
-        ? one(userId, "new_login", { device: str(payload.deviceSummary), subjectId: str(payload.sessionId) })
+        ? one(userId, "new_login", { device: str(payload.deviceSummary) })
         : [];
     default:
       return [];
