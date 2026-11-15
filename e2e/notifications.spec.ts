@@ -75,6 +75,9 @@ test("誘いのお知らせ（プッシュ）：購読があれば、本文な�
 test("友達追加と「見せない」：お知らせ一覧の「この人に見せない」で、相手の「みんな」から自分のここ暇が消える", async ({ browser }) => {
   const { a, b } = await friends(browser);
   await a.page.goto("/availability");
+  // 夜の枠が過去にならないよう、日付は明日（Asia/Tokyo）を使う（今日だと 23 時以降に作れない）
+  const tomorrow = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  await a.page.getByLabel("日付").fill(tomorrow);
   await a.page.getByRole("button", { name: "夜", exact: true }).click();
   await expect(a.page.getByRole("list", { name: "自分のここ暇" }).getByText(/夜 19:00〜23:00/)).toBeVisible();
   await b.page.goto("/");
