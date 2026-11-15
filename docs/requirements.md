@@ -145,7 +145,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | DBアクセス | Drizzle ORM（D1） | 型安全で、認可条件をSQLに明示しやすい |
 | テスト | 単体：Vitest＋Cloudflareのworkers向けプール、E2E：Playwright | 単体はD1込みの本物に近い環境で、E2Eは利用者の流れを実ブラウザで確かめる |
 | JWT・暗号 | jose（WebCrypto） | Workersで動く定番。暗号処理は自作しない |
-| メール配信 | 外部のメール配信サービスをAPIで利用（サービスは要選定） | Cloudflareのメール機能は任意宛先の通知向きではない |
+| メール配信 | Resend をAPIで利用（docs/specs/T-07-notification.md） | Cloudflareのメール機能は任意宛先の通知向きではない |
 | Webプッシュ | Workers（WebCrypto）で動く実装 | Node向けのライブラリはそのまま動かないことがある |
 | パッケージ管理 | pnpmのモノレポ（apps/web、apps/api、packages/shared） | 型とスキーマを1か所で管理する |
 | CI | GitHub Actions＋依存更新の自動プルリクエスト | 更新を日単位で回す運用に必要 |
@@ -178,13 +178,17 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | AvailabilityCancelledByCalendar | Availability | 取り消しの前に作られた未返答の誘いを「今回は難しい」にする／本人に通知（T-07） |
 | CalendarConnected | Calendar | 連携した人のこれからの成立した予定を、カレンダーに書き直す |
 | CalendarReauthRequired | Calendar | Google 側で連携が失効した。本人に通知（T-07） |
-| MeetupConfirmed | Invitation | Calendarが双方に書き込む／通知 |
-| BroadcastSent | Invitation | 宛先ごとに通知 |
-| BroadcastDecided | Invitation | Meetupを作成し、参加者全員に名前を開示して通知（カレンダーへの書き込みは同時に書く MeetupConfirmed で行う） |
+| SessionStarted | Identity | その人の2つめ以降のセッションなら、新しい端末でのログインを本人にメールで通知（T-07） |
+| DirectInviteSent | Invitation | 受信者に通知（T-07） |
+| DirectInviteDeclined・DirectInviteCounterProposed | Invitation | 送信者に通知（T-07） |
+| DirectInviteSkipped | Invitation | 受信者に通知（T-07） |
+| MeetupConfirmed | Invitation | Calendarが双方に書き込む／直接の誘いの成立は、成立させた人でない方に通知（T-07。募集の成立は BroadcastDecided で通知する） |
+| BroadcastSent | Invitation | 宛先ごとに通知（T-07） |
+| BroadcastDecided | Invitation | Meetupを作成し、募集者を除く参加者に名前を開示して通知（T-07。カレンダーへの書き込みは同時に書く MeetupConfirmed で行う） |
 | （期限切れ） | Invitation | 状態を保存せず、読むときに期限で決める。通知しないので、イベントは作らない（docs/specs/T-05-broadcast.md） |
-| MeetupLeft | Invitation | 募集の予定から1人が抜けた。残った参加者に定型文で通知 |
-| MeetupCancelled | Invitation | カレンダーから削除し、定型文で通知 |
-| FriendshipEstablished | Social | 本人に通知し、公開オフの導線を出す |
+| MeetupLeft | Invitation | 募集の予定から1人が抜けた。残った参加者に定型文で通知（T-07） |
+| MeetupCancelled | Invitation | カレンダーから削除し、押した人を除く参加者に定型文で通知（T-07） |
+| FriendshipEstablished | Social | 2人の両方に通知し、公開オフの導線を出す（T-07） |
 | UserWithdrew | Identity | 本人データを削除し、相手側は表示を置換 |
 
 ## 収益と拡張の方針
@@ -212,7 +216,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 
 ## 未決事項
 
-- [ ] 通知の種別と頻度、メールにする通知、停止設定、自動取り消しのまとめ通知
+- [x] 通知の種別と頻度、メールにする通知、停止設定、自動取り消しのまとめ通知（docs/specs/T-07-notification.md。種別ごとに止められる。1日の上限はプッシュ30件・メール10件で、予定・カレンダー・新端末のログインは数えない。メールはプッシュの購読がない人に送る）
 - [ ] 招待リンクの有効期限と人数上限のデフォルト値（モックでは3日間・5人）
 - [ ] 表示名・アイコン・プロフィール項目、居住エリアの持ち方
 - [ ] ひとことの不適切利用への対策
