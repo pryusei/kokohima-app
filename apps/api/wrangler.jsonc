@@ -70,8 +70,8 @@
         "MAIL_FROM": "ここ暇 <notify@example.invalid>",
         // T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない
         "NOTIFICATION_START_AT": "0",
-        // サービス全体の1日のメール数の上限
-        "MAIL_DAILY_LIMIT": "90"
+        // サービス全体の1日のメール数の上限（E2E は偽の配信で、同じ日に何度も流すので実質なしにする）
+        "MAIL_DAILY_LIMIT": "1000000"
       },
       "queues": {
         "producers": [{ "binding": "JOBS", "queue": "kokohima-e2e-outbox" }],
