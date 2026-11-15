@@ -6,6 +6,7 @@ import { decideRefresh, nextTokenExpiry, SESSION_TTL_MS } from "../domain/refres
 import { sanitizeReturnTo } from "../domain/returnTo";
 import { issueAccessToken } from "../infra/accessToken";
 import { authorizeUrl, exchangeCode, LoginFailed, type OidcProviderName } from "../infra/oidc";
+import { deleteSubscriptionsOf, deleteSubscriptionsOfSession } from "../../notification/application/subscriptions";
 import * as repo from "../infra/repository";
 
 // 認証のユースケース（docs/specs/T-01-auth.md「振る舞い」）
@@ -158,6 +159,8 @@ export async function refresh(ctx: Ctx, cookieToken: string | undefined): Promis
     if (decision.kind === "reject") return { kind: "unauthenticated" };
     if (decision.kind === "reuse") {
       await repo.revokeSession(db, session.id, now);
+      // 盗んだ側のブラウザに、お知らせの合図を届け続けない（docs/specs/T-07-notification.md）
+      await deleteSubscriptionsOfSession(ctx, session.id);
       console.warn(JSON.stringify({ event: "refresh_token_reuse", sessionId: session.id }));
       return { kind: "unauthenticated" };
     }
@@ -189,11 +192,15 @@ export async function logout(ctx: Ctx, cookieToken: string | undefined) {
   if (!cookieToken || cookieToken.length > 128) return;
   const db = repo.db(ctx.env.DB);
   const found = await repo.findRefreshToken(db, await sha256(cookieToken));
-  if (found) await repo.revokeSession(db, found.session.id, ctx.deps.now());
+  if (found) {
+    await repo.revokeSession(db, found.session.id, ctx.deps.now());
+    await deleteSubscriptionsOfSession(ctx, found.session.id);
+  }
 }
 
 export async function logoutAll(ctx: Ctx, viewer: Viewer) {
   await repo.revokeAllSessions(repo.db(ctx.env.DB), viewer.userId, ctx.deps.now());
+  await deleteSubscriptionsOf(ctx, viewer.userId);
 }
 
 export async function getMe(ctx: Ctx, viewerId: string) {
@@ -222,4 +229,19 @@ export async function getPublicProfiles(env: Bindings, userIds: string[]) {
 /** 他のコンテキスト向け：閲覧者自身のタイムゾーン（IANA）。行がなければ初期値 */
 export async function getUserTimezone(env: Bindings, userId: string) {
   return (await repo.findTimezone(repo.db(env.DB), userId)) ?? "Asia/Tokyo";
+}
+
+/** 通知向け：メールの宛先。なければ null */
+export async function getNotificationAddress(env: Bindings, userId: string) {
+  return repo.findEmail(repo.db(env.DB), userId);
+}
+
+/** 通知向け：このセッションより前に作られたセッションがあるか（新しい端末でのログインの判定） */
+export async function hasEarlierSession(env: Bindings, userId: string, sessionId: string) {
+  return repo.hasEarlierSession(repo.db(env.DB), userId, sessionId);
+}
+
+/** 通知向け：渡したセッションのうち、有効なもの */
+export async function activeSessionIds(env: Bindings, sessionIds: string[], now: number) {
+  return repo.activeSessionIds(repo.db(env.DB), sessionIds, now);
 }

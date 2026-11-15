@@ -19,7 +19,14 @@ export async function e2eLogin(c: Context<AppEnv>) {
   const parsed = e2eLoginSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return problem(c.get("requestId"), 400, "validation_failed", "Validation failed");
   const ctx = { env: c.env, deps: c.var.deps };
-  const userId = await findOrCreateUser(db(c.env.DB), "e2e", parsed.data.user, null, ctx.deps.now());
+  const userId = await findOrCreateUser(
+    db(c.env.DB),
+    "e2e",
+    parsed.data.user,
+    // お知らせのメール（T-07）を偽のメール配信で確かめられるよう、届かない宛先を持たせる
+    `${parsed.data.user}@mail.e2e.invalid`,
+    ctx.deps.now(),
+  );
   if (parsed.data.displayName) await updateDisplayName(db(c.env.DB), userId, parsed.data.displayName, ctx.deps.now());
   const issued = await createSession(ctx, userId, "e2e", c.req.header("User-Agent"));
   setRefreshCookie(c, issued.refreshToken, issued.refreshExpiresAt);

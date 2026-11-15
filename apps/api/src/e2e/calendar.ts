@@ -5,8 +5,9 @@ import { syncConnection } from "../calendar/application/sync";
 import type { AppEnv, GoogleEndpoints } from "../env";
 import { problem } from "../http/problem";
 import { handleJob } from "../jobs/consumer";
-import { DISPATCHED_TYPES } from "../jobs/dispatch";
+import { dispatchedTypes } from "../jobs/dispatch";
 import { sha256 } from "../shared/crypto";
+import { e2eDeliverPending, e2eNotificationFetch } from "./notifications";
 
 // E2E用の偽の Google（docs/specs/T-06-calendar.md「E2E用の偽のGoogle」）。src/e2e/entry.ts からだけ読み込む
 // 状態はこのファイルだけが作る表に置く（本番のマイグレーションには入れない）
@@ -63,10 +64,12 @@ async function fakeGoogle(url: URL, init: RequestInit | undefined): Promise<Resp
   return json({}, 404);
 }
 
-/** E2E のエントリの fetch。偽の Google の宛先だけをここで受ける */
+/** E2E のエントリの fetch。偽の Google・偽のメール配信・偽のプッシュの宛先だけをここで受ける */
 export const e2eFetch: typeof fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url);
   if (url.host === FAKE_HOST) return fakeGoogle(url, init);
+  const delivery = await e2eNotificationFetch(url, init);
+  if (delivery) return delivery;
   return fetch(input, init);
 };
 
@@ -116,18 +119,28 @@ export async function e2eCalendarSync(c: Context<AppEnv>) {
   return c.json({ outcome });
 }
 
-/** outbox のうち、この仕様書で処理する型の未処理の行を、Queue を通さずにすぐ処理する */
+/**
+ * outbox のうち、Queue に流す型の未処理の行を、Queue を通さずにすぐ処理する。
+ * ローカルの DB に前の実行の行がたまっていても、いま作った行まで届くよう、なくなるまでくり返す
+ */
 export async function e2eOutboxDrain(c: Context<AppEnv>) {
   const ctx = { env: c.env, deps: c.var.deps };
-  const { results } = await c.env.DB.prepare(
-    `SELECT id, type, payload FROM outbox
-     WHERE processed_at IS NULL AND type IN (SELECT value FROM json_each(?1)) ORDER BY created_at, id LIMIT 200`,
-  )
-    .bind(JSON.stringify(DISPATCHED_TYPES))
-    .all<{ id: string; type: string; payload: string }>();
-  for (const r of results) {
-    await handleJob(ctx, { kind: "outbox", id: r.id, type: r.type, payload: r.payload });
-    await c.env.DB.prepare("UPDATE outbox SET processed_at = ?1 WHERE id = ?2").bind(ctx.deps.now(), r.id).run();
+  let processed = 0;
+  for (let round = 0; round < 50; round++) {
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, type, payload, created_at FROM outbox
+       WHERE processed_at IS NULL AND type IN (SELECT value FROM json_each(?1)) ORDER BY created_at, id LIMIT 200`,
+    )
+      .bind(JSON.stringify(dispatchedTypes(c.env)))
+      .all<{ id: string; type: string; payload: string; created_at: number }>();
+    if (results.length === 0) break;
+    for (const r of results) {
+      await handleJob(ctx, { kind: "outbox", id: r.id, type: r.type, payload: r.payload, createdAt: r.created_at });
+      await c.env.DB.prepare("UPDATE outbox SET processed_at = ?1 WHERE id = ?2").bind(ctx.deps.now(), r.id).run();
+    }
+    processed += results.length;
   }
-  return c.json({ processed: results.length });
+  // お知らせ（T-07）も、Queue を待たずに届ける
+  const delivered = await e2eDeliverPending(c);
+  return c.json({ processed, delivered });
 }

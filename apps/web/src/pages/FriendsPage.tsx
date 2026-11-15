@@ -238,6 +238,9 @@ function Account() {
       <Link to="/settings/calendar" className="self-start underline">
         カレンダー連携
       </Link>
+      <Link to="/settings/notifications" className="self-start underline">
+        通知の設定
+      </Link>
       {failed && (
         <p role="status" className="text-slate-600">
           ログアウトできませんでした。通信状態を確認して、もう一度お試しください。

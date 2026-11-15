@@ -26,6 +26,11 @@ export default tseslint.config(
     rules: reactHooks.configs.recommended.rules,
   },
   {
+    // Service Worker（docs/specs/T-07-notification.md）
+    files: ["apps/web/public/sw.js"],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  {
     // E2E用の経路（テスト用ログインなど）が本番のコードから読み込まれないようにする
     files: ["apps/api/src/**/*.ts"],
     ignores: ["apps/api/src/e2e/**"],

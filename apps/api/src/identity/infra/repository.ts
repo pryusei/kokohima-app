@@ -263,3 +263,38 @@ export async function findTimezone(db: Db, userId: string) {
   const row = await db.select({ timezone: users.timezone }).from(users).where(eq(users.id, userId)).get();
   return row?.timezone ?? null;
 }
+
+// ---- 通知（T-07）から使う読み取り ----
+
+export async function findEmail(db: Db, userId: string) {
+  const row = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get();
+  return row?.email ?? null;
+}
+
+/** このセッションより前に作られた、その人のセッションがあるか（失効・期限切れも数える） */
+export async function hasEarlierSession(db: Db, userId: string, sessionId: string) {
+  const current = await db
+    .select({ createdAt: sessions.createdAt })
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)))
+    .get();
+  if (!current) return false;
+  const earlier = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.userId, userId), ne(sessions.id, sessionId), lte(sessions.createdAt, current.createdAt)))
+    .limit(1)
+    .get();
+  return earlier !== undefined;
+}
+
+/** 渡したセッションのうち、失効しておらず期限内のもの（requireActiveSession と同じ条件） */
+export async function activeSessionIds(db: Db, sessionIds: string[], now: number) {
+  if (sessionIds.length === 0) return new Set<string>();
+  const rows = await db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(inArray(sessions.id, sessionIds.slice(0, 50)), isNull(sessions.revokedAt), gt(sessions.expiresAt, now)))
+    .all();
+  return new Set(rows.map((r) => r.id));
+}

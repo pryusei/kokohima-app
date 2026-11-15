@@ -860,18 +860,23 @@ describe("成立した予定の書き込み", () => {
 });
 
 describe("outbox を Queue に流す", () => {
-  it("処理する型だけを送り、送ってから処理済みにする。ほかの型は未処理のまま", async () => {
+  it("処理する型だけを送り、送ってから処理済みにする。知らない型は未処理のまま", async () => {
     const a = await authenticated();
     await connect(a);
+    const unknownId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO outbox (id, type, payload, created_at) VALUES (?1, 'SomethingElse', '{}', ?2)")
+      .bind(unknownId, h.clock.now)
+      .run();
     h.jobs.length = 0;
-    await dispatchOutbox(h.ctx);
+    // 1回に最大100件なので、この人の行が送られるまで何回か流す
+    for (let n = 0; n < 30 && (await outbox("CalendarConnected", a.id))[0]?.processedAt === null; n++) {
+      await dispatchOutbox(h.ctx);
+    }
     expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "CalendarConnected" && j.payload.includes(a.id))).toBe(true);
-    expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "SessionStarted")).toBe(false);
+    expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "SomethingElse")).toBe(false);
     expect((await outbox("CalendarConnected", a.id))[0]?.processedAt).toBe(h.clock.now);
-    const other = await env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM outbox WHERE type NOT IN ('MeetupConfirmed','MeetupCancelled','MeetupLeft','CalendarConnected','AvailabilityCancelledByCalendar') AND processed_at IS NOT NULL",
-    ).first<{ n: number }>();
-    expect(other?.n).toBe(0);
+    const other = await env.DB.prepare("SELECT processed_at FROM outbox WHERE id = ?1").bind(unknownId).first<{ processed_at: number | null }>();
+    expect(other?.processed_at).toBeNull();
   });
 
   it("1回に最大100件。処理済みにする SQL は値100個の制限に収まる", async () => {
