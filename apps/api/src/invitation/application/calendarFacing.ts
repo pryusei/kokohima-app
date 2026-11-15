@@ -81,3 +81,8 @@ export async function declineForCancelledAvailability(
   }
   return declined;
 }
+
+// ---- 通知（T-07）から使う ----
+
+export const broadcastOwnerOf = (ctx: Ctx, broadcastId: string) => repo.findBroadcastOwner(ctx.env.DB, broadcastId);
+export const inviteActorOf = (ctx: Ctx, inviteId: string) => repo.findInviteActor(ctx.env.DB, inviteId);

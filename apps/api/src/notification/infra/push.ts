@@ -1,0 +1,55 @@
+import { importPKCS8, SignJWT } from "jose";
+import type { AppDeps, Bindings } from "../../env";
+import { pushEndpointOrigin } from "../domain/endpoint";
+
+// Webプッシュの送信（RFC 8030・RFC 8292）。本文は送らない（中身はアプリのお知らせ一覧で読む）ので、
+// RFC 8291 の暗号化はしない。endpoint・鍵・応答の本文はログに出さない
+
+const TIMEOUT_MS = 5000;
+const TTL_SECONDS = 86400;
+const JWT_LIFETIME_SECONDS = 12 * 60 * 60;
+
+/** gone：購読を消す。rejected：この購読だけ一時的でない失敗。一時的な失敗は投げる */
+export type PushResult = "sent" | "gone" | "rejected";
+
+export class PushUnavailable extends Error {
+  constructor(readonly status: number) {
+    super("push_unavailable");
+  }
+}
+
+export async function sendPush(env: Bindings, deps: AppDeps, endpoint: string): Promise<PushResult> {
+  // 保存した値でも、送る直前にもう一度確かめる
+  const audience = pushEndpointOrigin(endpoint, deps.notification.extraPushHosts);
+  if (!audience) return "rejected";
+  const key = await importPKCS8(env.VAPID_PRIVATE_KEY, "ES256");
+  const now = Math.floor(deps.now() / 1000);
+  const jwt = await new SignJWT({})
+    .setProtectedHeader({ alg: "ES256", typ: "JWT" })
+    .setAudience(audience)
+    .setSubject(env.VAPID_SUBJECT)
+    .setExpirationTime(now + JWT_LIFETIME_SECONDS)
+    .sign(key);
+
+  let res: Response;
+  try {
+    res = await deps.fetch(endpoint, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        "Content-Length": "0",
+        TTL: String(TTL_SECONDS),
+        Urgency: "normal",
+        Authorization: `vapid t=${jwt}, k=${env.VAPID_PUBLIC_KEY}`,
+      },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch {
+    throw new PushUnavailable(0);
+  }
+  if (res.status === 201 || res.status === 202 || res.status === 200) return "sent";
+  if (res.status === 404 || res.status === 410) return "gone";
+  if (res.status === 429 || res.status >= 500) throw new PushUnavailable(res.status);
+  // 3xx（リダイレクトは追わない）・400・401・403・413 など
+  return "rejected";
+}

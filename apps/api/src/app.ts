@@ -7,6 +7,7 @@ import { availabilityRoutes } from "./availability/routes";
 import { calendarRoutes } from "./calendar/routes";
 import { identityRoutes } from "./identity/routes";
 import { invitationRoutes } from "./invitation/routes";
+import { notificationRoutes } from "./notification/routes";
 import { socialRoutes } from "./social/routes";
 
 export { problem };
@@ -20,6 +21,7 @@ export function defaultDeps(): AppDeps {
     },
     now: () => Date.now(),
     google: { endpoints: GOOGLE_ENDPOINTS },
+    notification: { resendUrl: "https://api.resend.com/emails", extraPushHosts: [] },
   };
 }
 
@@ -40,6 +42,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
   app.route("/api/v1", availabilityRoutes());
   app.route("/api/v1", invitationRoutes());
   app.route("/api/v1", calendarRoutes());
+  app.route("/api/v1", notificationRoutes());
 
   app.notFound((c) => problem(c.get("requestId"), 404, "not_found", "Not Found"));
 

@@ -5,3 +5,8 @@ JWT_SIGNING_KEYS='{"local-1":"<base64urlの32バイト>"}'
 CALENDAR_TOKEN_KEYS='{"local-1":"<base64urlの32バイト>"}'
 GOOGLE_CLIENT_SECRET=
 APPLE_PRIVATE_KEY=
+# 通知（T-07）。VAPID の鍵は P-256 の鍵の組（秘密鍵は PKCS#8 の PEM を1行にして \n でつなぐ。公開鍵は wrangler の vars の VAPID_PUBLIC_KEY）
+RESEND_API_KEY=
+VAPID_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+# プッシュの購読の endpoint の暗号化の鍵（作り方は JWT の鍵と同じ。別の値にする）
+NOTIFICATION_KEYS='{"local-1":"<base64urlの32バイト>"}'

@@ -10,7 +10,8 @@
   // URL を含む呼び出しのログを出さない（docs/specs/T-06-calendar.md 決定事項14）。アプリの console のログは残る
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
 
-  // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS）は
+  // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS、
+  // RESEND_API_KEY、VAPID_PRIVATE_KEY、NOTIFICATION_KEYS）は
   // wrangler secret で設定する（ローカルは .dev.vars、E2Eは scripts/write-e2e-dev-vars.mjs が生成）
   "vars": {
     "APP_ORIGIN": "http://localhost:5173",
@@ -19,7 +20,16 @@
     "APPLE_TEAM_ID": "",
     "APPLE_KEY_ID": "",
     "JWT_CURRENT_KID": "local-1",
-    "CALENDAR_TOKEN_CURRENT_KID": "local-1"
+    "CALENDAR_TOKEN_CURRENT_KID": "local-1",
+    "NOTIFICATION_CURRENT_KID": "local-1",
+    // VAPID の公開鍵（秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）。TODO: 環境ごとの鍵の公開鍵に置き換える
+    "VAPID_PUBLIC_KEY": "",
+    "VAPID_SUBJECT": "mailto:ops@example.invalid",
+    "MAIL_FROM": "ここ暇 <notify@example.invalid>",
+    // T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない
+    "NOTIFICATION_START_AT": "0",
+    // サービス全体の1日のメール数の上限
+    "MAIL_DAILY_LIMIT": "90"
   },
 
   // outbox と定期の確認（docs/specs/T-06-calendar.md）。staging・prod の Queue の本体と退避キューは infra/terraform で作る（cloudflare_queue.outbox・outbox_dlq）
@@ -52,7 +62,16 @@
         "APPLE_TEAM_ID": "e2e-unused",
         "APPLE_KEY_ID": "e2e-unused",
         "JWT_CURRENT_KID": "e2e-1",
-        "CALENDAR_TOKEN_CURRENT_KID": "e2e-1"
+        "CALENDAR_TOKEN_CURRENT_KID": "e2e-1",
+        "NOTIFICATION_CURRENT_KID": "e2e-1",
+        // VAPID の公開鍵（秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）。TODO: 環境ごとの鍵の公開鍵に置き換える
+        "VAPID_PUBLIC_KEY": "",
+        "VAPID_SUBJECT": "mailto:ops@example.invalid",
+        "MAIL_FROM": "ここ暇 <notify@example.invalid>",
+        // T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない
+        "NOTIFICATION_START_AT": "0",
+        // サービス全体の1日のメール数の上限
+        "MAIL_DAILY_LIMIT": "90"
       },
       "queues": {
         "producers": [{ "binding": "JOBS", "queue": "kokohima-e2e-outbox" }],
@@ -77,7 +96,16 @@
         "APPLE_TEAM_ID": "",
         "APPLE_KEY_ID": "",
         "JWT_CURRENT_KID": "staging-1",
-        "CALENDAR_TOKEN_CURRENT_KID": "staging-1"
+        "CALENDAR_TOKEN_CURRENT_KID": "staging-1",
+        "NOTIFICATION_CURRENT_KID": "staging-1",
+        // VAPID の公開鍵（秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）。TODO: 環境ごとの鍵の公開鍵に置き換える
+        "VAPID_PUBLIC_KEY": "",
+        "VAPID_SUBJECT": "mailto:ops@example.invalid",
+        "MAIL_FROM": "ここ暇 <notify@staging.example.invalid>",
+        // T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない
+        "NOTIFICATION_START_AT": "0",
+        // サービス全体の1日のメール数の上限
+        "MAIL_DAILY_LIMIT": "90"
       },
       "queues": {
         "producers": [{ "binding": "JOBS", "queue": "kokohima-staging-outbox" }],
@@ -103,7 +131,16 @@
         "APPLE_TEAM_ID": "",
         "APPLE_KEY_ID": "",
         "JWT_CURRENT_KID": "prod-1",
-        "CALENDAR_TOKEN_CURRENT_KID": "prod-1"
+        "CALENDAR_TOKEN_CURRENT_KID": "prod-1",
+        "NOTIFICATION_CURRENT_KID": "prod-1",
+        // VAPID の公開鍵（秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）。TODO: 環境ごとの鍵の公開鍵に置き換える
+        "VAPID_PUBLIC_KEY": "",
+        "VAPID_SUBJECT": "mailto:ops@example.invalid",
+        "MAIL_FROM": "ここ暇 <notify@prod.example.invalid>",
+        // T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない
+        "NOTIFICATION_START_AT": "0",
+        // サービス全体の1日のメール数の上限
+        "MAIL_DAILY_LIMIT": "90"
       },
       "queues": {
         "producers": [{ "binding": "JOBS", "queue": "kokohima-prod-outbox" }],
