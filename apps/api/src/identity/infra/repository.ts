@@ -23,6 +23,14 @@ export async function saveOauthTransaction(db: Db, row: typeof oauthTransactions
   await db.insert(oauthTransactions).values(row);
 }
 
+/** 期限切れのログイン開始の記録（nonce・code_verifier を含む）とログインコードを消す */
+export async function deleteExpiredLoginRecords(db: Db, now: number) {
+  await db.batch([
+    db.delete(oauthTransactions).where(lte(oauthTransactions.expiresAt, now)),
+    db.delete(loginCodes).where(lte(loginCodes.expiresAt, now)),
+  ]);
+}
+
 /** state を1回だけ取り出す（DELETE ... RETURNING）。期限切れは返さない */
 export async function takeOauthTransaction(db: Db, stateHash: string, now: number) {
   const rows = await db
