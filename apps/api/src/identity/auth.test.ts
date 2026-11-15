@@ -351,7 +351,7 @@ describe("更新", () => {
     expect((await h.refresh(next)).status).toBe(200);
   });
 
-  it("応答が届かなかった場合：古いトークンが来ても、次のトークンが未使用なら救済する（時間がたっていても）", async () => {
+  it("応答が届かなかった場合：古いトークンが来ても、次のトークンが未使用なら救済する（24時間以内）", async () => {
     const r = await h.login("google", uniq());
     const lost = await h.refresh(r.refreshToken);
     expect(lost.status).toBe(200); // この応答のCookieはブラウザに届かなかったとする
@@ -360,6 +360,15 @@ describe("更新", () => {
     expect(retry.status).toBe(200);
     // 救済で受け取ったトークンで続けられる
     expect((await h.refresh(cookieValue(retry, "__Host-kh_rt"))).status).toBe(200);
+  });
+
+  it("使用済みから24時間を過ぎた古いトークンは救済せず401。系列ごと失効する", async () => {
+    const r = await h.login("google", uniq());
+    const first = await h.refresh(r.refreshToken);
+    expect(first.status).toBe(200);
+    h.clock.now += 25 * 60 * 60 * 1000;
+    expect((await h.refresh(r.refreshToken)).status).toBe(401);
+    expect((await h.refresh(cookieValue(first, "__Host-kh_rt"))).status).toBe(401);
   });
 
   it.each([0, 1])(
