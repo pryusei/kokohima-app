@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { meResponseSchema, problemSchema } from "@kokohima/shared";
 import { exportSPKI, generateKeyPair, importSPKI, jwtVerify, SignJWT } from "jose";
 import { beforeEach, describe, expect, it } from "vitest";
+import { cleanupExpired } from "../jobs/dispatch";
 import {
   completeCodeFrom,
   cookieHeader,
@@ -557,5 +558,34 @@ describe("認証ミドルウェアと /me", () => {
     const oldKey = Uint8Array.from(atob("b2xkLWtleS1vbGQta2V5LW9sZC1rZXktb2xkLWtleS1vbGQ="), (c) => c.charCodeAt(0));
     const token = await new SignJWT(claims).setProtectedHeader({ alg: "HS256", kid: "test-old" }).sign(oldKey);
     expect((await me(token)).status).toBe(200);
+  });
+});
+
+describe("期限切れの掃除（Cron）", () => {
+  it("期限切れの oauth_transactions・login_codes だけを消し、期限内の行は残す", async () => {
+    const now = h.clock.now;
+    const tx = (hash: string, expiresAt: number) =>
+      env.DB.prepare(
+        "INSERT INTO oauth_transactions (state_hash, provider, nonce, code_verifier, binding_hash, return_to, expires_at) VALUES (?, 'google', 'n', 'v', 'b', '/', ?)",
+      )
+        .bind(hash, expiresAt)
+        .run();
+    const owner = meResponseSchema.parse(await (await me((await h.login("google", uniq())).accessToken)).json()).id;
+    const code = (hash: string, expiresAt: number) =>
+      env.DB.prepare(
+        "INSERT INTO login_codes (code_hash, user_id, provider, binding_hash, return_to, expires_at) VALUES (?, ?, 'google', 'b', '/', ?)",
+      )
+        .bind(hash, owner, expiresAt)
+        .run();
+    const tag = crypto.randomUUID();
+    await tx(`old-${tag}`, now - 1);
+    await tx(`live-${tag}`, now + 60_000);
+    await code(`old-${tag}`, now);
+    await code(`live-${tag}`, now + 60_000);
+    await cleanupExpired(h.ctx);
+    const txs = await dbAll<{ state_hash: string }>("SELECT state_hash FROM oauth_transactions WHERE state_hash LIKE ?", `%-${tag}`);
+    const codes = await dbAll<{ code_hash: string }>("SELECT code_hash FROM login_codes WHERE code_hash LIKE ?", `%-${tag}`);
+    expect(txs.map((r) => r.state_hash)).toEqual([`live-${tag}`]);
+    expect(codes.map((r) => r.code_hash)).toEqual([`live-${tag}`]);
   });
 });

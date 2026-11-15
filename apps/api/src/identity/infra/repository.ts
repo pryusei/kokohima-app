@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, eq, exists, gt, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { outbox, outboxRow } from "../../shared/outbox/schema";
 import type { Provider } from "../domain/idTokenClaims";
@@ -21,6 +21,14 @@ export function db(d1: D1Database): Db {
 
 export async function saveOauthTransaction(db: Db, row: typeof oauthTransactions.$inferInsert) {
   await db.insert(oauthTransactions).values(row);
+}
+
+/** 期限切れのログイン開始の記録（nonce・code_verifier を含む）とログインコードを消す */
+export async function deleteExpiredLoginRecords(db: Db, now: number) {
+  await db.batch([
+    db.delete(oauthTransactions).where(lte(oauthTransactions.expiresAt, now)),
+    db.delete(loginCodes).where(lte(loginCodes.expiresAt, now)),
+  ]);
 }
 
 /** state を1回だけ取り出す（DELETE ... RETURNING）。期限切れは返さない */
