@@ -33,7 +33,7 @@ export default defineProject({
           VAPID_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg7jBHfSgXWj51x/Kr\nB1yX515Ey/R4brF3uWcywJZq15yhRANCAATjQz7mClg0F2er68NIGogPm99EOsBA\n1laX+ifoRhM6NtN9lrm1lB6rCsPII63F9FtJu+W6lhEW8zONmjZ2xSlj\n-----END PRIVATE KEY-----\n",
           VAPID_PUBLIC_KEY: "BONDPuYKWDQXZ6vrw0gaiA-b30Q6wEDWVpf6J-hGEzo2032WubWUHqsKw8gjrcX0W0m75bqWERbzM42aNnbFKWM",
           VAPID_SUBJECT: "mailto:ops@kokohima.test",
-          NOTIFICATION_KEYS: JSON.stringify({ "push-1": "cHVzaC1rZXktMS1wdXNoLWtleS0xLXB1c2gta2V5LTEhIQ" }),
+          NOTIFICATION_KEYS: JSON.stringify({ "push-1": "cHVzaC1rZXktMS1wdXNoLWtleS0xLXB1c2gta2V5LTE" }),
           NOTIFICATION_CURRENT_KID: "push-1",
           MAIL_FROM: "ここ暇 <notify@kokohima.test>",
           NOTIFICATION_START_AT: "0",
