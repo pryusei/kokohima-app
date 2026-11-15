@@ -27,11 +27,12 @@
     - `getPublicProfiles`（相手の表示名）
     - `getUserTimezone`（日付と時刻）
     - 新しく足す `getNotificationAddress(userId)`（メールアドレス。なければ null）
-    - 新しく足す `hasEarlierSession(userId, sessionId)`（このセッションより前に作られたセッションがあるか）
+    - 新しく足す `hasEarlierSession(userId, sessionId)`（このセッションより前に作られたセッションがあるか。同じ時刻に作られたものも「前」に数え、迷ったら知らせる側に倒す）
+    - 新しく足す `activeSessionIds(sessionIds, now)`（有効なセッションの ID だけを返す。購読に送るかの判定）
   - invitation：新しく足す次の関数（`calendarFacing.ts` と同じく、閲覧者で絞らない consumer 用の関数）。
     - `broadcastOwnerOf(broadcastId)`
     - `inviteActorOf(inviteId)`：予定を成立させた操作をした人。`decided_at` があれば送信者、なければ受信者。
-    - `meetupParticipantsOf(meetupId)`
+    - 予定の参加者は、イベントの payload の `participantIds` を使う（関数は足さない）。
   - availability：`setSharing`。画面からは T-02 の `PATCH /friends/{friendId}` を使う。
   - identity から notification を呼ぶ：
     - ログアウトで、そのセッションの購読を消す（`deleteSubscriptionsOfSession`）。
@@ -62,6 +63,11 @@
   - 型：`SessionStarted`・`FriendshipEstablished`・`DirectInvite*`・`BroadcastSent`・`BroadcastDecided`・`CalendarReauthRequired`。
   - 線は経過日数でなく、「T-07 を有効にした時刻」（vars の `NOTIFICATION_START_AT`、Unixミリ秒）で引く。
   - `created_at < NOTIFICATION_START_AT` の行を、dispatch で Queue に流さずに処理済みにする。
+  - consumer も同じ線で判定する。dispatch は Queue のメッセージに outbox の行の `created_at` を載せる（載っていないメッセージでは payload の `occurredAt` で判定する）。
+  - `NOTIFICATION_START_AT` が未設定・正の整数でないときは、「まだ有効にしていない」として扱う（安全な側に倒す）。
+    - お知らせを作らない。dispatch は通知だけの型を流さず、処理済みにもしない（有効にしたあと、その時刻より後の行から流れる）。
+    - T-06 の型は今までどおり流す（カレンダーの処理と自動の断りは行い、お知らせだけ作らない）。
+    - staging・prod は空にしておき、T-07 を有効にするときにその時刻を入れる（人が行う）。
   - 経過日数（例：作成から7日）で決めると、デプロイ直前の行（この1週間の `SessionStarted` による「新しい端末でのログイン」のメールなど）がまとめて届き、逆にデプロイ後に処理が止まったときは正当なお知らせを捨ててしまうため。
   - デプロイの後に outbox の処理が長く止まっても、T-07 を有効にした後の行は捨てない（遅れて届く）。
 - T-06 の型の行（`MeetupConfirmed`・`MeetupCancelled`・`MeetupLeft`・`CalendarConnected`・`AvailabilityCancelledByCalendar`）は、今までどおり常に流す。
@@ -155,7 +161,7 @@
 | GET | `/api/v1/me/notification-preferences` | Bearer | なし | 200：`notificationPreferencesSchema` | 401 |
 | PATCH | `/api/v1/me/notification-preferences` | Bearer | JSON：`notificationPreferencesPatchSchema` | 200：`notificationPreferencesSchema` | 400、401 |
 | GET | `/api/v1/push/vapid-key` | Bearer | なし | 200：`{ publicKey }`（base64url） | 401 |
-| POST | `/api/v1/push/subscriptions` | Bearer | JSON：`{ endpoint }` | 204 | 400（許可していない宛先）、401 |
+| POST | `/api/v1/push/subscriptions` | Bearer（有効なセッション。`requireActiveSession`） | JSON：`{ endpoint }` | 204 | 400（許可していない宛先）、401（失効したセッションを含む） |
 | DELETE | `/api/v1/push/subscriptions` | Bearer | JSON：`{ endpoint }` | 204（なくても204） | 400、401 |
 
 ### 入力
@@ -229,16 +235,22 @@
 - 列：`user_id`（PK、→ users、CASCADE）、`invites`、`broadcasts`、`meetups`、`friends`、`calendar`（0／1）、`updated_at`。
 
 ### `notification_daily_counts`
-- 列：`user_id`、`day`（利用者のタイムゾーンでの `YYYY-MM-DD`）、`channel`（`push`・`email`）、`count`。PK は `(user_id, day, channel)`。
+- 列：`user_id`、`day`（利用者のタイムゾーンでの `YYYY-MM-DD`）、`channel`、`count`。PK は `(user_id, day, channel)`。
+- `channel` は上限の組ごとに分ける（決定事項8）。
+  - `push`・`email`：誘い・募集・友達（プッシュ30件・メール10件）
+  - `push_priority`・`email_priority`：予定・カレンダー（それぞれ30件）
+  - `email_login`：新端末のログイン（メール5件）
 - サービス全体の1日のメール数（決定事項8）も同じ表で数える。
-  - `user_id` が空文字の行（`channel = 'email'`）が全体の数。`day` は、送る相手のタイムゾーンでの日付。
-  - お知らせごとに1回だけ数えるため、`user_id = 'n:<お知らせの ID>'`・`channel = 'email_claim'` の印の行を先に入れ、入ったときだけ全体の数を増やす（再試行で二重に数えない）。
+  - `user_id` が空文字の行（`channel = 'email'`）が全体の数。`day` は UTC の日付（利用者ごとに枠が分かれないようにするため）。
+  - お知らせごとに1回だけ数えるため、`user_id = 'n:<お知らせの ID>'`・`channel = 'email_claim'` の印の行を先に入れ、入ったときだけ全体の数を増やす（再試行で二重に数えない）。上限で止まったときは印を消す。
+  - UTC の日付をまたいだ再試行では、もう一度数えることがある（1件ずつで、受け入れる）。
 - 数を増やすのは、そのチャネルの `counted_push_at`・`counted_email_at` が NULL のときだけ。
-  - 増やす文と、お知らせにそのチャネルの日時を書く文を、同じ batch にする（日時を確かめる `EXISTS` 付き。T-04 の `transition_id` と同じ書き方）。
-  - 再試行でも同じお知らせを、同じチャネルで2回数えない。
+  - 増やす文（「印が NULL」の `EXISTS` 付き）と、印を書く文（直前の文で数えられたとき＝`changes() = 1` のときだけ）を、同じ batch にする。
+  - 上限に達して数えられなかったときは、印を付けない。再試行でも、もう一度上限で確かめる。
+  - 再試行でも同じお知らせを、同じチャネルで2回数えない。同時に2回処理されたときは、印を付けた側が数え、もう一方は印を読み直して判定する。
   - プッシュからメールに切り替えたときは、メールの分を「メールで数えていなければ数える」。プッシュで数えた分は戻さない（プッシュの上限を少し早く使い切ることを受け入れる）。
 - 上限の判定は、`INSERT ... ON CONFLICT DO UPDATE SET count = count + 1 WHERE count < ?` の1つの文で行う（同時に届いても超えない）。
-- 2日より前の行は掃除する。
+- UTC で3日前の日付より前の行は掃除する（どのタイムゾーンの「今日」「昨日」も消さないため）。
 
 ## 振る舞い
 
@@ -256,13 +268,15 @@
    - `new_login`：メールだけ。
    - ほかの種類：プッシュの購読が1つ以上あればプッシュ、なければメール。
    - メールアドレスがない人には、メールを送らない（`outcome = 'no_address'`）。
-4. 1日の上限を確かめる（決定事項4）。
-   - プッシュは1日30件、メールは1日10件。
-   - 数えるのは、種別が誘い（`invites`）・募集（`broadcasts`）・友達（`friends`）のお知らせだけ（決定事項8）。
-     - 予定（`meetups`）・カレンダー（`calendar`）・`new_login` は数えず、上限に達していても送る。成立した予定の取り消しや、ここ暇の自動取り消しを知らせそこなわないため。
+4. 1日の上限を確かめる（決定事項4・8）。
+   - 利用者ごとの上限は、上限の組ごとに数える。
+     - 誘い（`invites`）・募集（`broadcasts`）・友達（`friends`）：プッシュ30件・メール10件。
+     - 予定（`meetups`）・カレンダー（`calendar`）：プッシュ・メールそれぞれ30件。誘いの上限とは別に数えるので、誘いが多い日でも予定の取り消しや自動取り消しは届く。30件は悪用（2人で成立と取り消しをくり返すなど）の歯止め。
+     - `new_login`：メール5件（何度もログインし直してメールを出させることへの歯止め）。
    - 超えたら送らずに `delivered_at` と `outcome = 'limited'` を書く。お知らせ一覧には残る。
-   - メールは、サービス全体の1日の数（vars の `MAIL_DAILY_LIMIT`）も確かめる（決定事項8）。
-     - メールを送る前に、全体の数を1つ増やす。上限を超えていたら、送らずに `outcome = 'limited'` を書く。
+   - メールは、サービス全体の1日の数（vars の `MAIL_DAILY_LIMIT`、UTC の日付）も確かめる（決定事項8）。
+     - メールを送る前に、全体の数を1つ増やす。組ごとに使える上限を超えていたら、送らずに `outcome = 'limited'` を書く。
+     - 誘い・募集・友達は `MAIL_DAILY_LIMIT - 20` まで、予定・カレンダーは `MAIL_DAILY_LIMIT` まで。残りの20通は、予定・カレンダー・新端末のログインの分。
      - `new_login` も全体の数に数えるが、超えていても送る（安全の通知を優先する）。
      - 利用者ごとの上限で止まったお知らせは、全体の数に数えない。
 5. 送る。
@@ -273,10 +287,10 @@
      - ヘッダー：`Content-Length: 0`、`TTL: 86400`、`Urgency: normal`、`Authorization: vapid t=<JWT>, k=<公開鍵>`。
      - JWT は ES256。`aud` は endpoint のオリジン、`exp` は12時間以内、`sub` は `VAPID_SUBJECT`。jose で作る。
      - 応答の扱い
-       - 201・202：成功。`last_success_at` を書く。
+       - 200・201・202：成功。`last_success_at` を書く（RFC 8030 は 201 だが、200 を返すサービスもあるため）。
        - 404・410：購読を消す。
        - 429・5xx・タイムアウト：一時的な失敗。
-       - 400・401・403・413：その購読だけ一時的でない失敗とし、ログに種類と状態コードを出す。
+       - 400・401・403・413：その購読だけ一時的でない失敗とし、ログに種類と状態コード（`notification_push_rejected`）を出す。
    - 送れる購読が1つもなかったとき（すべて消えた・セッションが無効・一時的でない失敗）：同じお知らせをメールに切り替えて送る（`channel` を `email` に書き直す）。
      - メールの上限は、`counted_email_at` が NULL なら数えてから確かめる（手順4と同じ文）。超えていれば送らずに `outcome = 'limited'` を書く。
      - プッシュで数えた分（`counted_push_at`）は戻さない。
@@ -366,8 +380,8 @@
 | `VAPID_PUBLIC_KEY` | vars | VAPID の公開鍵（base64url、非圧縮の点） |
 | `VAPID_SUBJECT` | vars | `mailto:` の連絡先 |
 | `MAIL_FROM` | vars | 差出人 |
-| `NOTIFICATION_START_AT` | vars | T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない（「古い outbox の行」） |
-| `MAIL_DAILY_LIMIT` | vars | サービス全体の1日のメール数の上限（決定事項8）。既定は90（Resend の無料枠の1日100通より少し下）。E2E は偽の配信なので実質なしにする |
+| `NOTIFICATION_START_AT` | vars | T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない（「古い outbox の行」）。未設定・正の整数でなければ、お知らせを作らない。staging・prod は有効にするときに人が入れる（ローカル・E2E・単体テストは `1`） |
+| `MAIL_DAILY_LIMIT` | vars | サービス全体の1日のメール数の上限（決定事項8）。正の整数でなければ90（Resend の無料枠の1日100通より少し下）として扱う。E2E は偽の配信なので実質なしにする |
 
 - ローカルと E2E の鍵は、`scripts/write-e2e-dev-vars.mjs` で作る（T-06 と同じ）。
 - 送信ドメインの SPF・DKIM・DMARC は、Resend の手順で DNS に設定する（人が行う）。Terraform で管理するなら、`infra-change` スキルに従って別の PR にする。
@@ -444,6 +458,10 @@
 - [ ] 1日の上限は、プッシュ30件・メール10件で止まる。同時に届いても超えない。日付が変われば戻る。
 - [ ] 予定・カレンダーのお知らせは1日の上限に数えず、上限に達していても送る（決定事項8）。
 - [ ] サービス全体の1日のメール数（`MAIL_DAILY_LIMIT`）を超えたら送らない。新端末のログインだけは送る（決定事項8）。
+- [ ] 全体のメール数の段階：誘い・募集・友達は `MAIL_DAILY_LIMIT - 20`、予定・カレンダーは `MAIL_DAILY_LIMIT` で止まる。`MAIL_DAILY_LIMIT` が不正なら90。
+- [ ] 利用者ごとの歯止め：新端末のログインのメールは5通、予定・カレンダーは各30件で止まる。
+- [ ] 上限で数えられなかったお知らせには印を付けない。数えたあとの再試行では数えない。
+- [ ] `NOTIFICATION_START_AT` が未設定・不正なら、お知らせを作らず、通知だけの型を流さず処理済みにもしない。線は outbox の行の `created_at` で引く。
 
 #### プッシュ
 - [ ] 本文がない（`Content-Length: 0`）。
@@ -462,7 +480,7 @@
 - [ ] T-06 の型は常に流す。`NOTIFICATION_START_AT` より前の `AvailabilityCancelledByCalendar` でも自動の断りは行い、お知らせだけ作らない。
 - [ ] `AvailabilityCancelledByCalendar` で、自動の断りが失敗しても通知は届けたうえで投げる。
 - [ ] カレンダーの処理が失敗しても、通知は届けたうえで投げる。
-- [ ] 90日を過ぎたお知らせと、2日より前の日ごとの数を Cron で掃除する。
+- [ ] 90日を過ぎたお知らせと、UTC で3日前の日付より前の日ごとの数を Cron で掃除する。
 
 #### API
 - [ ] 一覧の並び（`inserted_at` の新しい順）・カーソル・未読数。
@@ -529,13 +547,16 @@
 3. メールは、プッシュの購読がない人に送る。購読がすべて使えなくなったときも、メールに切り替える。新端末のログインだけは、全員にメールで送る。
 4. 種別（誘い・募集・予定・友達・カレンダー）ごとに止められる。
    - 1日の上限はプッシュ30件・メール10件。超えた分はお知らせ一覧だけに残す。
-   - 新端末のログインは止められず、上限にも数えない。
+   - 新端末のログインは止められず、この上限には数えない（決定事項8で、別に1日5通の歯止めを持つ）。
 5. 通知だけの型の outbox の行のうち、T-07 を有効にした時刻（`NOTIFICATION_START_AT`）より前に作られたものは送らない。経過日数では決めない。
 6. メールの本文には、お知らせの種類の短い説明だけを書く。相手の名前・ひとこと・エリア・予定の時刻は入れない。新端末のログインは、端末の要約とログインの日時を入れる。
 7. 新端末のログインは、端末を区別せず「その人の2つめ以降のセッション」で判定する。
-8. 1日の上限の対象と、サービス全体のメール数（実装PRで利用者に確かめた。pryusei/kokohima-app#48）。
-   - 1日の上限（プッシュ30件・メール10件）に数えるのは、誘い・募集・友達のお知らせだけ。予定・カレンダーのお知らせは数えず、必ず送る。
-   - サービス全体の1日のメール数に上限（`MAIL_DAILY_LIMIT`、既定90）を持つ。超えた分は送らず、お知らせ一覧だけに残す。新端末のログインは超えていても送る。
+8. 1日の上限の組と、サービス全体のメール数（実装PRで利用者に確かめた。pryusei/kokohima-app#48。レビューの指摘を受けて段階と歯止めを足した）。
+   - 1日の上限（プッシュ30件・メール10件）に数えるのは、誘い・募集・友達のお知らせだけ。
+   - 予定・カレンダーのお知らせは、その上限とは別に、プッシュ・メールそれぞれ1日30件まで（悪用の歯止め）。
+   - 新端末のログインのメールは、1日5件まで（何度もログインし直してメールを出させることへの歯止め）。
+   - サービス全体の1日のメール数に上限（`MAIL_DAILY_LIMIT`、既定90）を持ち、段階をつける。誘い・募集・友達は `MAIL_DAILY_LIMIT - 20` まで、予定・カレンダーは `MAIL_DAILY_LIMIT` まで。新端末のログインは超えていても送る。
+   - 超えた分は送らず、お知らせ一覧だけに残す。
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
@@ -545,3 +566,4 @@
 | 2026-11-14 | レビューの提案に合わせ、線引きの時刻を vars の `NOTIFICATION_START_AT` にした（設定の表はやめた）。切り替えたメールがメールの上限に達していれば送らない。一覧の同じ時刻の並びを `id` の降順にした。T-01 の仕様書の更新を「実装PRで直すもの」に足した | 仕様書PRのレビュー（提案） |
 | 2026-11-14 | `AvailabilityCancelledByCalendar` を「通知だけの型」から外し、常に流す（自動の断りを捨てない）。セッションの掃除への申し送り、退会した相手の表示を足した | 全体の点検 |
 | 2026-11-15 | 実装した。決定事項8（1日の上限の対象を誘い・募集・友達に絞る、サービス全体の1日のメール数の上限 `MAIL_DAILY_LIMIT`）を足した。Resend・Web Push・Workers の上限を公式で確かめた結果を書いた。冪等キーの内容の不一致を一時的でない失敗にした。E2E のテスト用ログインにメールアドレスを持たせ、drain でお知らせも届けるようにした | 実装PR（pryusei/kokohima-app#48 の回答） |
+| 2026-11-15 | レビューの指摘に合わせた：決定事項8に予定・カレンダー（各30件）と新端末のログイン（5件）の歯止め、全体のメール数の段階（誘い・募集・友達は `MAIL_DAILY_LIMIT - 20`）を足した。全体の数の日付を UTC に、上限で数えられなかったお知らせには印を付けない。`NOTIFICATION_START_AT` の未設定は送らない側に倒し、consumer も outbox の行の時刻で判定する。プッシュの 200 を成功に、購読の登録は有効なセッションだけ、`activeSessionIds` を足し `meetupParticipantsOf` をやめた。日ごとの数の掃除を UTC の3日前より前にした | 実装PRのレビュー（セキュリティ・仕様） |
