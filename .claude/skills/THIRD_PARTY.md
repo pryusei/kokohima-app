@@ -4,6 +4,7 @@
 | --- | --- | --- | --- |
 | vercel-react-best-practices | https://github.com/vercel-labs/agent-skills/tree/main/skills/react-best-practices | 063bee94c3f4df8453406c830b0a7df0f2860278 | MIT |
 | vercel-composition-patterns | https://github.com/vercel-labs/agent-skills/tree/main/skills/composition-patterns | 063bee94c3f4df8453406c830b0a7df0f2860278 | MIT |
+| security-audit | https://github.com/cloudflare/security-audit-skill/tree/main/skills/security-audit | c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 | MIT（リポジトリの `LICENSE` を同じフォルダに置いた） |
 
 ## ルール
 - 外部のスキルはエージェントへの指示そのものなので、取り込む前と更新するたびに中身をレビューする
