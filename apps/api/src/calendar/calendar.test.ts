@@ -755,6 +755,57 @@ describe("自動の「今回は難しい」", () => {
     expect((await viewersWhoCanSee(env.DB, a.id, [b.id], since - 10 * MIN)).size).toBe(0);
   });
 
+  it("viewersWhoCanSee：片方向の行だけ・since と同じ時刻の友達関係や公開設定は、見られる側に数えない", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await u.befriend(a, b);
+    await tick(MIN);
+    const since = h.clock.now;
+    const rows = async () =>
+      (
+        await env.DB.prepare("SELECT user_id, friend_id, created_at FROM friendships WHERE (user_id = ?1 AND friend_id = ?2) OR (user_id = ?2 AND friend_id = ?1)")
+          .bind(a.id, b.id)
+          .all<{ user_id: string; friend_id: string; created_at: number }>()
+      ).results;
+    const original = await rows();
+    const restore = async () => {
+      await env.DB.prepare("DELETE FROM friendships WHERE (user_id = ?1 AND friend_id = ?2) OR (user_id = ?2 AND friend_id = ?1)").bind(a.id, b.id).run();
+      for (const r of original) {
+        await env.DB.prepare("INSERT INTO friendships (user_id, friend_id, created_at) VALUES (?1, ?2, ?3)").bind(r.user_id, r.friend_id, r.created_at).run();
+      }
+    };
+    const sees = async () => (await viewersWhoCanSee(env.DB, a.id, [b.id], since)).has(b.id);
+    expect(await sees()).toBe(true);
+    // 片方向の行だけが残っている（どちらの向きでも）
+    for (const [from, to] of [[b.id, a.id], [a.id, b.id]] as const) {
+      await env.DB.prepare("DELETE FROM friendships WHERE user_id = ?1 AND friend_id = ?2").bind(from, to).run();
+      expect(await sees()).toBe(false);
+      await restore();
+    }
+    // 片方向ずつ、since とちょうど同じ時刻に作った
+    for (const [from, to] of [[a.id, b.id], [b.id, a.id]] as const) {
+      await env.DB.prepare("UPDATE friendships SET created_at = ?3 WHERE user_id = ?1 AND friend_id = ?2").bind(from, to, since).run();
+      expect(await sees()).toBe(false);
+      await restore();
+    }
+    expect(await sees()).toBe(true);
+    // 公開設定を since とちょうど同じ時刻に「見せる」にした
+    await env.DB.prepare("INSERT INTO sharing_policies (owner_id, target_id, visible, updated_at) VALUES (?1, ?2, 1, ?3)").bind(a.id, b.id, since).run();
+    expect(await sees()).toBe(false);
+    await env.DB.prepare("UPDATE sharing_policies SET updated_at = ?3 WHERE owner_id = ?1 AND target_id = ?2").bind(a.id, b.id, since - 1).run();
+    expect(await sees()).toBe(true);
+  });
+
+  it("取り消しの後に同じ「見せる」を保存し直した送信者の誘いは pending のまま", async () => {
+    const { a, b } = await scenario();
+    const id = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await tick(MIN);
+    expect((await setSharing(a, b, true)).status).toBe(200);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, id)).toBe("pending");
+  });
+
   it("取り消しの後に作られた誘い・期限切れの誘いは変わらない", async () => {
     const { a, b } = await scenario();
     const expiring = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
