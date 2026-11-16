@@ -26,3 +26,26 @@ export async function setSharing(d1: D1Database, ownerId: string, targetId: stri
       set: { visible, updatedAt: now },
     });
 }
+
+/**
+ * viewerIds のうち、owner のここ暇を since の前から今まで、ずっと見られる人（docs/specs/T-06-calendar.md 決定事項15）。
+ * 見られる＝両方向の友達関係があり、owner がその人を「見せない」にしていない（T-03 の「前提」の3条件）。
+ * 「ずっと」は、両方向の友達関係がどちらも since より前に作られ、公開設定の行がないか、since より前から「見せる」であること。
+ * 条件はすべてこの1つの SQL に入れる（取得したあとで絞り込まない）。ID の一覧は json_each で渡す
+ */
+export async function viewersWhoCanSee(d1: D1Database, ownerId: string, viewerIds: string[], since: number): Promise<Set<string>> {
+  if (viewerIds.length === 0) return new Set();
+  const { results } = await d1
+    .prepare(
+      `SELECT DISTINCT v.value AS id FROM json_each(?2) v
+       WHERE EXISTS (SELECT 1 FROM friendships f WHERE f.user_id = ?1 AND f.friend_id = v.value AND f.created_at < ?3)
+         AND EXISTS (SELECT 1 FROM friendships r WHERE r.user_id = v.value AND r.friend_id = ?1 AND r.created_at < ?3)
+         AND NOT EXISTS (
+           SELECT 1 FROM sharing_policies sp
+           WHERE sp.owner_id = ?1 AND sp.target_id = v.value AND (sp.visible = 0 OR sp.updated_at >= ?3)
+         )`,
+    )
+    .bind(ownerId, JSON.stringify(viewerIds), since)
+    .all<{ id: string }>();
+  return new Set(results.map((r) => r.id));
+}

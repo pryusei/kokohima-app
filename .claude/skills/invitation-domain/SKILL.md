@@ -58,7 +58,7 @@ open →（期限）expired（保存しない。誰にも通知しない。再�
 | DirectInviteSent | 受信者に通知（T-07） |
 | DirectInviteDeclined・DirectInviteCounterProposed | 送信者に通知（T-07） |
 | DirectInviteSkipped | 受信者に通知（T-07） |
-| AvailabilityCancelledByCalendar | 取り消しの前に作られた pending の誘いを、手で断ったときと同じ遷移で declined にする（T-06）。本人に通知（T-07） |
+| AvailabilityCancelledByCalendar | 取り消しの前に作られた pending の誘いのうち、送信者が受信者のここ暇を取り消しの時点からずっと見られたものだけを、手で断ったときと同じ遷移で declined にする（T-06 決定事項15。判定は availability の `viewersWhoCanSee`）。本人に通知（T-07） |
 | MeetupConfirmed | カレンダーへ書き込み（T-06）。直接の誘いの成立は、成立させた人でない方に通知（T-07。募集の成立は BroadcastDecided で通知する） |
 | BroadcastSent | 宛先ごとに通知（T-07） |
 | BroadcastDecided | Meetup作成、募集者を除く参加者に名前を開示して通知（T-07。同時に MeetupConfirmed も書く） |
