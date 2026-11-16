@@ -6,6 +6,7 @@ import { makeUsers, type User } from "../../test/users";
 import { handleJob } from "../jobs/consumer";
 import { dispatchOutbox } from "../jobs/dispatch";
 import { runScheduled } from "../worker";
+import { viewersWhoCanSee } from "../availability/application/sharing";
 import { syncConnection } from "./application/sync";
 
 // カレンダー連携（docs/specs/T-06-calendar.md）。時計は 2026-10-10T00:00:00Z（土曜、東京は 09:00）
@@ -644,6 +645,114 @@ describe("自動の「今回は難しい」", () => {
     // 2回届いても1回だけ
     await deliver("AvailabilityCancelledByCalendar", a.id);
     expect(await outbox("DirectInviteDeclined", hit)).toHaveLength(1);
+  });
+
+  // 決定事項15：受信者のここ暇を、取り消しの時点からずっと見られた送信者の誘いだけを断る（pryusei/kokohima-app#53）
+  const setSharing = (owner: User, friend: User, sharesMyAvailability: boolean) =>
+    u.call("PATCH", `/api/v1/friends/${friend.id}`, { token: owner.token, body: { sharesMyAvailability } });
+  const unfriend = (who: User, friend: User) => u.call("DELETE", `/api/v1/friends/${friend.id}`, { token: who.token });
+  /** a のここ暇を自動で取り消す（取り消しの時刻を返す） */
+  async function cancelByCalendar(a: User) {
+    await tick(15 * MIN);
+    h.google.state.busy = [busy(T("13:00", "11"), T("14:00", "11"))];
+    await syncConnection(h.ctx, a.id, "google");
+    return h.clock.now;
+  }
+  const declinedEvents = async (inviteId: string) => (await outbox("DirectInviteDeclined", inviteId)).length;
+
+  it("受信者が「見せない」にしている送信者の誘いは pending のまま。見られる送信者の誘いだけが declined になる", async () => {
+    const { a, b } = await scenario();
+    const c = await authenticated("ちさ");
+    await u.befriend(a, c);
+    expect((await setSharing(a, b, false)).status).toBe(200);
+    const hidden = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    const shown = await invite(c, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, hidden)).toBe("pending");
+    expect(await declinedEvents(hidden)).toBe(0);
+    expect(await inviteStatus(c, shown)).toBe("declined");
+    expect(await declinedEvents(shown)).toBe(1);
+  });
+
+  it("判定の向き：送信者が受信者を「見せない」にしていても、受信者が見せていれば declined になる", async () => {
+    const { a, b } = await scenario();
+    expect((await setSharing(b, a, false)).status).toBe(200);
+    const id = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, id)).toBe("declined");
+  });
+
+  it("誘いのあと、処理するまでに「見せない」にした送信者の誘いは pending のまま", async () => {
+    const { a, b } = await scenario();
+    const id = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await tick(MIN);
+    expect((await setSharing(a, b, false)).status).toBe(200);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, id)).toBe("pending");
+    expect(await declinedEvents(id)).toBe(0);
+  });
+
+  it("取り消しの後に「見せる」に戻した送信者の誘いは pending のまま（隠していた間のここ暇を知らせない）", async () => {
+    const { a, b } = await scenario();
+    expect((await setSharing(a, b, false)).status).toBe(200);
+    const id = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await tick(MIN);
+    expect((await setSharing(a, b, true)).status).toBe(200);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, id)).toBe("pending");
+    expect(await declinedEvents(id)).toBe(0);
+  });
+
+  it("友達でなくなった送信者・取り消しの後に友達に戻った送信者の誘いは pending のまま", async () => {
+    const { a, b } = await scenario();
+    const c = await authenticated("ちさ");
+    await u.befriend(a, c);
+    const fromB = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    const fromC = await invite(c, a, T("11:00", "11"), T("12:00", "11"));
+    expect((await unfriend(a, b)).status).toBe(204);
+    expect((await unfriend(a, c)).status).toBe(204);
+    await cancelByCalendar(a);
+    await tick(MIN);
+    await u.befriend(a, c);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    for (const [who, id] of [[b, fromB], [c, fromC]] as const) {
+      expect(await env.DB.prepare("SELECT status FROM direct_invites WHERE id = ?1").bind(id).first("status")).toBe("pending");
+      expect(await declinedEvents(id), who.name).toBe(0);
+    }
+  });
+
+  it("viewersWhoCanSee：since の前からずっと見られる人だけを返し、別の所有者の設定に影響されない", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    const c = await authenticated("ちさ");
+    const d = await authenticated("だい");
+    const stranger = await authenticated("えま");
+    await u.befriend(a, b);
+    await u.befriend(a, c);
+    await u.befriend(a, d);
+    await u.befriend(d, b);
+    // 別の所有者（d）が b を「見せない」にしても、a の判定には影響しない
+    expect((await setSharing(d, b, false)).status).toBe(200);
+    // c は since より前に一度隠して、また見せた
+    expect((await setSharing(a, c, false)).status).toBe(200);
+    await tick(MIN);
+    expect((await setSharing(a, c, true)).status).toBe(200);
+    await tick(MIN);
+    const since = h.clock.now;
+    await tick(MIN);
+    // d は since の後に隠した
+    expect((await setSharing(a, d, false)).status).toBe(200);
+    const visible = await viewersWhoCanSee(env.DB, a.id, [b.id, c.id, d.id, stranger.id, b.id], since);
+    expect([...visible].sort()).toEqual([b.id, c.id].sort());
+    expect((await viewersWhoCanSee(env.DB, a.id, [b.id], since)).size).toBe(1);
+    expect((await viewersWhoCanSee(env.DB, b.id, [a.id], since)).size).toBe(1);
+    expect((await viewersWhoCanSee(env.DB, a.id, [], since)).size).toBe(0);
+    // since より後に作った友達関係は数えない
+    expect((await viewersWhoCanSee(env.DB, a.id, [b.id], since - 10 * MIN)).size).toBe(0);
   });
 
   it("取り消しの後に作られた誘い・期限切れの誘いは変わらない", async () => {

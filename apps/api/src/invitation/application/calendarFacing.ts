@@ -1,3 +1,4 @@
+import { viewersWhoCanSee } from "../../availability/application/sharing";
 import type { AppDeps, Bindings } from "../../env";
 import * as repo from "../infra/repository";
 
@@ -64,8 +65,17 @@ export async function declineForCancelledAvailability(
   if (input.ranges.length === 0) return 0;
   const now = ctx.deps.now();
   const rows = await repo.pendingInvitesOverlapping(ctx.env.DB, input.userId, input.ranges, input.occurredAt, now);
+  // 受信者のここ暇を、取り消しの時点から今までずっと見られた送信者の誘いだけを断る（T-06 決定事項15）。
+  // 「見せない」にした相手などの誘いは pending のまま残し、ここ暇がなかったときと同じに見せる
+  const visible = await viewersWhoCanSee(
+    ctx.env.DB,
+    input.userId,
+    rows.map((r) => r.sender_id),
+    input.occurredAt,
+  );
   let declined = 0;
   for (const row of rows) {
+    if (!visible.has(row.sender_id)) continue;
     const event = {
       id: crypto.randomUUID(),
       type: "DirectInviteDeclined",
