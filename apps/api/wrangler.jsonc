@@ -38,6 +38,13 @@
     "consumers": [{ "queue": "kokohima-local-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-local-outbox-dlq" }]
   },
   // 1分ごと：outbox を Queue に流す・掃除。15分ごと：カレンダーの確認の割り当て
+  // キャッシュ（KV）とおおよその回数の上限（Rate Limiting）。docs/specs/T-10-idempotency-cache-ratelimit.md
+  // Rate Limiting の namespace_id はアカウントの中で一意の整数。環境ごとに分ける（ローカル 1xxx・staging 2xxx・prod 3xxx）
+  "kv_namespaces": [{ "binding": "CACHE", "id": "local-cache" }],
+  "ratelimits": [
+    { "name": "RL_PUBLIC", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } },
+    { "name": "RL_USER", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
+  ],
   "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
 
   // ローカル開発（wrangler dev）。D1はローカルのSQLiteなのでIDは何でもよい
@@ -77,6 +84,11 @@
         "producers": [{ "binding": "JOBS", "queue": "kokohima-e2e-outbox" }],
         "consumers": [{ "queue": "kokohima-e2e-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-e2e-outbox-dlq" }]
       },
+      "kv_namespaces": [{ "binding": "CACHE", "id": "e2e-cache" }],
+      "ratelimits": [
+        { "name": "RL_PUBLIC", "namespace_id": "1101", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RL_USER", "namespace_id": "1102", "simple": { "limit": 20, "period": 60 } }
+      ],
       "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
       "d1_databases": [
         {
@@ -111,6 +123,12 @@
         "producers": [{ "binding": "JOBS", "queue": "kokohima-staging-outbox" }],
         "consumers": [{ "queue": "kokohima-staging-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-staging-outbox-dlq" }]
       },
+      // TODO: terraform output の kv_namespace_id を転記する（infra/README.md の初回の手順6）
+      "kv_namespaces": [{ "binding": "CACHE", "id": "00000000000000000000000000000000" }],
+      "ratelimits": [
+        { "name": "RL_PUBLIC", "namespace_id": "2001", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RL_USER", "namespace_id": "2002", "simple": { "limit": 20, "period": 60 } }
+      ],
       "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
       "d1_databases": [
         {
@@ -146,6 +164,12 @@
         "producers": [{ "binding": "JOBS", "queue": "kokohima-prod-outbox" }],
         "consumers": [{ "queue": "kokohima-prod-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-prod-outbox-dlq" }]
       },
+      // TODO: terraform output の kv_namespace_id を転記する（infra/README.md の初回の手順6）
+      "kv_namespaces": [{ "binding": "CACHE", "id": "00000000000000000000000000000000" }],
+      "ratelimits": [
+        { "name": "RL_PUBLIC", "namespace_id": "3001", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RL_USER", "namespace_id": "3002", "simple": { "limit": 20, "period": 60 } }
+      ],
       "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
       "d1_databases": [
         {

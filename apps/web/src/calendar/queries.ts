@@ -1,5 +1,5 @@
 import { calendarConnectionsSchema, freeSlotsSchema, icsLinkSchema } from "@kokohima/shared";
-import { apiGet, apiSend } from "../api/client";
+import { ApiError, apiGet, apiSend } from "../api/client";
 import { keys } from "../api/keys";
 import { rangeFrom } from "../availability/format";
 
@@ -13,6 +13,8 @@ export const connectionsQuery = () => ({
 /** 今日から7日分の候補 */
 export const freeSlotsQuery = (date: string) => ({
   queryKey: keys.availability.calendarFree(date),
+  // 回数の上限（429。T-10）のあとは取り直さない（取り直すとさらに上限を使う）
+  retry: (count: number, error: unknown) => !(error instanceof ApiError && error.status === 429) && count < 3,
   queryFn: () => {
     const range = rangeFrom(date, 7);
     return apiGet(

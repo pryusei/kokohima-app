@@ -11,6 +11,7 @@ import type { AppEnv } from "../env";
 import { requireActiveSession, requireAuth, requireSameOrigin } from "../identity/middleware";
 import { clearInviteCookie, getInviteCookie, setInviteCookie } from "../http/inviteCookie";
 import { problem, problemFrom } from "../http/problem";
+import { rateLimit } from "../http/rateLimit";
 import { validationFailed } from "../http/validation";
 import * as social from "./application/social";
 
@@ -54,7 +55,11 @@ export function socialRoutes() {
     }
   });
 
-  app.post("/invite-links/lookup", requireSameOrigin, async (c) => {
+  app.post(
+    "/invite-links/lookup",
+    requireSameOrigin,
+    rateLimit({ group: "invite_lookup", limiter: "RL_PUBLIC", by: "ip" }),
+    async (c) => {
     const body = inviteLookupRequestSchema.safeParse((await json(c)) ?? {});
     if (!body.success) return validationFailed(c, body.error);
     // 本文のトークン（最初に開いたとき）か、招待Cookieのトークン（ログインをはさんだ後）

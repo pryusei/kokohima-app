@@ -17,7 +17,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
   const queryClient = useQueryClient();
   const meetup = useQuery(meetupQuery(meetupId));
   const [failed, setFailed] = useState(false);
-  const [icsFailed, setIcsFailed] = useState(false);
+  const [icsFailed, setIcsFailed] = useState<false | "failed" | "limited">(false);
   // 表示した時点の時刻で判定する（描画のたびに時計を読まない）
   const [openedAt] = useState(() => Date.now());
   const key = keys.meetups.detail(meetupId);
@@ -53,7 +53,8 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
     onSuccess: (link) => {
       if (link) redirectTo.go(link.url);
     },
-    onError: () => setIcsFailed(true),
+    // 回数の上限（429。T-10）は、少し待ってもらう
+    onError: (error) => setIcsFailed(error instanceof ApiError && error.status === 429 ? "limited" : "failed"),
   });
 
   if (meetup.error instanceof ApiError && meetup.error.status === 404) {
@@ -94,7 +95,9 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
           </button>
           {icsFailed && (
             <p role="status" className="text-sm text-slate-600">
-              カレンダーに追加できませんでした。もう一度お試しください
+              {icsFailed === "limited"
+                ? "少し待ってから、もう一度お試しください"
+                : "カレンダーに追加できませんでした。もう一度お試しください"}
             </p>
           )}
           {cancellable && (

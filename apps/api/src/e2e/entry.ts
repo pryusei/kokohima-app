@@ -13,6 +13,9 @@ const { app, handler } = createWorker({
   fetch: e2eFetch,
   google: { endpoints: E2E_GOOGLE_ENDPOINTS },
   notification: E2E_NOTIFICATION_DEPS,
+  // 並んで走るテストが同じ回線になり、偽の埋まりを途中で変えるテストもあるので、上限とキャッシュを使わない（T-10）
+  rateLimit: async () => true,
+  cacheEnabled: false,
 });
 
 app.use("/__e2e__/*", async (c, next) => {

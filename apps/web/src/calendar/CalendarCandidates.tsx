@@ -1,7 +1,7 @@
 import { myAvailabilitySchema, type FreeSlot } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { apiSend } from "../api/client";
+import { ApiError, apiSend } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { formatDate, formatSlot } from "../availability/format";
@@ -51,6 +51,10 @@ function Candidates() {
   });
 
   const data = slots.data;
+  // 回数の上限（429。T-10）は、候補を出さずに静かに待ってもらう
+  if (slots.error instanceof ApiError && slots.error.status === 429) {
+    return <p className="text-slate-600">少し待ってから、もう一度開いてください</p>;
+  }
   if (!data) return null;
   if (data.status === "needs_reauth") {
     return (

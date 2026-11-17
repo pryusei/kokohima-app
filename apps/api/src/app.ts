@@ -22,6 +22,13 @@ export function defaultDeps(): AppDeps {
     now: () => Date.now(),
     google: { endpoints: GOOGLE_ENDPOINTS },
     notification: { resendUrl: "https://api.resend.com/emails", extraPushHosts: [] },
+    // バインディングがなければ（設定の漏れ）上限をかけない。おおよその上限なので、止めるより通す側に倒す
+    rateLimit: async (env, limiter, key) => {
+      const binding = env[limiter];
+      if (!binding) return true;
+      return (await binding.limit({ key })).success;
+    },
+    cacheEnabled: true,
   };
 }
 
