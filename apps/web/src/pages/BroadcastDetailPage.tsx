@@ -1,7 +1,8 @@
 import { broadcastSchema, type Broadcast } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ApiError, apiSend } from "../api/client";
+import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
+import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { Link, Nav } from "../components/Nav";
 import { broadcastStatusClass, broadcastStatusText, formatRange, linkLabel } from "../invitations/format";
@@ -12,19 +13,22 @@ import { displayNameOf } from "./FriendsPage";
 
 type Action = "respond" | "withdraw" | "decide";
 
-const request = (id: string, action: Action) => {
+/** 「決める」だけ Idempotency-Key を付ける（応じる・やめるは何度送っても同じ。T-10） */
+const request = (id: string, action: Action, idempotencyKey: (signature: string) => string) => {
   const base = `/api/v1/broadcasts/${encodeURIComponent(id)}`;
   if (action === "respond") return apiSend("POST", `${base}/responses`, undefined, broadcastSchema);
   if (action === "withdraw") return apiSend("DELETE", `${base}/responses/me`, undefined, broadcastSchema);
-  return apiSend("POST", `${base}/decide`, undefined, broadcastSchema);
+  const path = `${base}/decide`;
+  return apiSend("POST", path, undefined, broadcastSchema, { idempotencyKey: idempotencyKey(signatureOf(path, undefined)) });
 };
 
 function Actions({ b }: { b: Broadcast }) {
   const queryClient = useQueryClient();
   const [failed, setFailed] = useState<string | null>(null);
   const key = keys.broadcasts.detail(b.id);
+  const idempotency = useIdempotencyKey();
   const act = useMutation({
-    mutationFn: (action: Action) => request(b.id, action),
+    mutationFn: (action: Action) => request(b.id, action, idempotency.keyFor),
     onMutate: () => setFailed(null),
     onSuccess: (updated) => {
       if (updated) queryClient.setQueryData(key, updated);
@@ -32,12 +36,13 @@ function Actions({ b }: { b: Broadcast }) {
     onError: (error) => {
       // 409 なら最新の状態を読み直して表示する
       setFailed(
-        error instanceof ApiError && error.status === 409
+        error instanceof ApiError && error.status === 409 && !isIdempotencyConflict(error)
           ? "状態が変わっていました。最新の状態を表示しました"
           : "送れませんでした。もう一度お試しください",
       );
     },
-    onSettled: async () => {
+    onSettled: async (_data, error) => {
+      idempotency.settle(error);
       await queryClient.invalidateQueries({ queryKey: keys.broadcasts.all() });
       await queryClient.invalidateQueries({ queryKey: keys.meetups.all() });
     },

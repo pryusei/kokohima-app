@@ -2,6 +2,7 @@ import { meetupSchema, type Meetup } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ApiError, apiSend } from "../api/client";
+import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { createIcsLink } from "../calendar/queries";
 import { redirectTo } from "./CalendarSettingsPage";
@@ -21,8 +22,12 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
   const [openedAt] = useState(() => Date.now());
   const key = keys.meetups.detail(meetupId);
 
+  const idempotency = useIdempotencyKey();
   const cancel = useMutation({
-    mutationFn: () => apiSend("POST", `/api/v1/meetups/${encodeURIComponent(meetupId)}/cancel`, undefined, meetupSchema),
+    mutationFn: () => {
+      const path = `/api/v1/meetups/${encodeURIComponent(meetupId)}/cancel`;
+      return apiSend("POST", path, undefined, meetupSchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, undefined)) });
+    },
     onMutate: async () => {
       setFailed(false);
       await queryClient.cancelQueries({ queryKey: key });
@@ -34,7 +39,8 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
       if (context?.previous) queryClient.setQueryData(key, context.previous);
       setFailed(true);
     },
-    onSettled: async () => {
+    onSettled: async (_data, error) => {
+      idempotency.settle(error);
       await queryClient.invalidateQueries({ queryKey: keys.meetups.all() });
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
     },

@@ -1,7 +1,8 @@
 import { directInviteSchema, type DirectInvite } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ApiError, apiSend } from "../api/client";
+import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
+import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { addDays, formatDate, formatTime, localDateOf, localInstant } from "../availability/format";
 import { Link, Nav } from "../components/Nav";
@@ -64,9 +65,14 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
   const key = keys.invites.detail(inviteId);
 
   // 返答・決定は押したらすぐ表示を変え、失敗したら戻して静かな文言を出す。409 なら最新の状態を読み直す
+  const idempotency = useIdempotencyKey();
   const act = useMutation({
-    mutationFn: (action: Action) =>
-      apiSend("POST", `/api/v1/direct-invites/${encodeURIComponent(inviteId)}/${action.path}`, action.body, directInviteSchema),
+    mutationFn: (action: Action) => {
+      const path = `/api/v1/direct-invites/${encodeURIComponent(inviteId)}/${action.path}`;
+      return apiSend("POST", path, action.body, directInviteSchema, {
+        idempotencyKey: idempotency.keyFor(signatureOf(path, action.body)),
+      });
+    },
     onMutate: async (action) => {
       setFailed(null);
       setCountering(false);
@@ -78,7 +84,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
     onError: (error, _action, context) => {
       if (context?.previous) queryClient.setQueryData(key, context.previous);
       setFailed(
-        error instanceof ApiError && error.status === 409
+        error instanceof ApiError && error.status === 409 && !isIdempotencyConflict(error)
           ? "この誘いはもう返事ができません。最新の状態を表示しました"
           : "送れませんでした。もう一度お試しください",
       );
@@ -86,7 +92,8 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
     onSuccess: (updated) => {
       if (updated) queryClient.setQueryData(key, updated);
     },
-    onSettled: async () => {
+    onSettled: async (_data, error) => {
+      idempotency.settle(error);
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
       await queryClient.invalidateQueries({ queryKey: keys.meetups.all() });
     },
