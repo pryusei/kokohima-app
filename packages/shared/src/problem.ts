@@ -8,6 +8,8 @@ export const errorCodeSchema = z.enum([
   "invalid_state",
   "expired",
   "rate_limited",
+  "idempotency_key_mismatch",
+  "request_in_progress",
   "internal_error",
 ]);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
