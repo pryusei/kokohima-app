@@ -112,3 +112,31 @@ describe("誘いの作成の Idempotency-Key", () => {
     expect(await screen.findByText("同じ時間の誘いをもう送っています")).toBeVisible();
   });
 });
+
+describe("ほかの操作の Idempotency-Key", () => {
+  it("ここ暇の作成：成功したあとは、同じ内容でも新しいキー", async () => {
+    window.history.replaceState(null, "", "/availability");
+    const { calls } = mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/me/presets": presets,
+      "/api/v1/availabilities": ({ init }) =>
+        init.method === "POST"
+          ? json({ id: crypto.randomUUID(), startsAt: "2026-10-10T10:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z", label: "night", source: "manual", date: null }, 201)()
+          : json({ items: [], nextCursor: null })(),
+      "/api/v1/recurrence-rules": json({ items: [], nextCursor: null }),
+      "/api/v1/calendar/connections": json({ google: { status: "none", connectedAt: null } }),
+    });
+    renderApp();
+    const night = await screen.findByRole("button", { name: /^夜$/ });
+    await userEvent.click(night);
+    await waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/availabilities" && c.init.method === "POST")).toHaveLength(1));
+    await userEvent.click(night);
+    await waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/availabilities" && c.init.method === "POST")).toHaveLength(2));
+    const [k1, k2] = calls
+      .filter((c) => c.url === "/api/v1/availabilities" && c.init.method === "POST")
+      .map((c) => new Headers(c.init.headers).get("Idempotency-Key"));
+    expect(k1).toMatch(/^[0-9a-f-]{36}$/);
+    expect(k2).toMatch(/^[0-9a-f-]{36}$/);
+    expect(k2).not.toBe(k1);
+  });
+});

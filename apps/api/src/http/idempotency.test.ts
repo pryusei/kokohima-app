@@ -68,6 +68,22 @@ describe("同じキーの再送", () => {
     const id = crypto.randomUUID();
     const decide = await u.call("POST", `/api/v1/direct-invites/${id}/decide`, { token: a.token, body: { decision: "skip" }, headers: withKey(k) });
     expect(decide.status).toBe(422);
+    // 同じ経路でパスの ID だけが違っても422
+    const k2 = key();
+    const id1 = crypto.randomUUID();
+    const id2 = crypto.randomUUID();
+    await u.call("POST", `/api/v1/direct-invites/${id1}/responses`, { token: b.token, body: { response: "decline" }, headers: withKey(k2) });
+    const otherId = await u.call("POST", `/api/v1/direct-invites/${id2}/responses`, { token: b.token, body: { response: "decline" }, headers: withKey(k2) });
+    expect(otherId.status).toBe(422);
+  });
+
+  it("同時に来たリクエストの新しい予約を、古い予約の削除で消さない", async () => {
+    const { a } = await pair();
+    const k = key();
+    await store.reserve(env.DB, { userId: a.id, key: k, reservationId: "new", requestHash: "h", now: h.clock.now });
+    await store.deleteReservation(env.DB, a.id, k, "old");
+    await store.release(env.DB, { userId: a.id, key: k, reservationId: "old" });
+    expect((await rows(a)).map((r) => r.reservation_id)).toEqual(["new"]);
   });
 
   it("1回目が処理中なら409。5分を過ぎた処理中の行は引き継ぎ、遅れて終わった1回目は上書きしない", async () => {
@@ -138,6 +154,50 @@ describe("同じキーの再送", () => {
     }
   });
 
+  it("状態遷移の経路でも、別の利用者が同じパス・本文・キーを送ると再送にならず、その人の通常の応答が返る", async () => {
+    const { a, b } = await pair();
+    const c = await u.user("ちさ");
+    await u.befriend(a, c);
+    await u.befriend(b, c);
+    const sameKey = async (path: string, body: unknown, owner: User, other: User) => {
+      const k = key();
+      const first = await u.call("POST", path, { token: owner.token, body, headers: withKey(k) });
+      const firstText = await first.text();
+      const second = await u.call("POST", path, { token: other.token, body, headers: withKey(k) });
+      const secondText = await second.text();
+      expect(second.headers.get("Idempotent-Replayed"), path).toBeNull();
+      expect(secondText, path).not.toBe(firstText);
+      return { first, second, firstText, secondText };
+    };
+    // 誘いの返事：受信者 b のあと、無関係の c は404
+    const invite = (await (await createInvite(a, inviteBody(b))).json()) as { id: string };
+    const responses = await sameKey(`/api/v1/direct-invites/${invite.id}/responses`, { response: "accept" }, b, c);
+    expect(responses.first.status).toBe(200);
+    expect(responses.second.status).toBe(404);
+    const meetupId = (JSON.parse(responses.firstText) as { meetupId: string }).meetupId;
+    // やっぱり難しい：参加者 a のあと、参加者でない c は404
+    const cancel = await sameKey(`/api/v1/meetups/${meetupId}/cancel`, undefined, a, c);
+    expect(cancel.second.status).toBe(404);
+    // 決める（この時間なら）：送信者 a のあと、受信者 b は自分の通常の応答
+    const second = (await (await createInvite(a, inviteBody(b, T("04:00"), T("05:00")))).json()) as { id: string };
+    await u.call("POST", `/api/v1/direct-invites/${second.id}/responses`, { token: b.token, body: { response: "counter", startsAt: T("06:00"), endsAt: T("07:00") } });
+    const decide = await sameKey(`/api/v1/direct-invites/${second.id}/decide`, { decision: "skip" }, a, c);
+    expect(decide.second.status).toBe(404);
+    // 募集の作成：同じ本文でも、別の募集として作られる
+    const d = await u.user("だい");
+    await u.befriend(d, b);
+    await u.befriend(d, c);
+    const created = await sameKey("/api/v1/broadcasts", { recipientIds: [b.id, c.id], startsAt: T("08:00"), endsAt: T("09:00") }, a, d);
+    expect(created.second.status).toBe(201);
+    // 決める（募集）：募集者 a のあと、宛先の b は参加者の名前の入った応答を受けない
+    const broadcastId = (JSON.parse(created.firstText) as { id: string }).id;
+    await u.call("POST", `/api/v1/broadcasts/${broadcastId}/responses`, { token: c.token });
+    const decided = await sameKey(`/api/v1/broadcasts/${broadcastId}/decide`, undefined, a, b);
+    expect(decided.first.status).toBe(200);
+    expect(decided.second.status).not.toBe(200);
+    expect(decided.secondText).not.toContain("ちさ");
+  });
+
   it("対象のすべての経路で受け付ける（2回目は再送）", async () => {
     const { a, b } = await pair();
     const replays = async (who: User, path: string, body: unknown) => {
@@ -176,6 +236,38 @@ describe("同じキーの再送", () => {
     expect(await rows(a)).toHaveLength(0);
     const all = await env.DB.prepare("SELECT body FROM idempotency_keys").all<{ body: string | null }>();
     expect(all.results.some((r) => r.body?.includes("#t="))).toBe(false);
+  });
+
+  it("ほかの対象外の経路でも、ヘッダーを無視して保存しない", async () => {
+    const { a, b } = await pair();
+    const c = await u.user("ちさ");
+    await u.befriend(a, c);
+    const link = (await (await u.call("POST", "/api/v1/invite-links", { token: a.token, body: {} })).json()) as { id: string };
+    const rule = (await (await u.call("POST", "/api/v1/recurrence-rules", { token: a.token, body: { weekday: 1, preset: "night" } })).json()) as { id: string };
+    const broadcast = (await (
+      await u.call("POST", "/api/v1/broadcasts", { token: a.token, body: { recipientIds: [b.id, c.id], startsAt: T("08:00"), endsAt: T("09:00") } })
+    ).json()) as { id: string };
+    const invite = (await (await createInvite(a, inviteBody(b))).json()) as { id: string };
+    const accepted = (await (await u.call("POST", `/api/v1/direct-invites/${invite.id}/responses`, { token: b.token, body: { response: "accept" } })).json()) as {
+      meetupId: string;
+    };
+    const sends: [User, string, unknown][] = [
+      [a, `/api/v1/invite-links/${link.id}/revoke`, undefined],
+      [b, `/api/v1/broadcasts/${broadcast.id}/responses`, undefined],
+      [a, `/api/v1/recurrence-rules/${rule.id}/exceptions`, { date: "2026-10-12" }],
+      [a, "/api/v1/calendar/google/authorizations", undefined],
+      [a, `/api/v1/meetups/${accepted.meetupId}/ics-links`, undefined],
+      [a, "/api/v1/notifications/read", { upTo: crypto.randomUUID() }],
+      [a, "/api/v1/push/subscriptions", { endpoint: "https://fcm.googleapis.com/fcm/send/x" }],
+    ];
+    for (const [who, path, body] of sends) {
+      const k = key();
+      await u.call("POST", path, { token: who.token, body, headers: withKey(k) });
+      const again = await u.call("POST", path, { token: who.token, body, headers: withKey(k) });
+      expect(again.headers.get("Idempotent-Replayed"), path).toBeNull();
+    }
+    expect(await rows(a)).toHaveLength(0);
+    expect(await rows(b)).toHaveLength(0);
   });
 
   it("ヘッダーがなければ今までどおり。UUID でなければ400", async () => {
@@ -239,6 +331,18 @@ describe("middleware の単体", () => {
     const replay = await send(app, k);
     expect(replay.headers.get("Idempotent-Replayed")).toBe("true");
     expect(calls).toBe(3);
+  });
+
+  it("429 は保存せず、同じキーでやり直せる", async () => {
+    let calls = 0;
+    const app = miniApp(() => {
+      calls++;
+      return calls === 1 ? new Response("slow down", { status: 429, headers: { "Retry-After": "60" } }) : new Response("ok");
+    });
+    const k = key();
+    expect((await send(app, k)).status).toBe(429);
+    expect((await send(app, k)).status).toBe(200);
+    expect(calls).toBe(2);
   });
 
   it("64KB を超える応答は保存しない", async () => {

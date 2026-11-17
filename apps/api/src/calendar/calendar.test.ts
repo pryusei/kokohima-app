@@ -1289,6 +1289,19 @@ describe("カレンダーの空きのキャッシュ（T-10）", () => {
     }
   });
 
+  it("プリセットを変えると（freeBusy の範囲が変わり）取り直す", async () => {
+    const a = await authenticated();
+    await connect(a);
+    await get(a);
+    const before = freeBusyCalls();
+    await u.call("PUT", "/api/v1/me/presets", {
+      token: a.token,
+      body: { day: { start: "10:00", end: "15:00" }, evening: { start: "16:00", end: "19:00" }, night: { start: "19:00", end: "23:30" } },
+    });
+    await get(a);
+    expect(freeBusyCalls() - before).toBe(1);
+  });
+
   it("つなぎ直したあとは前の連携の埋まりを使わない。別の利用者に、ほかの人の埋まりが返らない", async () => {
     const a = await authenticated();
     const b = await authenticated("べに");

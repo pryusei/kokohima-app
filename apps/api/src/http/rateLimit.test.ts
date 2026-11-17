@@ -2,6 +2,8 @@ import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHarness, ORIGIN } from "../../test/identity-harness";
 import { makeUsers, type User } from "../../test/users";
+import { defaultDeps } from "../app";
+import { clientKeyOf } from "./rateLimit";
 
 // 回数の上限（docs/specs/T-10-idempotency-cache-ratelimit.md「回数の上限」）。時計は 2026-10-10T00:00:00Z
 
@@ -29,8 +31,8 @@ describe("Rate Limiting の経路", () => {
       expect(res.headers.get("Content-Type")).toBeNull();
     }
     expect(h.limiter.calls).toEqual([
-      { limiter: "RL_PUBLIC", key: `auth_start:${IP}` },
-      { limiter: "RL_PUBLIC", key: `auth_start:${IP}` },
+      { limiter: "RL_PUBLIC", key: `auth_start:ip4:${IP}` },
+      { limiter: "RL_PUBLIC", key: `auth_start:ip4:${IP}` },
     ]);
     // 超えていなければ今までどおり認可画面へ
     h.limiter.allow = () => true;
@@ -48,7 +50,7 @@ describe("Rate Limiting の経路", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBe("60");
     expect(((await res.json()) as { code: string }).code).toBe("rate_limited");
-    expect(h.limiter.calls).toEqual([{ limiter: "RL_PUBLIC", key: `invite_lookup:${IP}` }]);
+    expect(h.limiter.calls).toEqual([{ limiter: "RL_PUBLIC", key: `invite_lookup:ip4:${IP}` }]);
   });
 
   it(".ics：超えたら本文なしの429", async () => {
@@ -57,7 +59,7 @@ describe("Rate Limiting の経路", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBe("60");
     expect(await res.text()).toBe("");
-    expect(h.limiter.calls).toEqual([{ limiter: "RL_PUBLIC", key: `ics:${IP}` }]);
+    expect(h.limiter.calls).toEqual([{ limiter: "RL_PUBLIC", key: `ics:ip4:${IP}` }]);
   });
 
   it("カレンダーの空き：利用者 ID で数え、超えたら429", async () => {
@@ -70,18 +72,29 @@ describe("Rate Limiting の経路", () => {
     expect(h.limiter.calls).toEqual([{ limiter: "RL_USER", key: `free_slots:${a.id}` }]);
   });
 
-  it("1回限りの値を消費する経路・refresh・連携の開始には付けない", async () => {
+  it("1回限りの値を消費する経路・refresh・連携の開始には付けない（IP を付けて送っても数えない）", async () => {
+    const a = await u.user("あき");
+    h.limiter.calls.length = 0;
     deny();
-    await u.user("あき");
-    // ログイン（start は IP なしで上限をかけない）・コールバック・complete・refresh・authorizations
-    const a = await u.user("べに");
-    await u.call("POST", "/api/v1/calendar/google/authorizations", { token: a.token });
-    await h.refresh(a.refreshToken);
-    const keys = h.limiter.calls.map((c) => c.key);
-    expect(keys.some((k) => /callback|complete|refresh|authorization/.test(k))).toBe(false);
+    const ipHeaders = { "CF-Connecting-IP": IP };
+    await h.request("/api/v1/auth/google/callback?code=x&state=y", { headers: ipHeaders });
+    await h.request("/api/v1/auth/apple/callback", {
+      method: "POST",
+      headers: { ...ipHeaders, "Content-Type": "application/x-www-form-urlencoded" },
+      body: "code=x&state=y",
+    });
+    await h.request("/api/v1/auth/complete", {
+      method: "POST",
+      headers: { ...ipHeaders, Origin: ORIGIN, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "x" }),
+    });
+    await h.request("/api/v1/auth/refresh", { method: "POST", headers: { ...ipHeaders, Origin: ORIGIN, Cookie: `__Host-kh_rt=${a.refreshToken}` } });
+    await h.request("/api/v1/calendar/google/callback?code=x&state=y", { headers: ipHeaders });
+    await u.call("POST", "/api/v1/calendar/google/authorizations", { token: a.token, headers: ipHeaders });
+    expect(h.limiter.calls).toEqual([]);
   });
 
-  it("本番で CF-Connecting-IP がなければ上限をかけず、記録だけ残す", async () => {
+  it("CF-Connecting-IP がなければ（どの環境でも）上限をかけず、記録だけ残す", async () => {
     const log = vi.spyOn(console, "log");
     deny();
     const res = await h.request("/api/v1/auth/google/start");
@@ -157,5 +170,45 @@ describe(".ics リンクの発行数（D1）", () => {
     expect(results.filter((r) => r.status === 429)).toHaveLength(5);
     const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM ics_tokens WHERE user_id = ?1").bind(a.id).first<{ n: number }>();
     expect(count?.n).toBe(20);
+  });
+});
+
+describe("IP のまとめ方と、判定できないとき", () => {
+  it("IPv4 はそのまま、IPv6 は /64 の接頭辞にまとめる。読めない値は null", () => {
+    expect(clientKeyOf("203.0.113.7")).toBe("ip4:203.0.113.7");
+    expect(clientKeyOf("2001:db8:1:2:3:4:5:6")).toBe("ip6:2001:db8:1:2");
+    expect(clientKeyOf("2001:0db8:0001:0002::abcd")).toBe("ip6:2001:db8:1:2");
+    expect(clientKeyOf("2001:db8::1")).toBe("ip6:2001:db8:0:0");
+    expect(clientKeyOf("::1")).toBe("ip6:0:0:0:0");
+    expect(clientKeyOf("::ffff:192.0.2.1")).toBe("ip6:0:0:0:0");
+    expect(clientKeyOf("2001:DB8:1:2::")).toBe("ip6:2001:db8:1:2");
+    for (const bad of ["", "unknown", "1:2:3", "2001:db8::1::2", "gggg::1", "1:2:3:4:5:6:7:8:9"]) {
+      expect(clientKeyOf(bad), bad).toBeNull();
+    }
+  });
+
+  it("同じ /64 の IPv6 は、アドレスが違っても同じ数え方になる", async () => {
+    h.limiter.allow = () => true;
+    for (const ip of ["2001:db8:aa:bb::1", "2001:db8:aa:bb:ffff:1:2:3"]) {
+      await h.request("/api/v1/auth/google/start", { headers: { "CF-Connecting-IP": ip } });
+    }
+    expect(h.limiter.calls.map((c) => c.key)).toEqual(["auth_start:ip6:2001:db8:aa:bb", "auth_start:ip6:2001:db8:aa:bb"]);
+  });
+
+  it("バインディングがない・判定に失敗したときは、キーを出さずに記録を残して通す", async () => {
+    const log = vi.spyOn(console, "log");
+    const deps = defaultDeps();
+    expect(await deps.rateLimit({ ...h.bindings, RL_PUBLIC: undefined }, "RL_PUBLIC", "auth_start:ip4:203.0.113.7")).toBe(true);
+    const broken = {
+      limit: async () => {
+        throw new Error("down");
+      },
+    } as unknown as RateLimit;
+    expect(await deps.rateLimit({ ...h.bindings, RL_USER: broken }, "RL_USER", "free_slots:someone")).toBe(true);
+    const logged = log.mock.calls.flat().join("\n");
+    expect(logged).toContain('"reason":"no_binding"');
+    expect(logged).toContain('"reason":"error"');
+    expect(logged).not.toMatch(/203\.0\.113\.7|someone/);
+    log.mockRestore();
   });
 });

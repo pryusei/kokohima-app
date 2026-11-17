@@ -122,7 +122,7 @@ flowchart LR
 
 | ID | 要件 |
 | --- | --- |
-| NF-01 | バックエンドはCloudflare Workersを基盤とし、D1・KV・R2・Queues・Cronで構成する |
+| NF-01 | バックエンドはCloudflare Workersを基盤とし、D1・KV・R2・Queues・Cron・Rate Limitingで構成する |
 | NF-02 | 外部連携（通知、OGP、カレンダー書き込み）はQueues経由の非同期処理とし、失敗時は再試行する |
 | NF-03 | 状態更新とイベントの受け渡しはOutboxパターンで行い、状態遷移は条件付き更新で二重処理を防ぐ |
 | NF-04 | 認証情報はSecretsの鍵でアプリ側暗号化して保存する |

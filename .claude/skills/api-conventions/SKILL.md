@@ -80,7 +80,11 @@ description: APIの全体共通ルール（パス、メソッド、ID、日時�
 - 最初のリクエストのメソッド・パス・本文のハッシュを一緒に保存し、同じキーで内容が違うリクエストが来たら422の `idempotency_key_mismatch` で拒否する
 - 同じキーの最初のリクエストがまだ処理中なら、409の `request_in_progress` を返す
 - クライアントは操作ごとにキーを持ち（`apps/web/src/api/idempotency.ts` の `useIdempotencyKey`）、通信できなかった・5xx のあとに同じ内容で送り直すときは同じキーを使う。4xx・成功・内容の変更のあとは新しいキーにする
-- 回数の上限（レート制限）：認証なしの経路は IP、認証のある経路は利用者 ID をキーに、`apps/api/src/http/rateLimit.ts` を付ける。1回限りの値を消費する経路には付けない。厳密な上限は D1 で数える
+
+## 回数の上限（レート制限）
+- 認証なしの経路は IP（IPv6 は /64）、認証のある経路は利用者 ID をキーに、`apps/api/src/http/rateLimit.ts` を付ける（docs/specs/T-10-idempotency-cache-ratelimit.md）
+- 1回限りの値を消費する経路（コールバック・完了・更新）には付けない。厳密な上限は D1 の1つの文で数える
+- 超えたら429 `rate_limited`（`Retry-After`）。画面遷移で開く経路は、その経路の失敗の形（リダイレクトや本文なし）で返す
 
 ## 認証
 - `Authorization: Bearer <アクセストークン>`。更新は `POST /api/v1/auth/refresh`（更新用トークンのCookieとOriginヘッダーで検証）
