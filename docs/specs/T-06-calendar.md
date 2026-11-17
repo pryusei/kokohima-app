@@ -80,9 +80,9 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | GET | `/api/v1/calendar/google/callback` | なし（state と結びつけCookie） | query：`code`、`state`（または `error`） | 303：`/settings/calendar?calendar=connected` か `?calendar=failed` | （常に303） |
 | GET | `/api/v1/calendar/connections` | Bearer | なし | 200：`calendarConnectionsSchema` | 401 |
 | DELETE | `/api/v1/calendar/connections/google` | Bearer（`requireActiveSession`） | なし | 204 | 401、404（連携していない） |
-| GET | `/api/v1/calendar/free-slots` | Bearer | query：`from`、`to`（ISO 8601。最長14日） | 200：`freeSlotsSchema` | 400、401 |
-| POST | `/api/v1/meetups/{id}/ics-links` | Bearer | なし | 200：`{ url, expiresAt }` | 401、404（参加者でない・抜けた） |
-| GET | `/api/v1/ics/{token}` | なし（URL のトークン） | なし | 200：`text/calendar; charset=utf-8` | 404（トークンがない・期限切れ・参加者でなくなった） |
+| GET | `/api/v1/calendar/free-slots` | Bearer | query：`from`、`to`（ISO 8601。最長14日） | 200：`freeSlotsSchema` | 400、401、429 `rate_limited`（T-10） |
+| POST | `/api/v1/meetups/{id}/ics-links` | Bearer | なし | 200：`{ url, expiresAt }` | 401、404（参加者でない・抜けた）、429 `rate_limited`（直近5分で20本まで。T-10） |
+| GET | `/api/v1/ics/{token}` | なし（URL のトークン） | なし | 200：`text/calendar; charset=utf-8` | 404（トークンがない・期限切れ・参加者でなくなった）、429（本文なし。T-10） |
 
 ### 入力
 - 連携の開始・解除・.ics のリンクの発行は本文なし（本文があっても読まない）。
@@ -137,7 +137,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - 期限は5分で、使うたびに参加者かどうかを確かめ直す。漏れても、5分を過ぎれば使えず、参加者でなくなった人には返さない。
   - アプリのログ（`console.log` など）には、トークンもパスも出さない。
   - 実装PRで確かめた結果：wrangler の `observability` で `logs.invocation_logs: false`（URL を含む呼び出しのログを出さない）にした。（`redact_query_string` は今の wrangler の設定の検証で知らない項目と警告されたので使わない）。これで、Workers のログに .ics のトークンもコールバックの `code` も残らない。アプリのログ（`console.log`）は `requestId` と種類だけを出す
-- **`Idempotency-Key` は受け付けない**：T-02 の決定事項6のとおり、別タスクで扱う。連携の開始は何度やり直しても害がなく、解除は2回目が404になるだけ。
+- **`Idempotency-Key` は受け付けない**：T-10 で対象外にした。連携の開始は何度やり直しても害がなく、解除は2回目が404になるだけ。
 
 ## データ
 マイグレーション `apps/api/migrations/0006_calendar.sql`。日時はUnixミリ秒で持つ。
@@ -166,7 +166,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 ### `ics_tokens`
 - `token_hash`（主キー）、`user_id`（→ users、CASCADE）、`meetup_id`（→ meetups、CASCADE）、`expires_at`（5分）、`created_at`。
-- インデックス：`(created_at)`。
+- インデックス：`(created_at)`、`(user_id, created_at)`（発行数の上限のため。T-10 で足す）。
 
 ### 既存の表とトークン
 - `outbox` は列を足さない。`processed_at` は「Queue に渡し終えた日時」として使う（「outbox を Queues に流す」）。型で絞って古い順に読むため、インデックス `(type, processed_at, created_at)` を足す。
@@ -254,7 +254,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 5. 自分のここ暇（手動の枠とくり返しの展開）と1分以上重なる枠を外す。
    - 手動の枠と重なる枠は、作っても T-03 で409になる。
    - くり返しと重なる枠は作れるが、同じ時間の重複なので出さない。
-6. 埋まりは保存しない。記録を書くのは「定期の確認」だけ。
+6. 埋まりは D1 に保存しない。記録を書くのは「定期の確認」だけ。freeBusy の埋まりの時刻だけを、KV に5分キャッシュする（T-10。キーに連携の `connected_at` と範囲を入れる）。
 
 ### 定期の確認と自動取り消し（決定事項5・6）
 
@@ -465,7 +465,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 ### 予定の中身
 - Googleから読むのは、freeBusy.query の `primary` の埋まり（開始・終了）だけ。
 - 予定の一覧・取得、カレンダーの一覧のAPIは呼ばない。スコープでも呼べない。
-- 保存するのも埋まりの時刻だけ。
+- 保存するのも埋まりの時刻だけ（D1 の確認の記録と、T-10 の KV の5分のキャッシュ）。
 
 ### 区別させない応答
 - 自動の「今回は難しい」は、送信者への応答とイベントが、手で断ったときと同じ。
@@ -623,8 +623,6 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - Googleの変更通知（Webhook）（決定事項5）。`calendar.freebusy` のスコープでは予定の変更を見張れない（見張るには予定を読むスコープが要る）ため、定期の確認で代える。
 - メインのカレンダー以外の埋まり（決定事項2）。
 - 誘い・募集を作る画面での空きの表示。
-- 候補の取得のキャッシュと、利用者ごとの上限。KV とあわせて別タスクで扱う。今は、開くたびにGoogleを1回呼ぶ。
-- `Idempotency-Key`、KV でのレート制限（別タスク）。
 - 処理済みの outbox の行の掃除（別タスクの Cron の掃除）。
 - 監査ログ（カレンダー連携の記録。別タスク）。
 - Googleの審査（一般公開まで）。テスト中の公開状態では、更新用トークンが7日で失効することがある。その場合は `needs_reauth` になる。
@@ -667,3 +665,4 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | 2026-11-12 | 実装PRの仕様レビュー：保留では `last_synced_at` も進めない。.ics に `METHOD` を付けない。calendar/domain の中身、`CalendarConnected` の続きと作り直しのメッセージ、needs_reauth で消すもの、画面の文言を実装に合わせて書いた | 実装PRのレビュー |
 | 2026-11-15 | 自動の「今回は難しい」を、送信者が受信者のここ暇を取り消しの時点から見られた誘いだけにする（決定事項15の提案）。availability に `viewersWhoCanSee` を足す。区別させない応答・受け入れるリスク・テスト計画を足した | セキュリティの点検（pryusei/kokohima-app#53） |
 | 2026-11-16 | 決定事項15を実装した（availability の `viewersWhoCanSee`、invitation の `declineForCancelledAvailability` で絞る）。確認事項を決定事項15にまとめて消した。要求定義書と invitation-domain スキルを直した | 実装PR（pryusei/kokohima-app#53） |
+| 2026-11-17 | 候補のキャッシュと上限、`ics-links` の発行数の上限、`.ics` の上限を T-10 で行うことにした（API の表・`ics_tokens` のインデックス・埋まりの保存・スコープ外を直した） | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |
