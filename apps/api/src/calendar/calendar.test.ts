@@ -52,7 +52,7 @@ async function connect(who: User) {
 const connectionRow = (who: User) =>
   env.DB.prepare("SELECT * FROM calendar_connections WHERE user_id = ?1 AND provider = 'google'")
     .bind(who.id)
-    .first<{ status: string; refresh_token_enc: string | null; calendar_id: string | null; busy_snapshot: string | null; large_change_held: number }>();
+    .first<{ status: string; refresh_token_enc: string | null; calendar_id: string | null; busy_snapshot: string | null; large_change_held: number; connected_at: number }>();
 
 const status = async (who: User) =>
   calendarConnectionsSchema.parse(await (await u.call("GET", "/api/v1/calendar/connections", { token: who.token })).json());
@@ -1258,5 +1258,100 @@ describe("Google へのリクエスト", () => {
     for (const r of h.google.state.requests.filter((r) => r.path.endsWith("/freeBusy"))) {
       expect((JSON.parse(r.body) as { items: unknown }).items).toEqual([{ id: "primary" }]);
     }
+  });
+});
+
+describe("カレンダーの空きのキャッシュ（T-10）", () => {
+  const range = `from=${T("00:00")}&to=${T("00:00", "12")}`;
+  const get = async (who: User, q = range, bindings = h.bindings) =>
+    h.app.request(`/api/v1/calendar/free-slots?${q}`, { headers: { Authorization: `Bearer ${who.token}` } }, bindings);
+  const freeBusyCalls = () => h.google.state.requests.filter((r) => r.path.endsWith("/freeBusy")).length;
+  const slotsOf = async (res: Response) => freeSlotsSchema.parse(await res.json()).items.map((i) => `${i.date} ${i.preset}`);
+
+  it("5分以内に続けて開くと freeBusy は1回。ここ暇を作った直後は候補が変わる", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const before = freeBusyCalls();
+    const first = await slotsOf(await get(a));
+    // 範囲の端でない枠を作る（端の枠だと freeBusy の範囲が変わって別のキーになる）
+    await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { date: "2026-10-10", preset: "night" } });
+    const second = await slotsOf(await get(a));
+    expect(freeBusyCalls() - before).toBe(1);
+    expect(first).toContain("2026-10-10 night");
+    expect(second).not.toContain("2026-10-10 night");
+    // キャッシュは時刻だけ（予定の中身は入らない）
+    const { env: workerEnv } = await import("cloudflare:workers");
+    const keys = await workerEnv.CACHE?.list({ prefix: `freebusy:v1:${a.id}:` });
+    expect(keys?.keys.length).toBeGreaterThan(0);
+    for (const k of keys?.keys ?? []) {
+      const value = await workerEnv.CACHE?.get(k.name);
+      expect(value).not.toMatch(/summary|title|location|attendee/i);
+    }
+  });
+
+  it("プリセットを変えると（freeBusy の範囲が変わり）取り直す", async () => {
+    const a = await authenticated();
+    await connect(a);
+    await get(a);
+    const before = freeBusyCalls();
+    await u.call("PUT", "/api/v1/me/presets", {
+      token: a.token,
+      body: { day: { start: "10:00", end: "15:00" }, evening: { start: "16:00", end: "19:00" }, night: { start: "19:00", end: "23:30" } },
+    });
+    await get(a);
+    expect(freeBusyCalls() - before).toBe(1);
+  });
+
+  it("つなぎ直したあとは前の連携の埋まりを使わない。別の利用者に、ほかの人の埋まりが返らない", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    await get(a);
+    const before = freeBusyCalls();
+    await u.call("DELETE", "/api/v1/calendar/connections/google", { token: a.token });
+    await tick(MIN);
+    await connect(a);
+    await get(a);
+    expect(freeBusyCalls() - before).toBe(1);
+    await connect(b);
+    const beforeB = freeBusyCalls();
+    await get(b);
+    expect(freeBusyCalls() - beforeB).toBe(1);
+  });
+
+  it("KV には5分（expirationTtl: 300）で書く。キーに利用者・連携の connected_at・実際の範囲が入る", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const puts: { key: string; ttl: number | undefined }[] = [];
+    const { env: workerEnv } = await import("cloudflare:workers");
+    const real = workerEnv.CACHE as KVNamespace;
+    const spy = {
+      get: (key: string, type: "json") => real.get(key, type),
+      put: (key: string, value: string, opts?: KVNamespacePutOptions) => {
+        puts.push({ key, ttl: opts?.expirationTtl });
+        return real.put(key, value, opts);
+      },
+    } as unknown as KVNamespace;
+    await get(a, range, { ...h.bindings, CACHE: spy });
+    const connectedAt = (await connectionRow(a))?.connected_at;
+    expect(puts).toHaveLength(1);
+    expect(puts[0]?.ttl).toBe(300);
+    expect(puts[0]?.key).toMatch(new RegExp(`^freebusy:v1:${a.id}:${connectedAt}:\\d+:\\d+$`));
+  });
+
+  it("KV が読めなくても書けなくても、候補を返す", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const broken = {
+      get: async () => {
+        throw new Error("kv down");
+      },
+      put: async () => {
+        throw new Error("kv down");
+      },
+    } as unknown as KVNamespace;
+    const res = await get(a, range, { ...h.bindings, CACHE: broken });
+    expect(res.status).toBe(200);
+    expect(freeSlotsSchema.parse(await res.json()).status).toBe("ok");
   });
 });

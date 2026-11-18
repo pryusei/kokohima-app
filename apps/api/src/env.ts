@@ -31,8 +31,15 @@ export type Bindings = {
   NOTIFICATION_START_AT: string;
   /** サービス全体の1日のメール数の上限（文字列の整数） */
   MAIL_DAILY_LIMIT: string;
+  /** 外部の結果のキャッシュ（docs/specs/T-10-idempotency-cache-ratelimit.md） */
+  CACHE?: KVNamespace;
+  /** おおよその回数の上限（Rate Limiting）。認証なしの経路は IP、認証のある経路は利用者 ID をキーにする */
+  RL_PUBLIC?: RateLimit;
+  RL_USER?: RateLimit;
   E2E_MODE?: string;
 };
+
+export type RateLimiterName = "RL_PUBLIC" | "RL_USER";
 
 export type JobMessage =
   /** createdAt は outbox の行を作った時刻（T-07 の「古い outbox の行」の線引きに使う） */
@@ -59,6 +66,10 @@ export type AppDeps = {
     /** プッシュの endpoint として追加で許可するホスト（E2E の偽のホストだけ。本番は空） */
     extraPushHosts: readonly string[];
   };
+  /** 回数の上限の判定（T-10）。E2E では上限を実質なしにする */
+  rateLimit: (env: Bindings, limiter: RateLimiterName, key: string) => Promise<boolean>;
+  /** KV のキャッシュを使うか（E2E では使わない） */
+  cacheEnabled: boolean;
 };
 
 /** Google の各エンドポイント。E2E では偽の経路に向ける（docs/specs/T-06-calendar.md「E2E用の偽のGoogle」） */

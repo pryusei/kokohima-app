@@ -60,8 +60,18 @@ export async function createHarness() {
     return tokenResponder({ provider, body });
   };
 
+  // 回数の上限の判定をテストから差し替える口（T-10）。null なら本物のバインディング（Miniflare）を使う
+  const limiter: { allow: null | ((limiter: string, key: string) => boolean); calls: { limiter: string; key: string }[] } = {
+    allow: null,
+    calls: [],
+  };
+  const base = defaultDeps();
   const deps: AppDeps = {
-    ...defaultDeps(),
+    ...base,
+    rateLimit: async (env, name, key) => {
+      limiter.calls.push({ limiter: name, key });
+      return limiter.allow ? limiter.allow(name, key) : base.rateLimit(env, name, key);
+    },
     fetch: fakeFetch,
     jwks: {
       google: createLocalJWKSet({ keys: [await jwk("google")] }),
@@ -160,6 +170,7 @@ export async function createHarness() {
     delivery,
     jobs,
     deps,
+    limiter,
     /** consumer・Cron の処理を呼ぶときの ctx */
     ctx: { env: bindings, deps },
     clock,

@@ -73,11 +73,18 @@ description: APIの全体共通ルール（パス、メソッド、ID、日時�
 - 作成は201と `Location` ヘッダー、更新・取得は200、本文のない削除・取り消しは204
 
 ## 冪等性
-- 作成と状態遷移の `POST` は `Idempotency-Key` ヘッダー（UUID）を受け付ける。同じキーの再送は、最初の結果をそのまま返す（KVに24時間保存）
+- 作成と状態遷移の `POST` のうち、二重に実行すると結果が変わるものは `Idempotency-Key` ヘッダー（UUID）を受け付ける。同じキーの再送は、最初の結果をそのまま返す（D1に24時間保存。共通の middleware `apps/api/src/http/idempotency.ts` を、経路ごとに認証の後に付ける。docs/specs/T-10-idempotency-cache-ratelimit.md）
+- 対象外：応答に秘密値（招待トークンなど）が入る経路、何度送っても結果が同じ経路、Cookie で結果が決まる経路、認証の経路
+- 保存するのは 2xx と、409・429 以外の 4xx。409・429・5xx・例外のあとは同じキーでやり直せる。再送には `Idempotent-Replayed: true` と `Cache-Control: no-store` を付ける
 - キーは利用者ごとに扱う（別の利用者が同じキーを送っても衝突させない）
 - 最初のリクエストのメソッド・パス・本文のハッシュを一緒に保存し、同じキーで内容が違うリクエストが来たら422の `idempotency_key_mismatch` で拒否する
 - 同じキーの最初のリクエストがまだ処理中なら、409の `request_in_progress` を返す
-- クライアントは楽観的更新の再試行や二重押しに備えて、操作ごとにキーを付ける
+- クライアントは操作ごとにキーを持ち（`apps/web/src/api/idempotency.ts` の `useIdempotencyKey`）、通信できなかった・5xx のあとに同じ内容で送り直すときは同じキーを使う。4xx・成功・内容の変更のあとは新しいキーにする
+
+## 回数の上限（レート制限）
+- 認証なしの経路は IP（IPv6 は /64）、認証のある経路は利用者 ID をキーに、`apps/api/src/http/rateLimit.ts` を付ける（docs/specs/T-10-idempotency-cache-ratelimit.md）
+- 1回限りの値を消費する経路（コールバック・完了・更新）には付けない。厳密な上限は D1 の1つの文で数える
+- 超えたら429 `rate_limited`（`Retry-After`）。画面遷移で開く経路は、その経路の失敗の形（リダイレクトや本文なし）で返す
 
 ## 認証
 - `Authorization: Bearer <アクセストークン>`。更新は `POST /api/v1/auth/refresh`（更新用トークンのCookieとOriginヘッダーで検証）

@@ -3,6 +3,7 @@ import { Hono, type Context } from "hono";
 import type { AppEnv } from "../env";
 import { clearInviteCookie } from "../http/inviteCookie";
 import { problem, problemFrom } from "../http/problem";
+import { rateLimit } from "../http/rateLimit";
 import { validationFailed } from "../http/validation";
 import * as social from "../social/application/social";
 import * as auth from "./application/auth";
@@ -27,11 +28,22 @@ const loginFailed = (c: Context<AppEnv>) => {
   return c.redirect("/login?error=login_failed", 303);
 };
 
+// ログインの開始の回数の上限（T-10）。超えたらログイン画面の失敗へ（T-01 と同じ。JSON は返さない）
+const authStartLimit = rateLimit({
+  group: "auth_start",
+  limiter: "RL_PUBLIC",
+  by: "ip",
+  onLimited: (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.redirect("/login?error=login_failed", 303);
+  },
+});
+
 export function identityRoutes() {
   const app = new Hono<AppEnv>();
 
   for (const provider of ["google", "apple"] as const satisfies OidcProviderName[]) {
-    app.get(`/auth/${provider}/start`, async (c) => {
+    app.get(`/auth/${provider}/start`, authStartLimit, async (c) => {
       const parsed = authStartQuerySchema.safeParse(c.req.query());
       const returnTo = parsed.success ? parsed.data.returnTo : undefined;
       const { redirectUrl, binding } = await auth.startLogin(ctx(c), provider, returnTo);

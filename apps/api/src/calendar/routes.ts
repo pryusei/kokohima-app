@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import type { AppEnv } from "../env";
 import { problem } from "../http/problem";
+import { rateLimit, rateLimitedProblem } from "../http/rateLimit";
 import { validationFailed } from "../http/validation";
 import { requireActiveSession, requireAuth } from "../identity/middleware";
 import { completeConnect, disconnectGoogle, getConnections, startConnect } from "./application/connections";
@@ -63,7 +64,7 @@ export function calendarRoutes() {
     return ok ? c.body(null, 204) : notFound(c);
   });
 
-  app.get("/calendar/free-slots", requireAuth, async (c) => {
+  app.get("/calendar/free-slots", requireAuth, rateLimit({ group: "free_slots", limiter: "RL_USER", by: "user" }), async (c) => {
     const q = rangeQuerySchema.safeParse(c.req.query());
     if (!q.success) return validationFailed(c, q.error);
     const from = Date.parse(q.data.from);
@@ -76,11 +77,26 @@ export function calendarRoutes() {
     const id = z.uuid().safeParse(c.req.param("id"));
     if (!id.success) return notFound(c);
     const link = await createIcsLink(ctx(c), c.var.viewer.userId, id.data);
-    return link ? c.json(link) : notFound(c);
+    if (link.kind === "not_found") return notFound(c);
+    if (link.kind === "rate_limited") {
+      const res = rateLimitedProblem(c);
+      res.headers.set("Retry-After", String(link.retryAfterSeconds));
+      return res;
+    }
+    return c.json(link.link);
   });
 
   // 認証なし（URL のトークン）。OS のカレンダーへの追加に画面遷移で開かせるため（決定事項10・14）
-  app.get("/ics/:token", async (c) => {
+  app.get(
+    "/ics/:token",
+    // OS のカレンダーが開く経路なので、上限を超えたら本文なしの429
+    rateLimit({
+      group: "ics",
+      limiter: "RL_PUBLIC",
+      by: "ip",
+      onLimited: () => new Response(null, { status: 429, headers: { "Retry-After": "60" } }),
+    }),
+    async (c) => {
     const token = icsToken.safeParse(c.req.param("token"));
     if (!token.success) return notFound(c);
     const ics = await icsFor(ctx(c), token.data);

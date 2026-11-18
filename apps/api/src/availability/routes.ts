@@ -9,6 +9,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
 import { problem } from "../http/problem";
+import { idempotent } from "../http/idempotency";
 import { validationFailed } from "../http/validation";
 import { requireAuth } from "../identity/middleware";
 import { decodeCursor, encodeCursor } from "../shared/cursor";
@@ -63,7 +64,7 @@ export function availabilityRoutes() {
     return saved ? c.json(saved) : validationFailed(c, null);
   });
 
-  app.post("/availabilities", async (c) => {
+  app.post("/availabilities", idempotent, async (c) => {
     const body = createAvailabilityRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
     const result = await av.createAvailability(ctx(c), c.var.viewer.userId, body.data);
@@ -85,7 +86,7 @@ export function availabilityRoutes() {
     return c.body(null, 204);
   });
 
-  app.post("/recurrence-rules", async (c) => {
+  app.post("/recurrence-rules", idempotent, async (c) => {
     const body = createRecurrenceRuleRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
     const result = await av.createRule(ctx(c), c.var.viewer.userId, body.data);

@@ -10,6 +10,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../env";
 import { problem } from "../http/problem";
+import { idempotent } from "../http/idempotency";
 import { validationFailed } from "../http/validation";
 import { requireAuth } from "../identity/middleware";
 import { decodeCursor, encodeCursor } from "../shared/cursor";
@@ -59,7 +60,7 @@ export function invitationRoutes() {
   app.use("/meetups", requireAuth);
   app.use("/meetups/*", requireAuth);
 
-  app.post("/direct-invites", async (c) => {
+  app.post("/direct-invites", idempotent, async (c) => {
     const body = createDirectInviteRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
     const result = await invites.sendInvite(ctx(c), c.var.viewer.userId, body.data);
@@ -90,7 +91,7 @@ export function invitationRoutes() {
     return invite ? c.json(invite) : notFound(c);
   });
 
-  app.post("/direct-invites/:id/responses", async (c) => {
+  app.post("/direct-invites/:id/responses", idempotent, async (c) => {
     const id = uuid.safeParse(c.req.param("id"));
     if (!id.success) return notFound(c);
     const body = respondDirectInviteRequestSchema.safeParse(await json(c));
@@ -98,7 +99,7 @@ export function invitationRoutes() {
     return transition(c, await invites.respond(ctx(c), c.var.viewer.userId, id.data, body.data));
   });
 
-  app.post("/direct-invites/:id/decide", async (c) => {
+  app.post("/direct-invites/:id/decide", idempotent, async (c) => {
     const id = uuid.safeParse(c.req.param("id"));
     if (!id.success) return notFound(c);
     const body = decideDirectInviteRequestSchema.safeParse(await json(c));
@@ -114,7 +115,7 @@ export function invitationRoutes() {
     return conflict(c, result.reason);
   };
 
-  app.post("/broadcasts", async (c) => {
+  app.post("/broadcasts", idempotent, async (c) => {
     const body = createBroadcastRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
     const result = await broadcasts.createBroadcast(ctx(c), c.var.viewer.userId, body.data);
@@ -157,7 +158,7 @@ export function invitationRoutes() {
     return broadcastTransition(c, await broadcasts.setResponse(ctx(c), c.var.viewer.userId, id.data, false));
   });
 
-  app.post("/broadcasts/:id/decide", async (c) => {
+  app.post("/broadcasts/:id/decide", idempotent, async (c) => {
     const id = uuid.safeParse(c.req.param("id"));
     if (!id.success) return notFound(c);
     return broadcastTransition(c, await broadcasts.decide(ctx(c), c.var.viewer.userId, id.data));
@@ -176,7 +177,7 @@ export function invitationRoutes() {
     return meetup ? c.json(meetup) : notFound(c);
   });
 
-  app.post("/meetups/:id/cancel", async (c) => {
+  app.post("/meetups/:id/cancel", idempotent, async (c) => {
     const id = uuid.safeParse(c.req.param("id"));
     if (!id.success) return notFound(c);
     const result = await invites.cancelMeetup(ctx(c), c.var.viewer.userId, id.data);
