@@ -37,5 +37,5 @@
 - docs/specs/T-08-link-preview.md（仕様書PRとして先に追加し、マージ後に実装PRを作る）
 
 ## 参考
-- 画面：docs/design/（OGP カードの取得中・成功・失敗）
+- 画面：docs/design/（OGP カード。取得中と失敗はドメインだけ）
 - 関係するスキル：api-conventions、new-api-endpoint、infra-change、e2e-testing、invitation-domain
