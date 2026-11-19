@@ -151,6 +151,18 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
     expect(text).toHaveClass("text-slate-600");
   });
 
+  it("回数の上限（429）は候補を出さず、静かに待ってもらう。取り直さない", async () => {
+    const { calls } = tab({
+      "/api/v1/calendar/connections": connected,
+      "/api/v1/calendar/free-slots": json({ type: "about:blank", title: "x", status: 429, code: "rate_limited", requestId: "r" }, 429),
+    });
+    renderApp();
+    const text = await screen.findByText("少し待ってから、もう一度開いてください");
+    expect(text).toHaveClass("text-slate-600");
+    expect(text.className).not.toMatch(/red|rose/);
+    expect(calls.filter((c) => c.url.startsWith("/api/v1/calendar/free-slots"))).toHaveLength(1);
+  });
+
   it("needs_reauth は設定へのリンクを出す", async () => {
     tab({ "/api/v1/calendar/connections": json({ google: { status: "needs_reauth", connectedAt: null } }) });
     renderApp();
@@ -185,5 +197,32 @@ describe("予定の詳細の .ics", () => {
     await userEvent.click(await screen.findByRole("button", { name: "カレンダーに追加（.ics）" }));
     await waitFor(() => expect(go).toHaveBeenCalledWith(link));
     expect(calls.find((c) => c.url.endsWith("/ics-links"))?.init.method).toBe("POST");
+  });
+});
+
+describe("予定の詳細の .ics の上限", () => {
+  it("回数の上限（429）は「少し待ってから」を静かに出す", async () => {
+    window.history.replaceState(null, "", `/meetups/${MEETUP_ID}`);
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      [`/api/v1/meetups/${MEETUP_ID}`]: json({
+        id: MEETUP_ID,
+        startsAt: "2026-10-11T10:00:00.000Z",
+        endsAt: "2026-10-11T14:00:00.000Z",
+        status: "confirmed",
+        participants: [{ id: "22222222-2222-4222-8222-222222222222", displayName: "あき", avatarUrl: null }],
+        area: null,
+        message: null,
+        url: null,
+        directInviteId: null,
+        broadcastId: null,
+        createdAt: "2026-10-10T00:00:00.000Z",
+      }),
+      [`/api/v1/meetups/${MEETUP_ID}/ics-links`]: json({ type: "about:blank", title: "x", status: 429, code: "rate_limited", requestId: "r" }, 429),
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "カレンダーに追加（.ics）" }));
+    const text = await screen.findByText("少し待ってから、もう一度お試しください");
+    expect(text.className).not.toMatch(/red|rose/);
   });
 });

@@ -9,7 +9,8 @@ import {
 } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ApiError, apiSend } from "../api/client";
+import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
+import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import {
   addDays,
@@ -32,6 +33,7 @@ type MyList = { items: MyAvailability[]; nextCursor: null };
 const HORIZON_DAYS = 60;
 
 function createErrorText(error: unknown) {
+  if (isIdempotencyConflict(error)) return "作れませんでした。もう一度お試しください。";
   if (error instanceof ApiError && error.status === 409) {
     return "作れませんでした。自分のほかのここ暇と重なっているか、作れる数の上限です。";
   }
@@ -51,8 +53,13 @@ function AddAvailability({ presets }: { presets: Presets | undefined }) {
   const [start, setStart] = useState("19:00");
   const [end, setEnd] = useState("23:00");
 
+  const idempotency = useIdempotencyKey();
   const create = useMutation({
-    mutationFn: (body: unknown) => apiSend("POST", "/api/v1/availabilities", body, myAvailabilitySchema),
+    mutationFn: (body: unknown) => {
+      const path = "/api/v1/availabilities";
+      return apiSend("POST", path, body, myAvailabilitySchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, body)) });
+    },
+    onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.availability.all() }),
   });
 
@@ -194,14 +201,16 @@ function Recurrence() {
   const [end, setEnd] = useState("23:00");
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.availability.all() });
 
+  const ruleIdempotency = useIdempotencyKey();
   const create = useMutation({
-    mutationFn: () =>
-      apiSend(
-        "POST",
-        "/api/v1/recurrence-rules",
-        mode === "custom" ? { weekday, start, end: asEnd(end) } : { weekday, preset: mode },
-        recurrenceRuleSchema,
-      ),
+    mutationFn: () => {
+      const path = "/api/v1/recurrence-rules";
+      const body = mode === "custom" ? { weekday, start, end: asEnd(end) } : { weekday, preset: mode };
+      return apiSend("POST", path, body, recurrenceRuleSchema, {
+        idempotencyKey: ruleIdempotency.keyFor(signatureOf(path, body)),
+      });
+    },
+    onSettled: (_data, error) => ruleIdempotency.settle(error),
     onSuccess: invalidate,
   });
   const remove = useMutation({
@@ -263,7 +272,9 @@ function Recurrence() {
       </form>
       {create.isError && (
         <p role="status" className="text-sm text-slate-600">
-          {create.error instanceof ApiError && create.error.status === 409
+          {isIdempotencyConflict(create.error)
+            ? "作れませんでした。もう一度お試しください。"
+            : create.error instanceof ApiError && create.error.status === 409
             ? "作れませんでした。同じ曜日のくり返しと重なっているか、作れる数（20個）の上限です。"
             : "作れませんでした。15分単位で、30分以上、日をまたがない時間を選んでください。"}
         </p>

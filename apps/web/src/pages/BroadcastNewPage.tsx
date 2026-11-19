@@ -11,7 +11,8 @@ import {
 } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ApiError, apiGet, apiSend } from "../api/client";
+import { ApiError, apiGet, apiSend, isIdempotencyConflict } from "../api/client";
+import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { formatTime, localDateOf, PRESET_LABELS, PRESET_NAMES } from "../availability/format";
 import { presetsQuery, today } from "../availability/queries";
@@ -73,6 +74,7 @@ function initialOf(friends: Friend[], from: Broadcast | null, now: number): Init
 }
 
 function createErrorText(error: unknown) {
+  if (isIdempotencyConflict(error)) return "送信できませんでした。もう一度お試しください";
   if (error instanceof ApiError && error.status === 409) return "送れませんでした。もう一度お試しください";
   if (error instanceof ApiError && error.status === 404) return "送れない友達が含まれていました。宛先を選び直してください";
   return sendErrorText(error);
@@ -97,22 +99,22 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
   const enoughRecipients =
     recipientIds.length >= BROADCAST_MIN_RECIPIENTS && recipientIds.length <= BROADCAST_MAX_RECIPIENTS;
 
+  const idempotency = useIdempotencyKey();
   const send = useMutation({
-    mutationFn: () =>
-      apiSend(
-        "POST",
-        "/api/v1/broadcasts",
-        {
-          recipientIds,
-          startsAt: new Date(range?.startsAt ?? 0).toISOString(),
-          endsAt: new Date(range?.endsAt ?? 0).toISOString(),
-          area: area.trim() === "" ? null : area,
-          message: message.trim() === "" ? null : message,
-          url: url.trim() === "" ? null : url.trim(),
-          expiresIn,
-        },
-        broadcastSchema,
-      ),
+    mutationFn: () => {
+      const body = {
+        recipientIds,
+        startsAt: new Date(range?.startsAt ?? 0).toISOString(),
+        endsAt: new Date(range?.endsAt ?? 0).toISOString(),
+        area: area.trim() === "" ? null : area,
+        message: message.trim() === "" ? null : message,
+        url: url.trim() === "" ? null : url.trim(),
+        expiresIn,
+      };
+      const path = "/api/v1/broadcasts";
+      return apiSend("POST", path, body, broadcastSchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, body)) });
+    },
+    onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: keys.broadcasts.all() });
       if (created) navigate(`/broadcasts/${created.id}`);

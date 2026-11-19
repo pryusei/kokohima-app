@@ -11,6 +11,8 @@ import { FriendsPage } from "./pages/FriendsPage";
 import { InviteDetailPage } from "./pages/InviteDetailPage";
 import { InviteNewPage } from "./pages/InviteNewPage";
 import { InvitesPage } from "./pages/InvitesPage";
+import { NotificationSettingsPage } from "./pages/NotificationSettingsPage";
+import { NotificationsPage } from "./pages/NotificationsPage";
 import { MeetupDetailPage } from "./pages/MeetupDetailPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -63,6 +65,8 @@ export function App() {
   if (pathname === "/friends") return <FriendsPage />;
   if (pathname === "/availability") return <AvailabilityPage />;
   if (pathname === "/settings/calendar") return <CalendarSettingsPage search={search} />;
+  if (pathname === "/notifications") return <NotificationsPage />;
+  if (pathname === "/settings/notifications") return <NotificationSettingsPage />;
   if (pathname === "/invites") return <InvitesPage />;
   if (pathname === "/invites/new") return <InviteNewPage key={search} />;
   if (pathname === "/broadcasts/new") return <BroadcastNewPage key={search} />;

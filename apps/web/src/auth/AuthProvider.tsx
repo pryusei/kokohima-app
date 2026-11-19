@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError, apiFetch, setUnauthenticatedHandler } from "../api/client";
+import { removeSubscriptionBeforeLogout, resendSubscription } from "../notifications/push";
 import { broadcastLogout, onAuthMessage, refreshAccessToken, type RefreshOutcome } from "./refresh";
 import { tokenStore } from "./tokenStore";
 
@@ -62,6 +63,11 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
     };
   }, [applyOutcome, skipInitialRefresh]);
 
+  // アプリを開くたび（ログイン中）：この端末のプッシュの購読を送り直す。別の人がログインしたときもここで追いつく
+  useEffect(() => {
+    if (status === "authenticated") void resendSubscription();
+  }, [status]);
+
   // 通信できなかったときは、オンラインに戻ったら自動で確かめ直す
   useEffect(() => {
     if (status !== "error") return;
@@ -79,6 +85,8 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
       },
       retry: check,
       logout: async () => {
+        // 先にこの端末の購読を消す（呼べなくても、サーバーがセッションの購読を消す）
+        await removeSubscriptionBeforeLogout();
         const res = await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" }).catch(
           () => null,
         );
@@ -89,6 +97,7 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
         return true;
       },
       logoutAll: async () => {
+        await removeSubscriptionBeforeLogout();
         try {
           // アクセストークンが切れていれば更新してから送る（401なら1回だけ再送）
           await apiFetch("/api/v1/auth/logout-all", { method: "POST" });

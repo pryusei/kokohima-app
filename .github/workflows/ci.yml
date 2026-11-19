@@ -13,9 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           # ランナーに入っている古い 22.x を使わず、セキュリティ修正の入った最新の 22.x を取る
@@ -30,7 +30,7 @@ jobs:
       - name: 本番ビルドにE2E用の経路がないことを確認
         run: |
           # 経路の文字列だけでなく、テスト用ログインの関数名も確認する
-          if grep -rqE "__e2e__|e2eLogin|e2eExpireBroadcast|e2eCalendar|e2eOutbox|e2eFetch|google\.e2e\.invalid" apps/api/dist; then
+          if grep -rqE "__e2e__|e2eLogin|e2eExpireBroadcast|e2eCalendar|e2eOutbox|e2eFetch|e2eNotification|e2eDeliverPending|google\.e2e\.invalid|resend\.e2e\.invalid|push\.e2e\.invalid" apps/api/dist; then
             echo "::error::本番のビルドにE2E用の経路が含まれています"
             exit 1
           fi
@@ -40,7 +40,7 @@ jobs:
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: 単体テストの追加を確認

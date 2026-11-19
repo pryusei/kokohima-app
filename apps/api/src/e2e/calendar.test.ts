@@ -12,6 +12,7 @@ describe("E2E用のカレンダーの経路", () => {
       ["POST", "/__e2e__/calendar/busy"],
       ["POST", "/__e2e__/calendar/sync"],
       ["POST", "/__e2e__/outbox/drain"],
+      ["GET", "/__e2e__/notifications/sent"],
     ] as const) {
       expect((await app.request(path, { method }, bindings)).status).toBe(404);
     }
@@ -21,6 +22,7 @@ describe("E2E用のカレンダーの経路", () => {
     const bindings = { ...env, E2E_MODE: "1" };
     expect((await app.request("/__e2e__/calendar/busy", { method: "POST" }, bindings)).status).toBe(401);
     expect((await app.request("/__e2e__/outbox/drain", { method: "POST" }, bindings)).status).toBe(401);
+    expect((await app.request("/__e2e__/notifications/sent", {}, bindings)).status).toBe(401);
     const authorize = await app.request(
       `/__e2e__/calendar/google/authorize?state=unknown&redirect_uri=${encodeURIComponent(`${env.APP_ORIGIN}/api/v1/calendar/google/callback`)}`,
       {},

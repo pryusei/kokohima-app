@@ -19,6 +19,7 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 | 締め切りました | （画面の状態 closed） | 宛先の人に、決まったか期限切れかを区別させずに出す |
 | 成立 | Meetup | 会うことが決まった予定 |
 | やっぱり難しい | MeetupCancel ／ MeetupLeave | 成立後の定型キャンセル。募集の予定では押した人だけが抜ける（MeetupLeave） |
+| お知らせ | Notification | アプリの中で読む通知の1件（notification コンテキスト。docs/specs/T-07-notification.md）。プッシュとメールは「お知らせがある」ことだけを伝える |
 | 見せる／見せない | SharingPolicy | 自分のここ暇を友達ごとに見せるか（初期値：見せる） |
 
 ## DirectInvite の状態
@@ -57,10 +58,10 @@ open →（期限）expired（保存しない。誰にも通知しない。再�
 | DirectInviteSent | 受信者に通知（T-07） |
 | DirectInviteDeclined・DirectInviteCounterProposed | 送信者に通知（T-07） |
 | DirectInviteSkipped | 受信者に通知（T-07） |
-| AvailabilityCancelledByCalendar | 取り消しの前に作られた pending の誘いを、手で断ったときと同じ遷移で declined にする（T-06）。本人に通知（T-07） |
-| MeetupConfirmed | カレンダーへ書き込み（T-06）、通知 |
+| AvailabilityCancelledByCalendar | 取り消しの前に作られた pending の誘いのうち、送信者が受信者のここ暇を取り消しの時点からずっと見られたものだけを、手で断ったときと同じ遷移で declined にする（T-06 決定事項15。判定は availability の `viewersWhoCanSee`）。本人に通知（T-07） |
+| MeetupConfirmed | カレンダーへ書き込み（T-06）。直接の誘いの成立は、成立させた人でない方に通知（T-07。募集の成立は BroadcastDecided で通知する） |
 | BroadcastSent | 宛先ごとに通知（T-07） |
-| BroadcastDecided | Meetup作成、参加者全員に名前を開示して通知（同時に MeetupConfirmed も書く） |
+| BroadcastDecided | Meetup作成、募集者を除く参加者に名前を開示して通知（T-07。同時に MeetupConfirmed も書く） |
 | （期限切れ） | 保存せず読むときに決める。通知しないのでイベントは作らない |
 | MeetupLeft | 募集の予定から1人が抜けた。抜けた人のカレンダーから消し、残りの人のタイトルを直す（T-06）。残った参加者に通知（T-07） |
-| MeetupCancelled | カレンダーから削除（T-06）、定型文で通知 |
+| MeetupCancelled | カレンダーから削除（T-06）、押した人を除く参加者に定型文で通知（T-07） |

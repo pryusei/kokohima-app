@@ -29,6 +29,7 @@
 - 秘密情報は `wrangler secret` だけで扱う。`.dev.vars` はコミットしない
 - ログとエラーメッセージに、個人情報・トークン・カレンダーの認証情報を出さない
 - 予定の中身（タイトル・場所・参加者）は取得も保存もしない。空き／埋まりのみ
+- コードベース全体の監査は `security-audit` スキルで行う（各PRの差分は `security-reviewer` サブエージェント）。出力先は `.security-audit/`（コミットしない）を指定し、まずは `quick` のプロファイルで回す。確定した指摘はタスク票にして、仕様書PR → 実装PRの流れで直す
 
 ## UI
 - Reactは `vercel-react-best-practices` と `vercel-composition-patterns` スキルに従う。ただしこのプロジェクトはVite（SSRなし）なので、`server-` で始まるルールとNext.js固有の書き方（next/dynamic など）は適用せず、遅延読み込みは `React.lazy` を使う

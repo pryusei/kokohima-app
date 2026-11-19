@@ -6,6 +6,7 @@ import { makeUsers, type User } from "../../test/users";
 import { handleJob } from "../jobs/consumer";
 import { dispatchOutbox } from "../jobs/dispatch";
 import { runScheduled } from "../worker";
+import { viewersWhoCanSee } from "../availability/application/sharing";
 import { syncConnection } from "./application/sync";
 
 // カレンダー連携（docs/specs/T-06-calendar.md）。時計は 2026-10-10T00:00:00Z（土曜、東京は 09:00）
@@ -51,7 +52,7 @@ async function connect(who: User) {
 const connectionRow = (who: User) =>
   env.DB.prepare("SELECT * FROM calendar_connections WHERE user_id = ?1 AND provider = 'google'")
     .bind(who.id)
-    .first<{ status: string; refresh_token_enc: string | null; calendar_id: string | null; busy_snapshot: string | null; large_change_held: number }>();
+    .first<{ status: string; refresh_token_enc: string | null; calendar_id: string | null; busy_snapshot: string | null; large_change_held: number; connected_at: number }>();
 
 const status = async (who: User) =>
   calendarConnectionsSchema.parse(await (await u.call("GET", "/api/v1/calendar/connections", { token: who.token })).json());
@@ -646,6 +647,165 @@ describe("自動の「今回は難しい」", () => {
     expect(await outbox("DirectInviteDeclined", hit)).toHaveLength(1);
   });
 
+  // 決定事項15：受信者のここ暇を、取り消しの時点からずっと見られた送信者の誘いだけを断る（pryusei/kokohima-app#53）
+  const setSharing = (owner: User, friend: User, sharesMyAvailability: boolean) =>
+    u.call("PATCH", `/api/v1/friends/${friend.id}`, { token: owner.token, body: { sharesMyAvailability } });
+  const unfriend = (who: User, friend: User) => u.call("DELETE", `/api/v1/friends/${friend.id}`, { token: who.token });
+  /** a のここ暇を自動で取り消す（取り消しの時刻を返す） */
+  async function cancelByCalendar(a: User) {
+    await tick(15 * MIN);
+    h.google.state.busy = [busy(T("13:00", "11"), T("14:00", "11"))];
+    await syncConnection(h.ctx, a.id, "google");
+    return h.clock.now;
+  }
+  const declinedEvents = async (inviteId: string) => (await outbox("DirectInviteDeclined", inviteId)).length;
+
+  it("受信者が「見せない」にしている送信者の誘いは pending のまま。見られる送信者の誘いだけが declined になる", async () => {
+    const { a, b } = await scenario();
+    const c = await authenticated("ちさ");
+    await u.befriend(a, c);
+    expect((await setSharing(a, b, false)).status).toBe(200);
+    const hidden = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    const shown = await invite(c, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, hidden)).toBe("pending");
+    expect(await declinedEvents(hidden)).toBe(0);
+    expect(await inviteStatus(c, shown)).toBe("declined");
+    expect(await declinedEvents(shown)).toBe(1);
+  });
+
+  it("判定の向き：送信者が受信者を「見せない」にしていても、受信者が見せていれば declined になる", async () => {
+    const { a, b } = await scenario();
+    expect((await setSharing(b, a, false)).status).toBe(200);
+    const id = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, id)).toBe("declined");
+  });
+
+  it("誘いのあと、処理するまでに「見せない」にした送信者の誘いは pending のまま", async () => {
+    const { a, b } = await scenario();
+    const id = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await tick(MIN);
+    expect((await setSharing(a, b, false)).status).toBe(200);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, id)).toBe("pending");
+    expect(await declinedEvents(id)).toBe(0);
+  });
+
+  it("取り消しの後に「見せる」に戻した送信者の誘いは pending のまま（隠していた間のここ暇を知らせない）", async () => {
+    const { a, b } = await scenario();
+    expect((await setSharing(a, b, false)).status).toBe(200);
+    const id = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await tick(MIN);
+    expect((await setSharing(a, b, true)).status).toBe(200);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, id)).toBe("pending");
+    expect(await declinedEvents(id)).toBe(0);
+  });
+
+  it("友達でなくなった送信者・取り消しの後に友達に戻った送信者の誘いは pending のまま", async () => {
+    const { a, b } = await scenario();
+    const c = await authenticated("ちさ");
+    await u.befriend(a, c);
+    const fromB = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    const fromC = await invite(c, a, T("11:00", "11"), T("12:00", "11"));
+    expect((await unfriend(a, b)).status).toBe(204);
+    expect((await unfriend(a, c)).status).toBe(204);
+    await cancelByCalendar(a);
+    await tick(MIN);
+    await u.befriend(a, c);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    for (const [who, id] of [[b, fromB], [c, fromC]] as const) {
+      expect(await env.DB.prepare("SELECT status FROM direct_invites WHERE id = ?1").bind(id).first("status")).toBe("pending");
+      expect(await declinedEvents(id), who.name).toBe(0);
+    }
+  });
+
+  it("viewersWhoCanSee：since の前からずっと見られる人だけを返し、別の所有者の設定に影響されない", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    const c = await authenticated("ちさ");
+    const d = await authenticated("だい");
+    const stranger = await authenticated("えま");
+    await u.befriend(a, b);
+    await u.befriend(a, c);
+    await u.befriend(a, d);
+    await u.befriend(d, b);
+    // 別の所有者（d）が b を「見せない」にしても、a の判定には影響しない
+    expect((await setSharing(d, b, false)).status).toBe(200);
+    // c は since より前に一度隠して、また見せた
+    expect((await setSharing(a, c, false)).status).toBe(200);
+    await tick(MIN);
+    expect((await setSharing(a, c, true)).status).toBe(200);
+    await tick(MIN);
+    const since = h.clock.now;
+    await tick(MIN);
+    // d は since の後に隠した
+    expect((await setSharing(a, d, false)).status).toBe(200);
+    const visible = await viewersWhoCanSee(env.DB, a.id, [b.id, c.id, d.id, stranger.id, b.id], since);
+    expect([...visible].sort()).toEqual([b.id, c.id].sort());
+    expect((await viewersWhoCanSee(env.DB, a.id, [b.id], since)).size).toBe(1);
+    expect((await viewersWhoCanSee(env.DB, b.id, [a.id], since)).size).toBe(1);
+    expect((await viewersWhoCanSee(env.DB, a.id, [], since)).size).toBe(0);
+    // since より後に作った友達関係は数えない
+    expect((await viewersWhoCanSee(env.DB, a.id, [b.id], since - 10 * MIN)).size).toBe(0);
+  });
+
+  it("viewersWhoCanSee：片方向の行だけ・since と同じ時刻の友達関係や公開設定は、見られる側に数えない", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await u.befriend(a, b);
+    await tick(MIN);
+    const since = h.clock.now;
+    const rows = async () =>
+      (
+        await env.DB.prepare("SELECT user_id, friend_id, created_at FROM friendships WHERE (user_id = ?1 AND friend_id = ?2) OR (user_id = ?2 AND friend_id = ?1)")
+          .bind(a.id, b.id)
+          .all<{ user_id: string; friend_id: string; created_at: number }>()
+      ).results;
+    const original = await rows();
+    const restore = async () => {
+      await env.DB.prepare("DELETE FROM friendships WHERE (user_id = ?1 AND friend_id = ?2) OR (user_id = ?2 AND friend_id = ?1)").bind(a.id, b.id).run();
+      for (const r of original) {
+        await env.DB.prepare("INSERT INTO friendships (user_id, friend_id, created_at) VALUES (?1, ?2, ?3)").bind(r.user_id, r.friend_id, r.created_at).run();
+      }
+    };
+    const sees = async () => (await viewersWhoCanSee(env.DB, a.id, [b.id], since)).has(b.id);
+    expect(await sees()).toBe(true);
+    // 片方向の行だけが残っている（どちらの向きでも）
+    for (const [from, to] of [[b.id, a.id], [a.id, b.id]] as const) {
+      await env.DB.prepare("DELETE FROM friendships WHERE user_id = ?1 AND friend_id = ?2").bind(from, to).run();
+      expect(await sees()).toBe(false);
+      await restore();
+    }
+    // 片方向ずつ、since とちょうど同じ時刻に作った
+    for (const [from, to] of [[a.id, b.id], [b.id, a.id]] as const) {
+      await env.DB.prepare("UPDATE friendships SET created_at = ?3 WHERE user_id = ?1 AND friend_id = ?2").bind(from, to, since).run();
+      expect(await sees()).toBe(false);
+      await restore();
+    }
+    expect(await sees()).toBe(true);
+    // 公開設定を since とちょうど同じ時刻に「見せる」にした
+    await env.DB.prepare("INSERT INTO sharing_policies (owner_id, target_id, visible, updated_at) VALUES (?1, ?2, 1, ?3)").bind(a.id, b.id, since).run();
+    expect(await sees()).toBe(false);
+    await env.DB.prepare("UPDATE sharing_policies SET updated_at = ?3 WHERE owner_id = ?1 AND target_id = ?2").bind(a.id, b.id, since - 1).run();
+    expect(await sees()).toBe(true);
+  });
+
+  it("取り消しの後に同じ「見せる」を保存し直した送信者の誘いは pending のまま", async () => {
+    const { a, b } = await scenario();
+    const id = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
+    await cancelByCalendar(a);
+    await tick(MIN);
+    expect((await setSharing(a, b, true)).status).toBe(200);
+    await deliver("AvailabilityCancelledByCalendar", a.id);
+    expect(await inviteStatus(b, id)).toBe("pending");
+  });
+
   it("取り消しの後に作られた誘い・期限切れの誘いは変わらない", async () => {
     const { a, b } = await scenario();
     const expiring = await invite(b, a, T("11:00", "11"), T("12:00", "11"));
@@ -860,18 +1020,23 @@ describe("成立した予定の書き込み", () => {
 });
 
 describe("outbox を Queue に流す", () => {
-  it("処理する型だけを送り、送ってから処理済みにする。ほかの型は未処理のまま", async () => {
+  it("処理する型だけを送り、送ってから処理済みにする。知らない型は未処理のまま", async () => {
     const a = await authenticated();
     await connect(a);
+    const unknownId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO outbox (id, type, payload, created_at) VALUES (?1, 'SomethingElse', '{}', ?2)")
+      .bind(unknownId, h.clock.now)
+      .run();
     h.jobs.length = 0;
-    await dispatchOutbox(h.ctx);
+    // 1回に最大100件なので、この人の行が送られるまで何回か流す
+    for (let n = 0; n < 30 && (await outbox("CalendarConnected", a.id))[0]?.processedAt === null; n++) {
+      await dispatchOutbox(h.ctx);
+    }
     expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "CalendarConnected" && j.payload.includes(a.id))).toBe(true);
-    expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "SessionStarted")).toBe(false);
+    expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "SomethingElse")).toBe(false);
     expect((await outbox("CalendarConnected", a.id))[0]?.processedAt).toBe(h.clock.now);
-    const other = await env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM outbox WHERE type NOT IN ('MeetupConfirmed','MeetupCancelled','MeetupLeft','CalendarConnected','AvailabilityCancelledByCalendar') AND processed_at IS NOT NULL",
-    ).first<{ n: number }>();
-    expect(other?.n).toBe(0);
+    const other = await env.DB.prepare("SELECT processed_at FROM outbox WHERE id = ?1").bind(unknownId).first<{ processed_at: number | null }>();
+    expect(other?.processed_at).toBeNull();
   });
 
   it("1回に最大100件。処理済みにする SQL は値100個の制限に収まる", async () => {
@@ -1093,5 +1258,100 @@ describe("Google へのリクエスト", () => {
     for (const r of h.google.state.requests.filter((r) => r.path.endsWith("/freeBusy"))) {
       expect((JSON.parse(r.body) as { items: unknown }).items).toEqual([{ id: "primary" }]);
     }
+  });
+});
+
+describe("カレンダーの空きのキャッシュ（T-10）", () => {
+  const range = `from=${T("00:00")}&to=${T("00:00", "12")}`;
+  const get = async (who: User, q = range, bindings = h.bindings) =>
+    h.app.request(`/api/v1/calendar/free-slots?${q}`, { headers: { Authorization: `Bearer ${who.token}` } }, bindings);
+  const freeBusyCalls = () => h.google.state.requests.filter((r) => r.path.endsWith("/freeBusy")).length;
+  const slotsOf = async (res: Response) => freeSlotsSchema.parse(await res.json()).items.map((i) => `${i.date} ${i.preset}`);
+
+  it("5分以内に続けて開くと freeBusy は1回。ここ暇を作った直後は候補が変わる", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const before = freeBusyCalls();
+    const first = await slotsOf(await get(a));
+    // 範囲の端でない枠を作る（端の枠だと freeBusy の範囲が変わって別のキーになる）
+    await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { date: "2026-10-10", preset: "night" } });
+    const second = await slotsOf(await get(a));
+    expect(freeBusyCalls() - before).toBe(1);
+    expect(first).toContain("2026-10-10 night");
+    expect(second).not.toContain("2026-10-10 night");
+    // キャッシュは時刻だけ（予定の中身は入らない）
+    const { env: workerEnv } = await import("cloudflare:workers");
+    const keys = await workerEnv.CACHE?.list({ prefix: `freebusy:v1:${a.id}:` });
+    expect(keys?.keys.length).toBeGreaterThan(0);
+    for (const k of keys?.keys ?? []) {
+      const value = await workerEnv.CACHE?.get(k.name);
+      expect(value).not.toMatch(/summary|title|location|attendee/i);
+    }
+  });
+
+  it("プリセットを変えると（freeBusy の範囲が変わり）取り直す", async () => {
+    const a = await authenticated();
+    await connect(a);
+    await get(a);
+    const before = freeBusyCalls();
+    await u.call("PUT", "/api/v1/me/presets", {
+      token: a.token,
+      body: { day: { start: "10:00", end: "15:00" }, evening: { start: "16:00", end: "19:00" }, night: { start: "19:00", end: "23:30" } },
+    });
+    await get(a);
+    expect(freeBusyCalls() - before).toBe(1);
+  });
+
+  it("つなぎ直したあとは前の連携の埋まりを使わない。別の利用者に、ほかの人の埋まりが返らない", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    await get(a);
+    const before = freeBusyCalls();
+    await u.call("DELETE", "/api/v1/calendar/connections/google", { token: a.token });
+    await tick(MIN);
+    await connect(a);
+    await get(a);
+    expect(freeBusyCalls() - before).toBe(1);
+    await connect(b);
+    const beforeB = freeBusyCalls();
+    await get(b);
+    expect(freeBusyCalls() - beforeB).toBe(1);
+  });
+
+  it("KV には5分（expirationTtl: 300）で書く。キーに利用者・連携の connected_at・実際の範囲が入る", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const puts: { key: string; ttl: number | undefined }[] = [];
+    const { env: workerEnv } = await import("cloudflare:workers");
+    const real = workerEnv.CACHE as KVNamespace;
+    const spy = {
+      get: (key: string, type: "json") => real.get(key, type),
+      put: (key: string, value: string, opts?: KVNamespacePutOptions) => {
+        puts.push({ key, ttl: opts?.expirationTtl });
+        return real.put(key, value, opts);
+      },
+    } as unknown as KVNamespace;
+    await get(a, range, { ...h.bindings, CACHE: spy });
+    const connectedAt = (await connectionRow(a))?.connected_at;
+    expect(puts).toHaveLength(1);
+    expect(puts[0]?.ttl).toBe(300);
+    expect(puts[0]?.key).toMatch(new RegExp(`^freebusy:v1:${a.id}:${connectedAt}:\\d+:\\d+$`));
+  });
+
+  it("KV が読めなくても書けなくても、候補を返す", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const broken = {
+      get: async () => {
+        throw new Error("kv down");
+      },
+      put: async () => {
+        throw new Error("kv down");
+      },
+    } as unknown as KVNamespace;
+    const res = await get(a, range, { ...h.bindings, CACHE: broken });
+    expect(res.status).toBe(200);
+    expect(freeSlotsSchema.parse(await res.json()).status).toBe("ok");
   });
 });

@@ -55,7 +55,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `login_codes` | `code_hash`（PK）、`user_id`（FK）、`provider`、`binding_hash`、`return_to`、`expires_at` | コールバックから完了までの一時データ。60秒で失効。使ったら削除 |
 | `outbox` | `id`（UUID、PK）、`type`、`payload`（JSON）、`created_at`、`processed_at`（null可） | 外部連携の共通の箱。今回は書き込みのみ |
 
-- 期限切れの `oauth_transactions`・`login_codes` と、失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens` の掃除はCronで行う（掃除は別タスク。今回は列とインデックスだけ用意）
+- 期限切れの `oauth_transactions`・`login_codes` は、Cron（毎分の `cleanupExpired`）で消す。失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens` の掃除は別タスク（利用者ごとに1行残す方針と一緒に決める。issue #38）
 
 ## 振る舞い
 
@@ -108,7 +108,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
    - 使用済みで、救済で使用済みにされた印（`rescued_at`）がある：再利用（下記）
    - 使用済みで、次のトークン（`replaced_by`）がまだ一度も使われていない：前回の交換の応答が届かなかったとみなし（回線が切れた、送信中にPWAが閉じられた）、次のトークンを交換する（救済。6へ）。次のトークンが期限切れなら401。救済は、使用済みにしてから24時間以内に限る（`RESCUE_WINDOW_MS`）。1世代前のトークンを後から手に入れた人が、正規の利用者が戻るまで最長30日ログインを乗っ取れないようにするため。24時間を過ぎた使用済みトークンは再利用として扱う（系列ごと失効）。PWAを閉じて数時間後に開いた場合は救える
    - 使用済みで、次のトークンも使用済み：再利用（下記）
-5. 再利用：そのセッションを失効させ、Cookieを消して401
+5. 再利用：そのセッションを失効させ、そのセッションのプッシュの購読を消し（notification の `deleteSubscriptionsOfSession`。docs/specs/T-07-notification.md）、Cookieを消して401
 6. 交換（`tryRotate`）：
    1. 新しいトークンの行を作る
    2. `UPDATE refresh_tokens SET used_at = ?, replaced_by = <新しいid>, rescued_at = <救済なら今。交換に負けたやり直しでの救済は除く> WHERE id = ? AND used_at IS NULL AND <セッションが失効していない>` を実行する（セッションの条件は、`logout-all` と同時に走ったときに失効直後のセッションで交換しないため）。「使用済みにする」と「次のトークンの記録」を1つの文で行うので、同時に来たリクエストは、使用済みのトークンには必ず次のトークンが記録された状態を見る
@@ -135,8 +135,8 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - 重要な操作のための `requireActiveSession`：`requireAuth` に加えて、D1で `sessions.revoked_at IS NULL` かつ期限内であることを毎回確認する。今回は `logout-all` で使う（以降のタスクで、アカウント連携・退会などに使う）
 
 ### ログアウト
-- `logout`：Originを検査し、Cookieのトークンが属するセッションを失効させ、Cookieを消して204。Cookieがない・無効でも204（何度押しても同じ結果）
-- `logout-all`：`requireActiveSession` とOriginを検査し、そのユーザーの全セッションを失効させ、Cookieを消して204
+- `logout`：Originを検査し、Cookieのトークンが属するセッションを失効させ、そのセッションのプッシュの購読を消し（T-07）、Cookieを消して204。Cookieがない・無効でも204（何度押しても同じ結果）
+- `logout-all`：`requireActiveSession` とOriginを検査し、そのユーザーの全セッションを失効させ、その人のプッシュの購読をすべて消し（T-07）、Cookieを消して204
 - 失効後もアクセストークンは最長10分有効だが、`requireActiveSession` を使う操作は即座に拒否される
 
 ### フロントエンド（apps/web）
@@ -146,6 +146,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - APIクライアント（`apps/web/src/api/client.ts`）は、401を受けたら1回だけ更新して再送し、失敗したらログアウト状態にする（`data-fetching` スキル）
 - 複数タブでの無駄な更新を減らすため、Web Locks API（`navigator.locks.request("kh-refresh", ...)`）で直列化する。ロックを取った後、他のタブが直前に更新していれば（`BroadcastChannel` で新しいトークンを受け取っていれば）それを使う。Web Locksがなく同時に更新が走っても、サーバー側の救済（更新の手順4）で、どちらの応答のCookieが残っても続けられる
 - 他のタブへの知らせ（`BroadcastChannel`、名前 `kh-auth`）：更新したタブは新しいアクセストークンを、ログアウトしたタブはログアウトを知らせる。受け取ったタブはそれぞれ、そのトークンを使う・ログアウト状態になる。内容はメモリの間で渡すだけで、保存はしない
+- プッシュの購読（T-07）：ログアウト・全端末ログアウトの前に、この端末の購読を `DELETE /api/v1/push/subscriptions` で消す（呼べなくても、サーバーがセッションの購読を消す）。ログイン中にアプリを開くたび、通知が許可済みなら、この端末の購読を `POST /api/v1/push/subscriptions` に送り直す（docs/specs/T-07-notification.md）
 - ログアウトの失敗：`logout` は204、`logout-all` は204（または、すでに失効していて401）を受け取ったときだけログアウト状態にする。通信できない・5xxのときはログイン状態のまま「ログアウトできませんでした」を静かに表示する（Cookieやセッションが残っているのに、ログアウトしたと思わせない）。`logout-all` はAPIクライアントを通し、アクセストークンが切れていれば更新してから送る
 - APIクライアントで、401の後の更新が通信エラー・5xxだったときも、ログアウトにはしない（失敗として返す）
 - 画面（仮）：
@@ -233,7 +234,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - 新端末ログインのメール通知（今回は `SessionStarted` を `outbox` に書くだけ）
 - 初回設定（表示名とアイコン）。今回は `displayName`・`avatarUrl` がnullのまま
 - 監査ログ（ログインの30日保持）。監査ログの仕組みとまとめて別タスクにする（決定事項6）
-- レート制限（ログイン開始・コールバック・更新）。WAFとレート制限のインフラのタスクで行う（決定事項7）
+- レート制限：ログインの開始は T-10 で IP ごとの上限を付ける（超えたら `/login?error=login_failed`）。コールバック・`complete`・`refresh` は1回限りの値を消費するので付けない。WAF のレート制限はエッジのセキュリティのタスクで行う（決定事項7）
 - 期限切れデータの掃除（Cron）
 - 最終的な画面デザイン
 
@@ -244,7 +245,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 4. メールアドレスは `users.email` に平文で保存する（通知の送信先に必要。NF-04の暗号化はカレンダーの認証情報が対象）
 5. 更新の応答が届かなかった場合は、次のトークンが未使用なら、使用済みにしてから24時間以内に限って救済する（更新の手順4。2026-11-14に、時間の制限なしから変更。issue #57）。救済で使用済みにしたトークンには印を残し、提示されたら再利用として系列ごと失効させる（交互に更新されても検知するため）。複数タブはクライアント側のWeb Locksで直列化する
 6. 監査ログ（ログインの記録）は、監査ログの仕組みと一緒に別タスクで行う
-7. ログイン・更新のレート制限は、インフラ（WAF・レート制限）のタスクで行う
+7. ログイン・更新のレート制限は、インフラ（WAF・レート制限）のタスクで行う。アプリの中の上限は T-10 で、ログインの開始にだけ付ける
 8. E2Eの認証状態はテストごとに作る。実装PRで、タスク票と `e2e-testing` スキルを合わせて直す
 9. Sign in with AppleのPKCE：実装の最初に確認したが、Appleの公式の資料（Sign in with Apple REST API）に `code_challenge`・`code_verifier` の記載がなく、対応を確認できなかった。そのため、AppleではPKCEを送らず、`state`・`nonce`・結びつけCookieとクライアントシークレット（機密クライアント）で守る。Googleは従来どおりPKCE（S256）を使う。Appleが公式に対応を明記したら、`apps/api/src/identity/infra/oidc.ts` の `usePkce` を有効にする
 
@@ -259,3 +260,5 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | 2026-10-07 | 救済で使用済みにしたトークンに印（`rescued_at`）を残し、提示されたら再利用とする（盗んだ側と正規の利用者が交互に更新すると救済が続き、再利用を検知できなかったため）。期限切れの使用済みトークンは先に拒否する。交換の書き込み順、他のタブへの知らせ、ログアウトの失敗の扱い、`GET /me` の404を明記 | 実装PRのレビュー（セキュリティ・仕様） |
 | 2026-10-07 | 交換に負けたやり直しでの救済には印を付けない（同時の更新で、勝った側のCookieが残ると次の更新でログアウトになっていた）。交換の条件にセッションが失効していないことを加えた | 実装PRのレビュー（pryusei/kokohima-app#8） |
 | 2026-11-14 | 救済を、使用済みにしてから24時間以内に限った（後から1世代前のトークンを手に入れた人が最長30日ログインを乗っ取れたため）。決定事項5を変更 | セキュリティの点検（issue #57） |
+| 2026-11-15 | ログアウト・全端末ログアウト・再利用の検知で、プッシュの購読を消す。フロントは、ログアウトの前にこの端末の購読を解除し、ログイン中にアプリを開くたび購読を送り直す | T-07 の実装PR（docs/specs/T-07-notification.md） |
+| 2026-11-17 | ログインの開始のレート制限を T-10 で付けることにした（コールバック・complete・refresh には付けない） | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |

@@ -541,3 +541,20 @@ export async function pendingInvitesOverlapping(
     .all<InviteRow>();
   return results;
 }
+
+// ---- 通知（T-07）から使う読み取り（閲覧者で絞らない。consumer が payload の ID を読むときだけ使う） ----
+
+export async function findBroadcastOwner(d1: D1Database, broadcastId: string) {
+  const row = await d1.prepare("SELECT owner_id FROM broadcasts WHERE id = ?1").bind(broadcastId).first<{ owner_id: string }>();
+  return row?.owner_id ?? null;
+}
+
+/** 予定を成立させた操作をした人：送信者が「決める」を押した（decided_at がある）なら送信者、そうでなければ受信者 */
+export async function findInviteActor(d1: D1Database, inviteId: string) {
+  const row = await d1
+    .prepare("SELECT sender_id, recipient_id, decided_at FROM direct_invites WHERE id = ?1")
+    .bind(inviteId)
+    .first<{ sender_id: string; recipient_id: string; decided_at: number | null }>();
+  if (!row) return null;
+  return row.decided_at !== null ? row.sender_id : row.recipient_id;
+}

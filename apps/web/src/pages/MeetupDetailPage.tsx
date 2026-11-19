@@ -2,6 +2,7 @@ import { meetupSchema, type Meetup } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ApiError, apiSend } from "../api/client";
+import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { createIcsLink } from "../calendar/queries";
 import { redirectTo } from "./CalendarSettingsPage";
@@ -16,13 +17,17 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
   const queryClient = useQueryClient();
   const meetup = useQuery(meetupQuery(meetupId));
   const [failed, setFailed] = useState(false);
-  const [icsFailed, setIcsFailed] = useState(false);
+  const [icsFailed, setIcsFailed] = useState<false | "failed" | "limited">(false);
   // 表示した時点の時刻で判定する（描画のたびに時計を読まない）
   const [openedAt] = useState(() => Date.now());
   const key = keys.meetups.detail(meetupId);
 
+  const idempotency = useIdempotencyKey();
   const cancel = useMutation({
-    mutationFn: () => apiSend("POST", `/api/v1/meetups/${encodeURIComponent(meetupId)}/cancel`, undefined, meetupSchema),
+    mutationFn: () => {
+      const path = `/api/v1/meetups/${encodeURIComponent(meetupId)}/cancel`;
+      return apiSend("POST", path, undefined, meetupSchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, undefined)) });
+    },
     onMutate: async () => {
       setFailed(false);
       await queryClient.cancelQueries({ queryKey: key });
@@ -34,7 +39,8 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
       if (context?.previous) queryClient.setQueryData(key, context.previous);
       setFailed(true);
     },
-    onSettled: async () => {
+    onSettled: async (_data, error) => {
+      idempotency.settle(error);
       await queryClient.invalidateQueries({ queryKey: keys.meetups.all() });
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
     },
@@ -47,7 +53,8 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
     onSuccess: (link) => {
       if (link) redirectTo.go(link.url);
     },
-    onError: () => setIcsFailed(true),
+    // 回数の上限（429。T-10）は、少し待ってもらう
+    onError: (error) => setIcsFailed(error instanceof ApiError && error.status === 429 ? "limited" : "failed"),
   });
 
   if (meetup.error instanceof ApiError && meetup.error.status === 404) {
@@ -88,7 +95,9 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
           </button>
           {icsFailed && (
             <p role="status" className="text-sm text-slate-600">
-              カレンダーに追加できませんでした。もう一度お試しください
+              {icsFailed === "limited"
+                ? "少し待ってから、もう一度お試しください"
+                : "カレンダーに追加できませんでした。もう一度お試しください"}
             </p>
           )}
           {cancellable && (

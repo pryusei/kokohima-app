@@ -17,12 +17,35 @@ export type Bindings = {
   CALENDAR_TOKEN_CURRENT_KID: string;
   /** outbox と定期の確認のメッセージ（docs/specs/T-06-calendar.md「outbox を Queues に流す」） */
   JOBS: Queue<JobMessage>;
+  /** メール配信（Resend）の API キー（secret） */
+  RESEND_API_KEY: string;
+  /** VAPID の秘密鍵（P-256、PKCS#8 の PEM。secret）と公開鍵（base64url、非圧縮の点） */
+  VAPID_PRIVATE_KEY: string;
+  VAPID_PUBLIC_KEY: string;
+  VAPID_SUBJECT: string;
+  /** プッシュの購読の endpoint の暗号化の鍵（kid → 32バイトのbase64 の JSON。secret） */
+  NOTIFICATION_KEYS: string;
+  NOTIFICATION_CURRENT_KID: string;
+  MAIL_FROM: string;
+  /** T-07 を有効にした時刻（Unixミリ秒の文字列）。これより前の通知だけの型の outbox の行は送らない */
+  NOTIFICATION_START_AT: string;
+  /** サービス全体の1日のメール数の上限（文字列の整数） */
+  MAIL_DAILY_LIMIT: string;
+  /** 外部の結果のキャッシュ（docs/specs/T-10-idempotency-cache-ratelimit.md） */
+  CACHE?: KVNamespace;
+  /** おおよその回数の上限（Rate Limiting）。認証なしの経路は IP、認証のある経路は利用者 ID をキーにする */
+  RL_PUBLIC?: RateLimit;
+  RL_USER?: RateLimit;
   E2E_MODE?: string;
 };
 
+export type RateLimiterName = "RL_PUBLIC" | "RL_USER";
+
 export type JobMessage =
-  | { kind: "outbox"; id: string; type: string; payload: string }
-  | { kind: "calendar_sync"; userId: string; provider: "google" };
+  /** createdAt は outbox の行を作った時刻（T-07 の「古い outbox の行」の線引きに使う） */
+  | { kind: "outbox"; id: string; type: string; payload: string; createdAt?: number }
+  | { kind: "calendar_sync"; userId: string; provider: "google" }
+  | { kind: "notification_deliver"; notificationId: string };
 
 export type Viewer = { userId: string; sessionId: string };
 
@@ -37,6 +60,16 @@ export type AppDeps = {
   jwks: { google: JWTVerifyGetKey; apple: JWTVerifyGetKey };
   now: () => number;
   google: { endpoints: GoogleEndpoints };
+  notification: {
+    /** メール配信の送信先 */
+    resendUrl: string;
+    /** プッシュの endpoint として追加で許可するホスト（E2E の偽のホストだけ。本番は空） */
+    extraPushHosts: readonly string[];
+  };
+  /** 回数の上限の判定（T-10）。E2E では上限を実質なしにする */
+  rateLimit: (env: Bindings, limiter: RateLimiterName, key: string) => Promise<boolean>;
+  /** KV のキャッシュを使うか（E2E では使わない） */
+  cacheEnabled: boolean;
 };
 
 /** Google の各エンドポイント。E2E では偽の経路に向ける（docs/specs/T-06-calendar.md「E2E用の偽のGoogle」） */

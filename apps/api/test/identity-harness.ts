@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { createLocalJWKSet, exportJWK, exportPKCS8, generateKeyPair, type JWK, SignJWT } from "jose";
 import { createApp, defaultDeps } from "../src/app";
 import type { AppDeps, Bindings, JobMessage } from "../src/env";
+import { createFakeDelivery } from "./fake-delivery";
 import { createFakeGoogle } from "./fake-google";
 
 // identity のテスト用の道具。本番のコードからは読み込まない（*.test.ts からだけ使う）
@@ -37,6 +38,7 @@ export async function createHarness() {
     JOBS: fakeQueue,
   };
   const google = createFakeGoogle();
+  const delivery = createFakeDelivery();
 
   /** 次にトークンエンドポイントが返すIDトークンの作り方。テストごとに差し替える */
   let tokenResponder: (req: { provider: ProviderName; body: URLSearchParams }) => Promise<Response> = async () =>
@@ -46,6 +48,7 @@ export async function createHarness() {
   const fakeFetch: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (google.handles(new URL(url), init)) return google.handle(new URL(url), init);
+    if (delivery.handles(new URL(url))) return delivery.handle(new URL(url), init);
     const provider: ProviderName | null = url.startsWith("https://oauth2.googleapis.com/token")
       ? "google"
       : url.startsWith("https://appleid.apple.com/auth/token")
@@ -57,8 +60,18 @@ export async function createHarness() {
     return tokenResponder({ provider, body });
   };
 
+  // 回数の上限の判定をテストから差し替える口（T-10）。null なら本物のバインディング（Miniflare）を使う
+  const limiter: { allow: null | ((limiter: string, key: string) => boolean); calls: { limiter: string; key: string }[] } = {
+    allow: null,
+    calls: [],
+  };
+  const base = defaultDeps();
   const deps: AppDeps = {
-    ...defaultDeps(),
+    ...base,
+    rateLimit: async (env, name, key) => {
+      limiter.calls.push({ limiter: name, key });
+      return limiter.allow ? limiter.allow(name, key) : base.rateLimit(env, name, key);
+    },
     fetch: fakeFetch,
     jwks: {
       google: createLocalJWKSet({ keys: [await jwk("google")] }),
@@ -154,8 +167,10 @@ export async function createHarness() {
     app,
     bindings,
     google,
+    delivery,
     jobs,
     deps,
+    limiter,
     /** consumer・Cron の処理を呼ぶときの ctx */
     ctx: { env: bindings, deps },
     clock,

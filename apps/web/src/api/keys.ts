@@ -39,6 +39,12 @@ export const keys = {
     list: () => ["meetups", "list"] as const,
     detail: (id: string) => ["meetups", "detail", id] as const,
   },
+  notifications: {
+    all: () => ["notifications"] as const,
+    list: () => ["notifications", "list"] as const,
+    unread: () => ["notifications", "unread"] as const,
+    preferences: () => ["notifications", "preferences"] as const,
+  },
   inviteLinks: {
     list: () => ["invite-links", "list"] as const,
   },

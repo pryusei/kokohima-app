@@ -4,10 +4,26 @@ import { tokenStore } from "../auth/tokenStore";
 
 // APIクライアント。アクセストークン（メモリ）を付け、401なら1回だけ更新して再送する
 
-/** status が 0 のときは通信できなかったことを表す */
+/** status が 0 のときは通信できなかったことを表す。code は Problem Details の code（読めたときだけ） */
 export class ApiError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    readonly code: string | null = null,
+  ) {
     super(`API error ${status}`);
+  }
+}
+
+/** Idempotency-Key の衝突（同じキーの処理中・内容の違う使い回し）。今の画面の 409 の扱いとは分ける（T-10） */
+export const isIdempotencyConflict = (error: unknown) =>
+  error instanceof ApiError && (error.code === "request_in_progress" || error.code === "idempotency_key_mismatch");
+
+async function problemCode(res: Response): Promise<string | null> {
+  try {
+    const body = (await res.clone().json()) as { code?: unknown };
+    return typeof body.code === "string" ? body.code : null;
+  } catch {
+    return null;
   }
 }
 
@@ -60,7 +76,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       throw new ApiError(401);
     }
   }
-  if (!res.ok) throw new ApiError(res.status);
+  if (!res.ok) throw new ApiError(res.status, await problemCode(res));
   return res;
 }
 
@@ -76,8 +92,10 @@ export async function apiSend<T>(
   path: string,
   body: unknown,
   schema?: ZodType<T>,
+  options: { idempotencyKey?: string } = {},
 ): Promise<T | undefined> {
-  const res = await apiFetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+  const headers = options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined;
+  const res = await apiFetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (!schema || res.status === 204) return undefined;
   return schema.parse(await res.json());
 }

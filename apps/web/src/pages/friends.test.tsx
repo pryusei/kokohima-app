@@ -26,6 +26,17 @@ afterEach(() => {
 });
 
 describe("招待リンクの受け口", () => {
+  it("回数の上限（429）は「混み合っています」を静かに出す", async () => {
+    window.history.replaceState(null, "", "/invite#t=secret-invite-token");
+    mockFetch({
+      "/api/v1/auth/refresh": json({}, 401),
+      "/api/v1/invite-links/lookup": json({ type: "about:blank", title: "x", status: 429, code: "rate_limited", requestId: "r" }, 429),
+    });
+    renderApp();
+    const text = await screen.findByText("混み合っています。少し待ってから、もう一度開いてください。");
+    expect(text).toHaveClass("text-slate-600");
+  });
+
   it("未ログインでも /login へ移さずに描画し、トークンをURLから消してストレージに置かない", async () => {
     window.history.replaceState(null, "", "/invite#t=secret-invite-token");
     const setItem = vi.spyOn(Storage.prototype, "setItem");

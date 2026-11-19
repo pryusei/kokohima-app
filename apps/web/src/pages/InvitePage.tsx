@@ -22,6 +22,8 @@ type State =
   | { kind: "own" }
   /** lookup で通信できなかった（まだ友達になっていない） */
   | { kind: "lookupNetwork" }
+  /** lookup が回数の上限（429。T-10） */
+  | { kind: "busy" }
   /** accept で通信できなかった（友達になれている可能性がある） */
   | { kind: "network" };
 
@@ -43,6 +45,10 @@ export function InvitePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(token ? { token } : {}),
         });
+        if (res.status === 429) {
+          setState({ kind: "busy" });
+          return;
+        }
         const parsed = inviteLookupResponseSchema.safeParse(res.ok ? await res.json() : null);
         setState(parsed.success ? { kind: "ready", invite: parsed.data } : { kind: "unusable" });
       } catch {
@@ -86,6 +92,11 @@ export function InvitePage() {
       {state.kind === "own" && (
         <p role="status" className="text-slate-600">
           これはあなたが作ったリンクです。友達に送ってください。
+        </p>
+      )}
+      {state.kind === "busy" && (
+        <p role="status" className="text-slate-600">
+          混み合っています。少し待ってから、もう一度開いてください。
         </p>
       )}
       {state.kind === "lookupNetwork" && (

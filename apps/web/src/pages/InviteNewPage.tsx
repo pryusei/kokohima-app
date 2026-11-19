@@ -8,6 +8,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, apiSend } from "../api/client";
+import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import {
   formatTime,
@@ -76,22 +77,22 @@ export function InviteNewPage() {
     !Number.isNaN(range.startsAt) &&
     isValidInviteRange(new Date(range.startsAt).toISOString(), new Date(range.endsAt).toISOString());
 
+  const idempotency = useIdempotencyKey();
   const send = useMutation({
-    mutationFn: () =>
-      apiSend(
-        "POST",
-        "/api/v1/direct-invites",
-        {
-          recipientId: friendId,
-          startsAt: new Date(range.startsAt).toISOString(),
-          endsAt: new Date(range.endsAt).toISOString(),
-          area: area.trim() === "" ? null : area,
-          message: message.trim() === "" ? null : message,
-          url: url.trim() === "" ? null : url.trim(),
-          expiresIn,
-        },
-        directInviteSchema,
-      ),
+    mutationFn: () => {
+      const body = {
+        recipientId: friendId,
+        startsAt: new Date(range.startsAt).toISOString(),
+        endsAt: new Date(range.endsAt).toISOString(),
+        area: area.trim() === "" ? null : area,
+        message: message.trim() === "" ? null : message,
+        url: url.trim() === "" ? null : url.trim(),
+        expiresIn,
+      };
+      const path = "/api/v1/direct-invites";
+      return apiSend("POST", path, body, directInviteSchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, body)) });
+    },
+    onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (invite) => {
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
       if (invite) navigate(`/invites/${invite.id}`);

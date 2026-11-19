@@ -271,14 +271,33 @@ export async function deleteExpiredOauthStates(d1: D1Database, before: number) {
 
 // ---- .ics の一時的な URL ----
 
+/**
+ * 直近 windowMs の発行が limit 本未満のときだけ入れる（1つの文なので、同時に送っても上限を超えない。T-10）。
+ * 入れたら true
+ */
 export async function insertIcsToken(
   d1: D1Database,
   row: { tokenHash: string; userId: string; meetupId: string; expiresAt: number; now: number },
+  quota: { limit: number; windowMs: number },
 ) {
-  await d1
-    .prepare("INSERT INTO ics_tokens (token_hash, user_id, meetup_id, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5)")
-    .bind(row.tokenHash, row.userId, row.meetupId, row.expiresAt, row.now)
+  const result = await d1
+    .prepare(
+      `INSERT INTO ics_tokens (token_hash, user_id, meetup_id, expires_at, created_at)
+       SELECT ?1, ?2, ?3, ?4, ?5
+       WHERE (SELECT COUNT(*) FROM ics_tokens WHERE user_id = ?2 AND created_at > ?6) < ?7`,
+    )
+    .bind(row.tokenHash, row.userId, row.meetupId, row.expiresAt, row.now, row.now - quota.windowMs, quota.limit)
     .run();
+  return result.meta.changes === 1;
+}
+
+/** 直近 windowMs の発行のうち、いちばん古い時刻（上限を超えたときの Retry-After のため） */
+export async function oldestRecentIcsToken(d1: D1Database, userId: string, since: number) {
+  const row = await d1
+    .prepare("SELECT MIN(created_at) AS t FROM ics_tokens WHERE user_id = ?1 AND created_at > ?2")
+    .bind(userId, since)
+    .first<{ t: number | null }>();
+  return row?.t ?? null;
 }
 
 /** 期限内のトークンだけ */

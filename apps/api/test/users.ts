@@ -10,9 +10,9 @@ export function makeUsers(h: Harness) {
   async function call(
     method: string,
     path: string,
-    opts: { token?: string; body?: unknown; cookie?: string; origin?: string | null } = {},
+    opts: { token?: string; body?: unknown; cookie?: string; origin?: string | null; headers?: Record<string, string> } = {},
   ) {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...opts.headers };
     if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";
     if (opts.cookie) headers.Cookie = opts.cookie;

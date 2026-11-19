@@ -1,7 +1,8 @@
 import { myAvailabilitySchema, type FreeSlot } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { apiSend } from "../api/client";
+import { ApiError, apiSend } from "../api/client";
+import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { formatDate, formatSlot } from "../availability/format";
 import { today } from "../availability/queries";
@@ -36,15 +37,28 @@ function Candidates() {
   const slots = useQuery(freeSlotsQuery(date));
   const [failed, setFailed] = useState(false);
 
+  const idempotency = useIdempotencyKey();
   const create = useMutation({
-    mutationFn: (slot: FreeSlot) =>
-      apiSend("POST", "/api/v1/availabilities", { date: slot.date, preset: slot.preset }, myAvailabilitySchema),
+    mutationFn: (slot: FreeSlot) => {
+      const path = "/api/v1/availabilities";
+      const body = { date: slot.date, preset: slot.preset };
+      return apiSend("POST", path, body, myAvailabilitySchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, body)) });
+    },
     onMutate: () => setFailed(false),
     onError: () => setFailed(true),
+    onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.availability.all() }),
   });
 
   const data = slots.data;
+  // 回数の上限（429。T-10）は、候補を出さずに静かに待ってもらう
+  if (slots.error instanceof ApiError && slots.error.status === 429) {
+    return (
+      <p role="status" className="text-slate-600">
+        少し待ってから、もう一度開いてください
+      </p>
+    );
+  }
   if (!data) return null;
   if (data.status === "needs_reauth") {
     return (

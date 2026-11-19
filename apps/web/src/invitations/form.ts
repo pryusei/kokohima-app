@@ -1,5 +1,5 @@
 import type { ExpiresIn } from "@kokohima/shared";
-import { ApiError } from "../api/client";
+import { ApiError, isIdempotencyConflict } from "../api/client";
 import { addDays, localInstant } from "../availability/format";
 
 // 誘いと募集の作成画面で共有する部品（docs/specs/T-04-direct-invite.md・T-05-broadcast.md「画面」）
@@ -12,6 +12,7 @@ export const EXPIRES: { value: ExpiresIn; label: string }[] = [
 ];
 
 export function sendErrorText(error: unknown) {
+  if (isIdempotencyConflict(error)) return "送信できませんでした。もう一度お試しください";
   if (error instanceof ApiError && error.status === 429) return "今日はたくさん誘ったので、少し時間をおいてください";
   if (error instanceof ApiError && error.status === 409) return "同じ時間の誘いをもう送っています";
   if (error instanceof ApiError && error.status === 404) return "この友達には送れませんでした";
