@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { AppEnv } from "../env";
 import { problem } from "../http/problem";
 import { idempotent } from "../http/idempotency";
+import { rateLimit } from "../http/rateLimit";
 import { validationFailed } from "../http/validation";
 import { requireAuth } from "../identity/middleware";
 import { decodeCursor, encodeCursor } from "../shared/cursor";
@@ -123,7 +124,8 @@ export function availabilityRoutes() {
     return result === "not_found" ? notFound(c) : c.body(null, 204);
   });
 
-  app.get("/friend-availabilities", async (c) => {
+  // 友達全員の枠を展開する重い読み取りなので、利用者 ID ごとに回数の上限をかける（docs/specs/T-14-friend-availabilities-ratelimit.md）
+  app.get("/friend-availabilities", rateLimit({ group: "friend_availabilities", limiter: "RL_USER", by: "user" }), async (c) => {
     const range = parseRange(c, 14);
     if ("error" in range) return validationFailed(c, range.error ?? null);
     const cursor = range.cursor === undefined ? null : decodeCursor(range.cursor);

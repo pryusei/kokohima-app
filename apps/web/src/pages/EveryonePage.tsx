@@ -1,7 +1,7 @@
 import type { FriendAvailability } from "@kokohima/shared";
 import { useQuery } from "@tanstack/react-query";
 import { formatDate, formatSlot, localDateOf } from "../availability/format";
-import { everyoneQuery, today } from "../availability/queries";
+import { everyoneQuery, isRateLimited, today } from "../availability/queries";
 import { initialRange } from "../invitations/format";
 import { AvailabilityChip } from "../ui/AvailabilityChip";
 import { Avatar } from "../ui/Avatar";
@@ -52,7 +52,11 @@ export function EveryonePage() {
         暇な人いる？と募る
       </ButtonLink>
       {everyone.isPending && <Loading />}
-      {everyone.isError && <LoadError retry={() => void everyone.refetch()} />}
+      {everyone.isError && !isRateLimited(everyone.error) && <LoadError retry={() => void everyone.refetch()} />}
+      {/* 回数の上限（429。T-14）：前に読めた内容があれば出したまま。なければ静かに待ってもらう（取り直さない） */}
+      {everyone.isError && isRateLimited(everyone.error) && !everyone.data && (
+        <LoadError text="少し時間をおいて、もう一度開いてください" />
+      )}
       {everyone.data?.length === 0 && (
         <EmptyState
           title="まだ友達のここ暇はありません"
