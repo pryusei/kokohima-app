@@ -11,6 +11,7 @@ export const errorCodeSchema = z.enum([
   "idempotency_key_mismatch",
   "request_in_progress",
   "internal_error",
+  "unavailable",
 ]);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
 
