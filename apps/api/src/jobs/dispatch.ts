@@ -2,6 +2,7 @@ import type { AppDeps, Bindings } from "../env";
 import { deleteExpiredIcsTokens, deleteExpiredOauthStates } from "../calendar/infra/repository";
 import { db as identityDb, deleteDeadSessions, deleteExpiredLoginRecords } from "../identity/infra/repository";
 import { OAUTH_STATE_TTL_MS } from "../calendar/application/connections";
+import { MAX_LENGTH_MS } from "../availability/domain/validation";
 import { deleteEndedManual } from "../availability/infra/repository";
 import { cleanupNotificationCounts, cleanupOldNotifications, notificationStartAt } from "../notification/application/delivery";
 import { NOTIFICATION_ONLY_TYPES } from "../notification/domain/events";
@@ -43,8 +44,11 @@ export const DISPATCH_MAX_ROUNDS = 10;
 export const DISPATCH_TIME_LIMIT_MS = 20 * 1000;
 /** 処理済みの行を残す期間。退避キューを調べるとき、元の行を見られるようにする */
 export const OUTBOX_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-/** ここ暇の掃除：始まりがこれより前の行を消す（長さは最大24時間なので、終わってから1日以上たっている） */
-export const AVAILABILITY_RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
+/**
+ * ここ暇の掃除：始まりがこれより前の行を消す（2日）。長さの上限（24時間）＋1日なので、どれも終わってから1日以上たっている。
+ * 長さの上限を変えても、終わっていない枠を消さないよう、上限の定数から求める
+ */
+export const AVAILABILITY_RETENTION_MS = MAX_LENGTH_MS + 24 * 60 * 60 * 1000;
 /** 掃除で1回に消す行の上限 */
 export const CLEANUP_BATCH = 1000;
 
