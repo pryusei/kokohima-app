@@ -1,3 +1,4 @@
+import { MAX_LENGTH_MS } from "../domain/validation";
 import { MINUTE_MS } from "../domain/zonedTime";
 
 // availability のD1アクセス（docs/specs/T-03-availability.md）
@@ -53,6 +54,12 @@ export async function putPresets(d1: D1Database, userId: string, p: PresetRow, n
     .run();
 }
 
+/*
+ * 手動の枠の長さは最大 MAX_LENGTH_MS（24時間）。範囲 [from, to) と重なる枠は必ず from - MAX_LENGTH_MS < starts_at < to を満たすので、
+ * 範囲と重なる枠を探す SQL には、この条件を重なりの条件に足す（置き換えない）。結果は変わらず、インデックス (user_id, starts_at, id) の範囲だけを読む
+ * （docs/specs/T-12-data-growth.md「ここ暇（手動の枠）の検索と掃除」）
+ */
+
 /**
  * 終了していない自分の手動の枠と1分以上重ならず、未来の手動の枠が limit 未満のときだけ、1つの文で追加する。追加できたら true
  */
@@ -67,11 +74,12 @@ export async function insertManualWithinLimits(
        SELECT ?1, ?2, ?3, ?4, ?5, ?6
        WHERE NOT EXISTS (
            SELECT 1 FROM availabilities
-           WHERE user_id = ?2 AND ends_at > ?6 AND MIN(ends_at, ?4) - MAX(starts_at, ?3) >= ?7
+           WHERE user_id = ?2 AND starts_at > ?3 - ?9 AND starts_at < ?4
+             AND ends_at > ?6 AND MIN(ends_at, ?4) - MAX(starts_at, ?3) >= ?7
          )
-         AND (SELECT COUNT(*) FROM availabilities WHERE user_id = ?2 AND ends_at > ?6) < ?8`,
+         AND (SELECT COUNT(*) FROM availabilities WHERE user_id = ?2 AND starts_at > ?6 - ?9 AND ends_at > ?6) < ?8`,
     )
-    .bind(row.id, row.userId, row.startsAt, row.endsAt, row.label, row.now, MINUTE_MS, limit)
+    .bind(row.id, row.userId, row.startsAt, row.endsAt, row.label, row.now, MINUTE_MS, limit, MAX_LENGTH_MS)
     .run();
   return result.meta.changes === 1;
 }
@@ -81,12 +89,21 @@ export async function listMyManual(d1: D1Database, userId: string, from: number,
   const { results } = await d1
     .prepare(
       `SELECT * FROM availabilities
-       WHERE user_id = ?1 AND MIN(ends_at, ?3) - MAX(starts_at, ?2) >= ?5 AND ends_at > ?4
+       WHERE user_id = ?1 AND starts_at > ?2 - ?6 AND starts_at < ?3
+         AND MIN(ends_at, ?3) - MAX(starts_at, ?2) >= ?5 AND ends_at > ?4
        ORDER BY starts_at, id`,
     )
-    .bind(userId, from, to, now, MINUTE_MS)
+    .bind(userId, from, to, now, MINUTE_MS, MAX_LENGTH_MS)
     .all<ManualRow>();
   return results;
+}
+
+/** 始まりが before より前の手動の枠を消す（毎分の掃除。上限つき）。終わった枠は、一覧・友達の空き・重なりの判定・自動取り消しのどれにも使わない */
+export async function deleteEndedManual(d1: D1Database, before: number, limit: number) {
+  await d1
+    .prepare("DELETE FROM availabilities WHERE id IN (SELECT id FROM availabilities WHERE starts_at < ?1 LIMIT ?2)")
+    .bind(before, limit)
+    .run();
 }
 
 export async function deleteMyManual(d1: D1Database, userId: string, id: string) {
@@ -185,9 +202,10 @@ export async function visibleManual(
       `SELECT * FROM availabilities
        WHERE user_id IN (${VISIBLE_OWNERS})
          AND (?6 IS NULL OR user_id = ?6)
+         AND starts_at > ?2 - ?7 AND starts_at < ?3
          AND MIN(ends_at, ?3) - MAX(starts_at, ?2) >= ?5 AND ends_at > ?4`,
     )
-    .bind(viewerId, range.from, range.to, range.now, MINUTE_MS, friendId ?? null)
+    .bind(viewerId, range.from, range.to, range.now, MINUTE_MS, friendId ?? null, MAX_LENGTH_MS)
     .all<ManualRow>();
   return results;
 }
@@ -224,10 +242,11 @@ export async function myManualWithCreatedAt(d1: D1Database, userId: string, from
   const { results } = await d1
     .prepare(
       `SELECT id, starts_at, ends_at, created_at FROM availabilities
-       WHERE user_id = ?1 AND MIN(ends_at, ?3) - MAX(starts_at, ?2) >= ?5 AND ends_at > ?4
+       WHERE user_id = ?1 AND starts_at > ?2 - ?6 AND starts_at < ?3
+         AND MIN(ends_at, ?3) - MAX(starts_at, ?2) >= ?5 AND ends_at > ?4
        ORDER BY starts_at, id`,
     )
-    .bind(userId, from, to, now, MINUTE_MS)
+    .bind(userId, from, to, now, MINUTE_MS, MAX_LENGTH_MS)
     .all<{ id: string; starts_at: number; ends_at: number; created_at: number }>();
   return results;
 }
