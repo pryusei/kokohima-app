@@ -894,6 +894,7 @@ describe("既定の依存とログ", () => {
     const lines: string[] = [];
     vi.spyOn(console, "log").mockImplementation((...args) => void lines.push(args.join(" ")));
     vi.spyOn(console, "error").mockImplementation((...args) => void lines.push(args.join(" ")));
+    vi.spyOn(console, "warn").mockImplementation((...args) => void lines.push(args.join(" ")));
     const { a, b } = await pair();
     const site = host();
     h.web.page(`https://${site}/ok`, () => html(ogpHead("秘密のタイトル")));
