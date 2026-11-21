@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch, ApiError, setUnauthenticatedHandler } from "../api/client";
@@ -8,9 +8,9 @@ import { tokenStore } from "./tokenStore";
 
 const me = { id: "6f1c1f9e-6c2a-4c55-9b7e-2d1f0b0c4a11", displayName: null, avatarUrl: null };
 const empty = json({ items: [], nextCursor: null });
-// ログイン後のホーム（みんな）と、ログアウトのボタンがある友達タブが読むもの
+// ログイン後のホーム（みんな）と、ログアウトのボタンがある設定のアカウント（docs/specs/T-11-design.md）が読むもの
 const home = { "/api/v1/friend-availabilities": empty };
-const friendsTab = { "/api/v1/me": json(me), "/api/v1/friends": empty, "/api/v1/invite-links": empty };
+const accountPage = { "/api/v1/me": json(me) };
 const loggedIn = () => screen.findByRole("heading", { name: "みんな" });
 
 beforeEach(() => {
@@ -104,11 +104,11 @@ describe("起動時のログイン状態", () => {
     );
   });
 
-  it("友達タブの「アカウント」からログアウトするとログイン画面になる", async () => {
-    window.history.replaceState(null, "", "/friends");
+  it("設定の「アカウント」からログアウトするとログイン画面になる", async () => {
+    window.history.replaceState(null, "", "/settings/account");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
-      ...friendsTab,
+      ...accountPage,
       "/api/v1/auth/logout": () => new Response(null, { status: 204 }),
     });
     renderApp();
@@ -121,10 +121,10 @@ describe("起動時のログイン状態", () => {
 
 describe("ログアウトの失敗", () => {
   it("全端末ログアウト：アクセストークンが切れていれば更新してから送る", async () => {
-    window.history.replaceState(null, "", "/friends");
+    window.history.replaceState(null, "", "/settings/account");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody("fresh")),
-      ...friendsTab,
+      ...accountPage,
       "/api/v1/auth/logout-all": () => new Response(null, { status: 204 }),
     });
     renderApp();
@@ -140,10 +140,10 @@ describe("ログアウトの失敗", () => {
     ["全端末ログアウト", "すべての端末からログアウト", "/api/v1/auth/logout-all"],
     ["ログアウト", "ログアウト", "/api/v1/auth/logout"],
   ])("%s：通信できなければログイン中のまま、静かに再試行を促す", async (_l, name, path) => {
-    window.history.replaceState(null, "", "/friends");
+    window.history.replaceState(null, "", "/settings/account");
     mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
-      ...friendsTab,
+      ...accountPage,
       [path]: () => Promise.reject(new TypeError("Failed to fetch")),
     });
     renderApp();
@@ -151,6 +151,24 @@ describe("ログアウトの失敗", () => {
     await userEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}$`) }));
     expect(await screen.findByText(/ログアウトできませんでした/)).toBeVisible();
     expect(screen.getByRole("heading", { name: "アカウント" })).toBeVisible();
+  });
+
+  it("オフラインの間はログアウトと全端末ログアウトを押せず、理由を出す。つながったら押せる", async () => {
+    window.history.replaceState(null, "", "/settings/account");
+    const { calls } = mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), ...accountPage });
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    renderApp();
+    await screen.findByRole("heading", { name: "アカウント" });
+    expect(screen.getByRole("button", { name: "ログアウト" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "すべての端末からログアウト" })).toBeDisabled();
+    expect(screen.getByText("オフラインの間はログアウトできません")).toBeVisible();
+    expect(screen.getByText("オフラインです。つながると最新の内容になります")).toBeVisible();
+    onLine.mockReturnValue(true);
+    act(() => window.dispatchEvent(new Event("online")));
+    expect(screen.getByRole("button", { name: "ログアウト" })).toBeEnabled();
+    expect(screen.queryByText("オフラインの間はログアウトできません")).toBeNull();
+    expect(calls.some((c) => c.url.startsWith("/api/v1/auth/logout"))).toBe(false);
+    onLine.mockRestore();
   });
 
   it("APIクライアント：更新が通信エラー・5xxならログアウトにしない", async () => {
