@@ -19,6 +19,8 @@ const expect = (ok, message) => {
   if (!ok) errors.push(message);
 };
 
+expect(c.main === "src/index.ts", "トップレベルの main は src/index.ts（本番のエントリ）");
+expect((prod.main ?? c.main) === "src/index.ts", "prod の main は src/index.ts（E2E 用のエントリを本番に出さない）");
 expect(c.workers_dev === false, "トップレベルの workers_dev は false");
 expect(c.preview_urls === false, "トップレベルの preview_urls は false");
 expect(prod.workers_dev === false, "prod の workers_dev は false");
@@ -36,6 +38,12 @@ expect(
 expect(prod.vars?.APPLE_LOGIN_ENABLED === "0", "prod の APPLE_LOGIN_ENABLED は \"0\"");
 expect(prod.vars?.E2E_MODE === undefined, "prod に E2E_MODE がない");
 expect(e2e.routes === undefined && e2e.route === undefined, "e2e の環境に routes がない");
+// どの環境でも workers.dev とプレビューの URL を開けない（e2e を誤ってデプロイしても公開されないように）。prod 以外に routes を書かない
+for (const [name, e] of Object.entries(c.env ?? {})) {
+  expect(e.workers_dev !== true, `${name} の workers_dev を true にしない`);
+  expect(e.preview_urls !== true, `${name} の preview_urls を true にしない`);
+  if (name !== "prod") expect(e.routes === undefined && e.route === undefined, `${name} の環境に routes がない`);
+}
 expect(c.routes === undefined && c.route === undefined, "トップレベルに routes がない");
 
 if (errors.length > 0) {

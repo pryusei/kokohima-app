@@ -165,8 +165,9 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `GOOGLE_CLIENT_ID`、`APPLE_CLIENT_ID`（Services ID）、`APPLE_TEAM_ID`、`APPLE_KEY_ID` | vars | 公開されてよい識別子 |
 | `GOOGLE_CLIENT_SECRET`、`APPLE_PRIVATE_KEY`、`JWT_SIGNING_KEYS` | secret | `wrangler secret` でのみ設定。ローカルは `.dev.vars`（コミットしない） |
 | `JWT_CURRENT_KID` | vars | 署名に使う鍵ID |
+| `APPLE_LOGIN_ENABLED` | vars | `"1"` のときだけ Apple の経路が動く。ほかの値は止める（start は `/login?error=login_failed` への303、callback は404。docs/specs/T-12-release.md）。prod は `"0"` |
 
-- ローカルの `http://localhost` では、ChromeとFirefoxがSecure Cookieと `__Host-` を許可するため、本番と同じCookie設定のまま動かす。Safari（WebKit）は許可しないため、ローカルの確認とE2EはChromium（とFirefox）で行い、Safariはstagingで確認する
+- ローカルの `http://localhost` では、ChromeとFirefoxがSecure Cookieと `__Host-` を許可するため、本番と同じCookie設定のまま動かす。Safari（WebKit）は許可しないため、ローカルの確認とE2EはChromium（とFirefox）で行い、Safariは本番（staging は作らない。T-12）で人が確認する
 - Appleはリダイレクト先に `localhost` や `http` を登録できない。Appleのログインはローカルでは確かめられないため、動かすときに本番に近い環境で人が手動で確認する（最初のリリースでは Apple を止め、staging も作らない。T-12）。Googleはローカルでも確認できる
 
 ### E2E用のテスト用ログイン

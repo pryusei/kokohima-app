@@ -380,7 +380,7 @@
 | `VAPID_PUBLIC_KEY` | vars | VAPID の公開鍵（base64url、非圧縮の点） |
 | `VAPID_SUBJECT` | vars | `mailto:` の連絡先（prod は `mailto:ops@kokohima.app`。T-12） |
 | `MAIL_FROM` | vars | 差出人 |
-| `NOTIFICATION_START_AT` | vars | T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない（「古い outbox の行」）。未設定・正の整数でなければ、お知らせを作らない。staging・prod は有効にするときに人が入れる（ローカル・E2E・単体テストは `1`） |
+| `NOTIFICATION_START_AT` | vars | T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない（「古い outbox の行」）。未設定・正の整数でなければ、お知らせを作らない。prod は `1`（新しい D1 で古い行がないため。T-12）、staging は有効にするときに人が入れる（ローカル・E2E・単体テストは `1`） |
 | `MAIL_DAILY_LIMIT` | vars | サービス全体の1日のメール数の上限（決定事項8）。正の整数でなければ90（Resend の無料枠の1日100通より少し下）として扱う。E2E は偽の配信なので実質なしにする |
 
 - ローカルと E2E の鍵は、`scripts/write-e2e-dev-vars.mjs` で作る（T-06 と同じ）。

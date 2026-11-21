@@ -187,7 +187,7 @@
 - `namespace_id`：ローカル 1001・1002、e2e 1101・1102、staging 2001・2002、prod 3001・3002（`RL_PUBLIC`・`RL_USER` の順）。
 - バインディングがない（設定の漏れ）・判定に失敗したときは、上限をかけずに `rate_limit_skipped` の記録を残す（キー・IP・利用者 ID は入れない）。おおよその上限なので、止めるより通す側に倒す。
 
-- wrangler の4つの環境（既定のローカル・e2e・staging・prod）すべてに書く（T-06 の `JOBS` と同じ）。ローカルと e2e の KV の ID は、ローカルでだけ使う値でよい。
+- wrangler の各環境（既定のローカル・e2e・assets（T-12）・staging・prod）すべてに書く（T-06 の `JOBS` と同じ）。ローカルと e2e の KV の ID は、ローカルでだけ使う値でよい。
 
 ## 認可と秘匿
 - 閲覧者IDの使い方：`idempotency_keys` は必ず `user_id = 閲覧者` で読み書きする。別の利用者が同じキーを送っても、別の行になる。middleware は閲覧者が決まってから動く（fail closed）。

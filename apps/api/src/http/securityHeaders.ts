@@ -44,10 +44,11 @@ export function withApiHeaders(res: Response): Response {
   return out;
 }
 
-/** SPA の入口（HTML）か。304 などで Content-Type がなければ、パスで決める */
+/** SPA の入口（HTML）か。Content-Type のない304だけは、パスで決める */
 function isHtml(pathname: string, res: Response) {
   const type = res.headers.get("Content-Type");
   if (type) return type.split(";")[0]?.trim().toLowerCase() === "text/html";
+  if (res.status !== 304) return false;
   const last = pathname.split("/").pop() ?? "";
   return pathname.endsWith("/") || last.endsWith(".html") || !last.includes(".");
 }

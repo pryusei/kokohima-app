@@ -17,7 +17,7 @@ function fakeApp() {
   app.get("/api/v1/own-headers", (c) => {
     c.header("Content-Security-Policy", "default-src 'none'; sandbox");
     c.header("Cache-Control", "public, max-age=86400, immutable");
-    c.header("Referrer-Policy", "no-referrer");
+    c.header("Referrer-Policy", "same-origin");
     return c.body("x");
   });
   app.get("/api/v1/redirect", (c) => c.redirect("/login", 303));
@@ -85,6 +85,8 @@ describe("振り分け", () => {
     }
     const head = await call("/invites/abc", { method: "HEAD" });
     expect(head.status).toBe(200);
+    expectCommon(head);
+    expect(head.headers.get("Content-Security-Policy")).toBe(PAGE_CSP);
     expect(assets.seen.map((s) => s.method)).toContain("HEAD");
     expect(app.seen).toEqual(["/api/v1/health"]);
   });
@@ -163,8 +165,10 @@ describe("セキュリティのヘッダー", () => {
     expectCommon(moved);
   });
 
-  it("Cache-Control は /sw.js と HTML だけ no-cache。ほかの画面のファイルは静的アセットの値のまま", async () => {
+  it("Cache-Control は /sw.js と HTML だけ no-cache。ほかの画面のファイル・405・リダイレクトは触らない", async () => {
     const { call } = setup();
+    expect((await call("/", { method: "POST" })).headers.get("Cache-Control")).toBeNull();
+    expect((await call("/moved")).headers.get("Cache-Control")).toBeNull();
     expect((await call("/sw.js")).headers.get("Cache-Control")).toBe("no-cache");
     expect((await call("/assets/app.js")).headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
   });
@@ -177,7 +181,7 @@ describe("セキュリティのヘッダー", () => {
     const own = await call("/api/v1/own-headers");
     expect(own.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
     expect(own.headers.get("Cache-Control")).toBe("public, max-age=86400, immutable");
-    expect(own.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(own.headers.get("Referrer-Policy")).toBe("same-origin");
     const redirect = await call("/api/v1/redirect");
     expect(redirect.status).toBe(303);
     expect(redirect.headers.get("Location")).toBe("/login");

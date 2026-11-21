@@ -134,7 +134,7 @@ export function InvitePage() {
               </a>
               {/* Sign in with Apple は VITE_APPLE_LOGIN_ENABLED が "1" のときだけ（T-12）。本番のビルドでは文字列ごと落ちる */}
               {import.meta.env.VITE_APPLE_LOGIN_ENABLED === "1" && (
-                <a className="rounded-lg bg-black px-4 py-3 text-center text-white" href={loginUrl("apple")}>
+                <a data-provider="apple-login" className="rounded-lg bg-black px-4 py-3 text-center text-white" href={loginUrl("apple")}>
                   Appleでログイン
                 </a>
               )}

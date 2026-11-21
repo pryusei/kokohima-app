@@ -59,7 +59,7 @@
 ## 振る舞い
 
 ### 振り分け（`apps/api/src/worker.ts`）
-- wrangler の `assets` は prod の環境にだけ書く（ローカルの開発と E2E は、今までどおり vite が画面を出し、`/api` を wrangler dev へ中継する）。
+- wrangler の `assets` は prod の環境と、デプロイしないローカル専用の `assets` の環境（本番と同じ形の E2E 用）にだけ書く（ローカルの開発と E2E は、今までどおり vite が画面を出し、`/api` を wrangler dev へ中継する）。
   - `directory`：`../web/dist`、`binding`：`ASSETS`、`not_found_handling`：`single-page-application`、`run_worker_first`：`true`。
 - Worker の `fetch` は次のとおりに振り分ける。振り分けとヘッダーの選び方は、同じ関数（`isApiPath(pathname)`：`URL.pathname` がデコードせずに `/api/` で始まるか）で決める。
   - パスが `/api/` で始まる：今までどおり Hono のアプリ。Hono が404を返しても、画面の `index.html` には置き換えない。
@@ -86,7 +86,7 @@
   - `eval`・`new Function` も許さない。Zod は最初の検証で `new Function` を試し、捕まえても CSP の違反が報告されるので、画面の入口（`apps/web/src/main.tsx` が最初に読む `zodConfig.ts`）で `config({ jitless: true })` にする（検証の結果は変わらない。本番と同じ形の E2E で見つけた）。
   - 画像は自分のオリジンだけ（OGP の画像は T-08 で自分のオリジンから出している。アバターの URL は今は外から読まない）。
 - API の応答（`/api/`）で、経路が CSP を付けていなければ `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` を付ける（JSON をブラウザで開いても何も読み込ませない）。
-- キャッシュ：画面の側の応答のうち、パスが `/sw.js` の応答と、`Content-Type` が `text/html` の応答（SPA の入口。304 で `Content-Type` がない応答は、パスが `/`・`.html` で終わる・拡張子がない（SPA の経路）なら HTML とみなす）には `Cache-Control: no-cache` を付ける（Service Worker と画面の入口が古いまま残らないように）。ほかの画面のファイルは、静的アセットの既定のまま。
+- キャッシュ：画面の側の応答のうち、パスが `/sw.js` の応答と、`Content-Type` が `text/html` の応答（SPA の入口。`Content-Type` がない304は、パスが `/`・`.html` で終わる・拡張子がない（SPA の経路）なら HTML とみなす）には `Cache-Control: no-cache` を付ける（Service Worker と画面の入口が古いまま残らないように）。ほかの画面のファイルは、静的アセットの既定のまま。
 
 ### Apple のログインを止める
 - 変数 `APPLE_LOGIN_ENABLED`（秘密ではない）。`"1"` のときだけ Apple の経路が動く。ほかの値・未設定は止める（fail closed）。
@@ -122,12 +122,12 @@
 - `pnpm --filter api build:prod`：`apps/web` をビルドしてから、`wrangler deploy --dry-run --env prod --outdir dist`。CI の本番のビルドの検査は、今の検査に加えて次を確かめる。
   - `apps/web/dist/index.html` があること。
   - `apps/web/dist` に E2E 用の名前（`__e2e__` など、今の検査と同じ一覧）がないこと。
-  - `apps/web/dist` に `Appleでログイン` と `auth/apple/start` がないこと（本番のビルドで Apple のボタンが出ない）。
+  - `apps/web/dist` に `Appleでログイン` と、Apple のボタンの目印 `data-provider="apple-login"` がないこと（本番のビルドで Apple のボタンが出ない。文言が変わっても目印で見つける。URL は実行時に組み立てるので、`auth/apple/start` の文字列では見つからない）。
   - `apps/web/dist` に `_headers`・`_redirects` がないこと（ヘッダーと振り分けはコードだけで決める）。
   - `apps/web/dist/index.html` にインラインの script・style（`style=` の属性を含む）がないこと。
-  - wrangler の設定：prod の `assets.run_worker_first` が `true`・`not_found_handling` が `single-page-application`、トップレベルと prod の `workers_dev`・`preview_urls` が `false`、e2e に `routes` がない（設定が変わってヘッダーが付かなくなるのを CI で気づくため）。
-- `pnpm --filter api deploy:prod`（新しく足す）：`apps/web` をビルドし、CI と同じ画面のビルドの検査（Apple のボタン・E2E の名前など）を通してから `wrangler deploy --env prod`。手元の `.env.local` などが本番のビルドに入り込んでも、ここで止まる。人だけが実行する（Claude は実行しない）。
-- `pnpm --filter api db:migrate:prod`（新しく足す）：`wrangler d1 migrations apply kokohima-prod --remote --env prod`。人だけが実行する。
+  - wrangler の設定：prod の `assets.run_worker_first` が `true`・`not_found_handling` が `single-page-application`・`binding` が `ASSETS`、トップレベルと prod の `workers_dev`・`preview_urls` が `false`、prod の `routes` が `kokohima.app`（`custom_domain`）だけ、prod の `APPLE_LOGIN_ENABLED` が `"0"` で `E2E_MODE` がない、トップレベルと prod の `main` が `src/index.ts`、どの環境も `workers_dev`・`preview_urls` を `true` にしない、prod 以外の環境とトップレベルに `routes` がない（設定が変わってヘッダーが付かなくなるのを CI で気づくため）。
+- `pnpm --filter api deploy:prod`（新しく足す）：`apps/web` をビルドし、CI と同じ検査（画面のビルド・wrangler の設定・`--dry-run` で作った API のビルドに E2E 用の経路がないこと。`apps/api/scripts/check-*.mjs`）を通してから `wrangler deploy --env prod`。手元の `.env.local` などが本番のビルドに入り込んでも、ここで止まる。人だけが実行する（Claude は実行しない）。
+- `pnpm --filter api db:migrate:prod`（新しく足す）：`wrangler d1 migrations apply DB --remote --env prod`（prod の `DB` のバインディング＝`kokohima-prod`）。人だけが実行する。
 
 ### 人が行う作業（デプロイの前。#52 に載せる）
 1. Cloudflare：`kokohima.app` の登録（済み）。Workers の有料プラン（Queues に要る。NF-09）。API トークンは用途ごとに分ける（要求定義書「APIトークンは用途ごとに分ける」）：
@@ -184,7 +184,7 @@
 - [x] Apple を止める：`APPLE_LOGIN_ENABLED` が `"0"`・未設定・ほかの値なら、`start` は `/login?error=login_failed` への303で、`oauth_transactions` を書かず、新しい結びつけ Cookie を発行しない（`loginFailed` と同じく、消す `Set-Cookie` だけが出る）。`callback` は本文を読まずに problem+json の404。回数の上限（`auth_start`）は Apple を止めても先に効く（既存の rateLimit のテストが通る）。application の `startLogin`・`handleCallback` も Apple なら失敗を返す。`"1"` なら今までどおり（既存のテストが通る）。
 - [x] Web：`VITE_APPLE_LOGIN_ENABLED` がないとき、ログインの画面と招待の画面に「Appleでログイン」が出ない。`"1"` なら出る。
 ### CI の検査（実装PRで足す）
-- [x] ビルドと設定：`build:prod` のあと、`apps/web/dist/index.html` があり、インラインの script・style・E2E 用の名前・`Appleでログイン`・`_headers`・`_redirects` がない。wrangler の設定の項目（`run_worker_first`・`not_found_handling`・`workers_dev`・`preview_urls`・e2e の `routes`）が仕様のとおり。
+- [x] ビルドと設定：`build:prod` のあと、`apps/web/dist/index.html` があり、インラインの script・style・E2E 用の名前・`Appleでログイン`・`_headers`・`_redirects` がない。wrangler の設定の項目（上の「ビルドとデプロイのコマンド」の一覧）が仕様のとおり。
 
 ### E2Eテスト（対象にする利用者の流れ）
 - [x] 既存の E2E がすべて通る（ローカルの開発と E2E は `VITE_APPLE_LOGIN_ENABLED=1`・`APPLE_LOGIN_ENABLED=1` で、今の流れのまま）。
@@ -220,3 +220,5 @@
 | 2026-11-21 | 仕様のレビューを反映：Apple を止めた `start`・`callback` の応答の形と順番、設定値の置き場（vars・vitest・`.env.development`）、`NOTIFICATION_START_AT` は `"1"`、転記の PR の順番、API トークンの分け方・有料プラン・Terraform の初回・Google Calendar API・Resend の DNS を Terraform で、本番と同じ形の画面の CSP の E2E、`db:migrate:prod`、実装PRで直す文書の追加、決定事項6・7 | 仕様書PRのレビュー（仕様） |
 | 2026-11-21 | Apple を止めた `start` は消す `Set-Cookie` だけを出す（`loginFailed` と同じ）、止めていることは隠さない、画面の `Cache-Control` は `/sw.js` と HTML だけ上書き、`.gitignore` の例外 | 仕様書PRのレビュー（pryusei/kokohima-app#83） |
 | 2026-11-21 | 実装した。Zod の `jitless`（CSP の `eval` の違反を出さない）を足し、決定事項と確認事項を合意済みにした | 実装PR |
+| 2026-11-21 | 実装PRのレビューを反映：`assets` を書く環境、`Content-Type` のない応答は304だけ HTML とみなす、wrangler の設定の検査の項目、`db:migrate:prod` のコマンド | 実装PRのレビュー（仕様） |
+| 2026-11-21 | 実装PRのセキュリティのレビューを反映：deploy:prod でも API のビルドの E2E の名前と `main` を検査、どの環境も workers.dev を開けない検査、Apple のボタンは目印 `data-provider="apple-login"` で検査 | 実装PRのレビュー（セキュリティ） |

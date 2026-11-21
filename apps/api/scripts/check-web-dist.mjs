@@ -31,7 +31,8 @@ const forbidden = [
   /e2eLogin|e2eExpireBroadcast|e2eCalendar|e2eOutbox|e2eFetch|e2eNotification|e2eDeliverPending|e2eOgpFetch|E2E_LINK_PREVIEW/,
   /google\.e2e\.invalid|resend\.e2e\.invalid|push\.e2e\.invalid|ogp\.e2e\.invalid/,
   /Appleでログイン/,
-  /auth\/apple\/start/,
+  // 文言が変わっても見つかるように、Apple のボタンには data-provider="apple-login" の目印を付けている
+  /apple-login/,
 ];
 const walk = (dir) =>
   readdirSync(dir).flatMap((f) => {
