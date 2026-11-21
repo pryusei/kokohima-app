@@ -1060,7 +1060,7 @@ describe("outbox を Queue に流す", () => {
     expect(other?.processed_at).toBeNull();
   });
 
-  it("1回に最大100件。処理済みにする SQL は値100個の制限に収まる", async () => {
+  it("100件ずつ流す。処理済みにする SQL は値100個の制限に収まる（1回の実行で繰り返すのは docs/specs/T-12-data-growth.md）", async () => {
     const ids = Array.from({ length: 120 }, () => crypto.randomUUID());
     await env.DB.batch(
       ids.map((id, n) =>
@@ -1072,15 +1072,14 @@ describe("outbox を Queue に流す", () => {
       ),
     );
     h.jobs.length = 0;
-    expect(await dispatchOutbox(h.ctx)).toBe(100);
-    expect(h.jobs).toHaveLength(100);
+    expect(await dispatchOutbox(h.ctx)).toBe(120);
+    expect(h.jobs).toHaveLength(120);
     const done = await env.DB.prepare(
       "SELECT COUNT(*) AS n FROM outbox WHERE id IN (SELECT value FROM json_each(?1)) AND processed_at IS NOT NULL",
     )
       .bind(JSON.stringify(ids))
       .first<{ n: number }>();
-    expect(done?.n).toBe(100);
-    await dispatchOutbox(h.ctx);
+    expect(done?.n).toBe(120);
   });
 
   it("送れなければ未処理のまま残り、次の実行で送り直す", async () => {
