@@ -1,6 +1,6 @@
 # T-12 仕様書：Web としての最初のリリースの準備
 
-- 状態：下書き
+- 状態：実装済み
 - タスク票：docs/tasks/T-12-release.md
 - 関係する要件：要求定義書「残りの論点」（XSS対策・Content-Security-Policy）、「AI時代の攻撃を前提にした運用」（使わないルートは閉じる）、F-01（ログイン）。issue pryusei/kokohima-app#42（アプリの中で行う部分）、#52
 
@@ -26,7 +26,7 @@
 - identity：Apple の経路の開け閉め（設定値で判断）。
 - `apps/web`：ログインの画面と招待の画面で、Apple のボタンを出すかを、ビルドのときの設定値で決める。
 
-### 実装PRで直すもの
+### 実装PRで直したもの
 - T-01 の仕様書：ログインの方法に「最初のリリースでは Apple は止める（T-12）」と、`APPLE_LOGIN_ENABLED` を足す。
 - 要求定義書：F-01 の行に「最初のリリースは Google だけ」、「残りの論点」の XSS対策 を済みに（CSP は T-12）。構成図に「Web は API と同じ Worker の静的アセット」。
 - infra/README.md：デプロイの手順（D1 のマイグレーション、`deploy:prod`）。
@@ -83,6 +83,7 @@
 - 画面の側（`/api/` 以外）の応答には、`Content-Type` に関係なく（HTML・SVG・304 など）、次の CSP を付ける。
   - `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`
   - インラインの script・style は許さない。ビルドした `index.html` にインラインの script・style があれば、実装PRで外に出す（CSP を緩めない）。
+  - `eval`・`new Function` も許さない。Zod は最初の検証で `new Function` を試し、捕まえても CSP の違反が報告されるので、画面の入口（`apps/web/src/main.tsx` が最初に読む `zodConfig.ts`）で `config({ jitless: true })` にする（検証の結果は変わらない。本番と同じ形の E2E で見つけた）。
   - 画像は自分のオリジンだけ（OGP の画像は T-08 で自分のオリジンから出している。アバターの URL は今は外から読まない）。
 - API の応答（`/api/`）で、経路が CSP を付けていなければ `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` を付ける（JSON をブラウザで開いても何も読み込ませない）。
 - キャッシュ：画面の側の応答のうち、パスが `/sw.js` の応答と、`Content-Type` が `text/html` の応答（SPA の入口。304 で `Content-Type` がない応答は、パスが `/`・`.html` で終わる・拡張子がない（SPA の経路）なら HTML とみなす）には `Cache-Control: no-cache` を付ける（Service Worker と画面の入口が古いまま残らないように）。ほかの画面のファイルは、静的アセットの既定のまま。
@@ -177,17 +178,17 @@
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 他人のIDでは取得・更新できない：対象外（新しい経路・データの取得を足さない。既存の経路のテストはそのまま通る）。
-- [ ] 振り分け：`/api/` は Hono のアプリ、それ以外の `GET`・`HEAD` は `ASSETS`（偽物）、`POST`・`OPTIONS` などは405と `Allow`（`POST /__e2e__/login` も405）。`ASSETS` がないときは今までどおり Hono のアプリ。`/api`・`/apix`・`//api/v1/me`・`/%61pi/v1/me`・`/API/v1/me` は画面の側に回る。`/api/` の下で Hono が404を返したとき、`index.html` に置き換わらない。
-- [ ] ヘッダー：画面の側の応答（HTML・SVG・304）に画面用の CSP と共通のヘッダー。偽の `ASSETS` が弱い CSP や `Cache-Control` を付けて返しても、コードの値で上書きされる（偽物はヘッダーを変えられない応答を返し、作り直しを確かめる）。API の応答に共通のヘッダーと `default-src 'none'` の CSP。API の経路が付けたヘッダー（T-08 の画像の CSP・`Cache-Control`）は上書きしない。`/sw.js` と HTML は `Cache-Control: no-cache`（偽の `ASSETS` が `Cache-Control: public, max-age=...` を返しても）。HEAD と405の応答にも共通のヘッダー。identity の callback が付けた `Referrer-Policy` を上書きしない。E2E のエントリ（`createWorker` を共有）の API の応答にもヘッダーが付く。
-- [ ] Apple を止める：`APPLE_LOGIN_ENABLED` が `"0"`・未設定・ほかの値なら、`start` は `/login?error=login_failed` への303で、`oauth_transactions` を書かず、新しい結びつけ Cookie を発行しない（`loginFailed` と同じく、消す `Set-Cookie` だけが出る）。`callback` は本文を読まずに problem+json の404。回数の上限（`auth_start`）は Apple を止めても先に効く（既存の rateLimit のテストが通る）。application の `startLogin`・`handleCallback` も Apple なら失敗を返す。`"1"` なら今までどおり（既存のテストが通る）。
-- [ ] Web：`VITE_APPLE_LOGIN_ENABLED` がないとき、ログインの画面と招待の画面に「Appleでログイン」が出ない。`"1"` なら出る。
+- [x] 他人のIDでは取得・更新できない：対象外（新しい経路・データの取得を足さない。既存の経路のテストはそのまま通る）。
+- [x] 振り分け：`/api/` は Hono のアプリ、それ以外の `GET`・`HEAD` は `ASSETS`（偽物）、`POST`・`OPTIONS` などは405と `Allow`（`POST /__e2e__/login` も405）。`ASSETS` がないときは今までどおり Hono のアプリ。`/api`・`/apix`・`//api/v1/me`・`/%61pi/v1/me`・`/API/v1/me` は画面の側に回る。`/api/` の下で Hono が404を返したとき、`index.html` に置き換わらない。
+- [x] ヘッダー：画面の側の応答（HTML・SVG・304）に画面用の CSP と共通のヘッダー。偽の `ASSETS` が弱い CSP や `Cache-Control` を付けて返しても、コードの値で上書きされる（偽物はヘッダーを変えられない応答を返し、作り直しを確かめる）。API の応答に共通のヘッダーと `default-src 'none'` の CSP。API の経路が付けたヘッダー（T-08 の画像の CSP・`Cache-Control`）は上書きしない。`/sw.js` と HTML は `Cache-Control: no-cache`（偽の `ASSETS` が `Cache-Control: public, max-age=...` を返しても）。HEAD と405の応答にも共通のヘッダー。identity の callback が付けた `Referrer-Policy` を上書きしない。E2E のエントリ（`createWorker` を共有）の API の応答にもヘッダーが付く。
+- [x] Apple を止める：`APPLE_LOGIN_ENABLED` が `"0"`・未設定・ほかの値なら、`start` は `/login?error=login_failed` への303で、`oauth_transactions` を書かず、新しい結びつけ Cookie を発行しない（`loginFailed` と同じく、消す `Set-Cookie` だけが出る）。`callback` は本文を読まずに problem+json の404。回数の上限（`auth_start`）は Apple を止めても先に効く（既存の rateLimit のテストが通る）。application の `startLogin`・`handleCallback` も Apple なら失敗を返す。`"1"` なら今までどおり（既存のテストが通る）。
+- [x] Web：`VITE_APPLE_LOGIN_ENABLED` がないとき、ログインの画面と招待の画面に「Appleでログイン」が出ない。`"1"` なら出る。
 ### CI の検査（実装PRで足す）
-- [ ] ビルドと設定：`build:prod` のあと、`apps/web/dist/index.html` があり、インラインの script・style・E2E 用の名前・`Appleでログイン`・`_headers`・`_redirects` がない。wrangler の設定の項目（`run_worker_first`・`not_found_handling`・`workers_dev`・`preview_urls`・e2e の `routes`）が仕様のとおり。
+- [x] ビルドと設定：`build:prod` のあと、`apps/web/dist/index.html` があり、インラインの script・style・E2E 用の名前・`Appleでログイン`・`_headers`・`_redirects` がない。wrangler の設定の項目（`run_worker_first`・`not_found_handling`・`workers_dev`・`preview_urls`・e2e の `routes`）が仕様のとおり。
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 既存の E2E がすべて通る（ローカルの開発と E2E は `VITE_APPLE_LOGIN_ENABLED=1`・`APPLE_LOGIN_ENABLED=1` で、今の流れのまま）。
-- [ ] 本番と同じ形（ビルドした画面を静的アセットとして同じ Worker から出す）で、ログインの画面と SPA の経路（`/invites/xxx`）を開くと、画面が出て、CSP の違反が0件で、画面用の CSP と共通のヘッダーが付く。
+- [x] 既存の E2E がすべて通る（ローカルの開発と E2E は `VITE_APPLE_LOGIN_ENABLED=1`・`APPLE_LOGIN_ENABLED=1` で、今の流れのまま）。
+- [x] 本番と同じ形（ビルドした画面を静的アセットとして同じ Worker から出す）で、ログインの画面と SPA の経路（`/invites/xxx`）を開くと、画面が出て、CSP の違反が0件で、画面用の CSP と共通のヘッダーが付く。
   - wrangler に、ローカルでだけ使う環境 `assets`（`main` は本番と同じ `src/index.ts`、`assets` は prod と同じ設定、vars は e2e と同じ形）を足し、Playwright の別の project（`release`）で `wrangler dev --env assets` に向けて開く。ログインはしない（テスト用ログインの経路を本番のエントリに入れないため）。
   - CSP の違反は `securitypolicyviolation` のイベントとコンソールで数える。
 - カスタムドメインと `workers.dev` を閉じたことは本番でしか確かめられないので、「人が行う作業」の9で確かめる。
@@ -199,18 +200,17 @@
 - 退会（#37）、古いデータの掃除（#38）、初回設定（#43）、画面のデザイン（T-11）。
 - Google の審査（一般公開のときに行う）。
 
-## 決定事項（仕様書PRのレビューで合意する）
+## 決定事項（仕様書PR pryusei/kokohima-app#83 のマージで合意）
 1. 最初のリリースは、友達だけに向けた Web アプリ。ログインは Google だけ（利用者と決めた）。
-2. ドメインは `kokohima.app`（利用者が取得済み）。画面と API を同じ Worker・同じオリジンから出す（提案）。
-3. セキュリティのヘッダーは `_headers` ファイルでなく、Worker のコードで付ける（公式の資料で確かめられなかったことに頼らず、テストで確かめられる形にする）。そのため `run_worker_first: true` にする。（提案）
-4. Apple は設定値で止め、コードは残す（あとで戻せるように）。（提案）
+2. ドメインは `kokohima.app`（利用者が取得済み）。画面と API を同じ Worker・同じオリジンから出す。
+3. セキュリティのヘッダーは `_headers` ファイルでなく、Worker のコードで付ける（公式の資料で確かめられなかったことに頼らず、テストで確かめられる形にする）。そのため `run_worker_first: true` にする。
+4. Apple は設定値で止め、コードは残す（あとで戻せるように）。
 5. 最初のリリースは prod だけにし、staging は作らない（利用者と決めた）。
-6. カスタムドメインの DNS の記録は、Workers（`custom_domain: true`）が作り、管理する。Terraform の DNS の管理（infra/README.md）の例外として README に書く。Resend の記録などほかの DNS の記録は Terraform で持つ。（提案）
-7. Google の OAuth の公開ステータスは「テスト」のままにし、カレンダーの連携が7日ごとに切れることを受け入れる（友達だけの間。一般公開の前に審査を受ける）。（提案）
+6. カスタムドメインの DNS の記録は、Workers（`custom_domain: true`）が作り、管理する。Terraform の DNS の管理（infra/README.md）の例外として README に書く。Resend の記録などほかの DNS の記録は Terraform で持つ。
+7. Google の OAuth の公開ステータスは「テスト」のままにし、カレンダーの連携が7日ごとに切れることを受け入れる（友達だけの間。一般公開の前に審査を受ける）。
 
-## 確認事項（合意前に解消する）
-- 決定事項2〜4・6・7でよいか。
-- 送信のメールアドレス `notify@kokohima.app` でよいか。
+## 確認事項（解消済み）
+- 決定事項2〜4・6・7と、送信のメールアドレス `notify@kokohima.app` は、仕様書PRのマージで合意した。
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
@@ -219,3 +219,4 @@
 | 2026-11-21 | staging を作らないことにした。セキュリティのレビューを反映：画面の応答のヘッダーは常に上書き、CSP は画面の側の全応答に、振り分けの端の場合、wrangler の設定の CI の検査、トップレベルの `workers_dev: false`、Apple の判定の位置、`VITE_APPLE_LOGIN_ENABLED` の置き場、`VAPID_SUBJECT`、ゾーンの設定・鍵・Google の「テスト」の制約・デプロイのあとの確認と戻し方 | 利用者の回答、仕様書PRのレビュー（セキュリティ） |
 | 2026-11-21 | 仕様のレビューを反映：Apple を止めた `start`・`callback` の応答の形と順番、設定値の置き場（vars・vitest・`.env.development`）、`NOTIFICATION_START_AT` は `"1"`、転記の PR の順番、API トークンの分け方・有料プラン・Terraform の初回・Google Calendar API・Resend の DNS を Terraform で、本番と同じ形の画面の CSP の E2E、`db:migrate:prod`、実装PRで直す文書の追加、決定事項6・7 | 仕様書PRのレビュー（仕様） |
 | 2026-11-21 | Apple を止めた `start` は消す `Set-Cookie` だけを出す（`loginFailed` と同じ）、止めていることは隠さない、画面の `Cache-Control` は `/sw.js` と HTML だけ上書き、`.gitignore` の例外 | 仕様書PRのレビュー（pryusei/kokohima-app#83） |
+| 2026-11-21 | 実装した。Zod の `jitless`（CSP の `eval` の違反を出さない）を足し、決定事項と確認事項を合意済みにした | 実装PR |

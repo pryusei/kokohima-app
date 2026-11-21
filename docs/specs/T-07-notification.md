@@ -326,7 +326,7 @@
   - 追加していない人には、設定画面で「ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます」と出す。
 
 ### メールの中身
-- 差出人は vars の `MAIL_FROM`（例：`ここ暇 <notify@example.invalid>`）。宛先は `getNotificationAddress`。
+- 差出人は vars の `MAIL_FROM`（prod は `ここ暇 <notify@kokohima.app>`。T-12）。宛先は `getNotificationAddress`。
 - テキストだけで、HTML は送らない。
 - 相手の名前・ひとこと・エリア・予定の時刻を入れない（決定事項6）。
 - ログイン用のリンク（トークンつきの URL）を入れない。アプリのトップ（`APP_ORIGIN`）の URL だけを書く。
@@ -378,7 +378,7 @@
 | `NOTIFICATION_KEYS` | secret | 購読の endpoint の暗号化の鍵（kid → 32バイトの base64 の JSON。T-06 の鍵とは別） |
 | `NOTIFICATION_CURRENT_KID` | vars | 暗号化に使う鍵ID |
 | `VAPID_PUBLIC_KEY` | vars | VAPID の公開鍵（base64url、非圧縮の点） |
-| `VAPID_SUBJECT` | vars | `mailto:` の連絡先 |
+| `VAPID_SUBJECT` | vars | `mailto:` の連絡先（prod は `mailto:ops@kokohima.app`。T-12） |
 | `MAIL_FROM` | vars | 差出人 |
 | `NOTIFICATION_START_AT` | vars | T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない（「古い outbox の行」）。未設定・正の整数でなければ、お知らせを作らない。staging・prod は有効にするときに人が入れる（ローカル・E2E・単体テストは `1`） |
 | `MAIL_DAILY_LIMIT` | vars | サービス全体の1日のメール数の上限（決定事項8）。正の整数でなければ90（Resend の無料枠の1日100通より少し下）として扱う。E2E は偽の配信なので実質なしにする |

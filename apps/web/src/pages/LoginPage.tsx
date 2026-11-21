@@ -20,9 +20,12 @@ export function LoginPage({ search }: { search: string }) {
       <a className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-center" href={startUrl("google")}>
         Googleでログイン
       </a>
-      <a className="rounded-lg bg-black px-4 py-3 text-center text-white" href={startUrl("apple")}>
-        Appleでログイン
-      </a>
+      {/* Sign in with Apple は VITE_APPLE_LOGIN_ENABLED が "1" のときだけ（T-12）。本番のビルドでは文字列ごと落ちる */}
+      {import.meta.env.VITE_APPLE_LOGIN_ENABLED === "1" && (
+        <a className="rounded-lg bg-black px-4 py-3 text-center text-white" href={startUrl("apple")}>
+          Appleでログイン
+        </a>
+      )}
     </main>
   );
 }

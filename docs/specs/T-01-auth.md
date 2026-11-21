@@ -5,12 +5,12 @@
 - 関係する要件：F-01、NF-04、要求定義書「セキュリティ設計 › 認証とセッション」「テスト環境の認証」
 
 ## 概要
-GoogleまたはSign in with Appleでログインし、再読み込みしてもログインが続くようにする。
+GoogleまたはSign in with Appleでログインし、再読み込みしてもログインが続くようにする。最初のリリースでは Apple を設定値 `APPLE_LOGIN_ENABLED` で止め、Google だけにする（docs/specs/T-12-release.md）。
 API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を処理し、短命のアクセストークン（JWT、メモリのみ）と、ローテーションする更新用トークン（HttpOnly Cookie、D1にはハッシュのみ）を発行する。
 以降のすべてのAPIが、認証済みの閲覧者IDを安全に受け取れるミドルウェアを用意する。
 
 ## 前提
-- PWAとAPIは同じオリジンで配信する（例：`https://<アプリのドメイン>` の `/api/*` をAPI Workerにルーティング）。CORSは設定しない。ローカルではviteが `/api` をwrangler devへ中継し、同じオリジンになる（決定事項1）
+- PWAとAPIは同じオリジンで配信する（`https://kokohima.app` の1つの Worker が、`/api/*` を API、それ以外を画面の静的アセットとして返す。docs/specs/T-12-release.md）。CORSは設定しない。ローカルではviteが `/api` をwrangler devへ中継し、同じオリジンになる（決定事項1）
 - コンテキストは `identity`。`apps/api/src/identity/{domain,application,infra}` に置く
 
 ## API
@@ -154,7 +154,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - ログアウトの失敗：`logout` は204、`logout-all` は204（または、すでに失効していて401）を受け取ったときだけログアウト状態にする。通信できない・5xxのときはログイン状態のまま「ログアウトできませんでした」を静かに表示する（Cookieやセッションが残っているのに、ログアウトしたと思わせない）。`logout-all` はAPIクライアントを通し、アクセストークンが切れていれば更新してから送る
 - APIクライアントで、401の後の更新が通信エラー・5xxだったときも、ログアウトにはしない（失敗として返す）
 - 画面（仮）：
-  - ログイン画面（`/login`）：「Googleでログイン」「Appleでログイン」のボタン（`/api/v1/auth/<provider>/start?returnTo=...` への画面遷移）。`error=login_failed` のときは静かな文言で「ログインできませんでした。もう一度お試しください」を表示する（赤を使わない）
+  - ログイン画面（`/login`）：「Googleでログイン」「Appleでログイン」のボタン（「Appleでログイン」はビルドのときの変数 `VITE_APPLE_LOGIN_ENABLED` が `"1"` のときだけ。本番のビルドでは出さない。T-12）（`/api/v1/auth/<provider>/start?returnTo=...` への画面遷移）。`error=login_failed` のときは静かな文言で「ログインできませんでした。もう一度お試しください」を表示する（赤を使わない）
   - ログイン後の仮のホーム（`/`）：「ログイン中」の表示、「ログアウト」「すべての端末からログアウト」のボタン
   - 未ログインで `/` を開いたら `/login` へ。最終的なデザインはデザインのタスクで差し替える
 
@@ -167,7 +167,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `JWT_CURRENT_KID` | vars | 署名に使う鍵ID |
 
 - ローカルの `http://localhost` では、ChromeとFirefoxがSecure Cookieと `__Host-` を許可するため、本番と同じCookie設定のまま動かす。Safari（WebKit）は許可しないため、ローカルの確認とE2EはChromium（とFirefox）で行い、Safariはstagingで確認する
-- Appleはリダイレクト先に `localhost` や `http` を登録できない。Appleのログインはローカルでは確かめられないため、stagingで人が手動で確認する（Googleはローカルでも確認できる）
+- Appleはリダイレクト先に `localhost` や `http` を登録できない。Appleのログインはローカルでは確かめられないため、動かすときに本番に近い環境で人が手動で確認する（最初のリリースでは Apple を止め、staging も作らない。T-12）。Googleはローカルでも確認できる
 
 ### E2E用のテスト用ログイン
 - `POST /__e2e__/login` を `apps/api/src/e2e/` に実装し、`src/e2e/entry.ts` からだけ読み込む（本番のエントリからの読み込みはESLintで禁止済み）

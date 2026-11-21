@@ -184,7 +184,7 @@
 | 名前 | 種類 | 内容 |
 | --- | --- | --- |
 | `OGP_IMAGES` | R2 | `kokohima-<env>-ogp-images`。wrangler の4つの環境に書く |
-| `LINK_PREVIEW_OWN_DOMAINS` | 変数（秘密ではない） | アプリ自身の登録ドメイン（カンマ区切り）。wrangler の4つの環境に書く（ローカル・e2e は `localhost`、staging・prod は本番のドメインが決まるまで `example.invalid`）。 |
+| `LINK_PREVIEW_OWN_DOMAINS` | 変数（秘密ではない） | アプリ自身の登録ドメイン（カンマ区切り）。wrangler の4つの環境に書く（ローカル・e2e は `localhost`、prod は `kokohima.app`（T-12）、staging は作るまで `example.invalid`）。 |
 | `global_fetch_strictly_public` | 互換性フラグ | `compatibility_flags` に足す（最上位に書けば各環境に引き継がれる） |
 
 ### E2E用の偽のサイト
