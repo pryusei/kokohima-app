@@ -270,6 +270,27 @@ describe("状態と解除", () => {
     expect(await syncConnection(h.ctx, a.id, "google")).toBe("skipped");
     expect(h.google.state.requests.length).toBe(count);
   });
+
+  it("知らない鍵IDの行は一時的な失敗（unavailable）で、needs_reauth にせず連携を壊さない", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const row = await connectionRow(a);
+    // 暗号化した行があることを先に確かめる（ないと、書き換えた値が何であっても通ってしまう）
+    expect(row?.refresh_token_enc).toMatch(/^v1\.[^.]+\.[^.]+\.[^.]+$/);
+    // 設定の誤りで鍵が消えた場合を、行の鍵IDを知らない値に書き換えて再現する（形は v1.<kid>.<iv>.<暗号文>）
+    const [, , iv, cipher] = (row?.refresh_token_enc ?? "").split(".");
+    await env.DB.prepare("UPDATE calendar_connections SET refresh_token_enc = ?1 WHERE user_id = ?2 AND provider = 'google'")
+      .bind(`v1.unknown-kid.${iv}.${cipher}`, a.id)
+      .run();
+    const count = h.google.state.requests.length;
+    const res = await u.call("GET", `/api/v1/calendar/free-slots?from=${T("00:00")}&to=${T("00:00", "13")}`, { token: a.token });
+    expect(freeSlotsSchema.parse(await res.json()).status).toBe("unavailable");
+    // Google を呼ばず、連携はそのまま。失効のイベントも書かない
+    expect(h.google.state.requests.length).toBe(count);
+    expect((await status(a)).google.status).toBe("connected");
+    expect((await connectionRow(a))?.status).toBe("active");
+    expect(await outbox("CalendarReauthRequired", a.id)).toHaveLength(0);
+  });
 });
 
 describe("カレンダーの空き（候補）", () => {
