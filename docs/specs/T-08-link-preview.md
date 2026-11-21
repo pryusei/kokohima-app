@@ -31,7 +31,6 @@
 - T-04・T-05 の仕様書の画面の節：「ドメインだけ（OGP は T-08）」をカードの表示に直す。
 - 要求定義書：イベントの表に `LinkAttached`、「OGP取得：ユーザーごとのレート制限、同一URLはキャッシュ」に決定事項4・5、残りの論点（レート制限の値）に `link_image`。
 - invitation-domain スキル：イベントの表に `LinkAttached`、用語表に「リンクのプレビュー」→`LinkPreview`。
-- docs/design/claude-design-prompts.md：OGP カードの「取得中」の状態と作成画面での OGP プレビューを、決定事項1と「画面」（取得中はドメインだけ）に合わせる。
 - `apps/api/src/jobs/consumer.ts` の `MAX_ATTEMPTS` を `MAX_RETRIES` に改める（値は wrangler の `max_retries` と同じ5。試行の回数ではなく再試行の回数なので、名前を意味に合わせる）。この仕様書では `MAX_RETRIES` と書く。
 - `apps/api/src/http/rateLimit.ts` の `RateLimitGroup` に `link_image`、.github/workflows/ci.yml の本番ビルドの検査に偽のホスト名と E2E の名前。
 
@@ -266,3 +265,4 @@
 | 2026-11-21 | 一時的な失敗では取得の権利を手放す。`fetching` のまま残った行を掃除する。R2 の画像を台帳（`link_preview_images`）で管理し、置いた直後の画像を消さない。参照の行を誘い・募集ごとの外部キー（CASCADE）にした | 仕様書PRのレビュー（pryusei/kokohima-app#75） |
 | 2026-11-21 | Workers の `TextDecoder` の文字コードを確かめた結果を足した。自分のドメインを設定値 `LINK_PREVIEW_OWN_DOMAINS` で渡す。権利を引き継がれた側が終えるときの振る舞いを足した | 仕様書PRのレビュー（pryusei/kokohima-app#75） |
 | 2026-11-21 | IPv6 の拒否に `3fff::/20`（文書用）を足した。`MAX_ATTEMPTS` を、意味に合わせて `MAX_RETRIES` に改めることにした（実装PRで直すもの） | 仕様書PRのレビュー（pryusei/kokohima-app#75） |
+| 2026-11-21 | 「実装PRで直すもの」から docs/design/claude-design-prompts.md を外した（デザインのプロンプトの更新で先に直したため） | pryusei/kokohima-app#51 |
