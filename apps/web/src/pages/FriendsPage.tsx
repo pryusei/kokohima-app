@@ -3,7 +3,6 @@ import {
   friendPageSchema,
   inviteLinkPageSchema,
   INVITE_DEFAULTS,
-  meResponseSchema,
   type CreatedInviteLink,
   type Friend,
 } from "@kokohima/shared";
@@ -11,19 +10,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, apiSend } from "../api/client";
 import { keys } from "../api/keys";
-import { useAuth } from "../auth/AuthProvider";
-import { Link, Nav } from "../components/Nav";
+import { DisplayNameForm } from "../account/DisplayNameForm";
+import { displayNameOf, meQuery } from "../account/me";
+import { Avatar } from "../ui/Avatar";
+import { BottomSheet } from "../ui/BottomSheet";
+import { Button, SendButton } from "../ui/Button";
+import { EmptyState, LoadError, Loading, Note } from "../ui/feedback";
+import { Chip, ChipRow, Field, inputClass } from "../ui/form";
+import { Link } from "../ui/Link";
+import { Section, TabScreen } from "../ui/Navigation";
+import { Switch } from "../ui/Switch";
 
-// 友達タブ（仮。最終的なデザインはデザインのタスクで差し替える）
-// docs/specs/T-02-friends.md「画面」
+// 友達タブ（docs/specs/T-02-friends.md「画面」、キャンバス「7 友達」「17 招待リンクの発行」）
 
 type FriendPage = { items: Friend[]; nextCursor: string | null };
 
-export const displayNameOf = (name: string | null) => name ?? "名前未設定の友達";
 
 function FriendRow({ friend }: { friend: Friend }) {
   const queryClient = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
   const [failed, setFailed] = useState(false);
 
   // 「自分の暇を見せる」は楽観的更新（data-fetching スキル）
@@ -49,46 +53,20 @@ function FriendRow({ friend }: { friend: Friend }) {
     onSettled: () => queryClient.invalidateQueries({ queryKey: keys.friends.list() }),
   });
 
-  const unfriend = useMutation({
-    mutationFn: () => apiSend("DELETE", `/api/v1/friends/${friend.id}`, undefined),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.friends.all() }),
-    onError: () => setFailed(true),
-  });
-
   const name = displayNameOf(friend.displayName);
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
-      <Link to={`/friends/${friend.id}`} className="font-bold underline">
-        {name}
-      </Link>
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          role="switch"
-          checked={friend.sharesMyAvailability}
-          onChange={(e) => toggle.mutate(e.target.checked)}
-        />
+    <li className="flex flex-col gap-1 border-b border-line py-2 last:border-b-0">
+      <div className="flex items-center gap-2">
+        <Avatar name={friend.displayName} />
+        <Link to={`/friends/${friend.id}`} className="min-w-0 flex-1 truncate font-bold text-ink no-underline">
+          {name}
+        </Link>
+      </div>
+      <Switch checked={friend.sharesMyAvailability} onChange={(v) => toggle.mutate(v)}>
         自分の暇を見せる
-      </label>
-      {confirming ? (
-        <div className="flex flex-col gap-2">
-          <p className="text-slate-600">解除しても相手には通知されません。</p>
-          <div className="flex gap-2">
-            <button type="button" className="rounded border px-3 py-1" onClick={() => unfriend.mutate()}>
-              {name}さんとの友達を解除する
-            </button>
-            <button type="button" className="rounded border px-3 py-1" onClick={() => setConfirming(false)}>
-              やめる
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button type="button" className="self-start text-sm text-slate-600 underline" onClick={() => setConfirming(true)}>
-          友達を解除
-        </button>
-      )}
+      </Switch>
       {failed && (
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className="text-s text-ink-muted">
           保存できませんでした。もう一度お試しください。
         </p>
       )}
@@ -96,46 +74,9 @@ function FriendRow({ friend }: { friend: Friend }) {
   );
 }
 
-function DisplayNameForm() {
+function InviteLinkSheet({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [value, setValue] = useState("");
-  const save = useMutation({
-    mutationFn: () => apiSend("PATCH", "/api/v1/me", { displayName: value }, meResponseSchema),
-    onSuccess: (me) => queryClient.setQueryData(keys.me(), me),
-  });
-  return (
-    <form
-      className="flex flex-col gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        save.mutate();
-      }}
-    >
-      <p className="text-slate-600">招待リンクを作る前に、友達に表示する名前を決めてください。</p>
-      <label className="flex flex-col gap-1">
-        表示名
-        <input
-          className="rounded border px-2 py-1"
-          value={value}
-          maxLength={20}
-          onChange={(e) => setValue(e.target.value)}
-        />
-      </label>
-      <button type="submit" disabled={save.isPending || value.trim() === ""} className="rounded border px-3 py-2">
-        保存する
-      </button>
-      {save.isError && <p className="text-sm text-slate-600">保存できませんでした。1〜20文字で入力してください。</p>}
-    </form>
-  );
-}
-
-function InviteLinks() {
-  const queryClient = useQueryClient();
-  const me = useQuery({ queryKey: keys.me(), queryFn: () => apiGet("/api/v1/me", meResponseSchema) });
-  const links = useQuery({
-    queryKey: keys.inviteLinks.list(),
-    queryFn: () => apiGet("/api/v1/invite-links", inviteLinkPageSchema),
-  });
+  const me = useQuery(meQuery());
   const [expiresInDays, setExpiresInDays] = useState<1 | 3 | 7>(INVITE_DEFAULTS.expiresInDays);
   const [maxUses, setMaxUses] = useState<number>(INVITE_DEFAULTS.maxUses);
   const [created, setCreated] = useState<CreatedInviteLink | null>(null);
@@ -147,12 +88,6 @@ function InviteLinks() {
       void queryClient.invalidateQueries({ queryKey: keys.inviteLinks.list() });
     },
   });
-  const revoke = useMutation({
-    mutationFn: (id: string) => apiSend("POST", `/api/v1/invite-links/${id}/revoke`, undefined),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.inviteLinks.list() }),
-  });
-
-  if (me.data && me.data.displayName === null) return <DisplayNameForm />;
 
   const share = async (url: string) => {
     if (navigator.share) await navigator.share({ url }).catch(() => undefined);
@@ -160,121 +95,111 @@ function InviteLinks() {
   };
 
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold">招待リンク</h2>
-      <div className="flex gap-2">
-        <label className="flex flex-col">
-          期限
-          <select value={expiresInDays} onChange={(e) => setExpiresInDays(Number(e.target.value) as 1 | 3 | 7)}>
-            <option value={1}>1日</option>
-            <option value={3}>3日</option>
-            <option value={7}>7日</option>
-          </select>
-        </label>
-        <label className="flex flex-col">
-          人数
-          <select value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))}>
-            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-              <option key={n} value={n}>
-                {n}人
-              </option>
+    <BottomSheet title="招待リンクを作る" label="招待リンクを作る" onClose={onClose}>
+      {me.data && me.data.displayName === null ? (
+        <DisplayNameForm intro="招待リンクを作る前に、友達に表示する名前を決めてください。" />
+      ) : (
+        <>
+          <ChipRow label="使える期間">
+            {([1, 3, 7] as const).map((d) => (
+              <Chip key={d} selected={expiresInDays === d} onClick={() => setExpiresInDays(d)}>
+                {d}日
+              </Chip>
             ))}
-          </select>
-        </label>
-      </div>
-      <button
-        type="button"
-        disabled={create.isPending}
-        className="rounded-lg bg-amber-300 px-4 py-3 disabled:opacity-50"
-        onClick={() => create.mutate()}
-      >
-        招待リンクを作る
-      </button>
-      {create.isError && (
-        <p role="status" className="text-sm text-slate-600">
-          作れませんでした。時間をおいてもう一度お試しください。
-        </p>
+          </ChipRow>
+          <Field label="使える人数">
+            <select className={inputClass} value={maxUses} onChange={(e) => setMaxUses(Number(e.target.value))}>
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}人
+                </option>
+              ))}
+            </select>
+          </Field>
+          <SendButton variant="primary" block disabled={create.isPending} onClick={() => create.mutate()}>
+            招待リンクを作る
+          </SendButton>
+          {create.isError && (
+            <p role="status" className="text-s text-ink-muted">
+              作れませんでした。時間をおいてもう一度お試しください。
+            </p>
+          )}
+          {created && (
+            <div className="flex flex-col gap-2 border-t border-line pt-4">
+              <input aria-label="招待リンクのURL" readOnly className={`${inputClass} text-s`} value={created.url} />
+              <Button variant="primary" onClick={() => void share(created.url)}>
+                共有する
+              </Button>
+              <Note>このURLはこの画面でしか表示できません。今のうちに友達に送ってください。</Note>
+            </div>
+          )}
+        </>
       )}
-      {created && (
-        <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
-          <p className="text-sm text-slate-600">このURLはこの画面でしか表示できません。今のうちに友達に送ってください。</p>
-          <input aria-label="招待リンクのURL" readOnly className="rounded border px-2 py-1" value={created.url} />
-          <button type="button" className="rounded border px-3 py-2" onClick={() => void share(created.url)}>
-            共有する
-          </button>
-        </div>
-      )}
-      {links.data && links.data.items.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {links.data.items.map((l) => (
-            <li key={l.id} className="flex items-center justify-between text-sm">
-              <span>
-                {new Date(l.expiresAt).toLocaleDateString()}まで・{l.uses}/{l.maxUses}人
-              </span>
-              <button type="button" className="underline" onClick={() => revoke.mutate(l.id)}>
-                無効にする
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    </BottomSheet>
   );
 }
 
-/** ログアウト（T-03でホームから移した。docs/specs/T-03-availability.md「画面」） */
-function Account() {
-  const { logout, logoutAll } = useAuth();
-  const [failed, setFailed] = useState(false);
-  const me = useQuery({ queryKey: keys.me(), queryFn: () => apiGet("/api/v1/me", meResponseSchema) });
-  const run = (action: () => Promise<boolean>) => async () => {
-    setFailed(false);
-    if (!(await action())) setFailed(true);
-  };
+function ActiveInviteLinks() {
+  const queryClient = useQueryClient();
+  const links = useQuery({
+    queryKey: keys.inviteLinks.list(),
+    queryFn: () => apiGet("/api/v1/invite-links", inviteLinkPageSchema),
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => apiSend("POST", `/api/v1/invite-links/${id}/revoke`, undefined),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.inviteLinks.list() }),
+  });
+  if (!links.data || links.data.items.length === 0) return null;
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold">アカウント</h2>
-      {me.data && <p className="text-slate-600">{me.data.displayName ?? "表示名は未設定です"}</p>}
-      <Link to="/settings/calendar" className="self-start underline">
-        カレンダー連携
-      </Link>
-      <Link to="/settings/notifications" className="self-start underline">
-        通知の設定
-      </Link>
-      {failed && (
-        <p role="status" className="text-slate-600">
-          ログアウトできませんでした。通信状態を確認して、もう一度お試しください。
-        </p>
-      )}
-      <button type="button" className="rounded-lg border border-slate-300 px-4 py-3" onClick={run(logout)}>
-        ログアウト
-      </button>
-      <button type="button" className="rounded-lg border border-slate-300 px-4 py-3" onClick={run(logoutAll)}>
-        すべての端末からログアウト
-      </button>
-    </section>
+    <Section title="有効な招待リンク" aside={`${links.data.items.length}件`}>
+      <ul className="rounded-l bg-surface px-4 shadow-card">
+        {links.data.items.map((l) => (
+          <li key={l.id} className="flex items-center justify-between gap-2 border-b border-line py-3 last:border-b-0">
+            <span className="tabular-nums">
+              {new Date(l.expiresAt).toLocaleDateString()}まで・{l.uses}/{l.maxUses}人
+            </span>
+            <SendButton variant="ghost" size="s" onClick={() => revoke.mutate(l.id)}>
+              無効にする
+            </SendButton>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
 export function FriendsPage() {
   const friends = useQuery({ queryKey: keys.friends.list(), queryFn: () => apiGet("/api/v1/friends", friendPageSchema) });
+  const [issuing, setIssuing] = useState(false);
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <h1 className="text-2xl font-bold">友達</h1>
-      <Nav />
-      <Link to="/broadcasts/new" className="self-start rounded-lg bg-amber-300 px-4 py-2">
-        暇な人いる？と募集する
-      </Link>
-      <InviteLinks />
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-bold">友達一覧</h2>
-        {friends.data?.items.length === 0 && <p className="text-slate-600">まだ友達がいません。</p>}
-        <ul aria-label="友達一覧" className="flex flex-col gap-2">
-          {friends.data?.items.map((f) => <FriendRow key={f.id} friend={f} />)}
-        </ul>
-      </section>
-      <Account />
-    </main>
+    <TabScreen title="友達">
+      <Button variant="primary" block onClick={() => setIssuing(true)}>
+        招待リンクを作る
+      </Button>
+      <Section title="友達一覧" aside={friends.data ? `${friends.data.items.length}人` : undefined}>
+        {friends.isPending && <Loading />}
+        {friends.isError && <LoadError retry={() => void friends.refetch()} />}
+        {friends.data?.items.length === 0 && <EmptyState title="まだ友達はいません" description="招待リンクを作って、友達に送ってください" />}
+        {friends.data && friends.data.items.length > 0 && (
+          <>
+            <ul aria-label="友達一覧" className="rounded-l bg-surface px-4 shadow-card">
+              {friends.data.items.map((f) => (
+                <FriendRow key={f.id} friend={f} />
+              ))}
+            </ul>
+            <Note>「自分の暇を見せる」を切り替えても、相手には通知されません。</Note>
+          </>
+        )}
+      </Section>
+      <ActiveInviteLinks />
+      <Section title="アカウント">
+        <Link to="/settings" className="flex min-h-11 items-center justify-between rounded-l bg-surface px-4 text-ink no-underline shadow-card">
+          設定
+          <span aria-hidden="true">›</span>
+        </Link>
+      </Section>
+      {issuing && <InviteLinkSheet onClose={() => setIssuing(false)} />}
+    </TabScreen>
   );
 }

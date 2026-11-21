@@ -127,7 +127,8 @@ describe("ほかの操作の Idempotency-Key", () => {
       "/api/v1/calendar/connections": json({ google: { status: "none", connectedAt: null } }),
     });
     renderApp();
-    const night = await screen.findByRole("button", { name: /^夜$/ });
+    await userEvent.click(await screen.findByRole("button", { name: "ここ暇を追加" }));
+    const night = await screen.findByRole("button", { name: /^夜/ });
     await userEvent.click(night);
     await waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/availabilities" && c.init.method === "POST")).toHaveLength(1));
     await userEvent.click(night);

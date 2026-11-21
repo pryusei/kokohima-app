@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
-import { initialRange, linkLabel, nextQuarter, statusClass, statusText } from "../invitations/format";
+import { initialRange, linkLabel, nextQuarter, statusText } from "../invitations/format";
 import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
 
 // 時計は 2026-10-10T00:00:00Z（東京は土曜 09:00）
@@ -94,9 +94,6 @@ describe("表示の関数", () => {
         counterProposal: { startsAt: "2026-10-10T11:00:00Z", endsAt: "2026-10-10T14:00:00Z" },
       }),
     ).toBe("この時間なら：10/10（土） 20:00〜23:00");
-    for (const s of ["declined", "expired", "skipped", "cancelled", "pending"] as const) {
-      expect(statusClass(s)).not.toMatch(/red|rose/);
-    }
   });
 });
 
@@ -212,11 +209,14 @@ describe("誘いの詳細と返答", () => {
       [`/api/v1/direct-invites/${INVITE_ID}/responses`]: json(invite({ status: "confirmed", meetupId: MEETUP_ID })),
     });
     renderApp();
-    expect(await screen.findByRole("heading", { name: "あそぼ" })).toBeVisible();
-    expect(screen.getByText("10/10（土） 19:00〜23:00")).toBeVisible();
+    // 詳細は後ろに誘いタブを出したシートで開く（docs/specs/T-11-design.md）
+    const sheet = await screen.findByRole("dialog", { name: "あきさんからの誘い" });
+    expect(within(sheet).getByRole("heading", { name: "あき" })).toBeVisible();
+    expect(within(sheet).getByText("あそぼ")).toBeVisible();
+    expect(within(sheet).getByText("10/10（土） 19:00〜23:00")).toBeVisible();
     expect(screen.getByRole("link", { name: "xn--pple-43d.com" })).toHaveAttribute("rel", "noopener noreferrer nofollow");
     await userEvent.click(screen.getByRole("button", { name: "行く" }));
-    expect(await screen.findByText("成立")).toBeVisible();
+    expect(await within(sheet).findByText("成立")).toBeVisible();
     expect(await screen.findByRole("link", { name: "成立した予定を見る" })).toHaveAttribute("href", `/meetups/${MEETUP_ID}`);
     const post = calls.find((c) => c.url.endsWith("/responses"));
     expect(JSON.parse(String(post?.init.body))).toEqual({ response: "accept" });
@@ -285,7 +285,8 @@ describe("誘いタブと成立した予定", () => {
     renderApp();
     const list = await screen.findByRole("list", { name: "送信した誘い" });
     expect(await within(list).findByText("今回は難しいみたい")).toBeVisible();
-    expect(within(list).getByText("あき・あそぼ")).toBeVisible();
+    expect(within(list).getByText("あきさんへ")).toBeVisible();
+    expect(within(list).getByText("あそぼ")).toBeVisible();
   });
 
   it("やっぱり難しい：押したらすぐキャンセルを表示する", async () => {

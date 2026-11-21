@@ -1,4 +1,5 @@
 import type { Broadcast, DirectInvite, InviteKind } from "@kokohima/shared";
+import type { Tone } from "../ui/Badge";
 import { linkHostname } from "@kokohima/shared";
 import { formatDate, formatSlot, localDateOf } from "../availability/format";
 
@@ -38,9 +39,25 @@ export function statusText(invite: Pick<DirectInvite, "status" | "direction" | "
   }
 }
 
-/** 成立だけ色をつける（成立の色）。ほかはどれも同じ静かな灰色 */
-export const statusClass = (status: DirectInvite["status"]) =>
-  status === "confirmed" ? "text-emerald-800" : "text-slate-600";
+/**
+ * 状態のバッジの色（docs/specs/T-11-design.md「共通の部品」）。成立だけ meet、返事待ちは枠だけ、「この時間なら」は lamp。
+ * 断り・期限切れ・見送り・やっぱり難しいはどれも同じ quiet（互いに色で区別しない。自動で断った誘いも同じ）
+ */
+export function statusTone(status: DirectInvite["status"]): Tone {
+  switch (status) {
+    case "confirmed":
+      return "meet";
+    case "pending":
+      return "pending";
+    case "counter_proposed":
+      return "lamp";
+    case "declined":
+    case "expired":
+    case "skipped":
+    case "cancelled":
+      return "quiet";
+  }
+}
 
 /** リンクの表示用のドメイン（punycode）。解釈できなければ何も出さない */
 export const linkLabel = (url: string | null) => (url ? linkHostname(url) : null);
@@ -77,5 +94,15 @@ export function broadcastStatusText(b: Pick<Broadcast, "status" | "direction" | 
   }
 }
 
-export const broadcastStatusClass = (status: Broadcast["status"]) =>
-  status === "decided" ? "text-emerald-800" : "text-slate-600";
+/** 募集のバッジの色。宛先の人の「締め切りました」は、決まったか期限切れかを区別させない quiet */
+export function broadcastStatusTone(b: Pick<Broadcast, "status" | "direction" | "respondedByMe">): Tone {
+  switch (b.status) {
+    case "decided":
+      return "meet";
+    case "open":
+      return b.direction === "received" && b.respondedByMe ? "lamp" : "pending";
+    case "expired":
+    case "closed":
+      return "quiet";
+  }
+}

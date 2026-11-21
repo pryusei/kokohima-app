@@ -63,6 +63,7 @@ export function linkOf(n: NotificationDto): string {
     case "calendar_reauth":
       return "/settings/calendar";
     case "new_login":
-      return "/friends";
+      // 設定のアカウント（ログアウト・全端末ログアウト）。docs/specs/T-11-design.md「画面のつながり」
+      return "/settings/account";
   }
 }

@@ -1,0 +1,71 @@
+import { befriend, expect, friendList, newUser, sheet, test } from "./fixtures";
+
+// T-11 画面のつながり（docs/specs/T-11-design.md「E2Eテスト」）：下のタブ・ヘッダーの鐘・シート
+
+function tomorrow() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(Date.now() + 24 * 60 * 60 * 1000));
+}
+
+test("下のタブで みんな → ここ暇 → 誘い → 友達 と移れ、ヘッダーの鐘からお知らせが開ける", async ({ loggedInPage: page }) => {
+  await page.goto("/");
+  const tabs = page.getByRole("navigation", { name: "タブ" });
+  await expect(tabs.getByRole("link")).toHaveText(["みんな", "ここ暇", "誘い", "友達"]);
+  for (const name of ["ここ暇", "誘い", "友達", "みんな"]) {
+    await tabs.getByRole("link", { name }).click();
+    await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
+    await expect(tabs.getByRole("link", { name })).toHaveAttribute("aria-current", "page");
+  }
+  await page.getByRole("link", { name: /^お知らせ/ }).click();
+  await expect(page.getByRole("heading", { name: "お知らせ", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "戻る" }).click();
+  await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
+});
+
+test("誘いの一覧のカードから詳細がシートで開き、「行く」のあとシートを閉じると誘いタブに戻る", async ({ browser }) => {
+  const a = await newUser(browser, "A");
+  const b = await newUser(browser, "B");
+  await befriend(a, b);
+
+  await a.page.goto("/friends");
+  await friendList(a.page).getByRole("link", { name: b.displayName }).click();
+  await sheet(a.page).getByRole("link", { name: "ここどう？と誘う" }).click();
+  const create = sheet(a.page, "誘う");
+  await create.getByLabel("日付").fill(tomorrow());
+  await create.getByLabel("開始", { exact: true }).fill("10:00");
+  await create.getByLabel("終了", { exact: true }).fill("12:00");
+  await create.getByRole("button", { name: "誘う", exact: true }).click();
+  await expect(sheet(a.page).getByText("返事待ち")).toBeVisible();
+
+  await b.page.goto("/invites");
+  await b.page.getByRole("list", { name: "受信した誘い" }).getByRole("link").filter({ hasText: a.displayName }).click();
+  const detail = sheet(b.page, `${a.displayName}さんからの誘い`);
+  await expect(detail).toBeVisible();
+  await detail.getByRole("button", { name: "行く" }).click();
+  await expect(detail.getByText("成立", { exact: true })).toBeVisible();
+  await detail.getByRole("button", { name: "閉じる" }).click();
+  await expect(sheet(b.page)).toHaveCount(0);
+  await expect(b.page).toHaveURL(/\/invites$/);
+  await expect(b.page.getByRole("heading", { name: "誘い", level: 1 })).toBeVisible();
+});
+
+test("お知らせのリンクのように誘いの URL を直接開いて閉じると、アプリの外に出ず誘いタブへ移る", async ({ browser }) => {
+  const a = await newUser(browser, "A");
+  const b = await newUser(browser, "B");
+  await befriend(a, b);
+  await a.page.goto("/friends");
+  await friendList(a.page).getByRole("link", { name: b.displayName }).click();
+  await sheet(a.page).getByRole("link", { name: "ここどう？と誘う" }).click();
+  const create = sheet(a.page, "誘う");
+  await create.getByLabel("日付").fill(tomorrow());
+  await create.getByLabel("開始", { exact: true }).fill("10:00");
+  await create.getByLabel("終了", { exact: true }).fill("12:00");
+  await create.getByRole("button", { name: "誘う", exact: true }).click();
+  await expect(a.page).toHaveURL(/\/invites\/[0-9a-f-]+$/);
+  const inviteUrl = a.page.url();
+
+  await b.page.goto(inviteUrl);
+  await expect(sheet(b.page)).toBeVisible();
+  await b.page.keyboard.press("Escape");
+  await expect(b.page).toHaveURL(/\/invites$/);
+  await expect(b.page.getByRole("heading", { name: "誘い", level: 1 })).toBeVisible();
+});

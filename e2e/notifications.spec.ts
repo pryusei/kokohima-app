@@ -1,5 +1,5 @@
 import type { Browser } from "@playwright/test";
-import { befriend, expect, loginAs, newUser, test, uniqueName, type E2EUser } from "./fixtures";
+import { addAvailability, befriend, expect, loginAs, newUser, test, uniqueName, type E2EUser } from "./fixtures";
 
 // T-07 通知（docs/specs/T-07-notification.md「E2Eテスト」）。メール配信とプッシュは E2E のエントリの偽の実装に向く
 
@@ -45,9 +45,11 @@ test("誘いのお知らせ（メール）：未読が出て、一覧から誘�
   const inviteId = await invite(a, b);
   await deliverTo(b);
 
+  // お知らせはヘッダーの鐘から開く。未読の数は読み上げの名前に入る（docs/specs/T-11-design.md）
   await b.page.goto("/");
-  await expect(b.page.getByLabel(/^未読\d+件$/)).toBeVisible();
-  await b.page.getByRole("link", { name: /お知らせ/ }).click();
+  const bell = b.page.getByRole("link", { name: /^お知らせ \d+件の未読$/ });
+  await expect(bell).toBeVisible();
+  await bell.click();
   await b.page.getByRole("link", { name: `${a.displayName}さんから誘いが届きました` }).click();
   await expect(b.page).toHaveURL(new RegExp(`/invites/${inviteId}$`));
 
@@ -74,11 +76,9 @@ test("誘いのお知らせ（プッシュ）：購読があれば、本文な�
 
 test("友達追加と「見せない」：お知らせ一覧の「この人に見せない」で、相手の「みんな」から自分のここ暇が消える", async ({ browser }) => {
   const { a, b } = await friends(browser);
-  await a.page.goto("/availability");
   // 夜の枠が過去にならないよう、日付は明日（Asia/Tokyo）を使う（今日だと 23 時以降に作れない）
   const tomorrow = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(Date.now() + 24 * 60 * 60 * 1000));
-  await a.page.getByLabel("日付").fill(tomorrow);
-  await a.page.getByRole("button", { name: "夜", exact: true }).click();
+  await addAvailability(a.page, tomorrow, "夜");
   await expect(a.page.getByRole("list", { name: "自分のここ暇" }).getByText(/夜 19:00〜23:00/)).toBeVisible();
   await b.page.goto("/");
   await expect(b.page.getByRole("listitem").filter({ hasText: a.displayName }).first()).toBeVisible();
@@ -97,7 +97,8 @@ test("友達追加と「見せない」：お知らせ一覧の「この人に�
 test("種別を止める：「誘い」を止めると、お知らせ一覧には出るがメールは届かない", async ({ browser }) => {
   const { a, b } = await friends(browser);
   await b.page.goto("/friends");
-  await b.page.getByRole("link", { name: "通知の設定" }).click();
+  await b.page.getByRole("link", { name: /設定/ }).click();
+  await b.page.getByRole("link", { name: /通知の設定/ }).click();
   const invites = b.page.getByRole("switch", { name: "誘い" });
   await expect(invites).toBeChecked();
   await invites.click();

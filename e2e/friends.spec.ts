@@ -42,6 +42,8 @@ test("無効化したリンクを開くと「このリンクは使えません�
   const a = await newUser(browser, "A");
   const b = await newUser(browser, "B");
   const url = await createInviteUrl(a.page);
+  // 作ったリンクは友達タブの「有効な招待リンク」から無効にする
+  await a.page.keyboard.press("Escape");
   await a.page.getByRole("button", { name: "無効にする" }).click();
   await expect(a.page.getByRole("button", { name: "無効にする" })).toHaveCount(0);
 
@@ -58,11 +60,14 @@ test("友達を解除すると、双方の一覧から消える", async ({ brows
   await b.page.getByRole("button", { name: "友達になる" }).click();
   await expect(friendList(b.page).getByText(a.displayName)).toBeVisible();
 
-  await a.page.reload();
+  // 解除は友達の詳細（シート）から。確認は1回だけ
+  await a.page.goto("/friends");
+  await friendList(a.page).getByRole("link", { name: b.displayName }).click();
   await a.page.getByRole("button", { name: "友達を解除" }).click();
   await a.page.getByRole("button", { name: `${b.displayName}さんとの友達を解除する` }).click();
-  await expect(friendList(a.page).getByText(b.displayName)).toHaveCount(0);
+  await expect(a.page).toHaveURL(/\/friends$/);
+  await expect(a.page.getByText("まだ友達はいません")).toBeVisible();
 
   await b.page.reload();
-  await expect(b.page.getByText("まだ友達がいません。")).toBeVisible();
+  await expect(b.page.getByText("まだ友達はいません")).toBeVisible();
 });

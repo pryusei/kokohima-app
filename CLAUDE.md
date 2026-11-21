@@ -35,6 +35,7 @@
 - Reactは `vercel-react-best-practices` と `vercel-composition-patterns` スキルに従う。ただしこのプロジェクトはVite（SSRなし）なので、`server-` で始まるルールとNext.js固有の書き方（next/dynamic など）は適用せず、遅延読み込みは `React.lazy` を使う
 - データ取得はTanStack Query（`data-fetching` スキル）。SWRは使わない
 - 断り・期限切れ・キャンセルに赤やエラー色を使わない。静かな状態として表示する
+- 色・余白・角丸は `apps/web/src/index.css` のトークン（`bg-surface`・`text-ink-muted` など）を使い、Tailwind の既定の色（`slate` など）を直書きしない。共通の部品は `apps/web/src/ui/` にある（docs/specs/T-11-design.md）
 - 画面の文言とコードの名前は `invitation-domain` スキルの用語表に合わせる
 
 ## 仕様書とPRの流れ（例外なし）

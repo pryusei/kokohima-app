@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -34,7 +34,7 @@ describe("招待リンクの受け口", () => {
     });
     renderApp();
     const text = await screen.findByText("混み合っています。少し待ってから、もう一度開いてください。");
-    expect(text).toHaveClass("text-slate-600");
+    expect(text.className).not.toMatch(/red|rose/);
   });
 
   it("未ログインでも /login へ移さずに描画し、トークンをURLから消してストレージに置かない", async () => {
@@ -42,8 +42,7 @@ describe("招待リンクの受け口", () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     const { calls } = mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": lookupOk });
     renderApp();
-    expect(await screen.findByText(/さんから、ここ暇の友達の招待が届いています/)).toBeVisible();
-    expect(screen.getByText("あき")).toBeVisible();
+    expect(await screen.findByText("あきさんから、ここ暇の友達の招待が届いています。")).toBeVisible();
     expect(window.location.pathname).toBe("/invite");
     expect(window.location.hash).toBe("");
     expect(setItem).not.toHaveBeenCalled();
@@ -67,7 +66,7 @@ describe("招待リンクの受け口", () => {
       "/api/v1/invite-links": json({ items: [], nextCursor: null }),
     });
     renderApp();
-    expect(await screen.findByText("あき")).toBeVisible();
+    expect(await screen.findByText("あきさんから、ここ暇の友達の招待が届いています。")).toBeVisible();
     const lookup = calls.find((c) => c.url === "/api/v1/invite-links/lookup");
     expect(JSON.parse(String(lookup?.init.body))).toEqual({});
     await userEvent.click(await screen.findByRole("button", { name: "友達になる" }));
@@ -173,11 +172,14 @@ describe("友達タブ", () => {
       "/api/v1/me": [json(me(null)), json(me("ゆう"))],
     });
     renderApp();
-    const input = await screen.findByLabelText("表示名");
-    expect(screen.queryByRole("button", { name: "招待リンクを作る" })).toBeNull();
+    // 招待リンクの発行はシートで開く（docs/specs/T-11-design.md）
+    await userEvent.click(await screen.findByRole("button", { name: "招待リンクを作る" }));
+    const sheet = screen.getByRole("dialog", { name: "招待リンクを作る" });
+    const input = await within(sheet).findByLabelText("表示名");
+    expect(within(sheet).queryByRole("button", { name: "招待リンクを作る" })).toBeNull();
     await userEvent.type(input, "ゆう");
-    await userEvent.click(screen.getByRole("button", { name: "保存する" }));
-    expect(await screen.findByRole("button", { name: "招待リンクを作る" })).toBeVisible();
+    await userEvent.click(within(sheet).getByRole("button", { name: "保存する" }));
+    expect(await within(sheet).findByRole("button", { name: "招待リンクを作る" })).toBeVisible();
   });
 
   it("招待リンクを作ると、URLを一度だけ表示する", async () => {
@@ -198,7 +200,9 @@ describe("友達タブ", () => {
     });
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: "招待リンクを作る" }));
-    expect(await screen.findByLabelText("招待リンクのURL")).toHaveValue(url);
+    const sheet = screen.getByRole("dialog", { name: "招待リンクを作る" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "招待リンクを作る" }));
+    expect(await within(sheet).findByLabelText("招待リンクのURL")).toHaveValue(url);
     expect(screen.getByText(/この画面でしか表示できません/)).toBeVisible();
   });
 });
