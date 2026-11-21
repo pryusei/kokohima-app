@@ -237,7 +237,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - 本物のGoogle／Appleでのログインは対象外（`e2e-testing` スキル）。人が手動で確認する
 
 ## スコープ外
-- アカウント連携（GoogleとAppleの統合）、退会
+- アカウント連携（GoogleとAppleの統合。MVPの対象外。要求定義書 F-01、#45）、退会
 - 新端末ログインのメール通知（今回は `SessionStarted` を `outbox` に書くだけ）
 - 初回設定（表示名とアイコン）。今回は `displayName`・`avatarUrl` がnullのまま
 - 監査ログ（ログインの30日保持）。監査ログの仕組みとまとめて別タスクにする（決定事項6）
