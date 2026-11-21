@@ -69,19 +69,35 @@
 - インデックス：`(url_hash, fetched_at)`。`url_hash` に対して `status = 'fetching'` の行は1つだけ（部分の UNIQUE インデックス `WHERE status = 'fetching'`）。
 - URL そのものは持たない（誘い・募集の `url` 列にある）。
 
+### `link_preview_images`（R2 に置いた画像の台帳）
+| 列 | 型 | 内容 |
+| --- | --- | --- |
+| `image_id` | TEXT PK | R2 の画像の ID（UUID） |
+| `created_at` | INTEGER | R2 に置く前に、この行を書いた時刻 |
+
+- R2 に画像を置く前に、この行を書く。R2 の画像を消すのは、この台帳から判定する掃除だけ（R2 の `list` は使わない。キーの順にしか読めず、置いた時刻で絞れないため）。
+
 ### `link_preview_refs`（誘い・募集がどの結果を見せるか）
 | 列 | 型 | 内容 |
 | --- | --- | --- |
-| `subject_type` | TEXT | `direct_invite`・`broadcast` |
-| `subject_id` | TEXT | 誘い・募集の ID |
+| `id` | TEXT PK | UUID |
+| `direct_invite_id` | TEXT | → `direct_invites.id`（`ON DELETE CASCADE`）。NULL 可。UNIQUE |
+| `broadcast_id` | TEXT | → `broadcasts.id`（`ON DELETE CASCADE`）。NULL 可。UNIQUE |
 | `preview_id` | TEXT | → `link_previews.id` |
 | `created_at` | INTEGER | |
 
-- PK は `(subject_type, subject_id)`。`preview_id` のインデックス。
+- `CHECK ((direct_invite_id IS NULL) <> (broadcast_id IS NULL))`（どちらか一方だけ）。`preview_id` のインデックス。
+- 誘い・募集ごとに外部キーの列を分け、誘い・募集が消えたとき（利用者の削除の CASCADE。T-04・T-05）に参照の行も一緒に消えるようにする。種類と ID の組で持つと、誘い・募集が消えても参照の行が残り、結果の行がずっと「参照あり」になって掃除されないため。
 - 成立した予定は、元の誘い・募集の参照を使う（予定は自分の `url` を持たず、元の誘い・募集の `url` を返す。T-04・T-05）。
 
-### 掃除
-- Cron で、どの `link_preview_refs` からも参照されず、`fetched_at` から30日を過ぎた `link_previews` の行を消し、R2 の画像も消す。
+### 掃除（毎分の `cleanupExpired`）
+- 結果の行：どの `link_preview_refs` からも参照されていない `link_previews` の行のうち、次のどちらかに当たるものを消す。
+  - `ok`・`failed` で、`fetched_at` から30日を過ぎたもの。
+  - `fetching` のまま、`claimed_at` から1時間を過ぎたもの（処理が途中で終わり、同じ URL が送られず引き継がれなかった行。`fetched_at` が NULL なので、上の条件では消えない）。
+- 画像：`link_preview_images` のうち、`created_at` から1時間を過ぎ、`link_previews.image_id` から参照されていないものについて、R2 の `images/v1/<image_id>` を消してから台帳の行を消す（R2 の削除に失敗したら台帳の行を残し、次の回でやり直す）。
+  - 結果の行を消したときの画像も、この掃除で消える（画像を消す道は1つだけ）。
+  - 1時間の猶予は、R2 に置いてから `link_previews.image_id` を書くまでの間に、置いたばかりの画像を消さないため。
+- 1回の掃除で扱う行の数には上限を付ける（実装PRで値を決める）。
 - `fetching` のまま10分を過ぎた行は、取得の権利を引き継げる（下の手順）。
 
 ### R2（`OGP_IMAGES`）
@@ -96,11 +112,13 @@
    - payload：`{ subjectType: "direct_invite" | "broadcast", subjectId, occurredAt }`（URL は入れない。T-04 の決まりのとおり ID だけ）。
 2. `LinkAttached` は、dispatch の「常に流す型」（今の `CALENDAR_TYPES` の側。`NOTIFICATION_START_AT` に左右されない）に足す。
 3. consumer は `LinkAttached` を受けたら、すでにその誘い・募集の参照の行があれば何もしない。なければ、invitation の application の関数（閲覧者で絞らない consumer 用。`calendarFacing.ts` と同じ扱い）で `url` を読み、次の手順で結果を決めて、参照の行を書く。
+   - 誘い・募集がすでにない（利用者の削除で消えた）なら、何もせずに終える（投げない）。参照の行は `INSERT OR IGNORE ... SELECT ... WHERE EXISTS (SELECT 1 FROM direct_invites（または broadcasts） WHERE id = ?)` で書き、処理の間に消えていたら書かずに終える。
    - 使い回せる結果：同じ `url_hash` の、7日以内に `ok` になった行、または24時間以内に `failed` になった行（いちばん新しいもの）。あれば、それを参照する（取りに行かない。決定事項4）。
    - なければ、取得の権利を取る：`status = 'fetching'` の新しい行を入れる（部分の UNIQUE インデックスで、同じ URL を同時に取りに行くのは1つだけ）。入らなければ（ほかの処理が取得中）、一時的な失敗として投げ、Queue の再試行で後から参照する。10分を過ぎた `fetching` の行は、`WHERE id = ? AND status = 'fetching' AND claimed_at < ?` の条件付き UPDATE で `claimed_at` を進めて引き継ぐ。
    - 取得を終えたら、`WHERE id = ? AND status = 'fetching'` の条件付き UPDATE で `ok`・`failed` と項目を書き、参照の行を書く。
 4. 一時的な失敗（取得先の5xx・429・タイムアウト・名前解決の失敗・ほかの処理が取得中）は投げて、Queue の再試行に任せる。
-   - consumer は `handleJob` にメッセージの試行の回数（`message.attempts`）を渡す。最後の試行（`attempts > MAX_ATTEMPTS`。最初の1回と再試行5回で6回め）でも失敗したら、`failed` の行を書いて参照し、投げずに終える（退避キューに送らない）。
+   - 権利を取った処理が一時的な失敗で投げるときは、投げる前に権利を手放す：`DELETE FROM link_previews WHERE id = ? AND status = 'fetching' AND claimed_at = ?`（自分が取った時刻。引き継がれていたら消さない）。手放さないと、同じメッセージの再試行が自分の権利に阻まれ、10分を過ぎるまで（今の再試行の間隔では6回めまで）取りに行けないため。手放すのに失敗しても、10分の引き継ぎで救われる。
+   - consumer は `handleJob` にメッセージの試行の回数（`message.attempts`）を渡す。最後の試行（`attempts > MAX_ATTEMPTS`。最初の1回と再試行5回で6回め）でも失敗したら、`failed` の行を書いて参照し、投げずに終える（退避キューに送らない）。権利を持っていれば、その行を条件付き UPDATE で `failed` にする（新しい行は入れない）。
    - E2E の drain など試行の回数がない呼び出しは、最後の試行として扱わない。
 - 量の上限：取得のきっかけは誘い・募集の作成だけなので、送信上限（誘いと募集を合わせて24時間に20件。T-04・T-05）が、利用者ごとの取得の上限になる（決定事項5）。
 - 見え方：誘い・募集を作った直後は、使い回せる結果があってもなくても、consumer が処理するまで `pending`。処理（毎分の dispatch のあと）で `ok`・`failed` になる。使い回したときと新しく取ったときの差は、取得の数秒だけ（受け入れるリスク）。
@@ -142,8 +160,8 @@
 - 展開後の量で2MB に達したら止めて、画像なしにする（ページの `ok` は保つ）。
 - 種類は、応答の `Content-Type` と先頭のバイト（JPEG `FF D8 FF`、PNG `89 50 4E 47`、WebP `RIFF....WEBP`、GIF `GIF87a`・`GIF89a`）の両方が一致したときだけ受け付ける。SVG・その他は画像なし。
 - 大きさ：ヘッダー（PNG の IHDR、GIF の論理画面、JPEG の SOF、WebP の VP8・VP8L・VP8X）から幅と高さを読み、どちらかが4096を超える、または読めないものは画像なし（受け取った人の端末で表示が固まるのを防ぐ）。
-- 受け付けた画像は、そのままのバイトを R2 の `images/v1/<image_id>` に置く（変換しない）。`image_id` は新しい UUID。
-- 画像の取得の失敗は、ページの結果に影響させない（画像なしの `ok`）。取得の権利を引き継いだときなどに R2 に残った、参照されない画像は、掃除で消す（`link_previews` に `image_id` のない R2 の画像を、Cron で古い順に消す）。
+- 受け付けた画像は、そのままのバイトを R2 の `images/v1/<image_id>` に置く（変換しない）。`image_id` は新しい UUID。置く前に `link_preview_images` に台帳の行を書き、置いたあとで、取得を終える条件付き UPDATE で `link_previews.image_id` を書く。
+- 画像の取得の失敗は、ページの結果に影響させない（画像なしの `ok`）。取得の権利を引き継がれたときや、処理が途中で終わったときに R2 に残った、参照されない画像は、台帳から掃除で消す（「掃除」）。
 
 ### 配信
 - `GET /api/v1/link-previews/images/{imageId}`：`image_id` で `link_previews` の `status = 'ok'` の行を確かめ、R2 から読んで返す。なければ404。
@@ -194,12 +212,14 @@
 - [ ] 画像：種類と先頭のバイトが合うときだけ。SVG・HTML を画像と偽ったもの・2MB 超・幅か高さが4096超は画像なし。画像の失敗はページの `ok` に影響しない。R2 に `images/v1/<UUID>` で置く。
 - [ ] `LinkAttached`：リンクがあるときだけ、作成と同じ batch で書く。送信が拒否された（友達でない・同じ誘い・送信上限）ときは書かない。payload に URL がない。`NOTIFICATION_START_AT` が空でも dispatch で流れる。
 - [ ] 同じ URL：2回送っても取得は1回（2つめは使い回す）。同時に2つ処理しても取得は1回（2つめは一時的な失敗のあと使い回す）。10分を過ぎた `fetching` は引き継ぐ。24時間を過ぎた `failed`、7日を過ぎた `ok` は取り直す。
+- [ ] 権利を手放す：権利を取った処理が一時的な失敗（5xx）で投げると `fetching` の行が消え、同じメッセージの次の試行で取りに行ける。引き継がれた後は、元の処理が手放しても引き継いだ側の行を消さない。最後の試行では権利の行が `failed` になる。
+- [ ] 誘い・募集が消えた：`LinkAttached` の処理の前・途中で誘い・募集が消えていたら、参照の行を書かずに投げずに終える。利用者を削除すると、参照の行も CASCADE で消える。
 - [ ] 見え方：すでに `ok` の URL で新しく誘いを作っても、consumer の処理までは `pending`。T-08 より前の誘い（参照の行がない）は `pending`。
 - [ ] 再試行：最後の試行（`attempts > MAX_ATTEMPTS`）の失敗で `failed` にして、退避キューに送らない。試行の回数がない呼び出しでは `failed` にしない。
 - [ ] DTO：誘い・募集・予定の詳細と一覧に `linkPreview`。リンクがなければ null。`pending`・`failed` の項目はすべて null。予定は元の誘い・募集の参照を使う。
 - [ ] 他人のIDでは取得できない：誘い・募集・予定を見られない人には404（プレビューも出ない）。
 - [ ] 画像の経路：ある ID は画像とヘッダー（`Content-Type`・`nosniff`・CSP・CORP・`Cache-Control`・`Content-Disposition`）、ない ID・壊れた ID・`status` が `ok` でない行は404。Rate Limiting の `link_image` と429・`Retry-After: 60`。
-- [ ] 掃除：参照されず30日を過ぎた行と R2 の画像を消す。参照されている行は消さない。参照されない R2 の画像を消す。
+- [ ] 掃除：参照されず30日を過ぎた `ok`・`failed` の行を消す。参照されず `claimed_at` から1時間を過ぎた `fetching` の行を消す。参照されている行・1時間以内の `fetching` は消さない。台帳のうち1時間を過ぎて参照されない画像は R2 から消し、1時間以内の画像（置いた直後で `image_id` がまだ書かれていない）は消さない。R2 の削除に失敗したら台帳の行を残す。利用者の削除で参照がなくなった結果の行も、30日後に消える。
 - [ ] 既定の `AppDeps` では偽のホストを許さず、名前解決の検査も本物を使う。
 - [ ] ログ：URL・ホスト名・タイトルが出ない。
 - [ ] Web：`ok` はカード（画像・タイトル・説明・ドメイン）、`pending`・`failed`・null はドメインだけ。ドメインは punycode。タイトルを HTML として解釈しない。
@@ -233,3 +253,4 @@
 | --- | --- | --- |
 | 2026-11-18 | 初版 | pryusei/kokohima-app#47 |
 | 2026-11-18 | 誘い・募集ごとの参照の行（作った直後は `pending`）、`LinkAttached` を条件付きで書き常に流す型にする、取得の権利を条件付きで取る、最後の試行の扱い、IPv6 を許可の一覧に、URL の判定（末尾のドット・登録ドメイン・`workers.dev`）、本文を読み終えるまでのタイムアウトと展開後の量、画像の大きさ、画像の ID の一意、相対の `imageUrl`、実装PRで直すものを足した | 仕様書PRのレビュー（セキュリティ・仕様） |
+| 2026-11-21 | 一時的な失敗では取得の権利を手放す。`fetching` のまま残った行を掃除する。R2 の画像を台帳（`link_preview_images`）で管理し、置いた直後の画像を消さない。参照の行を誘い・募集ごとの外部キー（CASCADE）にした | 仕様書PRのレビュー（pryusei/kokohima-app#75） |
