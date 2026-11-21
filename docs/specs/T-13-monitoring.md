@@ -84,8 +84,16 @@
 - 読むだけで、何も書かない。認証は要らない。利用者のデータには触れない。
 
 ### 3. ログの追加と、重さの見直し
-- 退避キューに入る前の失敗 `job_failed` を、`console.error` から `console.warn` に変える。再試行で直ることが多く、Workers Issues（error のログを問題として扱う）に毎回上げないため。
-  - `job_dead_lettered` は `console.error` のまま。項目（`kind`・`type`・`id`・`attempts`・`error`）は変えない。
+- 同じ1件の失敗が、Monitors と Workers Issues の両方から通知されないように、ログの重さで受け持ちを分ける。Workers Issues は error の重さのログと 5xx を問題として扱うため、何もしないと二重に届く。
+  - **Monitors が受け持つログ（`event` で数えるもの）は、warn 以下で出す。** Issues には上がらない。
+    - `job_failed`・`job_dead_lettered` を、`console.error` から `console.warn` に変える。項目（`kind`・`type`・`id`・`attempts`・`error`）は変えない。
+    - `cron_step_failed`（T-12）は `console.warn` で出す。
+    - `refresh_token_reuse`（warn）・`calendar_decrypt_failed`（log）などは、いまのまま。
+  - **error で出すログは、Workers Issues が受け持つ。** Monitors は作らない。
+    - `unhandled_error`：`console.error` のまま。応答が 500 になるので、ログの重さを変えても Issues に上がる。Issues の側に任せる。
+    - `calendar_connect_failed`（`reason: "unexpected"`）：`console.error` のまま。
+  - これから足すログも、この分け方に従う（`event` で数えて通知したいものは warn 以下、想定外の例外は error）。
+  - Issues の自動の通知に、対象を絞る条件があるかは確かめられていない。ログの重さで分けるので、絞れなくても二重にならない。
 - サービス全体の1日のメール数の上限（`MAIL_DAILY_LIMIT`、T-07 決定事項8）で送らなかったとき、ログを出す：`{ event: "notification_mail_global_limit", kind }`。
   - `kind` はお知らせの種類だけ。宛先・利用者IDは出さない。利用者ごとの上限（`limited`）では出さない。
 - ほかのログの名前と項目は変えない。ログの書き方（1行の JSON、`event` で種類を表す）も変えない。
@@ -105,10 +113,9 @@
 | --- | --- | --- |
 | `refresh_token_reuse` | 15分に1件以上 | 更新用トークンの再利用。盗用の疑い。そのセッションは失効済み。同じ時間帯の `login_failed`・`rate_limited` を見る |
 | `job_dead_lettered` | 15分に1件以上 | 通知・カレンダーの書き込みなどが再試行を使い切った。「退避キューの調べ方」へ |
-| `unhandled_error` | 15分に1件以上 | API の想定外の例外。`requestId` と例外の名前でログを引く |
 | `cron_step_failed` | 15分に3件以上 | 定期処理の同じ失敗が続いている。`step` を見る |
 | `calendar_decrypt_failed` | 15分に1件以上 | カレンダーの認証情報を復号できない。鍵の設定を確かめる |
-| Workers Issues | 新しい問題が1回起きた／24時間止まっていた問題がまた起きた | アプリのログを通らない失敗（捕まえていない例外、CPU 時間の超過など） |
+| Workers Issues | 新しい問題が1回起きた／24時間止まっていた問題がまた起きた | API の想定外の例外（`unhandled_error`。`requestId` と例外の名前でログを引く）と、アプリのログを通らない失敗（捕まえていない例外、CPU 時間の超過など） |
 | 外からの死活確認 | `/api/v1/health/ready` か `/` が、2回続けて失敗 | Worker・D1 の障害、定期処理の停止、outbox の滞留。`health_degraded` の `reason` を見る |
 
 **気づけばよい（`#kokohima-notices`）**
@@ -127,10 +134,11 @@
 
 - 通知の中身：Monitors の通知は、モニターの名前と数だけにする。モニターの名前に、個人を表す値を入れない。ログの本文（`sessionId` など）は Slack に流さず、Cloudflare の管理画面で見る。
 - Workers Issues の通知には、例外の要約が入る。個人情報が入りうるかは、設定するときに実際の通知で確かめる（「確認事項」）。
+- 上の表で、Monitors（`event` の行）と Workers Issues の対象は重ならない（「3.」のログの重さの分け方）。同じ1件で2通は届かない。
 
 ### 5. 外からの死活監視
 - 外の監視サービス（無料の枠で、5分ごとの HTTP の確認と、メール・Slack への通知ができるもの）を1つ使う。
-  - 確かめる URL：`https://kokohima.app/api/v1/health/ready`（200 であること）、`https://kokohima.app/`（200 であること）。
+  - 確かめる URL：`https://kokohima.app/api/v1/health/ready`（200 であること）、`https://kokohima.app/`（200 であること）。`kokohima.app` は、T-12（Web としての最初のリリースの準備）で決めた本番のドメイン。wrangler の設定の仮の値は、T-12 の実装で置き換わる。
   - 2回続けて失敗したら通知し、戻ったときも通知する。
   - 通知先は、メール（開発者本人）と `#kokohima-alerts`。Slack 自体が止まっていても気づけるよう、メールを必ず入れる。
 - どのサービスにするかは「確認事項」。サービスには URL のほかに何も渡さない（認証情報を渡さない）。
@@ -162,7 +170,10 @@
 | `calendar_sync` | 何もしない。15分以内に、次の割り当てで確かめ直される |
 
 - `processed_at` を戻すのは、人が `wrangler d1 execute --remote` で行う。consumer はどの処理も冪等なので、二重に流れても結果は変わらない（T-06）。
-- メッセージの本文を見る必要があるときだけ、退避キューに HTTP で読む consumer を付けて、API で読む。読んだあと ack しない（見えない時間が過ぎるとキューに戻る）。
+- メッセージの本文を見るのは最後の手段にする。ログと outbox の行で足りることが多い。どうしても要るときだけ、退避キューに HTTP で読む consumer を付けて、API で読む。
+  - 読むのは1回だけにし、読んだあと ack しない（見えない時間が過ぎるとキューに戻る）。
+  - ack せずに何度も読むと、試行の回数が増え、consumer の再試行の上限に達してメッセージが消えるおそれがある（退避キューには、その先の退避キューがない）。上限の既定値と、達したときの扱いは実装PRで確かめ、手順書に「consumer を付けるときの再試行の上限の設定」を書く。
+  - 調べ終えたら、consumer を外す。
   - 本文には outbox の payload（時刻などの行動の情報）が入る。Slack・issue・PR に貼らない。
   - 読むための API トークンは、Queues の読み書きだけに絞り、使い終えたら消す。
 - 退避キューのメッセージは4日で消える。消える前に調べられなくても、outbox の行（7日）からやり直せる。
@@ -204,7 +215,7 @@
 - [ ] 死活確認：503 の本文はどの理由でも同じで、`code` は `unavailable`。理由・時刻・件数・利用者IDを含まない。`Cache-Control: no-store` が付く
 - [ ] 死活確認：503 のとき `health_degraded` が `reason` だけで出る。200 のときは出ない
 - [ ] 死活確認：回数の上限を超えると 429
-- [ ] ログ：`job_failed` は warn、`job_dead_lettered` は error で出る。項目は変わらない
+- [ ] ログ：`job_failed`・`job_dead_lettered`・`cron_step_failed` は warn、`unhandled_error` は error で出る。項目は変わらない
 - [ ] ログ：サービス全体のメール数の上限で送らなかったとき `notification_mail_global_limit` が `kind` だけで出る。利用者ごとの上限では出ない
 - [ ] 設定：wrangler の設定で、トップレベルと prod の `observability.issues.enabled` が true、`invocation_logs` が false のまま
 - [ ] 他人のIDでは取得・更新できない：追加する API が利用者のデータを返さない（上の本文のテスト）。既存のテストが通る
@@ -235,15 +246,17 @@
 - Monitors が、いまのプランで Workers Logs（`logs.workersLogs`）を読めるか。読めない場合は、Tail Worker から Slack に送る形に仕様を変える（仕様書を直してから実装する）。
 - Monitors で `event` の値で絞れるか。いまのログは JSON を文字列にして出している。項目として絞れない場合は、本文の文字列の一致で絞るか、ログをオブジェクトのまま出す形に変える。
 - Monitors の実行の間隔の下限（1分か10分か）と、作れる数の上限。
-- Workers Issues が、queue と scheduled の呼び出しの失敗も拾うか。通知の本文に個人情報が入りうるか。入りうる場合は、Issues の Slack への通知をやめ、管理画面で見るだけにする。
+- Workers Issues が、queue と scheduled の呼び出しの失敗も拾うか。通知の本文に個人情報が入りうるか。入りうる場合は、Issues の Slack への通知をやめ、管理画面で見るだけにする。そのときは、`unhandled_error` の Monitors（15分に1件以上）を足す。
+- warn のログが Workers Issues に上がらないこと（公式の説明のとおりか）。上がる場合は、二重に届くことを手順書に書くか、Issues の通知の条件で絞る。
+- 退避キューに付ける HTTP の consumer の、再試行の上限の既定値と、上限に達したときの扱い（メッセージが消えるか）。
 - Workers Logs の料金が 2026-12-01 から変わる（Cloudflare Observability の料金になる）。いまのログの量で費用が出ないか。
 - wrangler のバージョン（いまは 4.161 系）で `observability.issues.enabled` が検証を通るか。
 
 ## 実装PRで書き換える仕様書
 - docs/requirements.md：「技術の選定」の監視の行（Workers Logs＋Monitors・Issues＋外からの死活監視。利用料アラートは #42）、「残りの論点」の「異常検知のアラートの条件と通知先」にチェックを付ける。
 - `api-conventions` スキル：エラーの表に 503 `unavailable` を足す。
-- docs/specs/T-06-calendar.md・T-07-notification.md：`job_failed` の重さと、`notification_mail_global_limit` のログ。
-- docs/specs/T-12-data-growth.md：「#85 のアラートの対象の候補」「退避キューを読む手段はまだない」を、この仕様書への参照に直す。
+- docs/specs/T-06-calendar.md・T-07-notification.md：`job_failed`・`job_dead_lettered` の重さと、`notification_mail_global_limit` のログ。
+- docs/specs/T-12-data-growth.md：「#85 のアラートの対象の候補」「退避キューを読む手段はまだない」を、この仕様書への参照に直す。`cron_step_failed` を warn で出すことを足す。
 - `infra/README.md`：「管理画面で手動変更しない」に、通知の設定の例外と手順書への参照を足す。`docs/README.md` に `runbooks/` を足す。
 - issue #52（本番までに人が行う作業）に、Slack・Cloudflare の通知・外の監視の設定を足す。
 
@@ -251,3 +264,4 @@
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-21 | 下書き | 仕様の点検で見つかった「監視とアラートの仕様がない」（#85） |
+| 2026-11-21 | Monitors と Workers Issues の受け持ちをログの重さで分ける（二重の通知をなくす）。退避キューを HTTP で読むときの注意と、確かめる項目を足す。本番のドメインの出どころを書く | PR のレビュー |
