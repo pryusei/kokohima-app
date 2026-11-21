@@ -46,7 +46,7 @@
 - 503 は Problem Details の形で返す。`code` は `unavailable`（新しく足す。`api-conventions` スキルの表に実装PRで追記する）。
   - 応答に、どの条件で落ちたか・時刻・件数を入れない。どの条件でも同じ本文にする。
 - 回数の上限：IP ごとに `RL_PUBLIC`（1分に30回）を使う。グループ名は `health_ready`（T-10 の仕組み）。
-- `Cache-Control: no-store` を付ける。
+- 200 と 503 の応答に `Cache-Control: no-store` を付ける（429 は、ほかの経路と共通の応答のまま）。
 
 ## データ
 - マイグレーション `0012_cron_runs.sql` で、表を1つ足す。
@@ -152,7 +152,7 @@
 - Monitors・Issues の自動の通知・通知先の webhook は、Cloudflare の管理画面で人が設定する。Terraform では管理しない。
   - 理由：Monitors と Issues の自動の通知を Terraform で書けるかは、公式ドキュメントで確かめられなかった。Slack の webhook の URL は秘密情報で、Terraform の変数や状態ファイルに入れたくない（`infra/README.md`「秘密情報は `wrangler secret` のみ」）。
   - 「管理画面で手動変更しない」（`infra/README.md`）の例外になる。代わりに、設定の内容（モニターの名前・条件・閾値・通知先のチャンネル）を手順書に書き、変えるときは手順書を直す PR を出してから管理画面を変える。
-  - 実装PRで、プロバイダ v5 にこれらのリソースがあると確かめられたら、秘密情報を含まない部分（Monitors の条件）を Terraform に移すことを検討する（別タスク）。
+  - Monitors と Issues の自動の通知を Terraform（プロバイダ v5）で書けるかは、実装PRでは確かめていない。書けると分かったら、秘密情報を含まない部分（Monitors の条件）を Terraform に移すことを検討する（別タスク。`infra-change` スキルに従い、プロバイダの公式ドキュメントで確かめてから）。
 - Slack の webhook の URL は、Cloudflare の管理画面と外の監視サービスにだけ登録する。リポジトリ・Terraform・issue・Slack の本文に書かない。漏れたら、Slack 側で作り直す。
 
 ### 7. 手順書（`docs/runbooks/monitoring.md`）
@@ -262,6 +262,7 @@
 ## 実装PRで書き換える仕様書
 - docs/requirements.md：「技術の選定」の監視の行（Workers Logs＋Monitors・Issues＋外からの死活監視。利用料アラートは #42）、「残りの論点」の「異常検知のアラートの条件と通知先」にチェックを付ける。
 - `api-conventions` スキル：エラーの表に 503 `unavailable` を足す。
+- docs/specs/T-10-idempotency-cache-ratelimit.md：「回数の上限を付ける経路」の表に `health_ready` を足す。
 - docs/specs/T-06-calendar.md・T-07-notification.md：`job_failed`・`job_dead_lettered` の重さと、`notification_mail_global_limit` のログ。
 - docs/specs/T-12-data-growth.md：「#85 のアラートの対象の候補」「退避キューを読む手段はまだない」を、この仕様書への参照に直す。`cron_step_failed` を warn で出すことを足す。
 - `docs/README.md` に `runbooks/` を足す。
@@ -276,3 +277,4 @@
 | 2026-11-21 | 確認事項を解消し、合意済みにする。外の監視サービスを Better Stack に決める | 4つの確認事項を決定（外の監視サービスは利用者と決めた。ほかは案のとおり） |
 | 2026-11-21 | 実装した。テスト計画のチェックを付け、状態を実装済みにした。`health_degraded` の重さ（warn）、outbox の滞留を読むインデックス、wrangler が `observability.issues` を受け付けることを書いた。管理画面と外のサービスで確かめる項目は、手順書に移して人が確かめる形にした | 実装PR |
 | 2026-11-21 | `infra/README.md` への例外の追記を、インフラの別のPRに回した（Terraform のワークフローが、既存のファイルの書式の検査で落ちるため） | 実装PRの CI |
+| 2026-11-21 | T-10 の回数の上限の表に `health_ready` を足すことを書いた。`no-store` を付ける応答（200 と 503）と、Terraform に移す検討の前提をはっきりさせた | 実装PRのレビュー |

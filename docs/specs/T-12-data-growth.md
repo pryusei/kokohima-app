@@ -79,7 +79,7 @@
   - 各処理を個別に `try` で囲み、1つが例外を投げても、後の処理は走る。
   - `cleanupExpired` の中の掃除（連携の state、.ics のトークン、ログインの記録、セッションと更新用トークン、冪等キー、お知らせ、リンクのプレビュー、この仕様書で足す outbox とここ暇）も、1つずつ独立させる。
 - 失敗したら、構造化したログを1行出す：`{ event: "cron_step_failed", step, name }`。
-  - `step` は処理の名前。`dispatch_outbox`・`assign_syncs`・`cleanup_oauth_states`・`cleanup_ics_tokens`・`cleanup_login_records`・`cleanup_sessions`・`cleanup_idempotency_keys`・`cleanup_notifications`・`cleanup_link_previews`・`cleanup_outbox`・`cleanup_availabilities`。
+  - `step` は処理の名前。`dispatch_outbox`・`assign_syncs`・`cleanup_oauth_states`・`cleanup_ics_tokens`・`cleanup_login_records`・`cleanup_sessions`・`cleanup_idempotency_keys`・`cleanup_notifications`・`cleanup_link_previews`・`cleanup_outbox`・`cleanup_availabilities`。 T-13 で、定期処理の最後に動いた記録を書く `heartbeat` が足された（docs/specs/T-13-monitoring.md）。
   - `name` は例外の名前（`Error.name`）だけ。`Error` でない値が投げられたときは `"unknown"`。メッセージ・スタック・SQL の値・payload は出さない（個人情報やトークンを含みうるため）。
 - 例外を握りつぶしたあとも、Cron の実行自体は成功として終える。失敗はログで気づく（ログのアラートは T-13。docs/specs/T-13-monitoring.md）。ログの重さは warn。
 
