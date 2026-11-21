@@ -148,7 +148,9 @@ describe("募集の詳細", () => {
       [`/api/v1/broadcasts/${ID}/decide`]: json(broadcast({ status: "decided", responseCount: 2, meetupId: MEETUP_ID })),
     });
     renderApp();
-    expect(await screen.findByText("2人が応じています")).toBeVisible();
+    // 人数は HeadCount で大きく出す（名前は出さない）。バッジは「募集中」
+    expect(await screen.findByText("人が応じています")).toBeVisible();
+    expect(screen.getByText("2")).toBeVisible();
     expect(screen.queryByText("友1")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "決める" }));
     expect(await screen.findByRole("link", { name: "成立した予定を見る" })).toHaveAttribute("href", `/meetups/${MEETUP_ID}`);
@@ -171,7 +173,7 @@ describe("募集の詳細", () => {
     renderApp();
     expect(await screen.findByText("募集中")).toBeVisible();
     expect(screen.queryByText(/人が応じています/)).toBeNull();
-    expect(screen.getByText("あき")).toBeVisible();
+    expect(screen.getByText("募集した人：あき")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "応じる" }));
     expect(await screen.findByRole("button", { name: "応じるのをやめる" })).toBeVisible();
     expect(screen.getByText("応じました")).toBeVisible();

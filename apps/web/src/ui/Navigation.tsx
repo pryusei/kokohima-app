@@ -1,0 +1,163 @@
+import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { unreadCountQuery } from "../notifications/queries";
+import { goBack, useLocation } from "../router";
+import { OfflineBanner } from "./feedback";
+import { Link } from "./Link";
+
+// 画面の枠（docs/specs/T-11-design.md「画面のつながり」、デザインシステム「TabBar」「Header」）
+// 下のタブは4つ。お知らせはタブにせず、ヘッダーの鐘から開く
+
+const Icon = ({ children }: { children: ReactNode }) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {children}
+  </svg>
+);
+
+export const TABS = [
+  {
+    to: "/",
+    label: "みんな",
+    icon: (
+      <Icon>
+        <circle cx="9" cy="9" r="3.2" />
+        <circle cx="16.5" cy="10" r="2.6" />
+        <path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5M14.5 15.2c2.6-.5 4.8.8 5.8 3.8" />
+      </Icon>
+    ),
+  },
+  {
+    to: "/availability",
+    label: "ここ暇",
+    icon: (
+      <Icon>
+        <rect x="5" y="4" width="14" height="16" rx="3" />
+        <path d="M9 9h6M9 13h6" />
+      </Icon>
+    ),
+  },
+  {
+    to: "/invites",
+    label: "誘い",
+    icon: (
+      <Icon>
+        <path d="M4 6h16v12H4z" />
+        <path d="m4 7 8 6 8-6" />
+      </Icon>
+    ),
+  },
+  {
+    to: "/friends",
+    label: "友達",
+    icon: (
+      <Icon>
+        <circle cx="12" cy="8.5" r="3.5" />
+        <path d="M5 20c1-3.6 3.8-5.5 7-5.5s6 1.9 7 5.5" />
+      </Icon>
+    ),
+  },
+] as const;
+
+export type TabPath = (typeof TABS)[number]["to"];
+
+export function TabBar() {
+  const { pathname } = useLocation();
+  return (
+    <nav
+      aria-label="タブ"
+      className="fixed inset-x-0 bottom-0 z-10 mx-auto grid max-w-md grid-cols-4 border-t border-line bg-surface pt-1 pb-[max(8px,env(safe-area-inset-bottom))]"
+    >
+      {TABS.map((t) => {
+        const current = pathname === t.to;
+        return (
+          <Link
+            key={t.to}
+            to={t.to}
+            current={current}
+            className={`flex flex-col items-center gap-0.5 py-1 text-xs font-bold no-underline ${current ? "text-ink" : "text-ink-muted"}`}
+          >
+            {t.icon}
+            <span>{t.label}</span>
+            <span aria-hidden="true" className={`size-1 rounded-full ${current ? "bg-lamp-line" : "bg-transparent"}`} />
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** 鐘のボタンの読み上げ。API の未読の数は99で頭打ち（UNREAD_CAP）なので、99は「99件以上」 */
+export function unreadLabel(count: number) {
+  if (count <= 0) return { badge: null, label: "お知らせ" };
+  if (count >= 99) return { badge: "99+", label: "お知らせ 99件以上の未読" };
+  return { badge: String(count), label: `お知らせ ${count}件の未読` };
+}
+
+function Bell() {
+  // 未読の数。読めなくてもボタンは出す
+  const count = useQuery(unreadCountQuery()).data?.count ?? 0;
+  const { badge, label } = unreadLabel(count);
+  return (
+    <Link to="/notifications" aria-label={label} className="relative grid size-11 place-items-center rounded-full text-ink">
+      <Icon>
+        <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" />
+        <path d="M10 20.5a2 2 0 0 0 4 0" />
+      </Icon>
+      {badge && (
+        <span aria-hidden="true" className="absolute top-1 right-0 min-w-[18px] rounded-full bg-lamp px-1.5 text-center text-xs leading-[18px] font-bold text-on-lamp tabular-nums">
+          {badge}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/** タブの画面：ヘッダー（名前と鐘）・オフラインの帯・中身・下のタブ */
+export function TabScreen({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col">
+      <header className="flex items-center justify-between px-4 py-3">
+        <h1 className="text-xl font-bold">{title}</h1>
+        <Bell />
+      </header>
+      <main className="flex flex-1 flex-col gap-4 px-4 pb-28">
+        <OfflineBanner />
+        {children}
+      </main>
+      <TabBar />
+    </div>
+  );
+}
+
+/** 設定・お知らせの画面：左上の「戻る」と名前。下のタブは出さない */
+export function SubScreen({ title, back, children }: { title: string; back: string; children: ReactNode }) {
+  return (
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col">
+      <header className="flex items-center gap-1 px-2 py-3">
+        <button type="button" aria-label="戻る" className="grid size-11 place-items-center rounded-full text-ink" onClick={() => goBack(back)}>
+          <Icon>
+            <path d="m15 6-6 6 6 6" />
+          </Icon>
+        </button>
+        <h1 className="text-xl font-bold">{title}</h1>
+      </header>
+      <main className="flex flex-1 flex-col gap-4 px-4 pb-10">
+        <OfflineBanner />
+        {children}
+      </main>
+    </div>
+  );
+}
+
+/** 一覧の節の見出し */
+export function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="flex items-baseline justify-between gap-2 text-l font-bold">
+        {title}
+        {aside && <span className="text-s font-normal text-ink-muted">{aside}</span>}
+      </h2>
+      {children}
+    </section>
+  );
+}

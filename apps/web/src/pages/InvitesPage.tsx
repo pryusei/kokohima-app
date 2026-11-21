@@ -1,18 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  broadcastStatusClass,
   broadcastStatusText,
+  broadcastStatusTone,
   formatRange,
   KIND_LABELS,
-  statusClass,
   statusText,
+  statusTone,
 } from "../invitations/format";
 import { broadcastsQuery, invitesQuery, meetupsQuery } from "../invitations/queries";
-import { Link, Nav } from "../components/Nav";
-import { useLocation } from "../router";
-import { displayNameOf } from "./FriendsPage";
+import { ButtonLink } from "../ui/Button";
+import { EmptyState, LoadError, Loading } from "../ui/feedback";
+import { BroadcastCard, InviteCard } from "../ui/InviteCard";
+import { Link } from "../ui/Link";
+import { Section, TabScreen } from "../ui/Navigation";
+import { displayNameOf } from "../account/me";
 
-// 誘いタブ（仮。docs/specs/T-04-direct-invite.md・T-05-broadcast.md「画面」）：受信・送信・募集・成立
+// 誘いタブ（docs/specs/T-04-direct-invite.md・T-05-broadcast.md「画面」、キャンバス「6 誘い」）：受信・送信・募集・成立
 
 const TABS = [
   { id: "received", label: "受信" },
@@ -24,23 +27,30 @@ type Tab = (typeof TABS)[number]["id"];
 
 function InviteList({ box }: { box: "received" | "sent" }) {
   const invites = useQuery(invitesQuery(box));
-  if (invites.isError) return <p className="text-slate-600">読み込めませんでした。もう一度お試しください。</p>;
-  if (invites.data?.items.length === 0) {
-    return <p className="text-slate-600">{box === "received" ? "まだ誘いは届いていません" : "まだ誘っていません"}</p>;
+  if (invites.isPending) return <Loading />;
+  if (invites.isError) return <LoadError retry={() => void invites.refetch()} />;
+  if (invites.data.items.length === 0) {
+    return <EmptyState title={box === "received" ? "まだ誘いは届いていません" : "まだ誘っていません"} />;
   }
   return (
-    <ul aria-label={box === "received" ? "受信した誘い" : "送信した誘い"} className="flex flex-col gap-2">
-      {invites.data?.items.map((invite) => (
-        <li key={invite.id} className="rounded-lg border border-slate-200 bg-white p-3">
-          <Link to={`/invites/${invite.id}`} className="flex flex-col gap-1">
-            <span className="font-bold">
-              {displayNameOf(invite.counterpart.displayName)}・{KIND_LABELS[invite.kind]}
-            </span>
-            <span>{formatRange(invite)}</span>
-            <span className={`text-sm ${statusClass(invite.status)}`}>{statusText(invite)}</span>
-          </Link>
-        </li>
-      ))}
+    <ul aria-label={box === "received" ? "受信した誘い" : "送信した誘い"} className="flex flex-col gap-4">
+      {invites.data.items.map((invite) => {
+        const name = displayNameOf(invite.counterpart.displayName);
+        return (
+          <li key={invite.id}>
+            <InviteCard
+              to={`/invites/${invite.id}`}
+              avatarName={invite.counterpart.displayName}
+              title={box === "sent" ? `${name}さんへ` : name}
+              subtitle={KIND_LABELS[invite.kind]}
+              when={formatRange(invite)}
+              note={invite.message}
+              status={statusText(invite)}
+              tone={statusTone(invite.status)}
+            />
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -49,31 +59,36 @@ function BroadcastList({ box }: { box: "received" | "sent" }) {
   const broadcasts = useQuery(broadcastsQuery(box));
   const label = box === "sent" ? "自分の募集" : "受け取った募集";
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="font-bold">{label}</h2>
-      {broadcasts.isError && <p className="text-slate-600">読み込めませんでした。もう一度お試しください。</p>}
-      {broadcasts.data?.items.length === 0 && <p className="text-slate-600">まだありません</p>}
-      <ul aria-label={label} className="flex flex-col gap-2">
+    <Section title={label}>
+      {broadcasts.isPending && <Loading />}
+      {broadcasts.isError && <LoadError retry={() => void broadcasts.refetch()} />}
+      {broadcasts.data?.items.length === 0 && <p className="text-ink-muted">まだありません</p>}
+      <ul aria-label={label} className="flex flex-col gap-4">
         {broadcasts.data?.items.map((b) => (
-          <li key={b.id} className="rounded-lg border border-slate-200 bg-white p-3">
-            <Link to={`/broadcasts/${b.id}`} className="flex flex-col gap-1">
-              {box === "received" && <span className="font-bold">{displayNameOf(b.owner.displayName)}</span>}
-              <span>{formatRange(b)}</span>
-              <span className={`text-sm ${broadcastStatusClass(b.status)}`}>{broadcastStatusText(b)}</span>
-            </Link>
+          <li key={b.id}>
+            <BroadcastCard
+              to={`/broadcasts/${b.id}`}
+              avatarName={box === "received" ? b.owner.displayName : null}
+              title={box === "received" ? `${displayNameOf(b.owner.displayName)}さんの募集` : "暇な人いる？"}
+              subtitle={box === "received" ? "暇な人いる？" : "自分の募集"}
+              when={formatRange(b)}
+              note={b.message}
+              status={broadcastStatusText(b)}
+              tone={broadcastStatusTone(b)}
+            />
           </li>
         ))}
       </ul>
-    </section>
+    </Section>
   );
 }
 
 function Broadcasts() {
   return (
-    <div className="flex flex-col gap-4">
-      <Link to="/broadcasts/new" className="self-start rounded-lg bg-amber-300 px-4 py-2">
-        暇な人いる？と募集する
-      </Link>
+    <div className="flex flex-col gap-6">
+      <ButtonLink to="/broadcasts/new" variant="lamp" block>
+        暇な人いる？と募る
+      </ButtonLink>
       <BroadcastList box="sent" />
       <BroadcastList box="received" />
     </div>
@@ -82,44 +97,49 @@ function Broadcasts() {
 
 function MeetupList() {
   const meetups = useQuery(meetupsQuery());
-  if (meetups.isError) return <p className="text-slate-600">読み込めませんでした。もう一度お試しください。</p>;
-  if (meetups.data?.items.length === 0) return <p className="text-slate-600">これからの成立した予定はありません</p>;
+  if (meetups.isPending) return <Loading />;
+  if (meetups.isError) return <LoadError retry={() => void meetups.refetch()} />;
+  if (meetups.data.items.length === 0) return <EmptyState title="これからの成立した予定はありません" />;
   return (
-    <ul aria-label="成立した予定" className="flex flex-col gap-2">
-      {meetups.data?.items.map((m) => (
-        <li key={m.id} className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-          <Link to={`/meetups/${m.id}`} className="flex flex-col gap-1">
-            <span className="font-bold">{m.participants.map((p) => displayNameOf(p.displayName)).join("・")}</span>
-            <span>{formatRange(m)}</span>
-          </Link>
+    <ul aria-label="成立した予定" className="flex flex-col gap-4">
+      {meetups.data.items.map((m) => (
+        <li key={m.id}>
+          <InviteCard
+            to={`/meetups/${m.id}`}
+            avatarName={m.participants[0]?.displayName ?? null}
+            title={m.participants.map((p) => displayNameOf(p.displayName)).join("・")}
+            subtitle="予定"
+            when={formatRange(m)}
+            note={m.message}
+            status="成立"
+            tone="meet"
+          />
         </li>
       ))}
     </ul>
   );
 }
 
-export function InvitesPage() {
-  const { search } = useLocation();
+/** search は ?tab= を含む URL の検索部分。シートの後ろに出すときは、開いたときの値を App が渡す */
+export function InvitesPage({ search }: { search: string }) {
   const requested = new URLSearchParams(search).get("tab");
   const tab: Tab = TABS.some((t) => t.id === requested) ? (requested as Tab) : "received";
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">誘い</h1>
-      <Nav />
-      <nav aria-label="誘いの一覧" className="flex gap-4">
+    <TabScreen title="誘い">
+      <nav aria-label="誘いの一覧" className="grid grid-cols-4 gap-1 rounded-m bg-surface-sunken p-1">
         {TABS.map((t) => (
           <Link
             key={t.id}
             to={`/invites?tab=${t.id}`}
             current={tab === t.id}
-            className={tab === t.id ? "font-bold" : "text-slate-600 underline"}
+            className={`rounded-s py-1.5 text-center font-bold no-underline ${tab === t.id ? "bg-surface text-ink shadow-card" : "text-ink-muted"}`}
           >
             {t.label}
           </Link>
         ))}
       </nav>
       {tab === "meetups" ? <MeetupList /> : tab === "broadcasts" ? <Broadcasts /> : <InviteList key={tab} box={tab} />}
-    </main>
+    </TabScreen>
   );
 }

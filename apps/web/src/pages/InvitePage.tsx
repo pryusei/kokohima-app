@@ -4,6 +4,10 @@ import { ApiError, apiFetch } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { navigate } from "../router";
 
+import { Avatar } from "../ui/Avatar";
+import { buttonClass, SendButton } from "../ui/Button";
+import { Loading } from "../ui/feedback";
+
 // 招待リンクの受け口（docs/specs/T-02-friends.md「招待リンクの受け口」）
 // トークンはURLのフラグメントから読んだらすぐ消し、ブラウザのストレージには置かない（サーバーが招待Cookieで持ち越す）
 
@@ -76,65 +80,67 @@ export function InvitePage() {
   const loginUrl = (provider: "google" | "apple") => `/api/v1/auth/${provider}/start?returnTo=${encodeURIComponent("/invite")}`;
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">ここ暇</h1>
-      {state.kind === "loading" && <p role="status">読み込み中…</p>}
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-6 py-12">
+      <h1 className="font-bold text-ink-muted">ここ暇</h1>
+      {state.kind === "loading" && <Loading />}
       {state.kind === "unusable" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
           このリンクは使えません。発行した人に新しいリンクをもらってください。
         </p>
       )}
       {state.kind === "acceptFailed" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
           友達になれませんでした。招待リンクをもう一度開いてください。
         </p>
       )}
       {state.kind === "own" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
           これはあなたが作ったリンクです。友達に送ってください。
         </p>
       )}
       {state.kind === "busy" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
           混み合っています。少し待ってから、もう一度開いてください。
         </p>
       )}
       {state.kind === "lookupNetwork" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
           通信できませんでした。通信状態を確認して、リンクをもう一度開いてください。
         </p>
       )}
       {state.kind === "network" && (
-        <p role="status" className="text-slate-600">
-          通信できませんでした。友達になれているか、<a className="underline" href="/friends">友達一覧</a>で確認してください。
+        <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
+          通信できませんでした。友達になれているか、<a className="text-action underline" href="/friends">友達一覧</a>で確認してください。
         </p>
       )}
       {state.kind === "ready" && (
         <>
-          <p>
-            <span className="font-bold">{state.invite.inviter.displayName ?? "友達"}</span>
-            さんから、ここ暇の友達の招待が届いています。
-          </p>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <Avatar name={state.invite.inviter.displayName} size="l" />
+            <p className="text-xl font-bold">
+              {state.invite.inviter.displayName ?? "友達"}さんから、ここ暇の友達の招待が届いています。
+            </p>
+            <p className="text-s text-ink-muted">友達になると、おたがいの「ここ暇」が見えて、気軽に誘えるようになります。</p>
+          </div>
           {status === "authenticated" ? (
-            <button
-              type="button"
-              disabled={sending}
-              className="rounded-lg bg-amber-300 px-4 py-3 disabled:opacity-50"
-              onClick={() => void accept(state.invite.linkId)}
-            >
+            <SendButton variant="primary" block disabled={sending} onClick={() => void accept(state.invite.linkId)}>
               友達になる
-            </button>
+            </SendButton>
           ) : status === "checking" ? (
-            <p role="status">読み込み中…</p>
+            <Loading />
           ) : (
             <>
-              <p className="text-slate-600">友達になるには、ログインしてください。</p>
-              <a className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-center" href={loginUrl("google")}>
+              <p className="text-ink-muted">友達になるには、ログインしてください。</p>
+              <a className={buttonClass("secondary", { block: true })} href={loginUrl("google")}>
                 Googleでログイン
               </a>
               {/* Sign in with Apple は VITE_APPLE_LOGIN_ENABLED が "1" のときだけ（T-12）。本番のビルドでは文字列ごと落ちる */}
               {import.meta.env.VITE_APPLE_LOGIN_ENABLED === "1" && (
-                <a data-provider="apple-login" className="rounded-lg bg-black px-4 py-3 text-center text-white" href={loginUrl("apple")}>
+                <a
+                  data-provider="apple-login"
+                  className={`${buttonClass("secondary", { block: true })} border-transparent bg-ink text-surface`}
+                  href={loginUrl("apple")}
+                >
                   Appleでログイン
                 </a>
               )}

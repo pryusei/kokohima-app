@@ -1,1 +1,145 @@
 @import "tailwindcss";
+
+/*
+ * ここ暇のトークン（docs/specs/T-11-design.md「トークンとテーマ」）。値はデザインシステム「ここ暇」の tokens.json と同じ。
+ * Tailwind の既定の色は使わない（--color-*: initial で消す）。色は意味の名前（bg-surface、text-ink-muted など）で使う。
+ * 断り・期限切れ・失敗は quiet の2色で静かに出す。赤やエラー色のトークンは置かない。
+ */
+
+:root {
+  --kh-bg: #f8f7f6;
+  --kh-surface: #ffffff;
+  --kh-surface-sunken: #f2f1f0;
+  --kh-head: #edebe8;
+  --kh-ink: #23221e;
+  --kh-ink-muted: #706d65;
+  --kh-ink-disabled: #c1bdb7;
+  --kh-line: #d6d3d0;
+  --kh-line-strong: #8c8880;
+  --kh-lamp: #ffcc17;
+  --kh-lamp-soft: #fff5d1;
+  --kh-lamp-line: #d9a90f;
+  --kh-on-lamp: #23221e;
+  --kh-meet: #0f7f85;
+  --kh-on-meet: #ffffff;
+  --kh-meet-soft: #e1f2f2;
+  --kh-meet-ink: #0b6166;
+  --kh-quiet-bg: #edebe8;
+  --kh-quiet-ink: #65625b;
+  --kh-action: #0077c7;
+  --kh-action-hover: #006bb3;
+  --kh-on-action: #ffffff;
+  --kh-focus: #0077c7;
+  --kh-scrim: #03030280;
+  --kh-shadow-card: 0 1px 2px 0 #0303024d;
+  --kh-shadow-float: 0 4px 8px 2px #0303024d;
+  --kh-shadow-sheet: 0 -4px 10px 0 #0303024d;
+  --kh-shadow-lamp: 0 0 0 3px #ffcc1752, 0 4px 16px #ffcc1766;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --kh-bg: #1b1a17;
+    --kh-surface: #262521;
+    --kh-surface-sunken: #141311;
+    --kh-head: #2e2c28;
+    --kh-ink: #f2f1f0;
+    --kh-ink-muted: #b3afa8;
+    --kh-ink-disabled: #5c5952;
+    --kh-line: #3b3934;
+    --kh-line-strong: #6b675f;
+    --kh-lamp-soft: #3d3520;
+    --kh-meet: #3fb8bf;
+    --kh-on-meet: #0b2a2c;
+    --kh-meet-soft: #12302f;
+    --kh-meet-ink: #7fd6db;
+    --kh-quiet-bg: #2e2c28;
+    --kh-quiet-ink: #b3afa8;
+    --kh-action: #4da3e8;
+    --kh-action-hover: #66b1ec;
+    --kh-on-action: #0b1b29;
+    --kh-focus: #4da3e8;
+    --kh-scrim: #000000a0;
+    --kh-shadow-card: 0 1px 2px 0 #00000099;
+    --kh-shadow-float: 0 4px 8px 2px #000000b3;
+    --kh-shadow-sheet: 0 -4px 10px 0 #000000b3;
+    --kh-shadow-lamp: 0 0 0 3px #ffcc1740, 0 0 20px #ffcc1759;
+    color-scheme: dark;
+  }
+}
+
+@theme {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --font-sans: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --radius-l: 8px;
+  --radius-sheet: 16px;
+  --radius-full: 10000px;
+  --text-xxs: 0.667rem;
+  --text-xs: 0.75rem;
+  --text-s: 0.857rem;
+  --text-m: 1rem;
+  --text-l: 1.2rem;
+  --text-xl: 1.5rem;
+  --text-xxl: 2rem;
+}
+
+@theme inline {
+  --color-bg: var(--kh-bg);
+  --color-surface: var(--kh-surface);
+  --color-surface-sunken: var(--kh-surface-sunken);
+  --color-head: var(--kh-head);
+  --color-ink: var(--kh-ink);
+  --color-ink-muted: var(--kh-ink-muted);
+  --color-ink-disabled: var(--kh-ink-disabled);
+  --color-line: var(--kh-line);
+  --color-line-strong: var(--kh-line-strong);
+  --color-lamp: var(--kh-lamp);
+  --color-lamp-soft: var(--kh-lamp-soft);
+  --color-lamp-line: var(--kh-lamp-line);
+  --color-on-lamp: var(--kh-on-lamp);
+  --color-meet: var(--kh-meet);
+  --color-on-meet: var(--kh-on-meet);
+  --color-meet-soft: var(--kh-meet-soft);
+  --color-meet-ink: var(--kh-meet-ink);
+  --color-quiet-bg: var(--kh-quiet-bg);
+  --color-quiet-ink: var(--kh-quiet-ink);
+  --color-action: var(--kh-action);
+  --color-action-hover: var(--kh-action-hover);
+  --color-on-action: var(--kh-on-action);
+  --color-focus: var(--kh-focus);
+  --color-scrim: var(--kh-scrim);
+  --shadow-card: var(--kh-shadow-card);
+  --shadow-float: var(--kh-shadow-float);
+  --shadow-sheet: var(--kh-shadow-sheet);
+  --shadow-lamp: var(--kh-shadow-lamp);
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  /* フォーカスは surface の2pxの隙間の外に focus の2pxの輪 */
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--color-surface),
+      0 0 0 4px var(--color-focus);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+}

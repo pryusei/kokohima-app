@@ -4,11 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { apiSend } from "../api/client";
 import { keys } from "../api/keys";
-import { Nav } from "../components/Nav";
+import { SendButton } from "../ui/Button";
+import { Note } from "../ui/feedback";
+import { Section, SubScreen } from "../ui/Navigation";
+import { Switch } from "../ui/Switch";
 import { disablePush, enablePush, pushEnabled, pushSupported } from "../notifications/push";
 import { preferencesQuery } from "../notifications/queries";
 
-// 通知の設定（仮。docs/specs/T-07-notification.md「お知らせ一覧」の「設定」）
+// 通知の設定（docs/specs/T-07-notification.md「お知らせ一覧」の「設定」、キャンバス「22 通知の設定」）
 
 const CATEGORIES: { key: keyof NotificationPreferences; label: string }[] = [
   { key: "invites", label: "誘い" },
@@ -50,37 +53,26 @@ function PushSection() {
   });
 
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold">この端末のプッシュ通知</h2>
-      {!supported && (
-        <p className="text-slate-600">ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます</p>
-      )}
-      {supported && enabled === false && (
-        <button
-          type="button"
-          className="self-start rounded-lg bg-amber-300 px-4 py-2"
-          disabled={toggle.isPending}
-          onClick={() => toggle.mutate(true)}
-        >
-          この端末でプッシュ通知を受け取る
-        </button>
-      )}
-      {supported && enabled === true && (
-        <button
-          type="button"
-          className="self-start rounded-lg border border-slate-300 px-4 py-2"
-          disabled={toggle.isPending}
-          onClick={() => toggle.mutate(false)}
-        >
-          この端末でのプッシュ通知をやめる
-        </button>
-      )}
-      {message && (
-        <p role="status" className="text-sm text-slate-600">
-          {message}
-        </p>
-      )}
-    </section>
+    <Section title="この端末のプッシュ通知">
+      <div className="flex flex-col gap-3 rounded-l bg-surface p-4 shadow-card">
+        {!supported && <Note>ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます</Note>}
+        {supported && enabled === false && (
+          <SendButton variant="primary" block disabled={toggle.isPending} onClick={() => toggle.mutate(true)}>
+            この端末でプッシュ通知を受け取る
+          </SendButton>
+        )}
+        {supported && enabled === true && (
+          <SendButton block disabled={toggle.isPending} onClick={() => toggle.mutate(false)}>
+            この端末でのプッシュ通知をやめる
+          </SendButton>
+        )}
+        {message && (
+          <p role="status" className="text-s text-ink-muted">
+            {message}
+          </p>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -107,34 +99,28 @@ export function NotificationSettingsPage() {
   });
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <h1 className="text-2xl font-bold">通知の設定</h1>
-      <Nav />
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-bold">受け取るお知らせ</h2>
-        <p className="text-sm text-slate-600">
-          止めた種類は、プッシュ通知もメールも届かず、お知らせ一覧にだけ残ります。
-        </p>
-        {preferences.data &&
-          CATEGORIES.map((c) => (
-            <label key={c.key} className="flex items-center justify-between gap-4">
-              <span>{c.label}</span>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={preferences.data[c.key]}
-                onChange={(e) => update.mutate({ [c.key]: e.target.checked })}
-              />
-            </label>
-          ))}
+    <SubScreen title="通知の設定" back="/settings">
+      <Section title="受け取るお知らせ">
+        <Note>止めた種類は、プッシュ通知もメールも届かず、お知らせ一覧にだけ残ります。</Note>
+        {preferences.data && (
+          <div className="rounded-l bg-surface px-4 shadow-card">
+            {CATEGORIES.map((c) => (
+              <div key={c.key} className="border-b border-line last:border-b-0">
+                <Switch checked={preferences.data[c.key]} onChange={(v) => update.mutate({ [c.key]: v })}>
+                  {c.label}
+                </Switch>
+              </div>
+            ))}
+          </div>
+        )}
         {failed && (
-          <p role="status" className="text-sm text-slate-600">
+          <p role="status" className="text-s text-ink-muted">
             変更できませんでした。もう一度お試しください
           </p>
         )}
-        <p className="text-sm text-slate-600">新しい端末でのログインのお知らせは止められません</p>
-      </section>
+        <Note>新しい端末でのログインのお知らせは止められません</Note>
+      </Section>
       <PushSection />
-    </main>
+    </SubScreen>
   );
 }

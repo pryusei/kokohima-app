@@ -71,7 +71,7 @@ describe("設定のカレンダー連携", () => {
     });
     renderApp();
     const failed = await screen.findByText("連携できませんでした。もう一度お試しください");
-    expect(failed).toHaveClass("text-slate-600");
+    expect(failed.className).not.toMatch(/red|rose/);
     expect(await screen.findByText("もう一度連携してください")).toBeVisible();
     expect(screen.getByRole("button", { name: "Googleカレンダーと連携" })).toBeVisible();
     expect(screen.getByRole("button", { name: "連携をやめる" })).toBeVisible();
@@ -100,7 +100,7 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
   it("連携していなければ出さず、候補も読まない", async () => {
     const { calls } = tab({ "/api/v1/calendar/connections": none });
     renderApp();
-    await screen.findByRole("heading", { name: "ここ暇を追加" });
+    await screen.findByRole("heading", { name: /^自分のここ暇/ });
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/calendar/connections")).toBe(true));
     expect(screen.queryByRole("heading", { name: "カレンダーの空き" })).toBeNull();
     expect(calls.some((c) => c.url.startsWith("/api/v1/calendar/free-slots"))).toBe(false);
@@ -128,7 +128,7 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
       "/api/v1/availabilities": [empty, json(created, 201), json({ items: [created], nextCursor: null })],
     });
     renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "10/10（土） 夜 19:00〜23:00" }));
+    await userEvent.click(await screen.findByRole("button", { name: "10/10（土） 夜 19:00〜23:00をここ暇にする" }));
     const post = await waitFor(() => {
       const c = calls.find((x) => x.url === "/api/v1/availabilities" && x.init.method === "POST");
       if (!c) throw new Error("not yet");
@@ -148,7 +148,7 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
     });
     renderApp();
     const text = await screen.findByText("カレンダーを読み込めませんでした");
-    expect(text).toHaveClass("text-slate-600");
+    expect(text.className).not.toMatch(/red|rose/);
   });
 
   it("回数の上限（429）は候補を出さず、静かに待ってもらう。取り直さない", async () => {
@@ -158,7 +158,7 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
     });
     renderApp();
     const text = await screen.findByText("少し待ってから、もう一度開いてください");
-    expect(text).toHaveClass("text-slate-600");
+    expect(text.className).not.toMatch(/red|rose/);
     expect(text.className).not.toMatch(/red|rose/);
     expect(calls.filter((c) => c.url.startsWith("/api/v1/calendar/free-slots"))).toHaveLength(1);
   });

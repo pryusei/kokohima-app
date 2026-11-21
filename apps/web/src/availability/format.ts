@@ -65,3 +65,6 @@ export function formatSlot(slot: { startsAt: string; endsAt: string; label: Pres
   const time = `${formatTime(slot.startsAt)}〜${end}`;
   return slot.label ? `${PRESET_LABELS[slot.label]} ${time}` : time;
 }
+
+/** 時刻の入力の "00:00" を終了に使うときは 24:00 とみなす */
+export const asEnd = (hhmm: string) => (hhmm === "00:00" ? "24:00" : hhmm);
