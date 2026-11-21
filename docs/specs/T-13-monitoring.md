@@ -264,7 +264,8 @@
 - `api-conventions` スキル：エラーの表に 503 `unavailable` を足す。
 - docs/specs/T-06-calendar.md・T-07-notification.md：`job_failed`・`job_dead_lettered` の重さと、`notification_mail_global_limit` のログ。
 - docs/specs/T-12-data-growth.md：「#85 のアラートの対象の候補」「退避キューを読む手段はまだない」を、この仕様書への参照に直す。`cron_step_failed` を warn で出すことを足す。
-- `infra/README.md`：「管理画面で手動変更しない」に、通知の設定の例外と手順書への参照を足す。`docs/README.md` に `runbooks/` を足す。
+- `docs/README.md` に `runbooks/` を足す。
+- `infra/README.md`：「管理画面で手動変更しない」に、通知の設定の例外と手順書への参照を足す。**これは T-13 の実装PRでは行わず、インフラの別のPRで行う**。`infra/` を触ると Terraform の plan のワークフローが動くが、いまは既存のファイル（`infra/terraform/modules/kokohima/versions.tf`）の書式の検査で落ちるため。書式の修正と一緒に足す。それまで、例外の正はこの仕様書の「6.」と手順書の冒頭。
 - issue #52（本番までに人が行う作業）に、Slack・Cloudflare の通知・外の監視の設定を足す。
 
 ## 変更履歴
@@ -274,3 +275,4 @@
 | 2026-11-21 | Monitors と Workers Issues の受け持ちをログの重さで分ける（二重の通知をなくす）。退避キューを HTTP で読むときの注意と、確かめる項目を足す。本番のドメインの出どころを書く | PR のレビュー |
 | 2026-11-21 | 確認事項を解消し、合意済みにする。外の監視サービスを Better Stack に決める | 4つの確認事項を決定（外の監視サービスは利用者と決めた。ほかは案のとおり） |
 | 2026-11-21 | 実装した。テスト計画のチェックを付け、状態を実装済みにした。`health_degraded` の重さ（warn）、outbox の滞留を読むインデックス、wrangler が `observability.issues` を受け付けることを書いた。管理画面と外のサービスで確かめる項目は、手順書に移して人が確かめる形にした | 実装PR |
+| 2026-11-21 | `infra/README.md` への例外の追記を、インフラの別のPRに回した（Terraform のワークフローが、既存のファイルの書式の検査で落ちるため） | 実装PRの CI |
