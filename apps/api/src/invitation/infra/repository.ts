@@ -118,9 +118,33 @@ export async function insertInvite(
          SELECT ?1, 'DirectInviteSent', ?2, ?3 WHERE EXISTS (SELECT 1 FROM direct_invites WHERE id = ?4)`,
       )
       .bind(event.id, event.payload, row.now, row.id),
+    ...(row.url !== null ? [linkAttached(d1, "direct_invites", "direct_invite", row.id, row.now)] : []),
   ]);
   return inserted?.meta.changes === 1;
 }
+
+/**
+ * リンクの取得のきっかけ（docs/specs/T-08-link-preview.md「取得のきっかけ」）。作成と同じ batch で、行があるときだけ書く。
+ * payload に URL は入れない
+ */
+export const linkAttached = (
+  d1: D1Database,
+  table: "direct_invites" | "broadcasts",
+  subjectType: "direct_invite" | "broadcast",
+  id: string,
+  now: number,
+) =>
+  d1
+    .prepare(
+      `INSERT INTO outbox (id, type, payload, created_at)
+       SELECT ?1, 'LinkAttached', ?2, ?3 WHERE EXISTS (SELECT 1 FROM ${table} WHERE id = ?4)`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      JSON.stringify({ subjectType, subjectId: id, occurredAt: new Date(now).toISOString() }),
+      now,
+      id,
+    );
 
 /** 送信が0行だったときの理由を、判定の順番（404 → 409 → 429）で読み直す */
 export async function diagnoseSend(
@@ -470,6 +494,13 @@ export type MeetupForCalendarRow = {
   area: string | null;
   url: string | null;
 };
+
+/** 誘い・募集のリンク（閲覧者で絞らない。consumer が LinkAttached を処理するときだけ使う）。行がない・リンクがなければ null */
+export async function linkOf(d1: D1Database, subject: { type: "direct_invite" | "broadcast"; id: string }) {
+  const table = subject.type === "direct_invite" ? "direct_invites" : "broadcasts";
+  const row = await d1.prepare(`SELECT url FROM ${table} WHERE id = ?1`).bind(subject.id).first<{ url: string | null }>();
+  return row?.url ?? null;
+}
 
 /** 予定1つ（閲覧者で絞らない。consumer が payload の予定を読むときだけ使う） */
 export async function findMeetupById(d1: D1Database, meetupId: string) {

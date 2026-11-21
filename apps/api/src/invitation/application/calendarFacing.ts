@@ -33,6 +33,11 @@ export async function meetupForCalendar(ctx: Ctx, meetupId: string): Promise<Mee
   };
 }
 
+/** LinkAttached の誘い・募集のリンク（閲覧者がいない処理。T-08）。行がない・リンクがなければ null */
+export function linkOfSubject(ctx: Ctx, subject: { type: "direct_invite" | "broadcast"; id: string }) {
+  return repo.linkOf(ctx.env.DB, subject);
+}
+
 /** その人が参加者（抜けた人を含む）で、これからの予定の ID */
 export function upcomingMeetupIdsOf(ctx: Ctx, userId: string, limit: number, after: string) {
   return repo.upcomingMeetupIdsOf(ctx.env.DB, userId, ctx.deps.now(), limit, after);

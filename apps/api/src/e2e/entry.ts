@@ -1,14 +1,16 @@
-import { problem } from "../app";
+import { defaultDeps, problem } from "../app";
 import { requireAuth } from "../identity/middleware";
 import { createWorker } from "../worker";
 import { e2eExpireBroadcast } from "./broadcasts";
 import { E2E_GOOGLE_ENDPOINTS, e2eCalendarAuthorize, e2eCalendarBusy, e2eCalendarSync, e2eFetch, e2eOutboxDrain } from "./calendar";
 import { e2eLogin } from "./login";
+import { E2E_LINK_PREVIEW_DEPS } from "./linkPreview";
 import { E2E_NOTIFICATION_DEPS, e2eNotificationsSent } from "./notifications";
 
 // E2E用のエントリ（wrangler の env.e2e でだけ使う）。本番のエントリからはimportしない
 // Google・メール配信・プッシュへの fetch は偽の実装に向ける
-// （docs/specs/T-06-calendar.md「E2E用の偽のGoogle」、docs/specs/T-07-notification.md「E2E用の偽のメール・プッシュ」）
+// （docs/specs/T-06-calendar.md「E2E用の偽のGoogle」、docs/specs/T-07-notification.md「E2E用の偽のメール・プッシュ」、
+// docs/specs/T-08-link-preview.md「E2E用の偽のサイト」）
 const { app, handler } = createWorker({
   fetch: e2eFetch,
   google: { endpoints: E2E_GOOGLE_ENDPOINTS },
@@ -16,6 +18,8 @@ const { app, handler } = createWorker({
   // 並んで走るテストが同じ回線になり、偽の埋まりを途中で変えるテストもあるので、上限とキャッシュを使わない（T-10）
   rateLimit: async () => true,
   cacheEnabled: false,
+  // 偽のサイト（ogp.e2e.invalid）だけを許し、名前解決も偽物にする（T-08）
+  linkPreview: E2E_LINK_PREVIEW_DEPS(defaultDeps().linkPreview),
 });
 
 app.use("/__e2e__/*", async (c, next) => {

@@ -7,6 +7,8 @@ import { availabilityRoutes } from "./availability/routes";
 import { calendarRoutes } from "./calendar/routes";
 import { identityRoutes } from "./identity/routes";
 import { invitationRoutes } from "./invitation/routes";
+import { resolveDoh } from "./link-preview/infra/dns";
+import { linkPreviewRoutes } from "./link-preview/routes";
 import { notificationRoutes } from "./notification/routes";
 import { socialRoutes } from "./social/routes";
 
@@ -38,6 +40,7 @@ export function defaultDeps(): AppDeps {
       }
     },
     cacheEnabled: true,
+    linkPreview: { resolve: resolveDoh, extraHosts: [], timeouts: { fetchMs: 5000, totalMs: 10_000, dnsMs: 3000 } },
   };
 }
 
@@ -59,6 +62,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
   app.route("/api/v1", invitationRoutes());
   app.route("/api/v1", calendarRoutes());
   app.route("/api/v1", notificationRoutes());
+  app.route("/api/v1", linkPreviewRoutes());
 
   app.notFound((c) => problem(c.get("requestId"), 404, "not_found", "Not Found"));
 

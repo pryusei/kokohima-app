@@ -5,9 +5,10 @@ import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { Link, Nav } from "../components/Nav";
-import { broadcastStatusClass, broadcastStatusText, formatRange, linkLabel } from "../invitations/format";
+import { broadcastStatusClass, broadcastStatusText, formatRange } from "../invitations/format";
 import { broadcastQuery } from "../invitations/queries";
 import { displayNameOf } from "./FriendsPage";
+import { LinkPreviewCard } from "../invitations/LinkPreviewCard";
 
 // 募集の詳細（仮。docs/specs/T-05-broadcast.md「画面」）。宛先の人には人数・名前・ほかの宛先を出さない
 
@@ -95,7 +96,6 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
     );
   }
   const b = broadcast.data;
-  const host = b ? linkLabel(b.url) : null;
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
@@ -115,11 +115,7 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
           <p>{formatRange(b)}</p>
           {b.area && <p>エリア：{b.area}</p>}
           {b.message && <p className="whitespace-pre-wrap">{b.message}</p>}
-          {b.url && host && (
-            <a href={b.url} target="_blank" rel="noopener noreferrer nofollow" className="underline">
-              {host}
-            </a>
-          )}
+          <LinkPreviewCard url={b.url} preview={b.linkPreview} />
           <p className={broadcastStatusClass(b.status)}>{broadcastStatusText(b)}</p>
           <Actions b={b} />
         </section>

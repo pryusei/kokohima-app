@@ -8,6 +8,7 @@ import type {
 import { visibleSlotsFor } from "../../availability/application/availability";
 import type { AppDeps, Bindings } from "../../env";
 import { getPublicProfiles } from "../../identity/application/auth";
+import { previewsFor } from "../../link-preview/application/previews";
 import type { Cursor } from "../../shared/cursor";
 import {
   cancelError,
@@ -43,7 +44,13 @@ const event = (type: string, payload: Record<string, unknown>) => ({
   payload: JSON.stringify(payload),
 });
 
-function toInviteDto(row: repo.InviteRow, viewerId: string, profiles: Map<string, PublicProfile>, now: number): DirectInvite {
+function toInviteDto(
+  row: repo.InviteRow,
+  viewerId: string,
+  profiles: Map<string, PublicProfile>,
+  now: number,
+  linkPreview: DirectInvite["linkPreview"],
+): DirectInvite {
   const received = row.recipient_id === viewerId;
   const counterpartId = received ? row.sender_id : row.recipient_id;
   return {
@@ -60,6 +67,7 @@ function toInviteDto(row: repo.InviteRow, viewerId: string, profiles: Map<string
     area: row.area,
     message: row.message,
     url: row.url,
+    linkPreview,
     expiresAt: iso(row.expires_at),
     counterProposal:
       row.counter_starts_at !== null && row.counter_ends_at !== null
@@ -74,8 +82,13 @@ async function inviteDtos(ctx: Ctx, viewerId: string, rows: repo.InviteRow[]) {
   // 渡すのは、閲覧者が参加者として SQL で絞った誘いの相手のIDだけ
   const ids = [...new Set(rows.map((r) => (r.recipient_id === viewerId ? r.sender_id : r.recipient_id)))];
   const profiles = await getPublicProfiles(ctx.env, ids);
+  // 渡すのは、閲覧者が参加者として SQL で絞った誘いだけ
+  const previews = await previewsFor(
+    ctx.env.DB,
+    rows.map((r) => ({ directInviteId: r.id, broadcastId: null, url: r.url })),
+  );
   const now = ctx.deps.now();
-  return rows.map((r) => toInviteDto(r, viewerId, profiles, now));
+  return rows.map((r, i) => toInviteDto(r, viewerId, profiles, now, previews[i] ?? null));
 }
 
 async function reloadInvite(ctx: Ctx, viewerId: string, id: string) {
@@ -330,7 +343,12 @@ async function meetupDtos(ctx: Ctx, viewerId: string, rows: repo.MeetupRow[]): P
   // 渡すのは、閲覧者が参加者として SQL で絞った予定の参加者のIDだけ
   const others = new Set([...participants.values()].flat().filter((id) => id !== viewerId));
   const profiles = await getPublicProfiles(ctx.env, [...others]);
-  return rows.map((r) => ({
+  // 予定は元の誘い・募集の参照を使う
+  const previews = await previewsFor(
+    ctx.env.DB,
+    rows.map((r) => ({ directInviteId: r.direct_invite_id, broadcastId: r.broadcast_id, url: r.url })),
+  );
+  return rows.map((r, i) => ({
     id: r.id,
     startsAt: iso(r.starts_at),
     endsAt: iso(r.ends_at),
@@ -343,6 +361,7 @@ async function meetupDtos(ctx: Ctx, viewerId: string, rows: repo.MeetupRow[]): P
     area: r.area,
     message: r.message,
     url: r.url,
+    linkPreview: previews[i] ?? null,
     directInviteId: r.direct_invite_id,
     broadcastId: r.broadcast_id,
     createdAt: iso(r.created_at),

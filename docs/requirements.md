@@ -186,6 +186,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | DirectInviteSkipped | Invitation | 受信者に通知（T-07） |
 | MeetupConfirmed | Invitation | Calendarが双方に書き込む／直接の誘いの成立は、成立させた人でない方に通知（T-07。募集の成立は BroadcastDecided で通知する） |
 | BroadcastSent | Invitation | 宛先ごとに通知（T-07） |
+| LinkAttached | Invitation | リンク付きの誘い・募集を作った。Link Preview がページを取得して OGP と画像を保存する（T-08。payload は ID だけ） |
 | BroadcastDecided | Invitation | Meetupを作成し、募集者を除く参加者に名前を開示して通知（T-07。カレンダーへの書き込みは同時に書く MeetupConfirmed で行う） |
 | （期限切れ） | Invitation | 状態を保存せず、読むときに期限で決める。通知しないので、イベントは作らない（docs/specs/T-05-broadcast.md） |
 | MeetupLeft | Invitation | 募集の予定から1人が抜けた。残った参加者に定型文で通知（T-07） |
@@ -268,7 +269,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 
 ### 悪用対策と運用
 - 誘い・募集の送信上限：1日20件
-- OGP取得：ユーザーごとのレート制限、同一URLはキャッシュ
+- OGP取得：ユーザーごとの取得の量は、誘い・募集の送信上限（24時間に20件）で兼ねる。同一URLの結果は D1 に保存して使い回す（成功は7日、失敗は24時間。docs/specs/T-08-link-preview.md 決定事項4・5）
 - 監査ログ：ログイン、カレンダー連携、公開設定の変更を30日間保持
 
 ### AI時代の攻撃を前提にした運用
@@ -306,7 +307,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 
 **一般公開までに必須**
 - [ ] Googleの審査要件とプライバシーポリシーへの反映
-- [ ] 招待リンク発行など、その他のレート制限の値（ログインの開始・招待リンクの確認・.ics・カレンダーの空き・.ics リンクの発行は T-10 で決めた。運用で見直す）
+- [ ] 招待リンク発行など、その他のレート制限の値（ログインの開始・招待リンクの確認・.ics・カレンダーの空き・.ics リンクの発行は T-10、リンクのプレビューの画像の配信（`link_image`）は T-08 で決めた。運用で見直す）
 - [ ] 異常検知のアラートの条件と通知先
 - [ ] 暗号鍵とJWT署名鍵のローテーション手順
 

@@ -1,5 +1,5 @@
 import type { StoredBroadcastStatus } from "../domain/broadcast";
-import { oldestSentSql, sentCountSql } from "./repository";
+import { linkAttached, oldestSentSql, sentCountSql } from "./repository";
 
 // 募集の永続化（docs/specs/T-05-broadcast.md「データ」「振る舞い」）
 // 宛先のIDは JSON の配列1つで渡し、json_each で展開する（D1 の1つの文に渡せる値は100個まで）
@@ -101,6 +101,7 @@ export async function insertBroadcast(d1: D1Database, row: NewBroadcast, limit: 
          FROM broadcast_recipients r WHERE r.broadcast_id = ?1`,
       )
       .bind(row.id, row.ownerId, new Date(row.now).toISOString(), row.now),
+    ...(row.url !== null ? [linkAttached(d1, "broadcasts", "broadcast", row.id, row.now)] : []),
   ]);
   return inserted?.meta.changes === 1;
 }

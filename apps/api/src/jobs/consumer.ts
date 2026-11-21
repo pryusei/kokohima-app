@@ -3,6 +3,7 @@ import type { AppDeps, Bindings, JobMessage } from "../env";
 import { syncConnection } from "../calendar/application/sync";
 import { reconcileMeetup, reconcileUpcomingOf } from "../calendar/application/writes";
 import { declineForCancelledAvailability } from "../invitation/application/calendarFacing";
+import { handleLinkAttached } from "../link-preview/application/fetchPreview";
 import { createFromEvent, deliver } from "../notification/application/delivery";
 
 // Queue の consumer（docs/specs/T-06-calendar.md）。kind と type で振り分ける。どの処理も冪等にしてあるので、
@@ -10,8 +11,8 @@ import { createFromEvent, deliver } from "../notification/application/delivery";
 
 type Ctx = { env: Bindings; deps: AppDeps };
 
-/** wrangler の max_retries（再試行の回数）。最初の1回と合わせて、最大 MAX_ATTEMPTS + 1 回試す */
-export const MAX_ATTEMPTS = 5;
+/** wrangler の max_retries（再試行の回数）。最初の1回と合わせて、最大 MAX_RETRIES + 1 回試す */
+export const MAX_RETRIES = 5;
 
 const meetupPayload = z.object({ meetupId: z.string() });
 const connectedPayload = z.object({ userId: z.string(), after: z.string().optional() });
@@ -20,10 +21,19 @@ const cancelledPayload = z.object({
   ranges: z.array(z.object({ startsAt: z.iso.datetime(), endsAt: z.iso.datetime() })),
   occurredAt: z.iso.datetime(),
 });
+const linkAttachedPayload = z.object({ subjectType: z.enum(["direct_invite", "broadcast"]), subjectId: z.string() });
 
-/** カレンダーの処理や自動の「今回は難しい」（T-06）。型ごとの処理がなければ何もしない */
-async function handleCalendarSide(ctx: Ctx, type: string, payload: unknown) {
+/**
+ * 通知のほかの処理：カレンダーの処理や自動の「今回は難しい」（T-06）、リンクのプレビューの取得（T-08）。
+ * 型ごとの処理がなければ何もしない。attempts はメッセージの試行の回数（1から。ない呼び出しは最後の試行として扱わない）
+ */
+async function handleCalendarSide(ctx: Ctx, type: string, payload: unknown, attempts: number | undefined) {
   switch (type) {
+    case "LinkAttached": {
+      const p = linkAttachedPayload.parse(payload);
+      await handleLinkAttached(ctx, { type: p.subjectType, id: p.subjectId }, attempts !== undefined && attempts > MAX_RETRIES);
+      return;
+    }
     case "MeetupConfirmed":
     case "MeetupCancelled":
     case "MeetupLeft":
@@ -48,7 +58,7 @@ async function handleCalendarSide(ctx: Ctx, type: string, payload: unknown) {
   }
 }
 
-export async function handleJob(ctx: Ctx, job: JobMessage) {
+export async function handleJob(ctx: Ctx, job: JobMessage, attempts?: number) {
   if (job.kind === "calendar_sync") {
     await syncConnection(ctx, job.userId, job.provider);
     return;
@@ -74,7 +84,7 @@ export async function handleJob(ctx: Ctx, job: JobMessage) {
     errors.push(e);
   }
   try {
-    await handleCalendarSide(ctx, job.type, payload);
+    await handleCalendarSide(ctx, job.type, payload, attempts);
   } catch (e) {
     errors.push(e);
   }
@@ -92,11 +102,11 @@ const describe = (job: JobMessage) =>
 export async function handleBatch(ctx: Ctx, batch: MessageBatch<JobMessage>) {
   for (const message of batch.messages) {
     try {
-      await handleJob(ctx, message.body);
+      await handleJob(ctx, message.body, message.attempts);
       message.ack();
     } catch (e) {
       const fields = { ...describe(message.body), attempts: message.attempts, error: e instanceof Error ? e.name : "unknown" };
-      console.error(JSON.stringify({ event: message.attempts > MAX_ATTEMPTS ? "job_dead_lettered" : "job_failed", ...fields }));
+      console.error(JSON.stringify({ event: message.attempts > MAX_RETRIES ? "job_dead_lettered" : "job_failed", ...fields }));
       message.retry({ delaySeconds: Math.min(30 * 2 ** (message.attempts - 1), 3600) });
     }
   }

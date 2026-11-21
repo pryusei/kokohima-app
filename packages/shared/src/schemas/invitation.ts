@@ -80,6 +80,19 @@ export const linkUrlSchema = z
     return url.href;
   });
 
+/**
+ * リンクのプレビュー（docs/specs/T-08-link-preview.md「API」）。リンクがなければ null。
+ * pending・failed のときは項目がすべて null（理由は返さない）。imageUrl は相対のパス
+ */
+export const linkPreviewSchema = z.object({
+  status: z.enum(["pending", "ok", "failed"]),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  siteName: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+});
+export type LinkPreview = z.infer<typeof linkPreviewSchema>;
+
 /** 15分単位、長さ30分以上24時間以下 */
 export function isValidInviteRange(startsAt: string, endsAt: string) {
   const start = Date.parse(startsAt);
@@ -153,6 +166,7 @@ export const directInviteSchema = z.object({
   area: z.string().nullable(),
   message: z.string().nullable(),
   url: z.string().nullable(),
+  linkPreview: linkPreviewSchema.nullable(),
   expiresAt: z.iso.datetime(),
   counterProposal: z.object({ startsAt: z.iso.datetime(), endsAt: z.iso.datetime() }).nullable(),
   meetupId: z.uuid().nullable(),
@@ -170,6 +184,7 @@ export const meetupSchema = z.object({
   area: z.string().nullable(),
   message: z.string().nullable(),
   url: z.string().nullable(),
+  linkPreview: linkPreviewSchema.nullable(),
   directInviteId: z.uuid().nullable(),
   broadcastId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
@@ -212,6 +227,7 @@ export const broadcastSchema = z.object({
   area: z.string().nullable(),
   message: z.string().nullable(),
   url: z.string().nullable(),
+  linkPreview: linkPreviewSchema.nullable(),
   expiresAt: z.iso.datetime(),
   createdAt: z.iso.datetime(),
   recipients: z.array(publicProfileSchema).nullable(),

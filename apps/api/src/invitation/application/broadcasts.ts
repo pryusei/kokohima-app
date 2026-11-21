@@ -1,6 +1,7 @@
 import type { Broadcast, CreateBroadcastRequest, PublicProfile } from "@kokohima/shared";
 import type { AppDeps, Bindings } from "../../env";
 import { getPublicProfiles } from "../../identity/application/auth";
+import { previewsFor } from "../../link-preview/application/previews";
 import type { Cursor } from "../../shared/cursor";
 import { decideError, ownerResponseCount, respondError, viewerStatus } from "../domain/broadcast";
 import {
@@ -31,6 +32,7 @@ function toDto(
   profiles: Map<string, PublicProfile>,
   recipients: Map<string, string[]>,
   now: number,
+  linkPreview: Broadcast["linkPreview"],
 ): Broadcast {
   const isOwner = row.owner_id === viewerId;
   const isParticipant = row.is_participant === 1;
@@ -44,6 +46,7 @@ function toDto(
     area: row.area,
     message: row.message,
     url: row.url,
+    linkPreview,
     expiresAt: iso(row.expires_at),
     createdAt: iso(row.created_at),
     recipients: isOwner
@@ -65,8 +68,13 @@ async function dtos(ctx: Ctx, viewerId: string, rows: repo.BroadcastRow[]) {
   const ids = new Set(rows.map((r) => r.owner_id));
   for (const list of recipients.values()) for (const id of list) ids.add(id);
   const profiles = await getPublicProfiles(ctx.env, [...ids]);
+  // 渡すのは、閲覧者が募集者か宛先として SQL で絞った募集だけ
+  const previews = await previewsFor(
+    ctx.env.DB,
+    rows.map((r) => ({ directInviteId: null, broadcastId: r.id, url: r.url })),
+  );
   const now = ctx.deps.now();
-  return rows.map((r) => toDto(r, viewerId, profiles, recipients, now));
+  return rows.map((r, i) => toDto(r, viewerId, profiles, recipients, now, previews[i] ?? null));
 }
 
 async function reload(ctx: Ctx, viewerId: string, id: string) {

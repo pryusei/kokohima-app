@@ -38,6 +38,8 @@ export default defineProject({
           MAIL_FROM: "ここ暇 <notify@kokohima.test>",
           NOTIFICATION_START_AT: "1",
           MAIL_DAILY_LIMIT: "90",
+          // リンクのプレビュー（T-08）
+          LINK_PREVIEW_OWN_DOMAINS: "app.test",
         },
       },
     })),
