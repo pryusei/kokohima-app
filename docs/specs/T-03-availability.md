@@ -44,7 +44,7 @@
 | DELETE | `/api/v1/recurrence-rules/{id}` | Bearer | なし | 204 | 404 |
 | POST | `/api/v1/recurrence-rules/{id}/exceptions` | Bearer | JSON：`{ date: "YYYY-MM-DD" }`（ルールのタイムゾーンでの日付） | 204（その日だけ外す） | 400（ルールの曜日でない、過去、60日より先）、404 |
 | DELETE | `/api/v1/recurrence-rules/{id}/exceptions/{date}` | Bearer | なし | 204（外したのを戻す） | 404 |
-| GET | `/api/v1/friend-availabilities` | Bearer | query：`from`、`to`（最長14日）、`cursor` | 200：`{ items: friendAvailabilitySchema[], nextCursor }`（500件ずつ） | 400 |
+| GET | `/api/v1/friend-availabilities` | Bearer | query：`from`、`to`（最長14日）、`cursor` | 200：`{ items: friendAvailabilitySchema[], nextCursor }`（500件ずつ） | 400、429 `rate_limited`（利用者IDごとに60秒に20回。T-14） |
 | GET | `/api/v1/friends/{friendId}` | Bearer | なし | 200：`friendSchema`（T-02と同じ形） | 404（友達でない） |
 | GET | `/api/v1/friends/{friendId}/availabilities` | Bearer | query：`from`、`to`（最長31日） | 200：`{ items: slotSchema[], nextCursor: null }` | 400、404（友達でない。片方向の行しかない場合も） |
 
@@ -225,8 +225,6 @@
 | 2026-10-07 | 実装に合わせて、ここ暇タブの開始・終了の指定で終了が開始以前なら翌日とみなすこと、画面の文言（重なりの印・くり返しの印・友達が見つからない）を明記。テスト計画を完了にした。状態を実装済みにした | 実装PR |
 | 2026-10-08 | 手動の枠の重なりの判定を、終了していない枠に限った | 実装PRのレビュー（pryusei/kokohima-app#12） |
 | 2026-11-17 | `Idempotency-Key` を T-10 で受け付ける経路を書いた | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |
-<<<<<<< HEAD
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
-=======
+| 2026-11-21 | `/friend-availabilities` の主なエラーに 429 を足した | T-14 の実装PR（docs/specs/T-14-friend-availabilities-ratelimit.md） |
 | 2026-11-21 | 過去の手動の枠の掃除と、検索の開始日時の条件を T-12 で実装した | T-12 の実装PR（docs/specs/T-12-data-growth.md） |
->>>>>>> feat/T-12-data-growth
