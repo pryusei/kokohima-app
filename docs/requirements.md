@@ -105,20 +105,35 @@ stateDiagram-v2
 ```mermaid
 flowchart LR
   U["利用者<br/>PWA・Service Worker"] --> P["Pages<br/>PWAの配信"]
-  U --> A["API Worker<br/>コンテキストごとのモジュール"]
-  A --> D1[("D1<br/>データ・outbox")]
+  CA["カレンダーアプリ"] -->|".ics の取得"| A
+  subgraph W["Worker（1つ。入口が3つ）"]
+    A["fetch<br/>API（コンテキストごとのモジュール）"]
+    S["scheduled<br/>Cron Triggers"]
+    C["queue<br/>通知・OGP・カレンダー"]
+  end
+  U -->|"/api"| A
+  A -->|"状態と outbox を書く"| D1[("D1<br/>データ・outbox")]
   A --> KV[("KV<br/>キャッシュ")]
   A --> RL["Rate Limiting<br/>おおよその回数の上限"]
-  A --> R2[("R2<br/>OGP画像")]
-  D1 --> Q["Queues"]
-  CR["Cron Triggers"] --> C["Consumer Worker<br/>通知・OGP・カレンダー書き込み"]
+  A -->|"画像を返す"| R2[("R2<br/>OGP画像")]
+  A -->|"ログイン"| ID["Google・Apple<br/>（OIDC）"]
+  A -->|"連携時のトークン交換"| G
+  S -->|"毎分：outbox を読む"| D1
+  S -->|"送る（15分ごとの同期の割り当ても）"| Q["Queues<br/>退避キューつき"]
   Q --> C
+  C -->|"読み書き"| D1
+  C -->|"画像を保存"| R2
   C --> G["Google Calendar API"]
-  C --> I["iCloud CalDAV"]
+  C -.->|"T-09"| I["iCloud CalDAV"]
   C --> WP["Webプッシュ"]
-  C --> M["メール配信サービス"]
-  C --> S["外部サイト（OGP）"]
+  C --> M["メール配信（Resend）"]
+  C --> SX["外部サイト（OGP）"]
 ```
+
+- API・定期処理（Cron）・Queue の処理は、1つの Worker の3つの入口（fetch・scheduled・queue）として動く（`apps/api/src/worker.ts`）。
+- 外部連携は queue の処理から行う。API が外部を呼ぶのは、ログインのトークン交換と鍵の取得、カレンダー連携のときのトークン交換と取り消しだけ。
+- Cron は outbox の未処理の行を Queues に送り、期限切れのデータを消す。15分ごとのカレンダーの確認も Queue を経由する。
+- iCloud CalDAV は T-09 で対応する（点線）。
 
 | ID | 要件 |
 | --- | --- |
