@@ -127,7 +127,7 @@ export function attributesOf(tag: string): Map<string, string> {
 /** HTML から OGP を取り出す。タイトルも説明もなければ null（failed） */
 export function parseOgp(html: string): Ogp | null {
   // コメントと script・style の中身は読まない
-  const head = stripIgnored(headOf(html));
+  const head = headOf(stripIgnored(html));
   const meta = new Map<string, string>();
   for (const tag of metaTags(head)) {
     const attrs = attributesOf(tag);

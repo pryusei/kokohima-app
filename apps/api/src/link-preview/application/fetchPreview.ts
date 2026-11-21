@@ -2,7 +2,7 @@ import type { AppDeps, Bindings } from "../../env";
 import { linkOfSubject } from "../../invitation/application/calendarFacing";
 import { sha256 } from "../../shared/crypto";
 import { acceptImage, IMAGE_MAX_BYTES } from "../domain/image";
-import { charsetOfContentType, headOf, mediaTypeOf, metaCharset, parseOgp } from "../domain/parse";
+import { charsetOfContentType, headOf, mediaTypeOf, metaCharset, parseOgp, stripIgnored } from "../domain/parse";
 import { fetchableUrl, parseOwnDomains, TransientError, withoutFragment, type FetchPolicy } from "../domain/url";
 import { fetchChecked } from "../infra/fetcher";
 import * as repo from "../infra/repository";
@@ -31,7 +31,7 @@ const log = (outcome: string, status?: number) =>
 
 function decode(body: Uint8Array, contentType: string): string | null {
   const sniffed = new TextDecoder("latin1").decode(body.subarray(0, 4096));
-  const charset = charsetOfContentType(contentType) ?? metaCharset(headOf(sniffed)) ?? "utf-8";
+  const charset = charsetOfContentType(contentType) ?? metaCharset(headOf(stripIgnored(sniffed))) ?? "utf-8";
   try {
     return new TextDecoder(charset).decode(body);
   } catch {

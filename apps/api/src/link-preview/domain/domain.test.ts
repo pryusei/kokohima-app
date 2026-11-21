@@ -203,6 +203,12 @@ describe("解析", () => {
     expect(stripIgnored("a<!--x-->b<script>c</script >d<style>e</STYLE>f<scripts>g")).toBe("abdf<scripts>g");
   });
 
+  it("コメント・script の中の <body や </head> で <head> が切れない", () => {
+    expect(parseOgp(`<html><head><!-- <body> --><meta property="og:title" content="A"></head>`)?.title).toBe("A");
+    expect(parseOgp(`<html><head><script>var s="</head>";</script><meta property="og:title" content="B"></head>`)?.title).toBe("B");
+    expect(parseOgp(`<html><head><meta property="og:title" content="C"></head>`)?.title).toBe("C");
+  });
+
   it("タイトルも説明もなければ null", () => {
     expect(parseOgp(page(`<meta property="og:image" content="/i.png">`))).toBeNull();
     expect(parseOgp(page(`<title>   </title>`))).toBeNull();
