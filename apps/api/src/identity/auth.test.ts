@@ -3,6 +3,7 @@ import { meResponseSchema, problemSchema } from "@kokohima/shared";
 import { exportSPKI, generateKeyPair, importSPKI, jwtVerify, SignJWT } from "jose";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanupExpired } from "../jobs/dispatch";
+import { hasEarlierSession } from "./application/auth";
 import {
   completeCodeFrom,
   cookieHeader,
@@ -596,5 +597,56 @@ describe("期限切れの掃除（Cron）", () => {
     const codes = await dbAll<{ code_hash: string }>("SELECT code_hash FROM login_codes WHERE code_hash LIKE ?", `%-${tag}`);
     expect(txs.map((r) => r.state_hash)).toEqual([`live-${tag}`]);
     expect(codes.map((r) => r.code_hash)).toEqual([`live-${tag}`]);
+  });
+
+  it("失効・期限切れから30日を過ぎたセッションと更新用トークンを消す。利用者の最初のセッションは残る", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const sub = uniq();
+    // 同じ利用者で4つのセッションを作る（作成の順に first・old・recent・live）
+    const logins = [];
+    for (let i = 0; i < 4; i++) {
+      logins.push(await h.login("google", sub));
+      h.clock.now += 1000;
+    }
+    // アクセストークンのクレームの sid がセッションの ID
+    const sessionOf = (accessToken: string) => {
+      const payload = (accessToken.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+      return (JSON.parse(atob(payload)) as { sid: string }).sid;
+    };
+    const [first, old, recent, live] = logins.map((l) => sessionOf(l.accessToken));
+    const now = h.clock.now;
+    const setSession = (id: string, revokedAt: number | null, expiresAt: number) =>
+      env.DB.prepare("UPDATE sessions SET revoked_at = ?1, expires_at = ?2 WHERE id = ?3").bind(revokedAt, expiresAt, id).run();
+    await setSession(first ?? "", now - 40 * DAY, now + 50 * DAY); // 最初のセッション：失効から40日でも残す
+    await setSession(old ?? "", now - 31 * DAY, now + 50 * DAY); // 失効から31日：消す
+    await setSession(recent ?? "", now - 10 * DAY, now + 50 * DAY); // 失効から10日：残す
+    // live は有効なまま。そのセッションの古い（期限切れから31日の）トークンだけを1つ足す
+    await env.DB.prepare(
+      "INSERT INTO refresh_tokens (id, session_id, token_hash, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+    )
+      .bind(`old-${sub}`, live, `hash-old-${sub}`, now - 61 * DAY, now - 31 * DAY)
+      .run();
+
+    await cleanupExpired(h.ctx);
+
+    const remaining = await dbAll<{ id: string }>(
+      `SELECT id FROM sessions WHERE id IN (?1, ?2, ?3, ?4) ORDER BY created_at`,
+      first,
+      old,
+      recent,
+      live,
+    );
+    expect(remaining.map((r) => r.id)).toEqual([first, recent, live]);
+    // 消したセッションの更新用トークンも外部キーの CASCADE で消える
+    expect(await dbAll("SELECT id FROM refresh_tokens WHERE session_id = ?1", old)).toHaveLength(0);
+    expect(await dbAll("SELECT id FROM refresh_tokens WHERE id = ?1", `old-${sub}`)).toHaveLength(0);
+    // 有効なセッションの更新用トークンは使い続けられる
+    expect((await h.refresh(logins[3]?.refreshToken ?? "")).status).toBe(200);
+
+    // 掃除の後も、新しいセッションは「前のセッションがある」と判定される（T-07 の新端末のログイン）
+    const next = sessionOf((await h.login("google", sub)).accessToken);
+    const userId = meResponseSchema.parse(await (await me(logins[3]?.accessToken ?? "")).json()).id;
+    expect(await hasEarlierSession(env, userId, next)).toBe(true);
+    expect(await hasEarlierSession(env, userId, first ?? "")).toBe(false);
   });
 });
