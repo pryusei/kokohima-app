@@ -171,7 +171,7 @@ describe("募集の詳細", () => {
     renderApp();
     expect(await screen.findByText("募集中")).toBeVisible();
     expect(screen.queryByText(/人が応じています/)).toBeNull();
-    expect(screen.getByText("あき")).toBeVisible();
+    expect(screen.getByText("募集した人：あき")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "応じる" }));
     expect(await screen.findByRole("button", { name: "応じるのをやめる" })).toBeVisible();
     expect(screen.getByText("応じました")).toBeVisible();

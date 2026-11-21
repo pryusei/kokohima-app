@@ -16,14 +16,17 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { formatTime, localDateOf, PRESET_LABELS, PRESET_NAMES } from "../availability/format";
 import { presetsQuery, today } from "../availability/queries";
-import { Nav } from "../components/Nav";
+import { SheetScreen } from "../ui/BottomSheet";
+import { buttonClass, SendButton } from "../ui/Button";
+import { LoadError, Loading, Note } from "../ui/feedback";
+import { inputClass, labelClass } from "../ui/form";
 import { EXPIRES, rangeOf, sendErrorText } from "../invitations/form";
 import { nextQuarter } from "../invitations/format";
 import { broadcastQuery } from "../invitations/queries";
 import { navigate, useLocation } from "../router";
 import { displayNameOf } from "./FriendsPage";
 
-// 募集の作成（仮。docs/specs/T-05-broadcast.md「画面」）。「もう一度募集する」は ?from=<募集のID> で開く
+// 募集の作成（docs/specs/T-05-broadcast.md「画面」、キャンバス「11 募集の作成」）。後ろに「みんな」を出したシートで開く。「もう一度募集する」は ?from=<募集のID> で開く
 
 const MINUTE_MS = 60 * 1000;
 
@@ -117,7 +120,7 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: keys.broadcasts.all() });
-      if (created) navigate(`/broadcasts/${created.id}`);
+      if (created) navigate(`/broadcasts/${created.id}`, { replace: true });
     },
   });
 
@@ -139,15 +142,16 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
       }}
     >
       <fieldset className="flex flex-col gap-1">
-        <legend className="font-bold">宛先（{recipientIds.length}人）</legend>
+        <legend className="text-xs font-bold text-ink-muted">宛先（{recipientIds.length}人）</legend>
         {friends.length > BROADCAST_MAX_RECIPIENTS && (
-          <p className="text-sm text-slate-600">一度に送れるのは100人までです</p>
+          <p className="text-s text-ink-muted">一度に送れるのは100人までです</p>
         )}
-        <ul aria-label="宛先" className="flex flex-col gap-1">
+        <ul aria-label="宛先" className="flex max-h-56 flex-col overflow-y-auto rounded-l border border-line px-3">
           {friends.map((f) => (
             <li key={f.id}>
-              <label className="flex items-center gap-2">
+              <label className="flex min-h-11 items-center gap-2 border-b border-line last:border-b-0">
                 <input
+                  className="size-5 accent-action"
                   type="checkbox"
                   checked={recipientIds.includes(f.id)}
                   onChange={(e) => toggle(f.id, e.target.checked)}
@@ -157,44 +161,44 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
             </li>
           ))}
         </ul>
-        {!enoughRecipients && <p className="text-sm text-slate-600">2人以上を選んでください（1人なら個別に誘えます）</p>}
+        {!enoughRecipients && <p className="text-s text-ink-muted">2人以上を選んでください（1人なら個別に誘えます）</p>}
       </fieldset>
-      <label className="flex flex-col gap-1">
+      <label className={labelClass}>
         日付
-        <input type="date" value={date} min={today()} onChange={(e) => setDate(e.target.value)} />
+        <input className={inputClass} type="date" value={date} min={today()} onChange={(e) => setDate(e.target.value)} />
       </label>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {PRESET_NAMES.map((name) => (
-          <button key={name} type="button" className="rounded border px-3 py-1" onClick={() => applyPreset(name)}>
+          <button key={name} type="button" className={buttonClass("secondary", { size: "s" })} onClick={() => applyPreset(name)}>
             {PRESET_LABELS[name]}
           </button>
         ))}
       </div>
       <div className="flex gap-2">
-        <label className="flex flex-col gap-1">
+        <label className={labelClass}>
           開始
-          <input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
+          <input className={inputClass} type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
         </label>
-        <label className="flex flex-col gap-1">
+        <label className={labelClass}>
           終了
-          <input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
+          <input className={inputClass} type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
         </label>
       </div>
-      <label className="flex flex-col gap-1">
+      <label className={labelClass}>
         エリア（任意）
-        <input className="rounded border px-2 py-1" value={area} onChange={(e) => setArea(e.target.value)} />
+        <input className={inputClass} value={area} onChange={(e) => setArea(e.target.value)} />
       </label>
-      <label className="flex flex-col gap-1">
+      <label className={labelClass}>
         ひとこと（任意）
-        <textarea className="rounded border px-2 py-1" value={message} onChange={(e) => setMessage(e.target.value)} />
+        <textarea className={inputClass} value={message} onChange={(e) => setMessage(e.target.value)} />
       </label>
-      <label className="flex flex-col gap-1">
+      <label className={labelClass}>
         リンク（任意）
-        <input type="url" className="rounded border px-2 py-1" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <input type="url" className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} />
       </label>
-      <label className="flex flex-col gap-1">
+      <label className={labelClass}>
         返事の期限
-        <select value={expiresIn} onChange={(e) => setExpiresIn(e.target.value as ExpiresIn)}>
+        <select className={inputClass} value={expiresIn} onChange={(e) => setExpiresIn(e.target.value as ExpiresIn)}>
           {EXPIRES.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
@@ -202,15 +206,12 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
           ))}
         </select>
       </label>
-      <button
-        type="submit"
-        disabled={send.isPending || !enoughRecipients || !validRange}
-        className="rounded-lg bg-amber-300 px-4 py-3 disabled:opacity-50"
-      >
+      <Note>応じた人は、あなたにも人数だけが表示されます。「決める」と、参加する人どうしに名前が開示されます。</Note>
+      <SendButton type="submit" variant="lamp" block disabled={send.isPending || !enoughRecipients || !validRange}>
         募集する
-      </button>
+      </SendButton>
       {send.isError && (
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className="text-s text-ink-muted">
           {createErrorText(send.error)}
         </p>
       )}
@@ -228,13 +229,12 @@ export function BroadcastNewPage() {
   const ready = friends.data && (fromId === null || from.data || from.isError);
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">暇な人いる？</h1>
-      <Nav />
-      {friends.isError && <p className="text-slate-600">読み込めませんでした。もう一度お試しください。</p>}
+    <SheetScreen title="暇な人いる？と募る" label="暇な人いる？と募る" parent="/">
+      {friends.isPending && <Loading />}
+      {friends.isError && <LoadError retry={() => void friends.refetch()} />}
       {ready && friends.data && (
         <BroadcastForm friends={friends.data} initial={initialOf(friends.data, from.data ?? null, openedAt)} />
       )}
-    </main>
+    </SheetScreen>
   );
 }

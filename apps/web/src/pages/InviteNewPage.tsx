@@ -17,13 +17,17 @@ import {
   PRESET_NAMES,
 } from "../availability/format";
 import { friendSlotsQuery, presetsQuery, today } from "../availability/queries";
-import { Nav } from "../components/Nav";
 import { EXPIRES, rangeOf, sendErrorText } from "../invitations/form";
 import { KIND_LABELS, nextQuarter } from "../invitations/format";
 import { navigate, useLocation } from "../router";
+import { SheetScreen } from "../ui/BottomSheet";
+import { Badge } from "../ui/Badge";
+import { buttonClass, SendButton } from "../ui/Button";
+import { inputClass, labelClass } from "../ui/form";
 import { displayNameOf } from "./FriendsPage";
 
-// 誘いの作成（仮。docs/specs/T-04-direct-invite.md「画面」）
+// 誘いの作成（docs/specs/T-04-direct-invite.md「画面」、キャンバス「10 誘いの作成」）。送る前のリンクのプレビューは出さない（T-08 決定事項1）
+// 後ろに「みんな」を出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
 
 const MINUTE_MS = 60 * 1000;
 
@@ -49,9 +53,9 @@ function KindPreview({ friendId, date, startsAt, endsAt }: { friendId: string; d
     (s) => Math.min(Date.parse(s.endsAt), endsAt) - Math.max(Date.parse(s.startsAt), startsAt) >= MINUTE_MS,
   );
   return (
-    <p className={overlaps ? "font-bold text-amber-800" : "font-bold text-slate-700"}>
-      <span>{KIND_LABELS[overlaps ? "asobo" : "kokodou"]}</span>
-      <span className="ml-2 text-sm font-normal text-slate-600">
+    <p className="flex items-center gap-2">
+      <Badge tone={overlaps ? "lamp" : "pending"}>{KIND_LABELS[overlaps ? "asobo" : "kokodou"]}</Badge>
+      <span className="text-s text-ink-muted">
         {overlaps ? "相手のここ暇と重なっています" : "相手のここ暇とは重なっていません"}
       </span>
     </p>
@@ -95,7 +99,7 @@ export function InviteNewPage() {
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (invite) => {
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
-      if (invite) navigate(`/invites/${invite.id}`);
+      if (invite) navigate(`/invites/${invite.id}`, { replace: true });
     },
   });
 
@@ -107,9 +111,7 @@ export function InviteNewPage() {
   };
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">誘う</h1>
-      <Nav />
+    <SheetScreen title="誘う" label="誘う" parent="/">
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
@@ -117,9 +119,9 @@ export function InviteNewPage() {
           send.mutate();
         }}
       >
-        <label className="flex flex-col gap-1">
+        <label className={labelClass}>
           相手
-          <select value={friendId} onChange={(e) => setFriendId(e.target.value)}>
+          <select className={inputClass} value={friendId} onChange={(e) => setFriendId(e.target.value)}>
             <option value="">選んでください</option>
             {friends.data?.items.map((f) => (
               <option key={f.id} value={f.id}>
@@ -128,45 +130,45 @@ export function InviteNewPage() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1">
+        <label className={labelClass}>
           日付
-          <input type="date" value={date} min={today()} onChange={(e) => setDate(e.target.value)} />
+          <input className={inputClass} type="date" value={date} min={today()} onChange={(e) => setDate(e.target.value)} />
         </label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {PRESET_NAMES.map((name) => (
-            <button key={name} type="button" className="rounded border px-3 py-1" onClick={() => applyPreset(name)}>
+            <button key={name} type="button" className={buttonClass("secondary", { size: "s" })} onClick={() => applyPreset(name)}>
               {PRESET_LABELS[name]}
             </button>
           ))}
         </div>
         <div className="flex gap-2">
-          <label className="flex flex-col gap-1">
+          <label className={labelClass}>
             開始
-            <input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
+            <input className={inputClass} type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className={labelClass}>
             終了
-            <input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
+            <input className={inputClass} type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
           </label>
         </div>
         {friendId !== "" && validRange && (
           <KindPreview friendId={friendId} date={date} startsAt={range.startsAt} endsAt={range.endsAt} />
         )}
-        <label className="flex flex-col gap-1">
+        <label className={labelClass}>
           エリア（任意）
-          <input className="rounded border px-2 py-1" value={area} onChange={(e) => setArea(e.target.value)} />
+          <input className={inputClass} value={area} onChange={(e) => setArea(e.target.value)} />
         </label>
-        <label className="flex flex-col gap-1">
+        <label className={labelClass}>
           ひとこと（任意）
-          <textarea className="rounded border px-2 py-1" value={message} onChange={(e) => setMessage(e.target.value)} />
+          <textarea className={inputClass} value={message} onChange={(e) => setMessage(e.target.value)} />
         </label>
-        <label className="flex flex-col gap-1">
+        <label className={labelClass}>
           リンク（任意）
-          <input type="url" className="rounded border px-2 py-1" value={url} onChange={(e) => setUrl(e.target.value)} />
+          <input type="url" className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} />
         </label>
-        <label className="flex flex-col gap-1">
+        <label className={labelClass}>
           返事の期限
-          <select value={expiresIn} onChange={(e) => setExpiresIn(e.target.value as ExpiresIn)}>
+          <select className={inputClass} value={expiresIn} onChange={(e) => setExpiresIn(e.target.value as ExpiresIn)}>
             {EXPIRES.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -174,19 +176,15 @@ export function InviteNewPage() {
             ))}
           </select>
         </label>
-        <button
-          type="submit"
-          disabled={send.isPending || friendId === "" || !validRange}
-          className="rounded-lg bg-amber-300 px-4 py-3 disabled:opacity-50"
-        >
+        <SendButton type="submit" variant="primary" block disabled={send.isPending || friendId === "" || !validRange}>
           誘う
-        </button>
+        </SendButton>
         {send.isError && (
-          <p role="status" className="text-sm text-slate-600">
+          <p role="status" className="text-s text-ink-muted">
             {sendErrorText(send.error)}
           </p>
         )}
       </form>
-    </main>
+    </SheetScreen>
   );
 }

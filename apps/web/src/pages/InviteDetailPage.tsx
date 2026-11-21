@@ -5,13 +5,21 @@ import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { addDays, formatDate, formatTime, localDateOf, localInstant } from "../availability/format";
-import { Link, Nav } from "../components/Nav";
-import { formatRange, KIND_LABELS, statusClass, statusText } from "../invitations/format";
+import { formatRange, KIND_LABELS, statusText, statusTone } from "../invitations/format";
 import { inviteQuery } from "../invitations/queries";
 import { displayNameOf } from "./FriendsPage";
-import { LinkPreviewCard } from "../invitations/LinkPreviewCard";
+import { Avatar } from "../ui/Avatar";
+import { Badge } from "../ui/Badge";
+import { SheetScreen } from "../ui/BottomSheet";
+import { Button, SendButton } from "../ui/Button";
+import { LoadError, Loading, Note } from "../ui/feedback";
+import { Field, inputClass } from "../ui/form";
+import { ResponseButtons } from "../ui/HeadCount";
+import { Link } from "../ui/Link";
+import { LinkCard } from "../ui/LinkCard";
 
-// 誘いの詳細と返答（仮。docs/specs/T-04-direct-invite.md「画面」）
+// 誘いの詳細と返答（docs/specs/T-04-direct-invite.md「画面」、キャンバス「12 受信した誘い」「12 この時間なら」「13 送信した誘い」）
+// 後ろに誘いタブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
 
 type Action =
   | { path: "responses"; body: { response: "accept" } | { response: "decline" } | { response: "counter"; startsAt: string; endsAt: string } }
@@ -30,7 +38,7 @@ function CounterForm({ invite, onSubmit }: { invite: DirectInvite; onSubmit: (st
   const [end, setEnd] = useState(formatTime(invite.endsAt));
   return (
     <form
-      className="flex flex-wrap items-end gap-2"
+      className="flex flex-col gap-3 rounded-l bg-lamp-soft p-4"
       onSubmit={(e) => {
         e.preventDefault();
         const startsAt = localInstant(date, start);
@@ -39,21 +47,22 @@ function CounterForm({ invite, onSubmit }: { invite: DirectInvite; onSubmit: (st
         onSubmit(new Date(startsAt).toISOString(), new Date(endsAt).toISOString());
       }}
     >
-      <label className="flex flex-col gap-1">
-        日付
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-      </label>
-      <label className="flex flex-col gap-1">
-        開始
-        <input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
-      </label>
-      <label className="flex flex-col gap-1">
-        終了
-        <input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
-      </label>
-      <button type="submit" className="rounded border px-3 py-1">
+      <p className="font-bold">別の時間を返す</p>
+      <Field label="日付">
+        <input type="date" className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+      <div className="flex items-end gap-2">
+        <Field label="開始">
+          <input type="time" step={900} className={inputClass} value={start} onChange={(e) => setStart(e.target.value)} />
+        </Field>
+        <span className="pb-2.5">〜</span>
+        <Field label="終了">
+          <input type="time" step={900} className={inputClass} value={end} onChange={(e) => setEnd(e.target.value)} />
+        </Field>
+      </div>
+      <SendButton type="submit" variant="primary">
         この時間で返す
-      </button>
+      </SendButton>
     </form>
   );
 }
@@ -102,53 +111,73 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
 
   if (invite.error instanceof ApiError && invite.error.status === 404) {
     return (
-      <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-        <Nav />
-        <p className="text-slate-600">この誘いは見つかりませんでした。</p>
-      </main>
+      <SheetScreen title="誘い" label="誘い" parent="/invites">
+        <p role="status">この誘いは見つかりませんでした。</p>
+      </SheetScreen>
     );
   }
   const d = invite.data;
+  const name = d ? displayNameOf(d.counterpart.displayName) : "";
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">{d ? KIND_LABELS[d.kind] : "誘い"}</h1>
-      <Nav />
+    <SheetScreen
+      label={d ? `${name}さん${d.direction === "received" ? "からの誘い" : "への誘い"}` : "誘い"}
+      parent="/invites"
+      title={
+        d ? (
+          <div className="flex items-center gap-3">
+            <Avatar name={d.counterpart.displayName} />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <h2 className="truncate text-l font-bold">{d.direction === "received" ? name : `${name}さんへ`}</h2>
+              <span className="text-s text-ink-muted">{KIND_LABELS[d.kind]}</span>
+            </div>
+            <Badge tone={statusTone(d.status)}>{statusText(d)}</Badge>
+          </div>
+        ) : (
+          <h2 className="text-xl font-bold">誘い</h2>
+        )
+      }
+    >
+      {invite.isPending && <Loading />}
+      {invite.isError && !(invite.error instanceof ApiError && invite.error.status === 404) && (
+        <LoadError retry={() => void invite.refetch()} />
+      )}
       {d && (
-        <section className="flex flex-col gap-2">
-          <p>
-            {d.direction === "received" ? "誘ってくれた人" : "誘った相手"}：
-            <span className="font-bold">{displayNameOf(d.counterpart.displayName)}</span>
+        <>
+          <p className="sr-only">
+            {d.direction === "received" ? "誘ってくれた人" : "誘った相手"}：{name}
           </p>
-          <p>{formatRange(d)}</p>
-          {d.area && <p>エリア：{d.area}</p>}
+          <div className="flex flex-col gap-1">
+            <p className="text-xl font-bold tabular-nums">{formatRange(d)}</p>
+            {d.area && <p className="text-ink-muted">エリア：{d.area}</p>}
+          </div>
           {d.message && <p className="whitespace-pre-wrap">{d.message}</p>}
-          <LinkPreviewCard url={d.url} preview={d.linkPreview} />
-          <p className={statusClass(d.status)}>{statusText(d)}</p>
+          <LinkCard url={d.url} preview={d.linkPreview} />
           {d.status === "pending" && (
-            <p className="text-sm text-slate-600">
+            <Note>
               返事の期限：{formatDate(localDateOf(d.expiresAt))} {formatTime(d.expiresAt)}
-            </p>
+            </Note>
           )}
           {d.meetupId && (
-            <Link to={`/meetups/${d.meetupId}`} className="underline">
+            <Link to={`/meetups/${d.meetupId}`} className="text-action underline">
               成立した予定を見る
             </Link>
           )}
 
           {d.direction === "received" && d.status === "pending" && (
-            <div className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <button type="button" className="rounded-lg bg-amber-300 px-4 py-2" onClick={() => act.mutate({ path: "responses", body: { response: "accept" } })}>
+            <div className="flex flex-col gap-3">
+              <ResponseButtons>
+                <SendButton variant="primary" onClick={() => act.mutate({ path: "responses", body: { response: "accept" } })}>
                   行く
-                </button>
-                <button type="button" className="rounded-lg border px-4 py-2" onClick={() => act.mutate({ path: "responses", body: { response: "decline" } })}>
+                </SendButton>
+                <SendButton onClick={() => act.mutate({ path: "responses", body: { response: "decline" } })}>
                   今回は難しい
-                </button>
-                <button type="button" className="rounded-lg border px-4 py-2" onClick={() => setCountering((v) => !v)}>
+                </SendButton>
+                <Button aria-pressed={countering} onClick={() => setCountering((v) => !v)}>
                   この時間なら
-                </button>
-              </div>
+                </Button>
+              </ResponseButtons>
+              <Note>「今回は難しい」を選んでも、理由は伝わりません。</Note>
               {countering && (
                 <CounterForm
                   invite={d}
@@ -161,22 +190,25 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
           )}
 
           {d.direction === "sent" && d.status === "counter_proposed" && (
-            <div className="flex gap-2">
-              <button type="button" className="rounded-lg bg-amber-300 px-4 py-2" onClick={() => act.mutate({ path: "decide", body: { decision: "accept" } })}>
-                決める
-              </button>
-              <button type="button" className="rounded-lg border px-4 py-2" onClick={() => act.mutate({ path: "decide", body: { decision: "skip" } })}>
-                見送る
-              </button>
+            <div className="flex flex-col gap-3">
+              <ResponseButtons>
+                <SendButton variant="primary" onClick={() => act.mutate({ path: "decide", body: { decision: "accept" } })}>
+                  決める
+                </SendButton>
+                <SendButton onClick={() => act.mutate({ path: "decide", body: { decision: "skip" } })}>
+                  見送る
+                </SendButton>
+              </ResponseButtons>
+              <Note>見送っても、相手には「見送りになりました」とだけ伝わります。</Note>
             </div>
           )}
           {failed && (
-            <p role="status" className="text-sm text-slate-600">
+            <p role="status" className="text-s text-ink-muted">
               {failed}
             </p>
           )}
-        </section>
+        </>
       )}
-    </main>
+    </SheetScreen>
   );
 }
