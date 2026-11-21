@@ -8,7 +8,8 @@ import { accessTokenFor, providerFor, type Ctx } from "./connections";
 
 const MINUTE_MS = 60 * 1000;
 export const SYNC_MIN_AGE_MS = 10 * MINUTE_MS;
-export const SYNC_BATCH = 200;
+/** 15分ごとに割り当てる上限。1時間に最大4000人分（docs/specs/T-13-data-growth.md） */
+export const SYNC_BATCH = 1000;
 export const SYNC_LEASE_MS = 5 * MINUTE_MS;
 export const SYNC_HORIZON_MS = 60 * 24 * 60 * MINUTE_MS;
 /** 1回の確認でこれを超えて取り消すときは、1回目を保留にする */
@@ -22,6 +23,8 @@ export async function assignSyncs(ctx: Ctx) {
       due.slice(i, i + 100).map((d) => ({ body: { kind: "calendar_sync" as const, userId: d.user_id, provider: d.provider } })),
     );
   }
+  // 上限で埋まった：間隔が15分より延びている見込み。件数だけを出す（docs/specs/T-13-data-growth.md「ログの一覧」）
+  if (due.length >= SYNC_BATCH) console.log(JSON.stringify({ event: "calendar_sync_assign_full", assigned: due.length }));
   return due.length;
 }
 
