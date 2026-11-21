@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deviceSummary } from "./deviceSummary";
 import { verifiedEmail } from "./idTokenClaims";
-import { decideRefresh, nextTokenExpiry, REFRESH_TOKEN_TTL_MS } from "./refresh";
+import { decideRefresh, nextTokenExpiry, REFRESH_TOKEN_TTL_MS, RESCUE_WINDOW_MS } from "./refresh";
 import { sanitizeReturnTo } from "./returnTo";
 
 const ORIGIN = "http://localhost:5173";
@@ -70,9 +70,14 @@ describe("decideRefresh", () => {
     expect(decideRefresh(unused, live, null, now).kind).toBe("rotate");
   });
 
-  it("使用済みで次のトークンが未使用なら救済する（時間の制限なし）", () => {
-    const longAgo = { expiresAt: now + 1000, usedAt: now - 10 * 24 * 3600 * 1000 };
-    expect(decideRefresh(longAgo, live, unused, now).kind).toBe("rescue");
+  it("使用済みで次のトークンが未使用なら、24時間以内は救済する", () => {
+    const recent = { expiresAt: now + 1000, usedAt: now - RESCUE_WINDOW_MS + 1 };
+    expect(decideRefresh(recent, live, unused, now).kind).toBe("rescue");
+  });
+
+  it("使用済みから24時間を過ぎたら、次のトークンが未使用でも救済せず再利用として扱う", () => {
+    const old = { expiresAt: now + 1000, usedAt: now - RESCUE_WINDOW_MS };
+    expect(decideRefresh(old, live, unused, now).kind).toBe("reuse");
   });
 
   it("救済で使用済みにされたトークンが提示されたら再利用（交互の救済で検知を逃さない）", () => {

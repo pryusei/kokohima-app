@@ -22,6 +22,9 @@ export type RefreshDecision =
   /** 期限切れ・失効済み：拒否するだけ */
   | { kind: "reject" };
 
+/** 使用済みのトークンを救済できる期間（使用済みにしてから）。応答が届かなかった場合のためだけの猶予 */
+export const RESCUE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export function decideRefresh(
   token: TokenState,
   session: SessionState,
@@ -35,7 +38,8 @@ export function decideRefresh(
   if (token.usedAt === null) return { kind: "rotate" };
   // 救済で使用済みにしたトークンは正規の利用者には届いていない。提示されたら再利用
   if (token.rescuedAt != null) return { kind: "reuse" };
-  if (successor && successor.usedAt === null) {
+  // 救済は使用済みにしてから一定時間だけ。過ぎた使用済みトークンは、後から手に入れた人の可能性があるので再利用として扱う
+  if (successor && successor.usedAt === null && now - token.usedAt < RESCUE_WINDOW_MS) {
     return successor.expiresAt <= now ? { kind: "reject" } : { kind: "rescue" };
   }
   return { kind: "reuse" };
