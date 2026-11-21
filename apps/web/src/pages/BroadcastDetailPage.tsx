@@ -122,7 +122,12 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
             <h2 className="truncate text-l font-bold">{owner ? `${owner}さんの募集` : "暇な人いる？"}</h2>
             {owner && <span className="text-s text-ink-muted">暇な人いる？</span>}
           </div>
-          {b && <Badge tone={broadcastStatusTone(b)}>{broadcastStatusText(b)}</Badge>}
+          {/* 募集者の募集中は、人数を下の HeadCount で大きく出すので、バッジは「募集中」だけにする */}
+          {b && (
+            <Badge tone={broadcastStatusTone(b)}>
+              {b.direction === "sent" && b.status === "open" ? "募集中" : broadcastStatusText(b)}
+            </Badge>
+          )}
         </div>
       }
     >

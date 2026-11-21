@@ -44,10 +44,12 @@ function Settings({ friend }: { friend: Friend }) {
 
   const unfriend = useMutation({
     mutationFn: () => apiSend("DELETE", `/api/v1/friends/${friend.id}`, undefined),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: keys.friends.all() });
-      await queryClient.invalidateQueries({ queryKey: keys.availability.all() });
+    onSuccess: () => {
+      // 先に友達タブへ移る。解除した友達の詳細を読み直すと404になり、再試行を待つことになるので、その行は捨てる
       navigate("/friends", { replace: true });
+      queryClient.removeQueries({ queryKey: keys.friends.detail(friend.id) });
+      void queryClient.invalidateQueries({ queryKey: keys.friends.all() });
+      void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
     },
     onError: () => setFailed(true),
   });

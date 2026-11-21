@@ -15,20 +15,25 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const dragFrom = useRef<number | null>(null);
 
+  // Esc は、押したボタンが送信中に押せなくなってフォーカスがシートの外（body）に出たときも効くように、文書全体で受ける
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.current?.focus();
+    const onEscape = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") close.current();
+    };
+    document.addEventListener("keydown", onEscape);
     return () => {
+      document.removeEventListener("keydown", onEscape);
       if (opener?.isConnected) opener.focus();
     };
   }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      onClose();
-      return;
-    }
     if (e.key !== "Tab" || !dialog.current) return;
     const items = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
     const first = items[0];
