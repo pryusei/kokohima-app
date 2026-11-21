@@ -44,9 +44,19 @@ export function identityRoutes() {
 
   for (const provider of ["google", "apple"] as const satisfies OidcProviderName[]) {
     app.get(`/auth/${provider}/start`, authStartLimit, async (c) => {
+      // 止めたログインの方法（T-12）：何も書かず、新しい結びつけ Cookie も発行しない。応答は T-01 の失敗と同じ
+      if (!auth.providerEnabled(c.env, provider)) {
+        c.header("Cache-Control", "no-store");
+        return loginFailed(c);
+      }
       const parsed = authStartQuerySchema.safeParse(c.req.query());
       const returnTo = parsed.success ? parsed.data.returnTo : undefined;
-      const { redirectUrl, binding } = await auth.startLogin(ctx(c), provider, returnTo);
+      const started = await auth.startLogin(ctx(c), provider, returnTo);
+      if (!started) {
+        c.header("Cache-Control", "no-store");
+        return loginFailed(c);
+      }
+      const { redirectUrl, binding } = started;
       setBindingCookie(c, binding, provider);
       c.header("Cache-Control", "no-store");
       return c.redirect(redirectUrl, 302);
@@ -68,7 +78,11 @@ export function identityRoutes() {
     return c.redirect(`/auth/complete#code=${encodeURIComponent(loginCode)}`, 303);
   };
   app.get("/auth/google/callback", (c) => callback(c, "google", c.req.query()));
-  app.post("/auth/apple/callback", async (c) => callback(c, "apple", await c.req.parseBody()));
+  app.post("/auth/apple/callback", async (c) => {
+    // 止めた環境では本文を読まずに404（T-12）
+    if (!auth.providerEnabled(c.env, "apple")) return problem(c.get("requestId"), 404, "not_found", "Not Found");
+    return callback(c, "apple", await c.req.parseBody());
+  });
 
   app.post("/auth/complete", requireSameOrigin, async (c) => {
     const body = authCompleteRequestSchema.safeParse(await c.req.json().catch(() => null));

@@ -17,12 +17,21 @@
 ## 初回の手順
 1. Cloudflareで状態ファイル用のR2バケット `kokohima-tfstate` を手動で作る（唯一の手動作業）
 2. 用途を絞ったAPIトークンを作り、`CLOUDFLARE_API_TOKEN` に設定する
-3. `cd infra/terraform/envs/staging`
+3. `cd infra/terraform/envs/prod`（最初のリリースは prod だけ。docs/specs/T-12-release.md）
 4. `terraform init -backend-config="endpoints={s3=\"https://<ACCOUNT_ID>.r2.cloudflarestorage.com\"}"`
 5. `terraform plan -var account_id=<ACCOUNT_ID>` で確認してから `apply`
 6. 出力されたIDを `apps/api` のwrangler設定の該当環境に転記する
 
 ## 環境
-- `staging`：本番と同じ構成の確認用
-- `prod`：本番
+- `staging`：本番と同じ構成の確認用（最初のリリースでは作らない。T-12 決定事項5）
+- `prod`：本番（`https://kokohima.app`）
 - E2Eはローカル（wrangler dev）で動かすため、Terraformのリソースは使わない
+
+## デプロイ（prod。人が行う。docs/specs/T-12-release.md「人が行う作業」）
+- `pnpm --filter api db:migrate:prod`：D1 のマイグレーションを本番に適用する
+- `pnpm --filter api deploy:prod`：画面をビルドし、画面のビルドと wrangler の設定を検査してから `wrangler deploy --env prod`
+- 問題があれば `wrangler rollback --env prod` で戻す
+
+## DNS の例外
+- `kokohima.app` のカスタムドメインの記録は、Workers（`custom_domain: true`）が作り、管理する。Terraform の DNS の管理の例外（T-12 決定事項6）。
+- ほかの DNS の記録（Resend の SPF・DKIM・MX、DMARC など）は Terraform で持つ。

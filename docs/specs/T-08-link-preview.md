@@ -102,7 +102,7 @@
 - `fetching` のまま10分を過ぎた行は、取得の権利を引き継げる（下の手順）。
 
 ### R2（`OGP_IMAGES`）
-- Terraform の `kokohima-<env>-ogp-images`（定義済み）を、wrangler の `r2_buckets` に `OGP_IMAGES` としてつなぐ。wrangler の4つの環境（ローカル・e2e・staging・prod）に書く（ローカル・e2e は Miniflare の R2）。
+- Terraform の `kokohima-<env>-ogp-images`（定義済み）を、wrangler の `r2_buckets` に `OGP_IMAGES` としてつなぐ。wrangler の各環境（ローカル・e2e・assets（T-12）・staging・prod）に書く（ローカル・e2e・assets は Miniflare の R2）。
 - キーは `images/v1/<image_id>`。`httpMetadata.contentType` に種類を入れる。
 
 ## 振る舞い
@@ -184,8 +184,8 @@
 ### 設定値（Workers）
 | 名前 | 種類 | 内容 |
 | --- | --- | --- |
-| `OGP_IMAGES` | R2 | `kokohima-<env>-ogp-images`。wrangler の4つの環境に書く |
-| `LINK_PREVIEW_OWN_DOMAINS` | 変数（秘密ではない） | アプリ自身の登録ドメイン（カンマ区切り）。wrangler の4つの環境に書く（ローカル・e2e は `localhost`、staging・prod は本番のドメインが決まるまで `example.invalid`）。 |
+| `OGP_IMAGES` | R2 | `kokohima-<env>-ogp-images`。wrangler の各環境（T-12 の assets を含む）に書く |
+| `LINK_PREVIEW_OWN_DOMAINS` | 変数（秘密ではない） | アプリ自身の登録ドメイン（カンマ区切り）。wrangler の各環境に書く（ローカル・e2e・assets（T-12）は `localhost`、prod は `kokohima.app`（T-12）、staging は作るまで `example.invalid`）。 |
 | `global_fetch_strictly_public` | 互換性フラグ | `compatibility_flags` に足す（最上位に書けば各環境に引き継がれる） |
 
 ### E2E用の偽のサイト

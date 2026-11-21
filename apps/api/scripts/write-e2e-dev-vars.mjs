@@ -4,7 +4,8 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const path = join(dirname(fileURLToPath(import.meta.url)), "..", ".dev.vars.e2e");
+// 引数で書き出し先の名前を変えられる（本番と同じ形の E2E の .dev.vars.assets。T-12）。並んで起動するサーバーが同じファイルを取り合わないように
+const path = join(dirname(fileURLToPath(import.meta.url)), "..", process.argv[2] ?? ".dev.vars.e2e");
 if (!existsSync(path)) {
   const key = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString("base64url");
   const calendarKey = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString("base64url");
