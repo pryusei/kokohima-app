@@ -44,7 +44,8 @@
 
 ### 1-4. Workers Issues
 1. 本番の Worker で Issues が有効になっていることを確かめる（wrangler の設定 `observability.issues.enabled`。デプロイで有効になる）。
-2. 自動の通知（Automations）を2つ作る。通知先はどちらも `kokohima-alerts`。
+2. 自動の通知を作る前に、「1-6.」の「問題の詳細と通知の本文に、個人情報や URL が入りうるか」を確かめる。入るなら、通知は作らない（「1-6.」の対応に従う）。
+3. 自動の通知（Automations）を2つ作る。通知先はどちらも `kokohima-alerts`。
    - 発生した数が1に達したとき（新しい問題）
    - 24時間止まっていた問題が、また起きたとき
 
@@ -67,7 +68,7 @@
 | Monitors の実行の間隔の下限と、作れる数の上限 | 数が足りなければ、「気づけばよい」の側からまとめる | 未確認 |
 | warn のログが Workers Issues に上がらないか | 二重に届くことをこの手順書に書くか、Issues の通知の条件で絞る | 未確認 |
 | Workers Issues が、queue と scheduled の失敗も拾うか | 拾わない分は Monitors（`job_dead_lettered`・`cron_step_failed`）で見ている。追加は要らない | 未確認 |
-| Workers Issues の通知の本文に、個人情報が入りうるか | Issues の Slack への通知をやめて管理画面で見るだけにし、`unhandled_error` のモニター（15分に1件以上、`kokohima-alerts`）を足す | 未確認 |
+| Workers Issues の問題の詳細と通知の本文に、個人情報や、リクエストの URL（パス・クエリ）が入りうるか。URL にはトークンが入る経路がある（OAuth のコールバックの `code`、.ics のパス。呼び出しのログを切っている理由） | 通知に入るなら、Issues の Slack への通知をやめて管理画面で見るだけにし、`unhandled_error` のモニター（15分に1件以上、`kokohima-alerts`）を足す。管理画面の詳細にも URL が残るなら、Issues を無効に戻すことを検討する（仕様書を直す） | 未確認 |
 | Workers Logs の料金（2026-12-01 から Cloudflare Observability の料金）で、いまのログの量に費用が出ないか | ログの量を減らすか、費用を受け入れるかを決める | 未確認 |
 | Better Stack の無料の枠の条件（監視の数・間隔・Slack とメール・続けて失敗したときだけ通知・利用の制限） | 別のサービスにする（仕様書を直す） | 未確認 |
 | 退避キューに付ける HTTP の consumer の、再試行の上限の既定値と、上限に達したときの扱い | 「3. 退避キュー」の手順に、consumer を付けるときの設定を書き足す | 未確認 |
@@ -125,7 +126,7 @@ wrangler d1 execute kokohima-prod --remote --env prod --command "UPDATE outbox S
   2. Queues の読み書きだけに絞った API トークンで、1回だけ読む。読んだあと ack しない（見えない時間が過ぎるとキューに戻る）。
      - ack せずに何度も読むと、試行の回数が増え、メッセージが消えるおそれがある。読むのは1回だけにする。
   3. 調べ終えたら、consumer を外し、API トークンを消す。
-  - 本文には outbox の payload（時刻などの行動の情報）が入る。Slack・issue・PR に貼らない。
+  - 本文には outbox の payload（時刻などの行動の情報）や利用者ID（`calendar_sync`）が入る。Slack・issue・PR に貼らない。
 - 退避キューのメッセージは4日で消える。消える前に調べられなくても、outbox の行（7日）からやり直せる。
 
 ## 4. 問い合わせの調べ方
