@@ -148,6 +148,17 @@ export async function runStep(step: string, fn: () => Promise<unknown>) {
   try {
     await fn();
   } catch (e) {
-    console.log(JSON.stringify({ event: "cron_step_failed", step, name: e instanceof Error ? e.name : "unknown" }));
+    // warn で出す（Monitors が数える。Workers Issues と二重にしない。docs/specs/T-13-monitoring.md「3.」）
+    console.warn(JSON.stringify({ event: "cron_step_failed", step, name: e instanceof Error ? e.name : "unknown" }));
   }
+}
+
+export type CronName = "minutely" | "calendar_sync";
+
+/** 定期処理が終わりまで動いた時刻を記録する（docs/specs/T-13-monitoring.md「定期処理が動いた記録」） */
+export async function recordCronRun(d1: D1Database, name: CronName, now: number) {
+  await d1
+    .prepare("INSERT INTO cron_runs (name, last_run_at) VALUES (?1, ?2) ON CONFLICT(name) DO UPDATE SET last_run_at = excluded.last_run_at")
+    .bind(name, now)
+    .run();
 }
