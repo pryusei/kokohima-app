@@ -24,9 +24,15 @@ import {
 } from "../availability/format";
 import { mineQuery, presetsQuery, rulesQuery, today } from "../availability/queries";
 import { CalendarCandidates } from "../calendar/CalendarCandidates";
-import { Nav } from "../components/Nav";
+import { AvailabilityChip } from "../ui/AvailabilityChip";
+import { BottomSheet } from "../ui/BottomSheet";
+import { Button, SendButton } from "../ui/Button";
+import { EmptyState, LoadError, Loading, Note } from "../ui/feedback";
+import { Field, inputClass } from "../ui/form";
+import { Section, TabScreen } from "../ui/Navigation";
 
-// ここ暇タブ（仮。docs/specs/T-03-availability.md「画面」）
+// ここ暇タブ（docs/specs/T-03-availability.md「画面」、キャンバス「5 ここ暇」「8 ここ暇の追加」「9 くり返しの追加」）
+// ここ暇の追加とくり返しの追加は、URL を持たないシートで開く（docs/specs/T-11-design.md「画面のつながり」）
 
 type MyList = { items: MyAvailability[]; nextCursor: null };
 
@@ -46,7 +52,7 @@ function createErrorText(error: unknown) {
 /** 時刻の入力の "00:00" を終了に使うときは 24:00 とみなす */
 const asEnd = (hhmm: string) => (hhmm === "00:00" ? "24:00" : hhmm);
 
-function AddAvailability({ presets }: { presets: Presets | undefined }) {
+function AddAvailabilitySheet({ presets, onClose }: { presets: Presets | undefined; onClose: () => void }) {
   const queryClient = useQueryClient();
   const first = today();
   const [date, setDate] = useState(first);
@@ -72,62 +78,65 @@ function AddAvailability({ presets }: { presets: Presets | undefined }) {
   };
 
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold">ここ暇を追加</h2>
-      <label className="flex flex-col gap-1">
-        日付
+    <BottomSheet title="ここ暇を追加" label="ここ暇を追加" onClose={onClose}>
+      <Field label="日付">
         <input
           type="date"
-          className="rounded border px-2 py-1"
+          className={inputClass}
           value={date}
           min={first}
           max={addDays(first, HORIZON_DAYS)}
           onChange={(e) => setDate(e.target.value)}
         />
-      </label>
-      <div className="flex gap-2">
-        {PRESET_NAMES.map((preset) => (
-          <button
-            key={preset}
-            type="button"
-            disabled={create.isPending || date === ""}
-            className="flex-1 rounded-lg bg-amber-300 px-4 py-3 disabled:opacity-50"
-            onClick={() => create.mutate({ date, preset })}
-          >
-            {PRESET_LABELS[preset]}
-          </button>
-        ))}
+      </Field>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-bold text-ink-muted">押すとすぐ作ります</span>
+        <div className="grid grid-cols-3 gap-2">
+          {PRESET_NAMES.map((preset) => (
+            <SendButton
+              key={preset}
+              disabled={create.isPending || date === ""}
+              className="min-h-16 flex-col gap-0"
+              onClick={() => create.mutate({ date, preset })}
+            >
+              {PRESET_LABELS[preset]}
+              {presets && (
+                <span className="text-s font-normal text-ink-muted tabular-nums">
+                  {presets[preset].start}〜{presets[preset].end}
+                </span>
+              )}
+            </SendButton>
+          ))}
+        </div>
       </div>
-      {presets && (
-        <p className="text-sm text-slate-600">
-          {PRESET_NAMES.map((p) => `${PRESET_LABELS[p]} ${presets[p].start}〜${presets[p].end}`).join("・")}
-        </p>
-      )}
       <form
-        className="flex items-end gap-2"
+        className="flex flex-col gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           submitRange();
         }}
       >
-        <label className="flex flex-col gap-1">
-          開始
-          <input type="time" step={900} className="rounded border px-2 py-1" value={start} onChange={(e) => setStart(e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1">
-          終了
-          <input type="time" step={900} className="rounded border px-2 py-1" value={end} onChange={(e) => setEnd(e.target.value)} />
-        </label>
-        <button type="submit" disabled={create.isPending || date === ""} className="rounded border px-3 py-1">
+        <div className="flex items-end gap-2">
+          <Field label="開始">
+            <input type="time" step={900} className={inputClass} value={start} onChange={(e) => setStart(e.target.value)} />
+          </Field>
+          <span className="pb-2.5">〜</span>
+          <Field label="終了">
+            <input type="time" step={900} className={inputClass} value={end} onChange={(e) => setEnd(e.target.value)} />
+          </Field>
+        </div>
+        <Note>終了が開始より前なら、翌日の時刻になります（22:00〜翌02:00）</Note>
+        <SendButton type="submit" variant="lamp" block disabled={create.isPending || date === ""}>
           時間を指定して追加
-        </button>
+        </SendButton>
       </form>
       {create.isError && (
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className="text-s text-ink-muted">
           {createErrorText(create.error)}
         </p>
       )}
-    </section>
+      {create.isSuccess && <p role="status" className="text-s text-ink-muted">追加しました</p>}
+    </BottomSheet>
   );
 }
 
@@ -162,28 +171,31 @@ function MyAvailabilities() {
   });
 
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold">自分のここ暇（14日分）</h2>
+    <Section title="自分のここ暇" aside="今日から14日">
       {failed && (
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className="text-s text-ink-muted">
           変更できませんでした。もう一度お試しください。
         </p>
       )}
-      {mine.data?.items.length === 0 && <p className="text-slate-600">まだここ暇はありません</p>}
-      <ul aria-label="自分のここ暇" className="flex flex-col gap-2">
-        {mine.data?.items.map((item) => (
-          <li key={itemKey(item)} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3">
-            <span>
-              {formatDate(localDateOf(item.startsAt))} {formatSlot(item)}
-              {item.source === "recurrence" && <span className="ml-1 text-sm text-slate-500">（くり返し）</span>}
-            </span>
-            <button type="button" className="text-sm text-slate-600 underline" onClick={() => remove.mutate(item)}>
-              {item.source === "manual" ? "取り消す" : "この日だけ外す"}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+      {mine.isPending && <Loading />}
+      {mine.isError && <LoadError retry={() => void mine.refetch()} />}
+      {mine.data?.items.length === 0 && <EmptyState title="まだここ暇はありません" description="「ここ暇を追加」から、昼・夕方・夜を押すと作れます" />}
+      {mine.data && mine.data.items.length > 0 && (
+        <ul aria-label="自分のここ暇" className="rounded-l bg-surface px-4 shadow-card">
+          {mine.data.items.map((item) => (
+            <li key={itemKey(item)} className="flex items-center gap-2 border-b border-line py-3 last:border-b-0">
+              <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                <span className="font-bold tabular-nums">{formatDate(localDateOf(item.startsAt))}</span>
+                <AvailabilityChip text={formatSlot(item)} recurring={item.source === "recurrence"} />
+              </span>
+              <Button variant="ghost" size="s" onClick={() => remove.mutate(item)}>
+                {item.source === "manual" ? "取り消す" : "この日だけ外す"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
   );
 }
 
@@ -193,6 +205,7 @@ function ruleText(rule: RecurrenceRuleDto) {
 }
 
 function Recurrence() {
+  const [adding, setAdding] = useState(false);
   const queryClient = useQueryClient();
   const rules = useQuery(rulesQuery());
   const [weekday, setWeekday] = useState(6);
@@ -224,28 +237,57 @@ function Recurrence() {
   });
 
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-bold">くり返し</h2>
+    <Section
+      title="くり返し"
+      aside={
+        <Button variant="ghost" size="s" onClick={() => setAdding(true)}>
+          くり返しを追加する
+        </Button>
+      }
+    >
+      {rules.data && rules.data.items.length > 0 && (
+        <ul aria-label="くり返し" className="rounded-l bg-surface px-4 shadow-card">
+          {rules.data.items.map((rule) => (
+            <li key={rule.id} className="flex flex-col gap-1 border-b border-line py-3 last:border-b-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="tabular-nums">{ruleText(rule)}</span>
+                <Button variant="ghost" size="s" onClick={() => remove.mutate(rule.id)}>
+                  削除
+                </Button>
+              </div>
+              {rule.exceptions.map((date) => (
+                <div key={date} className="flex items-center justify-between gap-2 text-s text-ink-muted">
+                  <span>{formatDate(date)}は外しています</span>
+                  <Button variant="ghost" size="s" onClick={() => restore.mutate({ id: rule.id, date })}>
+                    戻す
+                  </Button>
+                </div>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding && (
+        <BottomSheet title="くり返しを追加" label="くり返しを追加" onClose={() => setAdding(false)}>
+          <Note>毎週の決まった暇な時間。特定の日だけ外すこともできます。</Note>
       <form
-        className="flex flex-wrap items-end gap-2"
+        className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
           create.mutate();
         }}
       >
-        <label className="flex flex-col gap-1">
-          曜日
-          <select aria-label="曜日" value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
+        <Field label="曜日">
+          <select aria-label="曜日" className={inputClass} value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
             {WEEKDAYS.map((w, i) => (
               <option key={w} value={i}>
                 {w}曜
               </option>
             ))}
           </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          時間帯
-          <select aria-label="時間帯" value={mode} onChange={(e) => setMode(e.target.value as PresetName | "custom")}>
+        </Field>
+        <Field label="時間帯">
+          <select aria-label="時間帯" className={inputClass} value={mode} onChange={(e) => setMode(e.target.value as PresetName | "custom")}>
             {PRESET_NAMES.map((p) => (
               <option key={p} value={p}>
                 {PRESET_LABELS[p]}
@@ -253,25 +295,24 @@ function Recurrence() {
             ))}
             <option value="custom">時刻を指定</option>
           </select>
-        </label>
+        </Field>
         {mode === "custom" && (
-          <>
-            <label className="flex flex-col gap-1">
-              開始
-              <input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
-            </label>
-            <label className="flex flex-col gap-1">
-              終了
-              <input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
-            </label>
-          </>
+          <div className="flex items-end gap-2">
+            <Field label="開始">
+              <input type="time" step={900} className={inputClass} value={start} onChange={(e) => setStart(e.target.value)} />
+            </Field>
+            <span className="pb-2.5">〜</span>
+            <Field label="終了">
+              <input type="time" step={900} className={inputClass} value={end} onChange={(e) => setEnd(e.target.value)} />
+            </Field>
+          </div>
         )}
-        <button type="submit" disabled={create.isPending} className="rounded border px-3 py-1">
+        <SendButton type="submit" variant="primary" block disabled={create.isPending}>
           くり返しを追加
-        </button>
+        </SendButton>
       </form>
       {create.isError && (
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className="text-s text-ink-muted">
           {isIdempotencyConflict(create.error)
             ? "作れませんでした。もう一度お試しください。"
             : create.error instanceof ApiError && create.error.status === 409
@@ -279,31 +320,14 @@ function Recurrence() {
             : "作れませんでした。15分単位で、30分以上、日をまたがない時間を選んでください。"}
         </p>
       )}
-      <ul aria-label="くり返し" className="flex flex-col gap-2">
-        {rules.data?.items.map((rule) => (
-          <li key={rule.id} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-3">
-            <div className="flex items-center justify-between">
-              <span>{ruleText(rule)}</span>
-              <button type="button" className="text-sm text-slate-600 underline" onClick={() => remove.mutate(rule.id)}>
-                削除
-              </button>
-            </div>
-            {rule.exceptions.map((date) => (
-              <div key={date} className="flex items-center justify-between text-sm text-slate-600">
-                <span>{formatDate(date)}は外しています</span>
-                <button type="button" className="underline" onClick={() => restore.mutate({ id: rule.id, date })}>
-                  戻す
-                </button>
-              </div>
-            ))}
-          </li>
-        ))}
-      </ul>
-    </section>
+        </BottomSheet>
+      )}
+    </Section>
   );
 }
 
-function PresetForm({ initial }: { initial: Presets }) {
+/** 時間帯プリセットの境界の変更（設定の「時間帯プリセット」で使う） */
+export function PresetForm({ initial }: { initial: Presets }) {
   const queryClient = useQueryClient();
   const [value, setValue] = useState(initial);
   const save = useMutation({
@@ -315,19 +339,20 @@ function PresetForm({ initial }: { initial: Presets }) {
 
   return (
     <form
-      className="flex flex-col gap-2"
+      className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         save.mutate();
       }}
     >
       {PRESET_NAMES.map((name) => (
-        <fieldset key={name} className="flex items-center gap-2">
+        <fieldset key={name} className="flex items-center gap-2 border-b border-line pb-3">
           <legend className="sr-only">{PRESET_LABELS[name]}</legend>
-          <span className="w-10">{PRESET_LABELS[name]}</span>
+          <span className="w-12 font-bold">{PRESET_LABELS[name]}</span>
           <input
             type="time"
             step={900}
+            className={inputClass}
             aria-label={`${PRESET_LABELS[name]}の開始`}
             value={value[name].start}
             onChange={(e) => set(name, "start", e.target.value)}
@@ -336,40 +361,39 @@ function PresetForm({ initial }: { initial: Presets }) {
           <input
             type="time"
             step={900}
+            className={inputClass}
             aria-label={`${PRESET_LABELS[name]}の終了`}
             value={value[name].end === "24:00" ? "00:00" : value[name].end}
             onChange={(e) => set(name, "end", e.target.value)}
           />
         </fieldset>
       ))}
-      <p className="text-sm text-slate-600">変えても、すでにあるここ暇とくり返しの時刻は変わりません。</p>
-      <button type="submit" disabled={save.isPending} className="self-start rounded border px-3 py-1">
+      <Note>変えても、すでにあるここ暇とくり返しの時刻は変わりません。</Note>
+      <SendButton type="submit" variant="primary" block disabled={save.isPending}>
         時間帯を保存
-      </button>
+      </SendButton>
       {save.isError && (
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className="text-s text-ink-muted">
           保存できませんでした。15分単位で、30分以上、日をまたがない時間を選んでください。
         </p>
       )}
-      {save.isSuccess && <p className="text-sm text-slate-600">保存しました</p>}
+      {save.isSuccess && <p role="status" className="text-s text-ink-muted">保存しました</p>}
     </form>
   );
 }
 
 export function AvailabilityPage() {
   const presets = useQuery(presetsQuery());
+  const [adding, setAdding] = useState(false);
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <h1 className="text-2xl font-bold">ここ暇</h1>
-      <Nav />
+    <TabScreen title="ここ暇">
+      <Button variant="lamp" block onClick={() => setAdding(true)}>
+        ここ暇を追加
+      </Button>
       <CalendarCandidates />
-      <AddAvailability presets={presets.data} />
       <MyAvailabilities />
       <Recurrence />
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-bold">時間帯</h2>
-        {presets.data && <PresetForm initial={presets.data} />}
-      </section>
-    </main>
+      {adding && <AddAvailabilitySheet presets={presets.data} onClose={() => setAdding(false)} />}
+    </TabScreen>
   );
 }

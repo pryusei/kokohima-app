@@ -1,9 +1,10 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import swSource from "../../public/sw.js?raw";
 import { tokenStore } from "../auth/tokenStore";
 import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
+import { unreadLabel } from "../ui/Navigation";
 
 // お知らせ一覧・通知の設定・プッシュの購読（docs/specs/T-07-notification.md「お知らせ一覧」「プッシュの購読と Service Worker」）
 
@@ -78,13 +79,12 @@ describe("お知らせ一覧", () => {
     const cancelled = screen.getByRole("link", { name: "予定がなくなりました" });
     expect(cancelled).toHaveAttribute("href", "/meetups/m1");
     for (const quiet of [declined, cancelled]) {
-      expect(quiet).toHaveClass("text-slate-600");
       expect(quiet.className).not.toMatch(/red|rose|error|danger/);
     }
     expect(screen.getByRole("link", { name: "名前未設定の友達さんが募集しています" })).toHaveAttribute("href", "/broadcasts/b1");
     expect(screen.getByRole("link", { name: "カレンダーの予定と重なったここ暇を2件取り消しました" })).toHaveAttribute("href", "/availability");
     expect(screen.getByRole("link", { name: "カレンダーの連携が切れました" })).toHaveAttribute("href", "/settings/calendar");
-    expect(screen.getByRole("link", { name: "新しい端末でログインがありました（Chrome / Windows）" })).toHaveAttribute("href", "/friends");
+    expect(screen.getByRole("link", { name: "新しい端末でログインがありました（Chrome / Windows）" })).toHaveAttribute("href", "/settings/account");
     expect(screen.getByRole("link", { name: "予定から1人抜けました" })).toBeVisible();
   });
 
@@ -109,23 +109,36 @@ describe("お知らせ一覧", () => {
     expect(screen.queryByText(/名前未設定の友達/)).toBeNull();
   });
 
-  it("ナビに未読の数を出す（赤を使わない）。一覧を開いたら、いちばん新しい id で既読にし、数を読み直す", async () => {
-    window.history.replaceState(null, "", "/notifications");
+  it("ヘッダーの鐘に未読の数を出す（赤を使わない）。一覧を開いたら、いちばん新しい id で既読にし、戻ると数が消える", async () => {
+    window.history.replaceState(null, "", "/");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/friend-availabilities": page([]),
       "/api/v1/notifications/unread-count": [json({ count: 2 }), json({ count: 0 })],
       "/api/v1/notifications/read": noContent,
       "/api/v1/notifications": page([item(2, "calendar_reauth"), item(1, "calendar_reauth")]),
     });
     renderApp();
-    const badge = await screen.findByLabelText("未読2件");
-    expect(badge.className).not.toMatch(/red|rose/);
+    const bell = await screen.findByRole("link", { name: "お知らせ 2件の未読" });
+    expect(within(bell).getByText("2").className).not.toMatch(/red|rose/);
+    await userEvent.click(bell);
+    expect(await screen.findByRole("heading", { name: "お知らせ" })).toBeVisible();
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/notifications/read")).toBe(true));
     const read = calls.filter((c) => c.url === "/api/v1/notifications/read");
     expect(read).toHaveLength(1);
     expect(read[0]?.init.method).toBe("POST");
     expect(JSON.parse(String(read[0]?.init.body))).toEqual({ upTo: ID(2) });
-    await waitFor(() => expect(screen.queryByLabelText(/未読/)).toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "戻る" }));
+    expect(await screen.findByRole("link", { name: "お知らせ" })).toBeVisible();
+  });
+
+  it.each([
+    [0, null, "お知らせ"],
+    [1, "1", "お知らせ 1件の未読"],
+    [98, "98", "お知らせ 98件の未読"],
+    [99, "99+", "お知らせ 99件以上の未読"],
+  ])("未読が %i 件なら、数は %s で読み上げは「%s」（API は99で頭打ち）", (count, badge, label) => {
+    expect(unreadLabel(count)).toEqual({ badge, label });
   });
 
   it("お知らせがなければ、既読の API を呼ばない", async () => {
@@ -152,7 +165,7 @@ describe("お知らせ一覧", () => {
     renderApp();
     expect(await screen.findByRole("link", { name: "あきさんと友達になりました" })).toHaveAttribute("href", `/friends/${FRIEND}`);
     await userEvent.click(screen.getByRole("button", { name: "この人に見せない" }));
-    expect(await screen.findByText("見せないにしました")).toHaveClass("text-slate-600");
+    expect((await screen.findByText("見せないにしました")).className).not.toMatch(/red|rose/);
     const patch = calls.find((c) => c.url === `/api/v1/friends/${FRIEND}`);
     expect(patch?.init.method).toBe("PATCH");
     expect(JSON.parse(String(patch?.init.body))).toEqual({ sharesMyAvailability: false });
@@ -257,7 +270,7 @@ describe("購読の送り直しとログアウト", () => {
   });
 
   it("通知を許可していなければ、送り直さない", async () => {
-    window.history.replaceState(null, "", "/friends");
+    window.history.replaceState(null, "", "/settings/account");
     stubPush({ permission: "default" });
     const { calls } = mockFetch(home);
     renderApp();
@@ -266,7 +279,7 @@ describe("購読の送り直しとログアウト", () => {
   });
 
   it("ログアウトの前に、この端末の購読を消す", async () => {
-    window.history.replaceState(null, "", "/friends");
+    window.history.replaceState(null, "", "/settings/account");
     stubPush();
     const { calls } = mockFetch({ ...home, "/api/v1/auth/logout": noContent });
     renderApp();
