@@ -1049,7 +1049,7 @@ describe("outbox を Queue に流す", () => {
       .bind(unknownId, h.clock.now)
       .run();
     h.jobs.length = 0;
-    // 1回の実行に上限があるので、この人の行が送られるまで何回か流す
+    // 1回に最大100件なので、この人の行が送られるまで何回か流す
     for (let n = 0; n < 30 && (await outbox("CalendarConnected", a.id))[0]?.processedAt === null; n++) {
       await dispatchOutbox(h.ctx);
     }
@@ -1060,7 +1060,7 @@ describe("outbox を Queue に流す", () => {
     expect(other?.processed_at).toBeNull();
   });
 
-  it("100件ずつ流す。処理済みにする SQL は値100個の制限に収まる（T-12 で、1回の実行で100件を超えて流すようにした）", async () => {
+  it("100件ずつ流す。処理済みにする SQL は値100個の制限に収まる（1回の実行で繰り返すのは docs/specs/T-12-data-growth.md）", async () => {
     const ids = Array.from({ length: 120 }, () => crypto.randomUUID());
     await env.DB.batch(
       ids.map((id, n) =>
@@ -1072,10 +1072,8 @@ describe("outbox を Queue に流す", () => {
       ),
     );
     h.jobs.length = 0;
-    // ほかのテストが残した行も一緒に流れるので、120件以上になる
-    expect(await dispatchOutbox(h.ctx)).toBeGreaterThanOrEqual(120);
-    const sent = new Set(h.jobs.flatMap((j) => (j.kind === "outbox" ? [j.id] : [])));
-    expect(ids.every((id) => sent.has(id))).toBe(true);
+    expect(await dispatchOutbox(h.ctx)).toBe(120);
+    expect(h.jobs).toHaveLength(120);
     const done = await env.DB.prepare(
       "SELECT COUNT(*) AS n FROM outbox WHERE id IN (SELECT value FROM json_each(?1)) AND processed_at IS NOT NULL",
     )
@@ -1097,7 +1095,7 @@ describe("outbox を Queue に流す", () => {
     };
     await expect(dispatchOutbox({ env: failing, deps: h.deps })).rejects.toThrow();
     expect((await outbox("CalendarConnected", a.id))[0]?.processedAt).toBeNull();
-    // 1回の実行に上限がある。何回か流せば、この人の行も送られる
+    // 1回に最大100件。何回か流せば、この人の行も送られる
     for (let n = 0; n < 20 && (await outbox("CalendarConnected", a.id))[0]?.processedAt === null; n++) {
       await dispatchOutbox(h.ctx);
     }

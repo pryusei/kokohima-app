@@ -175,12 +175,10 @@ export async function deliver(ctx: Ctx, notificationId: string) {
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const NOTIFICATION_RETENTION_MS = 90 * DAY_MS;
 
-/** 90日を過ぎたお知らせを消す */
-export async function cleanupOldNotifications(ctx: Ctx) {
-  await repo.deleteOldNotifications(ctx.env.DB, ctx.deps.now() - NOTIFICATION_RETENTION_MS);
-}
-
-/** 古い日ごとの数を消す。どのタイムゾーンの「今日」「昨日」も消さないよう、UTC で3日前より前の日付を消す */
-export async function cleanupNotificationCounts(ctx: Ctx) {
-  await repo.deleteOldCounts(ctx.env.DB, new Date(ctx.deps.now() - 3 * DAY_MS).toISOString().slice(0, 10));
+/** 90日を過ぎたお知らせと、2日より前の日ごとの数を消す */
+export async function cleanupNotifications(ctx: Ctx) {
+  const now = ctx.deps.now();
+  await repo.deleteOldNotifications(ctx.env.DB, now - NOTIFICATION_RETENTION_MS);
+  // どのタイムゾーンの「今日」「昨日」も消さないよう、UTC で3日前より前の日付を消す
+  await repo.deleteOldCounts(ctx.env.DB, new Date(now - 3 * DAY_MS).toISOString().slice(0, 10));
 }

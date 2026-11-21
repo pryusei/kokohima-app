@@ -183,10 +183,8 @@ export async function activeConnectionsOf(d1: D1Database, userIds: string[], pro
 
 // ---- 定期の確認 ----
 
-/**
- * 確認する連携。active で、前回の確認から minAge 以上たったものを古い順に。
- * SQLite は昇順で NULL を先に並べるので、確認したことがない連携が先になる。インデックス (status, last_synced_at) の順に読んで LIMIT で止まる
- */
+/** 確認する連携。active で、前回の確認から minAge 以上たったものを古い順に */
+/** 確認する連携。SQLite は昇順で NULL を先に並べるので、確認したことがない連携が先。インデックス (status, last_synced_at) の順に読む */
 export async function connectionsDueForSync(d1: D1Database, now: number, minAge: number, limit: number) {
   const { results } = await d1
     .prepare(

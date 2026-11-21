@@ -1,6 +1,9 @@
 import { MAX_LENGTH_MS } from "../domain/validation";
 import { MINUTE_MS } from "../domain/zonedTime";
 
+// 手動の枠は長さが最大 MAX_LENGTH_MS（24時間）。範囲 [from, to) と重なる枠は必ず from - MAX_LENGTH_MS < starts_at < to を満たすので、
+// 重なりの条件にこの条件を足して、インデックス (user_id, starts_at, id) の範囲だけを読む（結果は変わらない。docs/specs/T-12-data-growth.md）
+
 // availability のD1アクセス（docs/specs/T-03-availability.md）
 // 友達の枠は「前提」の3条件をSQLに入れて取得する。friendships は読み取りだけ（T-02の「前提」の例外）
 
@@ -54,12 +57,6 @@ export async function putPresets(d1: D1Database, userId: string, p: PresetRow, n
     .run();
 }
 
-/*
- * 手動の枠の長さは最大 MAX_LENGTH_MS（24時間）。範囲 [from, to) と重なる枠は必ず from - MAX_LENGTH_MS < starts_at < to を満たすので、
- * 範囲と重なる枠を探す SQL には、この条件を重なりの条件に足す（置き換えない）。結果は変わらず、インデックス (user_id, starts_at, id) の範囲だけを読む
- * （docs/specs/T-12-data-growth.md「ここ暇（手動の枠）の検索と掃除」）
- */
-
 /**
  * 終了していない自分の手動の枠と1分以上重ならず、未来の手動の枠が limit 未満のときだけ、1つの文で追加する。追加できたら true
  */
@@ -96,14 +93,6 @@ export async function listMyManual(d1: D1Database, userId: string, from: number,
     .bind(userId, from, to, now, MINUTE_MS, MAX_LENGTH_MS)
     .all<ManualRow>();
   return results;
-}
-
-/** 始まりが before より前の手動の枠を消す（毎分の掃除。上限つき）。終わった枠は、一覧・友達の空き・重なりの判定・自動取り消しのどれにも使わない */
-export async function deleteEndedManual(d1: D1Database, before: number, limit: number) {
-  await d1
-    .prepare("DELETE FROM availabilities WHERE id IN (SELECT id FROM availabilities WHERE starts_at < ?1 LIMIT ?2)")
-    .bind(before, limit)
-    .run();
 }
 
 export async function deleteMyManual(d1: D1Database, userId: string, id: string) {
@@ -303,4 +292,15 @@ export function calendarCancelStatements(
     );
   }
   return statements;
+}
+
+// ---- 終わった枠の掃除（T-12） ----
+
+/** 始まりが startedBefore より前の手動の枠を消す（上限つき）。消した数 */
+export async function deleteManualStartedBefore(d1: D1Database, startedBefore: number, limit: number) {
+  const r = await d1
+    .prepare("DELETE FROM availabilities WHERE id IN (SELECT id FROM availabilities WHERE starts_at < ?1 LIMIT ?2)")
+    .bind(startedBefore, limit)
+    .run();
+  return r.meta.changes;
 }
