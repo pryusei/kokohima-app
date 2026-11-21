@@ -23,6 +23,7 @@
 - `global_fetch_strictly_public` の互換性フラグがないと、自分のゾーンあての `fetch` は、Cloudflare のセキュリティ設定を飛ばしてオリジンに届く。このフラグには既定で有効になる日付がないので、wrangler の `compatibility_flags` に明示して付ける（決定事項3）。ほかの外部呼び出し（Google・Resend・プッシュ）は公開のホストなので影響しない。
 - `redirect` は `follow` か `manual`。`manual` にして、リダイレクトを自分で数えて検査する。
 - Workers は応答の大きさを制限しない。圧縮された応答は自動で展開されるので、読む量は展開後の量で自分で打ち切る。
+- `TextDecoder` の対応する文字コードは、公式の資料（Encoding API）に一覧がない（`TextDecoder` は UTF-8 のデコーダーとだけ書かれている）。互換性フラグの一覧に `text_decoder_cjk_decoder`（CJK の文字コードの専用の実装。2026-03-03 から既定で有効）がある。このリポジトリの `compatibility_date`（2026-08-22）のローカルの workerd（`pnpm test`）で、`shift_jis`・`euc-jp`・`iso-2022-jp`・`windows-31j`（→`shift_jis`）が読めること、知らない名前は `RangeError` になることを確かめた（2026-11-21）。実装PRの単体テストで、この3つを読めることを確かめ続ける。
 - R2 の書き込み・削除は強い整合性。`put` にストリームを渡すときは長さが要るので、読み終えた `ArrayBuffer` を渡す。
 - 1回の呼び出しの外部の取得（サブリクエスト）は、有料プランで10,000まで。1件の処理は、名前解決（A・AAAA）とリダイレクトを入れて、ページと画像で最大24回ほどに収まる。
 
@@ -116,6 +117,9 @@
    - 使い回せる結果：同じ `url_hash` の、7日以内に `ok` になった行、または24時間以内に `failed` になった行（いちばん新しいもの）。あれば、それを参照する（取りに行かない。決定事項4）。
    - なければ、取得の権利を取る：`status = 'fetching'` の新しい行を入れる（部分の UNIQUE インデックスで、同じ URL を同時に取りに行くのは1つだけ）。入らなければ（ほかの処理が取得中）、一時的な失敗として投げ、Queue の再試行で後から参照する。10分を過ぎた `fetching` の行は、`WHERE id = ? AND status = 'fetching' AND claimed_at < ?` の条件付き UPDATE で `claimed_at` を進めて引き継ぐ。
    - 取得を終えたら、`WHERE id = ? AND status = 'fetching'` の条件付き UPDATE で `ok`・`failed` と項目を書き、参照の行を書く。
+   - この UPDATE が0行だったら（権利を引き継いだ側が先に終えた、または掃除で行が消えた）、その行を読み直す。
+     - `ok`・`failed` になっていれば、その行を参照して終える（自分の結果は書かない）。自分が R2 に置いた画像は、台帳の掃除で消える。
+     - 行がない、またはまだ `fetching` なら、一時的な失敗として投げる（次の試行で、使い回すか権利を取り直す）。
 4. 一時的な失敗（取得先の5xx・429・タイムアウト・名前解決の失敗・ほかの処理が取得中）は投げて、Queue の再試行に任せる。
    - 権利を取った処理が一時的な失敗で投げるときは、投げる前に権利を手放す：`DELETE FROM link_previews WHERE id = ? AND status = 'fetching' AND claimed_at = ?`（自分が取った時刻。引き継がれていたら消さない）。手放さないと、同じメッセージの再試行が自分の権利に阻まれ、10分を過ぎるまで（今の再試行の間隔では6回めまで）取りに行けないため。手放すのに失敗しても、10分の引き継ぎで救われる。
    - consumer は `handleJob` にメッセージの試行の回数（`message.attempts`）を渡す。最後の試行（`attempts > MAX_ATTEMPTS`。最初の1回と再試行5回で6回め）でも失敗したら、`failed` の行を書いて参照し、投げずに終える（退避キューに送らない）。権利を持っていれば、その行を条件付き UPDATE で `failed` にする（新しい行は入れない）。
@@ -129,7 +133,9 @@
 - ホスト名の末尾の `.` は除いてから判定する。
 - ホストが IP アドレス（IPv4・IPv6）なら取らない。
 - ホストが `localhost`、`.localhost`・`.local`・`.internal`・`.home.arpa`・`.test`・`.invalid`・`.example`・`.onion` で終わるもの、ドットを含まないものは取らない。
-- アプリ自身の登録ドメイン（`APP_ORIGIN` のホストの登録ドメイン）とそのサブドメイン、`workers.dev` とそのサブドメインは取らない。
+- アプリ自身のドメイン（設定値 `LINK_PREVIEW_OWN_DOMAINS` に書いたもの）とそのサブドメイン、`workers.dev` とそのサブドメインは取らない。
+  - 登録ドメイン（`APP_ORIGIN` のホストから求める）には Public Suffix List が要るので、コードでは求めない。登録ドメインを人が設定値に書き、domain の判定の関数には引数で渡す（domain は設定を読まない）。
+  - `LINK_PREVIEW_OWN_DOMAINS` はカンマ区切りの小文字のホスト名。空・読めない値なら、取りに行かずに一時的な失敗として投げる（設定の誤りで自分のドメインに向かないように。最後の試行では `failed`）。
 
 ### 名前解決の検査（infra。決定事項2）
 - 取りに行く前に、ホスト名を DNS over HTTPS（`https://cloudflare-dns.com/dns-query`、`Accept: application/dns-json`）で A・AAAA の両方を引く。1回のタイムアウトは3秒。
@@ -177,6 +183,7 @@
 | 名前 | 種類 | 内容 |
 | --- | --- | --- |
 | `OGP_IMAGES` | R2 | `kokohima-<env>-ogp-images`。wrangler の4つの環境に書く |
+| `LINK_PREVIEW_OWN_DOMAINS` | 変数（秘密ではない） | アプリ自身の登録ドメイン（カンマ区切り）。wrangler の4つの環境に書く（ローカル・e2e は `localhost`、staging・prod は本番のドメインが決まるまで `example.invalid`）。 |
 | `global_fetch_strictly_public` | 互換性フラグ | `compatibility_flags` に足す（最上位に書けば各環境に引き継がれる） |
 
 ### E2E用の偽のサイト
@@ -203,11 +210,13 @@
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 取りに行ってよい URL：http・https、ポート、userinfo、IP（IPv4・IPv6・`[::1]`・`127.1`・`0x7f000001`）、`localhost`・内部向けの接尾辞・末尾のドット（`localhost.`・`foo.local.`）・ドットなし・全角、アプリ自身の登録ドメインとそのサブドメイン、`workers.dev`。
+- [ ] 取りに行ってよい URL：http・https、ポート、userinfo、IP（IPv4・IPv6・`[::1]`・`127.1`・`0x7f000001`）、`localhost`・内部向けの接尾辞・末尾のドット（`localhost.`・`foo.local.`）・ドットなし・全角、`LINK_PREVIEW_OWN_DOMAINS` のドメインとそのサブドメイン（`evil-example.com` のように末尾が似ているだけのものは通す）、`workers.dev`。`LINK_PREVIEW_OWN_DOMAINS` が空・読めないときは投げる。
 - [ ] IP の検査：IPv4 の範囲の境界（`172.15.255.255` は通し `172.16.0.0` は拒む、`240.0.0.1`・`255.255.255.255`）、IPv6 は `2000::/3` だけ（`::ffff:7f00:1`・`0:0:0:0:0:ffff:127.0.0.1`・`::127.0.0.1`・`2002:7f00:1::`・`2001::1`・`fec0::1`・`fe80::1`・`fc00::1` は拒む）、読めない値は拒む。
 - [ ] 名前解決：A・AAAA のどれか1つでも内部なら取らない。答えがなければ取らない。CNAME の `data` を使わない。NXDOMAIN は `failed`、SERVFAIL・DoH の失敗は一時的な失敗。
 - [ ] リダイレクト：3回まで追い、4回めは `failed`。リダイレクト先が内部・取りに行ってはいけない URL なら `failed`。相対の `Location`。
 - [ ] 取得：本文を読み終えるまでの5秒・全体の10秒、`Content-Type` が HTML でない、展開後の512KB で止める（大きいページでも OGP が先頭にあれば取れる）、4xx は `failed`、5xx・429 は投げる、Cookie・Authorization・Referer を送らない。
+- [ ] 権利を引き継がれた側：終えるときの UPDATE が0行なら、`ok`・`failed` の行を参照して終える。行がない・まだ `fetching` なら投げる。
+- [ ] 文字コード：`shift_jis`・`euc-jp`・`iso-2022-jp` のページの OGP を読める。知らない文字コードは `failed`。
 - [ ] 解析：og: と name の両方、`<title>`・description の代わり、文字参照、制御文字、長さの上限、`<head>` の外の meta は読まない、タイトルも説明もなければ `failed`、文字コード（Shift_JIS など）。
 - [ ] 画像：種類と先頭のバイトが合うときだけ。SVG・HTML を画像と偽ったもの・2MB 超・幅か高さが4096超は画像なし。画像の失敗はページの `ok` に影響しない。R2 に `images/v1/<UUID>` で置く。
 - [ ] `LinkAttached`：リンクがあるときだけ、作成と同じ batch で書く。送信が拒否された（友達でない・同じ誘い・送信上限）ときは書かない。payload に URL がない。`NOTIFICATION_START_AT` が空でも dispatch で流れる。
@@ -254,3 +263,4 @@
 | 2026-11-18 | 初版 | pryusei/kokohima-app#47 |
 | 2026-11-18 | 誘い・募集ごとの参照の行（作った直後は `pending`）、`LinkAttached` を条件付きで書き常に流す型にする、取得の権利を条件付きで取る、最後の試行の扱い、IPv6 を許可の一覧に、URL の判定（末尾のドット・登録ドメイン・`workers.dev`）、本文を読み終えるまでのタイムアウトと展開後の量、画像の大きさ、画像の ID の一意、相対の `imageUrl`、実装PRで直すものを足した | 仕様書PRのレビュー（セキュリティ・仕様） |
 | 2026-11-21 | 一時的な失敗では取得の権利を手放す。`fetching` のまま残った行を掃除する。R2 の画像を台帳（`link_preview_images`）で管理し、置いた直後の画像を消さない。参照の行を誘い・募集ごとの外部キー（CASCADE）にした | 仕様書PRのレビュー（pryusei/kokohima-app#75） |
+| 2026-11-21 | Workers の `TextDecoder` の文字コードを確かめた結果を足した。自分のドメインを設定値 `LINK_PREVIEW_OWN_DOMAINS` で渡す。権利を引き継がれた側が終えるときの振る舞いを足した | 仕様書PRのレビュー（pryusei/kokohima-app#75） |
