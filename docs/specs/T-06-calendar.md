@@ -166,7 +166,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 ### `ics_tokens`
 - `token_hash`（主キー）、`user_id`（→ users、CASCADE）、`meetup_id`（→ meetups、CASCADE）、`expires_at`（5分）、`created_at`。
-- インデックス：`(created_at)`、`(user_id, created_at)`（発行数の上限のため。T-10 で足す）。
+- インデックス：`(created_at)`、`(user_id, created_at)`（発行数の上限のため。T-10 で足す）、`(expires_at)`（期限切れの掃除のため。T-13 で足す）。
 
 ### 既存の表とトークン
 - `outbox` は列を足さない。`processed_at` は「Queue に渡し終えた日時」として使う（「outbox を Queues に流す」）。型で絞って古い順に読むため、インデックス `(type, processed_at, created_at)` を足す。
@@ -260,7 +260,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 #### 確認の割り当て
 - Cron（15分ごと）で、`status = 'active'` で `last_synced_at` が10分以上前（または NULL）の連携を選ぶ。
-  - 古い順に最大200件。1時間に確かめられるのは最大800人分なので、連携している人が200人を超えると、1人あたりの間隔が15分より延びる（例：1000人なら約75分ごと）。その分、自動取り消しが遅れる。人数が増えたら上限を見直す。
+  - 古い順（確認したことがない連携が先）に最大1000件（docs/specs/T-13-data-growth.md）。1時間に確かめられるのは最大4000人分なので、連携している人が1000人を超えると、1人あたりの間隔が15分より延びる（例：2000人なら約30分ごと）。その分、自動取り消しが遅れる。人数が増えたら上限を見直す。
+  - 上限で埋まったら、件数だけのログ `calendar_sync_assign_full` を出す（T-13）。
   - 1人ずつ Queue に `calendar_sync` のメッセージ（`{ userId, provider }`）を送る。`sendBatch` は100件ずつ。
   - outbox には書かない。状態の変化ではないため。
 - `scheduled` は `event.cron` で処理を振り分ける。
@@ -367,6 +368,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 ### outbox を Queues に流す
 - Cron（1分ごと）で、次の手順で流す。送ってから処理済みにする。
+  - 1回の実行で、手順1〜3を最大10回繰り返す（1分に最大1000件）。読んだ件数が100件より少なければ終える。実行を始めてから20秒を過ぎたら次の回に入らない。打ち切ったら件数だけのログ `outbox_dispatch_capped` を出す（docs/specs/T-13-data-growth.md）。
   1. `processed_at IS NULL` で、`type` がこの仕様書で処理する型の行を、作成日時の古い順に最大100件読む。
      - 処理する型：`MeetupConfirmed`・`MeetupCancelled`・`MeetupLeft`・`CalendarConnected`・`AvailabilityCancelledByCalendar`。
   2. Queue に `sendBatch` する。
@@ -375,6 +377,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - 二重に届くことは、consumer の冪等性で受ける（どの処理も条件付き更新か、あるべき状態にそろえる処理）。
 - ほかの型の行（`DirectInviteSent`・`FriendshipEstablished` などの通知の対象）は取り出さず、未処理のまま残す。T-07 で型を足して流す。
 - 同じ Cron で、期限（作成から10分）を過ぎた `calendar_oauth_states` と、期限を過ぎた `ics_tokens` を消す。
+  - 処理済みになって7日を過ぎた outbox の行も消す（1回に最大1000行。T-13）。
+  - Cron の各処理は互いに独立させ、1つが失敗しても後の処理は走る。失敗は `cron_step_failed` のログに出す（T-13）。
 - Queue のメッセージは `{ kind: "outbox", id, type, payload }` か `{ kind: "calendar_sync", userId, provider }`。consumer は `kind` と `type` で処理を振り分ける。
 - 再試行は最大5回で、間隔を広げていく。それでも失敗したら退避キューに送る。
   - 退避キューのメッセージは処理しない。ログには `kind`・`type`・`id` だけを出す。
@@ -667,3 +671,4 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | 2026-11-16 | 決定事項15を実装した（availability の `viewersWhoCanSee`、invitation の `declineForCancelledAvailability` で絞る）。確認事項を決定事項15にまとめて消した。要求定義書と invitation-domain スキルを直した | 実装PR（pryusei/kokohima-app#53） |
 | 2026-11-17 | 候補のキャッシュと上限、`ics-links` の発行数の上限、`.ics` の上限を T-10 で行うことにした（API の表・`ics_tokens` のインデックス・埋まりの保存・スコープ外を直した） | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |
 | 2026-11-21 | テスト計画のチェックを付けた（すべての項目に対応する単体テスト・E2Eがあることを確かめた）。「知らない鍵IDは一時的な失敗」の単体テストがなかったので足した | 全体の点検（pryusei/kokohima-app#50） |
+| 2026-11-21 | 確認の割り当てを最大1000件に、outbox の送出を1回の実行で最大10回の繰り返しにし、処理済みの行の掃除と Cron の各処理の独立を足す | docs/specs/T-13-data-growth.md |
