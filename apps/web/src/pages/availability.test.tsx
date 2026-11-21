@@ -115,8 +115,12 @@ describe("ここ暇タブ", () => {
       "/api/v1/availabilities": [empty, json(manual, 201), json({ items: [manual], nextCursor: null })],
     });
     renderApp();
-    expect(await screen.findByText("昼 11:00〜15:00・夕方 16:00〜19:00・夜 19:00〜23:00")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "夜" }));
+    // ここ暇の追加はシートで開く（docs/specs/T-11-design.md）。プリセットのボタンには時刻を添える
+    await userEvent.click(await screen.findByRole("button", { name: "ここ暇を追加" }));
+    const sheet = screen.getByRole("dialog", { name: "ここ暇を追加" });
+    expect(await within(sheet).findByRole("button", { name: "昼11:00〜15:00" })).toBeVisible();
+    expect(within(sheet).getByRole("button", { name: "夕方16:00〜19:00" })).toBeVisible();
+    await userEvent.click(within(sheet).getByRole("button", { name: "夜19:00〜23:00" }));
     const post = await waitFor(() => {
       const c = calls.find((x) => x.url === "/api/v1/availabilities" && x.init.method === "POST");
       expect(c).toBeDefined();
@@ -129,7 +133,8 @@ describe("ここ暇タブ", () => {
   it("重なりで作れなければ静かな文言（赤を使わない）", async () => {
     availabilityTab({ "/api/v1/availabilities": [empty, json({}, 409)] });
     renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "昼" }));
+    await userEvent.click(await screen.findByRole("button", { name: "ここ暇を追加" }));
+    await userEvent.click(await screen.findByRole("button", { name: /^昼/ }));
     const message = await screen.findByText(/自分のほかのここ暇と重なっているか/);
     expect(message.className).not.toMatch(/red/);
   });
@@ -181,7 +186,8 @@ describe("友達の詳細", () => {
     detail([{ startsAt: "2026-10-10T10:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z", label: "night" }]);
     const view = renderApp();
     expect(await screen.findByRole("heading", { name: "あき" })).toBeVisible();
-    expect(await screen.findByText("10/10（土） 夜 19:00〜23:00")).toBeVisible();
+    const row = (await screen.findByText("10/10（土）")).closest("li") as HTMLElement;
+    expect(within(row).getByText("夜 19:00〜23:00")).toBeVisible();
     view.unmount();
     detail([]);
     renderApp();

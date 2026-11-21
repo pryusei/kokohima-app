@@ -6,13 +6,18 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { createIcsLink } from "../calendar/queries";
 import { redirectTo } from "./CalendarSettingsPage";
-import { Nav } from "../components/Nav";
 import { formatRange } from "../invitations/format";
 import { meetupQuery } from "../invitations/queries";
-import { displayNameOf } from "./FriendsPage";
-import { LinkPreviewCard } from "../invitations/LinkPreviewCard";
+import { displayNameOf } from "../account/me";
+import { Avatar } from "../ui/Avatar";
+import { Badge } from "../ui/Badge";
+import { SheetScreen } from "../ui/BottomSheet";
+import { SendButton } from "../ui/Button";
+import { LoadError, Loading, Note } from "../ui/feedback";
+import { LinkCard } from "../ui/LinkCard";
 
-// 成立した予定（仮。docs/specs/T-04-direct-invite.md「画面」）。「やっぱり難しい」は確認なしで送る
+// 成立した予定（docs/specs/T-04-direct-invite.md「画面」、キャンバス「15 成立した予定」）。「やっぱり難しい」は確認なしで送る
+// 後ろに誘いタブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
 
 export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
   const queryClient = useQueryClient();
@@ -60,54 +65,75 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
 
   if (meetup.error instanceof ApiError && meetup.error.status === 404) {
     return (
-      <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-        <Nav />
-        <p className="text-slate-600">この予定は見つかりませんでした。</p>
-      </main>
+      <SheetScreen title="成立した予定" label="成立した予定" parent="/invites">
+        <p role="status">この予定は見つかりませんでした。</p>
+      </SheetScreen>
     );
   }
   const m = meetup.data;
   // 開始後はキャンセルできないので、ボタンを出さない（決定事項4）
   const cancellable = m?.status === "confirmed" && Date.parse(m.startsAt) > openedAt;
+  const cancelled = m?.status === "cancelled";
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">成立した予定</h1>
-      <Nav />
+    <SheetScreen
+      label="成立した予定"
+      parent="/invites"
+      title={
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xl font-bold">成立した予定</h2>
+          {m && (cancelled ? <Badge tone="quiet">やっぱり難しくなりました</Badge> : <Badge tone="meet">成立</Badge>)}
+        </div>
+      }
+    >
+      {meetup.isPending && <Loading />}
+      {meetup.isError && !(meetup.error instanceof ApiError && meetup.error.status === 404) && (
+        <LoadError retry={() => void meetup.refetch()} />
+      )}
       {m && (
-        <section className="flex flex-col gap-2">
-          <p className="font-bold">{m.participants.map((p) => displayNameOf(p.displayName)).join("・")}</p>
-          <p>{formatRange(m)}</p>
-          {m.area && <p>エリア：{m.area}</p>}
+        <>
+          <div className={`-mx-6 flex flex-col gap-1 px-6 py-4 ${cancelled ? "bg-quiet-bg" : "bg-meet-soft"}`}>
+            <p className={`text-xl font-bold tabular-nums ${cancelled ? "text-quiet-ink" : "text-ink"}`}>{formatRange(m)}</p>
+            {m.area && <p className={cancelled ? "text-quiet-ink" : "font-bold text-meet-ink"}>エリア：{m.area}</p>}
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-bold text-ink-muted">参加する人</span>
+            <ul className="flex flex-wrap gap-4">
+              {m.participants.map((p) => (
+                <li key={p.id} className="flex items-center gap-2">
+                  <Avatar name={p.displayName} size="s" />
+                  {displayNameOf(p.displayName)}
+                </li>
+              ))}
+            </ul>
+          </div>
           {m.message && <p className="whitespace-pre-wrap">{m.message}</p>}
-          <LinkPreviewCard url={m.url} preview={m.linkPreview} />
-          {m.status === "cancelled" ? (
-            <p className="text-slate-600">やっぱり難しくなりました</p>
-          ) : (
-            <p className="text-emerald-800">成立</p>
-          )}
-          <button type="button" className="self-start rounded-lg border px-4 py-2" onClick={() => ics.mutate()}>
+          <LinkCard url={m.url} preview={m.linkPreview} />
+          <SendButton block onClick={() => ics.mutate()}>
             カレンダーに追加（.ics）
-          </button>
+          </SendButton>
           {icsFailed && (
-            <p role="status" className="text-sm text-slate-600">
+            <p role="status" className="text-s text-ink-muted">
               {icsFailed === "limited"
                 ? "少し待ってから、もう一度お試しください"
                 : "カレンダーに追加できませんでした。もう一度お試しください"}
             </p>
           )}
           {cancellable && (
-            <button type="button" className="self-start rounded-lg border px-4 py-2" onClick={() => cancel.mutate()}>
-              やっぱり難しい
-            </button>
+            <>
+              <SendButton variant="ghost" block onClick={() => cancel.mutate()}>
+                やっぱり難しい
+              </SendButton>
+              <Note>押すと、ほかの参加者にお知らせが届きます</Note>
+            </>
           )}
           {failed && (
-            <p role="status" className="text-sm text-slate-600">
+            <p role="status" className="text-s text-ink-muted">
               送れませんでした。もう一度お試しください
             </p>
           )}
-        </section>
+        </>
       )}
-    </main>
+    </SheetScreen>
   );
 }

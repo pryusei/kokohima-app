@@ -2,11 +2,16 @@ import type { FriendAvailability } from "@kokohima/shared";
 import { useQuery } from "@tanstack/react-query";
 import { formatDate, formatSlot, localDateOf } from "../availability/format";
 import { everyoneQuery, today } from "../availability/queries";
-import { Link, Nav } from "../components/Nav";
 import { initialRange } from "../invitations/format";
-import { displayNameOf } from "./FriendsPage";
+import { AvailabilityChip } from "../ui/AvailabilityChip";
+import { Avatar } from "../ui/Avatar";
+import { ButtonLink } from "../ui/Button";
+import { EmptyState, LoadError, Loading } from "../ui/feedback";
+import { Link } from "../ui/Link";
+import { TabScreen } from "../ui/Navigation";
+import { displayNameOf } from "../account/me";
 
-// ホーム＝「みんな」（仮。docs/specs/T-03-availability.md「画面」）
+// ホーム＝「みんな」（docs/specs/T-03-availability.md「画面」、キャンバス「4 みんな」）
 
 /** 枠の時間を入れた誘いの作成へ（開始は次の15分の区切り以降、長さは24時間まで）。終わりかけの枠は null */
 function inviteLink(item: FriendAvailability) {
@@ -20,7 +25,7 @@ function InviteFromSlot({ item }: { item: FriendAvailability }) {
   const to = inviteLink(item);
   if (!to) return null;
   return (
-    <Link to={to} className="self-start text-sm underline">
+    <Link to={to} className="self-start text-s text-action underline">
       この時間に誘う
     </Link>
   );
@@ -42,40 +47,43 @@ export function EveryonePage() {
   const everyone = useQuery(everyoneQuery(date));
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">みんな</h1>
-      <Nav />
-      {everyone.isError && (
-        <p role="status" className="text-slate-600">
-          読み込めませんでした。通信状態を確認して、もう一度お試しください。
-        </p>
+    <TabScreen title="みんな">
+      <ButtonLink to="/broadcasts/new" variant="lamp" block>
+        暇な人いる？と募る
+      </ButtonLink>
+      {everyone.isPending && <Loading />}
+      {everyone.isError && <LoadError retry={() => void everyone.refetch()} />}
+      {everyone.data?.length === 0 && (
+        <EmptyState
+          title="まだ友達のここ暇はありません"
+          description="友達を招待すると、ここに暇な時間が並びます"
+          action={
+            <ButtonLink to="/friends" size="s">
+              招待リンクを作る
+            </ButtonLink>
+          }
+        />
       )}
-      {everyone.data?.length === 0 && <p className="text-slate-600">まだ友達のここ暇はありません</p>}
       {everyone.data &&
         groupByDate(everyone.data).map(([day, items]) => (
-          <section key={day} className="flex flex-col gap-2">
-            <h2 className="font-bold">{formatDate(day)}</h2>
-            <ul className="flex flex-col gap-2">
+          <section key={day} className="flex flex-col">
+            <h2 className="-mx-4 bg-head px-4 py-1 font-bold tabular-nums">{formatDate(day)}</h2>
+            <ul className="flex flex-col">
               {items.map((item) => (
-                <li
-                  key={`${item.friend.id}|${item.startsAt}`}
-                  className={
-                    item.overlapsMine
-                      ? "flex flex-col rounded-lg border-2 border-amber-400 bg-amber-50 p-3"
-                      : "flex flex-col rounded-lg border border-slate-200 bg-white p-3"
-                  }
-                >
-                  <Link to={`/friends/${item.friend.id}`} className="font-bold underline">
-                    {displayNameOf(item.friend.displayName)}
-                  </Link>
-                  <span>{formatSlot(item)}</span>
-                  {item.overlapsMine && <span className="text-sm text-amber-800">自分のここ暇と重なっています</span>}
-                  <InviteFromSlot item={item} />
+                <li key={`${item.friend.id}|${item.startsAt}`} className="flex gap-2 border-b border-line py-3 last:border-b-0">
+                  <Avatar name={item.friend.displayName} />
+                  <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                    <Link to={`/friends/${item.friend.id}`} className="font-bold text-ink no-underline">
+                      {displayNameOf(item.friend.displayName)}
+                    </Link>
+                    <AvailabilityChip text={formatSlot(item)} overlaps={item.overlapsMine} />
+                    <InviteFromSlot item={item} />
+                  </div>
                 </li>
               ))}
             </ul>
           </section>
         ))}
-    </main>
+    </TabScreen>
   );
 }
