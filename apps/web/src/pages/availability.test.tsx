@@ -127,6 +127,24 @@ describe("みんな：回数の上限（docs/specs/T-14-friend-availabilities-ra
     expect(retry(3, new ApiError(500))).toBe(false);
   });
 
+  it(
+    "429 以外の失敗は、いままでどおり取り直したあと「読み込めませんでした。…」と「もう一度」を出す",
+    async () => {
+      window.history.replaceState(null, "", "/");
+      const { calls } = mockFetch({
+        "/api/v1/auth/refresh": json(tokenBody()),
+        "/api/v1/friend-availabilities": json({ type: "about:blank", title: "Internal Server Error", status: 500 }, 500),
+      });
+      renderApp();
+      // 取り直しの間隔（1秒・2秒・4秒）を待つ
+      expect(await screen.findByText("読み込めませんでした。もう一度お試しください", undefined, { timeout: 12000 })).toBeVisible();
+      expect(screen.getByRole("button", { name: "もう一度" })).toBeVisible();
+      expect(screen.queryByText("少し時間をおいて、もう一度開いてください")).toBeNull();
+      expect(calls.filter((c) => c.url.startsWith("/api/v1/friend-availabilities"))).toHaveLength(4);
+    },
+    20000,
+  );
+
   it("前に読めた内容がなければ、静かな文言を出し、「もう一度」を出さず、取り直さない", async () => {
     window.history.replaceState(null, "", "/");
     const { calls } = mockFetch({
