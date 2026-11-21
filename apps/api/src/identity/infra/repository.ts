@@ -31,6 +31,36 @@ export async function deleteExpiredLoginRecords(db: Db, now: number) {
   ]);
 }
 
+/** 失効・期限切れから掃除までの日数（docs/specs/T-01-auth.md「データ」） */
+export const DEAD_SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+/** 1回の掃除で消す行の数の上限（毎分の Cron の処理を短く保つ） */
+export const SESSION_CLEANUP_LIMIT = 500;
+
+/**
+ * 失効・期限切れから30日を過ぎたセッションと、期限切れから30日を過ぎた更新用トークンを消す。
+ * 利用者ごとに最初に作ったセッションの行は残す（T-07 の新端末のログインの判定 hasEarlierSession が、
+ * 「その人のこれより前のセッションがあるか」で最初のログインを見分けるため）。
+ * 期限切れのトークンは使用済みかどうかに関係なく拒否されるので（「更新」の手順3）、消しても振る舞いは変わらない
+ */
+export async function deleteDeadSessions(d1: D1Database, now: number) {
+  const before = now - DEAD_SESSION_RETENTION_MS;
+  await d1.batch([
+    d1
+      .prepare(
+        `DELETE FROM sessions WHERE id IN (
+           SELECT s.id FROM sessions s
+           WHERE (s.revoked_at <= ?1 OR s.expires_at <= ?1)
+             AND s.id <> (SELECT f.id FROM sessions f WHERE f.user_id = s.user_id ORDER BY f.created_at, f.id LIMIT 1)
+           LIMIT ?2
+         )`,
+      )
+      .bind(before, SESSION_CLEANUP_LIMIT),
+    d1
+      .prepare(`DELETE FROM refresh_tokens WHERE id IN (SELECT id FROM refresh_tokens WHERE expires_at <= ?1 LIMIT ?2)`)
+      .bind(before, SESSION_CLEANUP_LIMIT),
+  ]);
+}
+
 /** state を1回だけ取り出す（DELETE ... RETURNING）。期限切れは返さない */
 export async function takeOauthTransaction(db: Db, stateHash: string, now: number) {
   const rows = await db

@@ -1,6 +1,6 @@
 import type { AppDeps, Bindings } from "../env";
 import { deleteExpiredIcsTokens, deleteExpiredOauthStates } from "../calendar/infra/repository";
-import { db as identityDb, deleteExpiredLoginRecords } from "../identity/infra/repository";
+import { db as identityDb, deleteDeadSessions, deleteExpiredLoginRecords } from "../identity/infra/repository";
 import { OAUTH_STATE_TTL_MS } from "../calendar/application/connections";
 import { cleanupNotifications, notificationStartAt } from "../notification/application/delivery";
 import { NOTIFICATION_ONLY_TYPES } from "../notification/domain/events";
@@ -76,7 +76,7 @@ export async function dispatchOutbox(ctx: Ctx) {
 }
 
 /**
- * 期限を過ぎた連携の state・.ics のトークン・ログイン開始の記録とログインコード・冪等キー、古いお知らせと日ごとの数、
+ * 期限を過ぎた連携の state・.ics のトークン・ログイン開始の記録とログインコード・冪等キー、失効・期限切れから30日を過ぎたセッションと更新用トークン、古いお知らせと日ごとの数、
  * 参照されないリンクのプレビューと画像を消す
  */
 export async function cleanupExpired(ctx: Ctx) {
@@ -84,6 +84,7 @@ export async function cleanupExpired(ctx: Ctx) {
   await deleteExpiredOauthStates(ctx.env.DB, now - OAUTH_STATE_TTL_MS);
   await deleteExpiredIcsTokens(ctx.env.DB, now);
   await deleteExpiredLoginRecords(identityDb(ctx.env.DB), now);
+  await deleteDeadSessions(ctx.env.DB, now);
   await deleteExpiredIdempotencyKeys(ctx.env.DB, now);
   await cleanupNotifications(ctx);
   await cleanupLinkPreviews(ctx);
