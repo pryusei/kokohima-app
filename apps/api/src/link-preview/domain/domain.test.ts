@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { images } from "../../../test/images";
 import { acceptImage, sniffType } from "./image";
 import { isPublicAddress } from "./ip";
-import { charsetOfContentType, cleanText, metaCharset, parseOgp } from "./parse";
+import { charsetOfContentType, cleanText, metaCharset, parseOgp, stripIgnored } from "./parse";
 import { fetchableUrl, parseOwnDomains } from "./url";
 
 // docs/specs/T-08-link-preview.md「テスト計画」の domain の項目
@@ -175,6 +175,19 @@ describe("解析", () => {
     expect(parseOgp(page("", `<meta property="og:title" content="体">`))).toBeNull();
     expect(parseOgp(page(`<!-- <meta property="og:title" content="x"> -->`))).toBeNull();
     expect(parseOgp(page(`<script>var s='<meta property="og:title" content="x">'</script>`))).toBeNull();
+  });
+
+  it("閉じのないコメント・script が多数あっても、ページの大きさに比例する時間で終わる", () => {
+    const evil = page(`<meta property="og:title" content="先頭">${"<!--".repeat(100_000)}${"<script ".repeat(50_000)}`);
+    const start = Date.now();
+    expect(parseOgp(evil)?.title).toBe("先頭");
+    expect(Date.now() - start).toBeLessThan(1000);
+    const unclosed = page(`<title>題</title>${"<meta ".repeat(100_000)}`);
+    const t2 = Date.now();
+    expect(parseOgp(unclosed)?.title).toBe("題");
+    expect(parseOgp(page(`<meta property="og:title" content="x">${"<title>".repeat(100_000)}`))?.title).toBe("x");
+    expect(Date.now() - t2).toBeLessThan(1000);
+    expect(stripIgnored("a<!--x-->b<script>c</script >d<style>e</STYLE>f<scripts>g")).toBe("abdf<scripts>g");
   });
 
   it("タイトルも説明もなければ null", () => {

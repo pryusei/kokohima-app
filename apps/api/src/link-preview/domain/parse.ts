@@ -44,6 +44,71 @@ export function headOf(html: string): string {
   return end === -1 ? html : html.slice(0, end);
 }
 
+/**
+ * コメントと script・style の中身を除く。左から1回だけ見ていく（閉じがなければ残りを捨てて終える）ので、
+ * 閉じのない開始が多数あっても、ページの大きさに比例する時間で終わる
+ */
+export function stripIgnored(text: string): string {
+  const lower = text.toLowerCase();
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const next = lower.indexOf("<", i);
+    if (next === -1) return out + text.slice(i);
+    let closer: string | null = null;
+    if (lower.startsWith("<!--", next)) closer = "-->";
+    else if (/^<(script|style)[\s>/]/.test(lower.slice(next, next + 8))) closer = lower.startsWith("<script", next) ? "</script" : "</style";
+    if (closer === null) {
+      out += text.slice(i, next + 1);
+      i = next + 1;
+      continue;
+    }
+    out += text.slice(i, next);
+    const end = lower.indexOf(closer, next + 4);
+    if (end === -1) return out;
+    const gt = closer === "-->" ? end + 2 : lower.indexOf(">", end);
+    if (gt === -1) return out;
+    i = gt + 1;
+  }
+}
+
+/** <meta ...> のタグを左から順に。閉じの > がなければそこで終える（ページの大きさに比例する時間） */
+export function* metaTags(text: string): Generator<string> {
+  const lower = text.toLowerCase();
+  let i = 0;
+  for (;;) {
+    const start = lower.indexOf("<meta", i);
+    if (start === -1) return;
+    const after = lower[start + 5] ?? "";
+    if (!/[\s/>]/.test(after)) {
+      i = start + 5;
+      continue;
+    }
+    const end = lower.indexOf(">", start);
+    if (end === -1) return;
+    yield text.slice(start, end + 1);
+    i = end + 1;
+  }
+}
+
+/** 最初の <title> の中身。閉じがなければ null */
+export function titleOf(text: string): string | null {
+  const lower = text.toLowerCase();
+  let i = 0;
+  for (;;) {
+    const start = lower.indexOf("<title", i);
+    if (start === -1) return null;
+    if (!/[\s>]/.test(lower[start + 6] ?? "")) {
+      i = start + 6;
+      continue;
+    }
+    const open = lower.indexOf(">", start);
+    if (open === -1) return null;
+    const close = lower.indexOf("</title", open);
+    return close === -1 ? null : text.slice(open + 1, close);
+  }
+}
+
 /** タグの属性を読む（名前は小文字） */
 export function attributesOf(tag: string): Map<string, string> {
   const attrs = new Map<string, string>();
@@ -59,17 +124,15 @@ export function attributesOf(tag: string): Map<string, string> {
 /** HTML から OGP を取り出す。タイトルも説明もなければ null（failed） */
 export function parseOgp(html: string): Ogp | null {
   // コメントと script・style の中身は読まない
-  const head = headOf(html)
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, "");
+  const head = stripIgnored(headOf(html));
   const meta = new Map<string, string>();
-  for (const m of head.matchAll(/<meta\b[^>]*>/gi)) {
-    const attrs = attributesOf(m[0]);
+  for (const tag of metaTags(head)) {
+    const attrs = attributesOf(tag);
     const key = (attrs.get("property") ?? attrs.get("name") ?? "").toLowerCase();
     const content = attrs.get("content");
     if (key && content !== undefined && !meta.has(key)) meta.set(key, content);
   }
-  const titleTag = /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(head)?.[1];
+  const titleTag = titleOf(head);
   const title = cleanText(meta.get("og:title"), TITLE_MAX) ?? cleanText(titleTag, TITLE_MAX);
   const description =
     cleanText(meta.get("og:description"), DESCRIPTION_MAX) ?? cleanText(meta.get("description"), DESCRIPTION_MAX);
@@ -85,8 +148,8 @@ export function parseOgp(html: string): Ogp | null {
 
 /** <meta charset> か http-equiv の content の charset。なければ null */
 export function metaCharset(head: string): string | null {
-  for (const m of head.matchAll(/<meta\b[^>]*>/gi)) {
-    const attrs = attributesOf(m[0]);
+  for (const tag of metaTags(head)) {
+    const attrs = attributesOf(tag);
     const charset = attrs.get("charset");
     if (charset) return charset.trim().toLowerCase();
     if ((attrs.get("http-equiv") ?? "").toLowerCase() === "content-type") {
