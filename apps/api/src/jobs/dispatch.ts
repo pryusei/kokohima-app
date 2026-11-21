@@ -148,6 +148,7 @@ export async function runStep(step: string, fn: () => Promise<unknown>) {
   try {
     await fn();
   } catch (e) {
-    console.log(JSON.stringify({ event: "cron_step_failed", step, name: e instanceof Error ? e.name : "unknown" }));
+    // Monitors で数えるログなので warn（error にすると Workers Issues にも上がり、通知が二重になる。docs/specs/T-13-monitoring.md）
+    console.warn(JSON.stringify({ event: "cron_step_failed", step, name: e instanceof Error ? e.name : "unknown" }));
   }
 }

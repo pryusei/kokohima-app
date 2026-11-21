@@ -7,6 +7,7 @@ import { availabilityRoutes } from "./availability/routes";
 import { calendarRoutes } from "./calendar/routes";
 import { identityRoutes } from "./identity/routes";
 import { invitationRoutes } from "./invitation/routes";
+import { healthRoutes } from "./jobs/health";
 import { resolveDoh } from "./link-preview/infra/dns";
 import { linkPreviewRoutes } from "./link-preview/routes";
 import { notificationRoutes } from "./notification/routes";
@@ -56,6 +57,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
   });
 
   app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
+  app.route("/api/v1", healthRoutes());
   app.route("/api/v1", identityRoutes());
   app.route("/api/v1", socialRoutes());
   app.route("/api/v1", availabilityRoutes());

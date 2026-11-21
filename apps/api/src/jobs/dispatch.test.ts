@@ -35,6 +35,10 @@ beforeEach(async () => {
   vi.spyOn(console, "log").mockImplementation((line: unknown) => {
     logs.push(String(line));
   });
+  // cron_step_failed は warn で出る（docs/specs/T-13-monitoring.md）
+  vi.spyOn(console, "warn").mockImplementation((line: unknown) => {
+    logs.push(String(line));
+  });
 });
 
 afterEach(() => {
@@ -354,7 +358,11 @@ describe("定期処理の独立とログ", () => {
       } as unknown as D1Database,
     };
     await expect(runScheduled("*/15 * * * *", failing, h.deps)).resolves.toBeUndefined();
-    expect(events("cron_step_failed")).toEqual([{ event: "cron_step_failed", step: "assign_syncs", name: "Error" }]);
+    // D1 がすべて失敗するので、動いた記録（docs/specs/T-13-monitoring.md）の書き込みも失敗する
+    expect(events("cron_step_failed")).toEqual([
+      { event: "cron_step_failed", step: "assign_syncs", name: "Error" },
+      { event: "cron_step_failed", step: "heartbeat", name: "Error" },
+    ]);
   });
 });
 

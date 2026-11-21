@@ -10,6 +10,7 @@
 
 ## ルール
 - 管理画面で手動変更しない。変更は必ずPRで行う
+  - 例外：監視の通知の設定（Cloudflare の Monitors・Workers Issues の通知・通知先の webhook）は、管理画面で人が設定する。設定の内容は `docs/runbooks/monitoring.md` を正とし、変えるときは先に手順書を直す PR を出す（docs/specs/T-13-monitoring.md「設定の置き場所」）
 - `terraform apply` は人が実行する（CIは plan まで）。Claudeには実行させない
 - D1は `prevent_destroy` で守っている。置き換えが必要な変更は、バックアップと移行手順を仕様書に書いてから
 - プロバイダはバージョンを固定し、更新はDependabotのPRで差分を確認してから

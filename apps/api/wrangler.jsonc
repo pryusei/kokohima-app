@@ -9,7 +9,8 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   // リクエストの URL にトークンが入る経路がある（OAuth のコールバックの code、.ics のパス）ので、
   // URL を含む呼び出しのログを出さない（docs/specs/T-06-calendar.md 決定事項14）。アプリの console のログは残る
-  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  // issues：捕まえていない例外・5xx・error のログを Workers Issues にまとめる（docs/specs/T-13-monitoring.md）。設定に書かないと、次のデプロイで無効に戻る
+  "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
 
   // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS、
   // RESEND_API_KEY、VAPID_PRIVATE_KEY、NOTIFICATION_KEYS）は
@@ -155,6 +156,8 @@
     },
     "prod": {
       // TODO: 本番の値に置き換える（ドメイン、Google／AppleのクライアントID）
+      // トップレベルと同じ（継承される設定だが、本番で Workers Issues が外れないよう明示する。docs/specs/T-13-monitoring.md）
+      "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
       "vars": {
         "APP_ORIGIN": "https://prod.example.invalid",
         "GOOGLE_CLIENT_ID": "",

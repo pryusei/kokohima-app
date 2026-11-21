@@ -62,6 +62,7 @@ description: APIの全体共通ルール（パス、メソッド、ID、日時�
 | 同じ冪等キーの処理が実行中 | 409 | `request_in_progress` |
 | 送信上限・レート制限 | 429（`Retry-After` を付ける） | `rate_limited` |
 | 想定外 | 500 | `internal_error` |
+| 死活確認で、サービスが正常でない（`GET /api/v1/health/ready` だけ。理由は返さない） | 503 | `unavailable` |
 
 - `invalid_state` と `expired` の使い分け
   - `invalid_state`：利用者やシステムの操作で状態が変わったために、もう実行できない（返答済み、決定済み、キャンセル済み、自動で断った後など）
