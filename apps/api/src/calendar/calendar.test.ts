@@ -275,6 +275,8 @@ describe("状態と解除", () => {
     const a = await authenticated();
     await connect(a);
     const row = await connectionRow(a);
+    // 暗号化した行があることを先に確かめる（ないと、書き換えた値が何であっても通ってしまう）
+    expect(row?.refresh_token_enc).toMatch(/^v1\.[^.]+\.[^.]+\.[^.]+$/);
     // 設定の誤りで鍵が消えた場合を、行の鍵IDを知らない値に書き換えて再現する（形は v1.<kid>.<iv>.<暗号文>）
     const [, , iv, cipher] = (row?.refresh_token_enc ?? "").split(".");
     await env.DB.prepare("UPDATE calendar_connections SET refresh_token_enc = ?1 WHERE user_id = ?2 AND provider = 'google'")
