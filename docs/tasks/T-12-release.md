@@ -14,7 +14,7 @@
   - `apps/web` のビルドを、API と同じ Worker の静的アセットとして出す（同じオリジン）
   - 画面の応答と API の応答に、セキュリティのヘッダーを付ける
   - Sign in with Apple を設定で止める（API の経路を閉じ、画面のボタンを出さない。コードは残す）
-  - staging・prod の wrangler の設定を、ドメイン `kokohima.app` に合わせる（カスタムドメイン、`APP_ORIGIN`、`LINK_PREVIEW_OWN_DOMAINS`、`MAIL_FROM`、`workers.dev` を閉じる）
+  - prod の wrangler の設定を、ドメイン `kokohima.app` に合わせる（カスタムドメイン、`APP_ORIGIN`、`LINK_PREVIEW_OWN_DOMAINS`、`MAIL_FROM`、`workers.dev` を閉じる）。staging は作らない
   - 本番のビルドの検査を、画面を含めた形にする
   - #52 の人が行う作業の一覧を、この形に合わせて書き直す
 - やらないこと（スコープ外）：

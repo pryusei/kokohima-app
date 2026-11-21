@@ -49,7 +49,7 @@
 ## 振る舞い
 
 ### 振り分け（`apps/api/src/worker.ts`）
-- wrangler の `assets` は staging・prod の環境にだけ書く（ローカルの開発と E2E は、今までどおり vite が画面を出し、`/api` を wrangler dev へ中継する）。
+- wrangler の `assets` は prod の環境にだけ書く（ローカルの開発と E2E は、今までどおり vite が画面を出し、`/api` を wrangler dev へ中継する）。
   - `directory`：`../web/dist`、`binding`：`ASSETS`、`not_found_handling`：`single-page-application`、`run_worker_first`：`true`。
 - Worker の `fetch` は次のとおりに振り分ける。
   - パスが `/api/` で始まる：今までどおり Hono のアプリ。
@@ -82,15 +82,16 @@
 - Google のログイン・既存の Apple のアカウントの扱い（T-01）は変えない。
 
 ### ドメインと環境の設定（wrangler）
-| 項目 | staging | prod |
-| --- | --- | --- |
-| `routes` | `staging.kokohima.app`（`custom_domain: true`） | `kokohima.app`（`custom_domain: true`） |
-| `workers_dev`・`preview_urls` | `false`・`false` | `false`・`false` |
-| `APP_ORIGIN` | `https://staging.kokohima.app` | `https://kokohima.app` |
-| `LINK_PREVIEW_OWN_DOMAINS` | `kokohima.app` | `kokohima.app` |
-| `MAIL_FROM` | `ここ暇 <notify@kokohima.app>` | `ここ暇 <notify@kokohima.app>` |
-| `APPLE_LOGIN_ENABLED` | `"0"` | `"0"` |
-| `assets` | 上の「振り分け」 | 上の「振り分け」 |
+| 項目 | prod |
+| --- | --- |
+| `routes` | `kokohima.app`（`custom_domain: true`） |
+| `workers_dev`・`preview_urls` | `false`・`false` |
+| `APP_ORIGIN` | `https://kokohima.app` |
+| `LINK_PREVIEW_OWN_DOMAINS` | `kokohima.app` |
+| `MAIL_FROM` | `ここ暇 <notify@kokohima.app>` |
+| `APPLE_LOGIN_ENABLED` | `"0"` |
+| `assets` | 上の「振り分け」 |
+- staging は最初のリリースでは使わない（決定事項5）。wrangler の staging の環境は、`APPLE_LOGIN_ENABLED: "0"` を足すだけで、ほかは今のまま（作るときに prod と同じ形にそろえる）。Terraform の `envs/staging` も apply しない。
 - `workers.dev` と プレビューの URL を閉じ、外に出す窓口を `kokohima.app` だけにする（要求定義書「使わないルートは閉じる」）。
 - D1・KV の ID、VAPID の公開鍵、`NOTIFICATION_START_AT`、Google のクライアント ID は、人が値を決めて転記する（「人が行う作業」）。
 
@@ -110,7 +111,7 @@
 7. `wrangler d1 migrations apply kokohima-prod --remote --env prod`。
 8. `pnpm --filter api deploy:prod`。
 9. 最初のデプロイのあとに確かめる：`https://kokohima.app` が開く、証明書、`workers.dev` が開かない、ヘッダー（ブラウザの開発ツール）、Google でログインできる、`/invites/xxx` を直接開ける。
-- staging は、本番の前に同じ手順で試したいときだけ作る（友達だけの最初のリリースでは省いてよい）。
+- staging は作らない（決定事項5）。
 
 ## 認可と秘匿
 - 閲覧者IDの使い方：変わらない（API の経路は今のまま）。
@@ -144,10 +145,10 @@
 2. ドメインは `kokohima.app`（利用者が取得済み）。画面と API を同じ Worker・同じオリジンから出す（提案）。
 3. セキュリティのヘッダーは `_headers` ファイルでなく、Worker のコードで付ける（公式の資料で確かめられなかったことに頼らず、テストで確かめられる形にする）。そのため `run_worker_first: true` にする。（提案）
 4. Apple は設定値で止め、コードは残す（あとで戻せるように）。（提案）
-5. staging は任意にする（友達だけの最初のリリースでは prod だけでよい）。（提案）
+5. 最初のリリースは prod だけにし、staging は作らない（利用者と決めた）。
 
 ## 確認事項（合意前に解消する）
-- 決定事項2〜5でよいか。
+- 決定事項2〜4でよいか。
 - 送信のメールアドレス `notify@kokohima.app` でよいか。
 
 ## 変更履歴
