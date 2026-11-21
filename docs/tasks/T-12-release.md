@@ -27,7 +27,9 @@
 - [ ] 本番の設定では、`https://kokohima.app/` で画面が、`https://kokohima.app/api/v1/...` で API が、同じ Worker から出る。画面の経路（`/invites/xxx` など）を直接開いても画面が出る
 - [ ] 画面と API の応答に、仕様書のセキュリティのヘッダーが付く
 - [ ] Apple のログインを止めた環境では、Apple の経路が使えず、画面に「Appleでログイン」が出ない
-- [ ] 本番のビルドに、画面のファイルが含まれ、E2E 用の名前が含まれない
+- [ ] 本番のビルドに、画面のファイルが含まれ、E2E 用の名前と Apple のボタンが含まれない
+- [ ] prod の設定で `workers_dev`・`preview_urls` が false で、`routes` は `kokohima.app` だけ
+- [ ] 本番と同じ形（静的アセット）で画面を開くと、CSP の違反なしに画面が出る
 - [ ] 単体テストが追加され、通る
 - [ ] 仕様書でE2Eの対象にした流れのE2Eテストが通る
 - [ ] 仕様書とコードに齟齬がない（仕様の変更は仕様書に反映済み）
@@ -37,4 +39,5 @@
 - docs/specs/T-12-release.md（仕様書PRとして先に追加し、マージ後に実装PRを作る）
 
 ## 参考
+- 画面：docs/design/（ログインの画面・招待の画面の Apple のボタンを出さない）
 - 関係するスキル：infra-change、api-conventions、e2e-testing
