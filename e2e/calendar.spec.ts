@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
-import { befriend, expect, newUser, test, type E2EUser } from "./fixtures";
+import { addAvailability, befriend, expect, newUser, sheet, test, type E2EUser } from "./fixtures";
 
 // T-06 カレンダー連携（docs/specs/T-06-calendar.md「E2Eテスト」）。Google は E2E のエントリの偽の実装に向く
 // 夜の枠が過去にならないよう、日付は明日（Asia/Tokyo）を使う
@@ -37,8 +37,10 @@ const mine = (page: Page) => page.getByRole("list", { name: "自分のここ暇"
 
 test("連携：設定で連携 → 偽の認可画面 → 「連携中」→ 「連携をやめる」で「連携していません」", async ({ browser }) => {
   const a = await newUser(browser, "A");
+  // 設定は友達タブの「アカウント」の節から開く（docs/specs/T-11-design.md）
   await a.page.goto("/friends");
-  await a.page.getByRole("link", { name: "カレンダー連携" }).click();
+  await a.page.getByRole("link", { name: /設定/ }).click();
+  await a.page.getByRole("link", { name: /カレンダー連携/ }).click();
   await connect(a.page);
   await a.page.getByRole("button", { name: "連携をやめる" }).click();
   await expect(a.page.getByText("連携していません")).toBeVisible();
@@ -50,13 +52,14 @@ test("候補：連携した人のここ暇タブに候補が出て、押すと�
   await setBusy(a, [{ startsAt: at(date, "17:00"), endsAt: at(date, "18:00") }]);
   await connect(a.page);
   await a.page.goto("/availability");
-  const candidates = a.page.getByRole("button", { name: /夜 19:00〜23:00/ });
-  const tomorrowLabel = new RegExp(`^${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}（.）`);
-  await expect(candidates.filter({ hasText: tomorrowLabel })).toBeVisible();
-  await expect(a.page.getByRole("button", { name: /夕方 16:00〜19:00/ }).filter({ hasText: tomorrowLabel })).toHaveCount(0);
-  await candidates.filter({ hasText: tomorrowLabel }).click();
+  // 候補の行ごとに「ここ暇にする」を置く。読み上げの名前に日付と時間帯が入る
+  const day = `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}（.）`;
+  const candidate = (slot: string) => a.page.getByRole("button", { name: new RegExp(`^${day} ${slot}をここ暇にする$`) });
+  await expect(candidate("夜 19:00〜23:00")).toBeVisible();
+  await expect(candidate("夕方 16:00〜19:00")).toHaveCount(0);
+  await candidate("夜 19:00〜23:00").click();
   await expect(mine(a.page).getByText(/夜 19:00〜23:00/)).toBeVisible();
-  await expect(candidates.filter({ hasText: tomorrowLabel })).toHaveCount(0);
+  await expect(candidate("夜 19:00〜23:00")).toHaveCount(0);
 });
 
 test("自動取り消し：A のここ暇が実予定で消え、B の誘いが「今回は難しい」になる", async ({ browser }) => {
@@ -68,23 +71,21 @@ test("自動取り消し：A のここ暇が実予定で消え、B の誘いが�
   await connect(a.page);
   // 最初の確認は記録だけ。ここ暇を作ってからもう一度確かめ、作った枠を「前回の確認より前」にする
   await sync(a);
-  await a.page.goto("/availability");
-  await a.page.getByLabel("日付").fill(date);
-  await a.page.getByRole("button", { name: "夜", exact: true }).click();
+  await addAvailability(a.page, date, "夜");
   await expect(mine(a.page).getByText(/夜 19:00〜23:00/)).toBeVisible();
   await sync(a);
 
   await b.page.goto("/");
   await b.page.getByRole("listitem").filter({ hasText: a.displayName }).getByRole("link", { name: "この時間に誘う" }).click();
   await b.page.getByRole("button", { name: "誘う", exact: true }).click();
-  await expect(b.page.getByText("返事待ち")).toBeVisible();
+  await expect(sheet(b.page).getByText("返事待ち")).toBeVisible();
 
   await setBusy(a, [{ startsAt: at(date, "20:00"), endsAt: at(date, "21:00") }]);
   await sync(a);
   await drain(a);
 
   await a.page.goto("/availability");
-  await expect(a.page.getByRole("heading", { name: "ここ暇を追加" })).toBeVisible();
+  await expect(a.page.getByRole("heading", { name: /^自分のここ暇/ })).toBeVisible();
   await expect(mine(a.page).getByText(/夜 19:00〜23:00/)).toHaveCount(0);
   await b.page.goto("/invites?tab=sent");
   const item = b.page.getByRole("list", { name: "送信した誘い" }).getByRole("listitem").filter({ hasText: a.displayName });
@@ -96,19 +97,17 @@ test(".ics：成立した予定の詳細から .ics を開くと、中身に予�
   const b = await newUser(browser, "B");
   await befriend(a, b);
   const date = tomorrow();
-  await b.page.goto("/availability");
-  await b.page.getByLabel("日付").fill(date);
-  await b.page.getByRole("button", { name: "夜", exact: true }).click();
+  await addAvailability(b.page, date, "夜");
   await expect(mine(b.page).getByText(/夜 19:00〜23:00/)).toBeVisible();
 
   await a.page.goto("/");
   await a.page.getByRole("listitem").filter({ hasText: b.displayName }).getByRole("link", { name: "この時間に誘う" }).click();
   await a.page.getByRole("button", { name: "誘う", exact: true }).click();
-  await expect(a.page.getByText("返事待ち")).toBeVisible();
+  await expect(sheet(a.page).getByText("返事待ち")).toBeVisible();
   await b.page.goto("/invites?tab=received");
   await b.page.getByRole("list", { name: "受信した誘い" }).getByRole("link").filter({ hasText: a.displayName }).click();
   await b.page.getByRole("button", { name: "行く" }).click();
-  await expect(b.page.getByText("成立", { exact: true })).toBeVisible();
+  await expect(sheet(b.page).getByText("成立", { exact: true })).toBeVisible();
 
   await a.page.goto("/invites?tab=meetups");
   await a.page.getByRole("list", { name: "成立した予定" }).getByRole("link").filter({ hasText: b.displayName }).click();

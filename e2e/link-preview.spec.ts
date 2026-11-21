@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { befriend, expect, friendList, newUser, test, type E2EUser } from "./fixtures";
+import { befriend, expect, friendList, newUser, sheet, test, type E2EUser } from "./fixtures";
 
 // T-08 リンクのプレビュー（docs/specs/T-08-link-preview.md「E2Eテスト」）。取得先は E2E のエントリの偽のサイト（ogp.e2e.invalid）
 // 並んで走るテストが同じ URL を取り合わないよう、URL にテストごとの値を付ける。日付は明日（Asia/Tokyo）
@@ -44,7 +44,7 @@ test("AがBにリンク付きで誘う → outbox を処理する → Bの誘い
   await befriend(a, b);
   await inviteWithLink(a.page, b, pageUrl());
   // 処理するまではドメインだけ
-  await expect(a.page.getByRole("link", { name: "ogp.e2e.invalid" })).toBeVisible();
+  await expect(sheet(a.page).getByRole("link", { name: "ogp.e2e.invalid" })).toBeVisible();
   await drain(a);
 
   await openReceived(b.page, a);

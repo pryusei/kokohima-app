@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { befriend, expect, friendList, newUser, test } from "./fixtures";
+import { addAvailability, befriend, expect, friendList, newUser, sheet, test } from "./fixtures";
 
 // T-03 ここ暇（docs/specs/T-03-availability.md「E2Eテスト」）
 // 夜の枠が過去にならないよう、日付は明日（Asia/Tokyo）を使う
@@ -16,16 +16,14 @@ function tokyoDate(offsetDays: number) {
 }
 
 async function addNight(page: Page, date: string) {
-  await page.goto("/availability");
-  await page.getByLabel("日付").fill(date);
-  await page.getByRole("button", { name: "夜", exact: true }).click();
+  await addAvailability(page, date, "夜");
   await expect(page.getByRole("list", { name: "自分のここ暇" }).getByText(/夜 19:00〜23:00/)).toBeVisible();
 }
 
 async function openFriendDetail(page: Page, displayName: string) {
   await page.goto("/friends");
   await friendList(page).getByRole("link", { name: displayName }).click();
-  await expect(page.getByRole("heading", { name: displayName })).toBeVisible();
+  await expect(sheet(page).getByRole("heading", { name: displayName })).toBeVisible();
 }
 
 test("Aが「夜」でここ暇を作ると、友達Bの「みんな」に表示名と「夜 19:00〜23:00」が出る", async ({ browser }) => {
@@ -68,7 +66,7 @@ test("AがBに「見せない」にすると、Bの「みんな」と友達の�
 
   for (const friend of [a, c]) {
     await openFriendDetail(b.page, friend.displayName);
-    await expect(b.page.getByText("見えているここ暇はありません")).toBeVisible();
+    await expect(sheet(b.page).getByText("見えているここ暇はありません")).toBeVisible();
     await expect(b.page.getByRole("list", { name: "友達のここ暇" }).getByRole("listitem")).toHaveCount(0);
   }
 });
@@ -77,14 +75,19 @@ test("毎週のくり返しを作ると自分の一覧に出て、「この日�
   const tomorrow = tokyoDate(1);
   const nextWeek = tokyoDate(8);
   await page.goto("/availability");
-  await page.getByLabel("曜日").selectOption(String(tomorrow.weekday));
-  await page.getByLabel("時間帯", { exact: true }).selectOption("night");
-  await page.getByRole("button", { name: "くり返しを追加" }).click();
+  // くり返しの追加はシートで開く（docs/specs/T-11-design.md）
+  await page.getByRole("button", { name: "くり返しを追加する" }).click();
+  const dialog = sheet(page, "くり返しを追加");
+  await dialog.getByLabel("曜日").selectOption(String(tomorrow.weekday));
+  await dialog.getByLabel("時間帯", { exact: true }).selectOption("night");
+  await dialog.getByRole("button", { name: "くり返しを追加" }).click();
   await expect(page.getByRole("list", { name: "くり返し" })).toContainText(`毎週${WEEKDAYS[tomorrow.weekday]}曜 夜 19:00〜23:00`);
+  await page.keyboard.press("Escape");
 
   const mine = page.getByRole("list", { name: "自分のここ暇" });
-  const first = mine.getByRole("listitem").filter({ hasText: `${tomorrow.label} 夜 19:00〜23:00` });
-  const second = mine.getByRole("listitem").filter({ hasText: `${nextWeek.label} 夜 19:00〜23:00` });
+  const row = (label: string) => mine.getByRole("listitem").filter({ hasText: label }).filter({ hasText: "夜 19:00〜23:00" });
+  const first = row(tomorrow.label);
+  const second = row(nextWeek.label);
   await expect(first).toBeVisible();
   await expect(second).toBeVisible();
 

@@ -4,6 +4,8 @@
 | --- | --- |
 | 要件検証モック（SPA、デモ操作つき） | https://claude.ai/artifact/7qHEYLMu6GRRLcgK1rMaV7 |
 | MVP画面一覧（12画面のダミー、キャンバス） | https://claude.ai/artifact/EF5rmHvkbeuP7TrTPEkrU9 |
+| デザインシステム「ここ暇」（トークン・部品・言葉。T-11 の正） | https://claude.ai/artifact/PPjh8Ur95KSyJXMLTRyUG3 |
+| MVP画面（27枚のキャンバス。T-11 の正） | https://claude.ai/artifact/FrMBeuctbQiPfQDdWYLimz |
 | 要求定義書（Claude Docsの原本） | https://claude.ai/code/artifact/9aec0644-e123-4ede-8fb8-0d8cf4efac81 |
 
 リンクは作成者のアカウントでのみ開けます。共有する場合は各画面の共有設定から行ってください。
@@ -14,10 +16,12 @@ Claude Design用のプロンプトは `claude-design-prompts.md` にあります
 2. 気まずくない：断り・期限切れ・キャンセルを赤やエラー色で表示しない
 3. 安心：「見せない相手」と「暇がない相手」の見た目を完全に同じにする
 
-## 方向性（ダミーで使った値）
-- 文字 #17213A、背景 #EEF2F8、面 #FFFFFF、補助文字 #5B6784、線 #DCE2EE
-- ここ暇・重なり #FFC53D（淡い #FFF1C8）、成立 #137A64（淡い #D9F3EC）
-- フォント：Zen Maru Gothic
+## 方向性（デザインシステム「ここ暇」の値。apps/web/src/index.css のトークン）
+- SmartHR UI（MIT）の既定のテーマの値に近づけた。危険の赤とブランド色（ターコイズ）は使わない
+- 文字 #23221E、背景 #F8F7F6、面 #FFFFFF、補助文字 #706D65、線 #D6D3D0、主ボタン #0077C7
+- ここ暇・重なり #FFCC17（淡い #FFF5D1）、成立 #0F7F85（淡い #E1F2F2）、静かな状態 #EDEBE8 に #65625B
+- フォント：端末の標準の書体（system-ui、ヒラギノ角ゴ、Noto Sans JP）。Web フォントは読み込まない
+- 夜（ダーク）のテーマは端末の設定に合わせる
 
 ## 画面一覧（約22画面）
 

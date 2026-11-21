@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { befriend, expect, newUser, test, type E2EUser } from "./fixtures";
+import { befriend, expect, newUser, sheet, test, type E2EUser } from "./fixtures";
 
 // T-05 募集（docs/specs/T-05-broadcast.md「E2Eテスト」）
 // 夜の時間が過去にならないよう、日付は明日（Asia/Tokyo）を使う
@@ -25,7 +25,7 @@ async function createBroadcast(owner: E2EUser, opts: { expiresIn?: string; area?
 async function openReceived(page: Page, owner: E2EUser) {
   await page.goto("/invites?tab=broadcasts");
   await page.getByRole("list", { name: "受け取った募集" }).getByRole("link").filter({ hasText: owner.displayName }).click();
-  await expect(page.getByText(owner.displayName)).toBeVisible();
+  await expect(sheet(page).getByText(`募集した人：${owner.displayName}`)).toBeVisible();
 }
 
 /** E2E 環境だけの経路で、募集者の募集の期限を過ぎた状態にする（決定事項5） */
@@ -52,27 +52,28 @@ test("AがB・C・Dに募集 → BとCが応じる → Aには人数だけ → �
   for (const f of [b, c]) {
     await openReceived(f.page, a);
     await f.page.getByRole("button", { name: "応じる" }).click();
-    await expect(f.page.getByText("応じました")).toBeVisible();
+    await expect(sheet(f.page).getByText("応じました")).toBeVisible();
   }
 
   await a.page.goto(`/broadcasts/${id}`);
-  await expect(a.page.getByText("2人が応じています")).toBeVisible();
+  await expect(sheet(a.page).getByText("2人が応じています")).toBeVisible();
   await expect(a.page.getByText(b.displayName)).toHaveCount(0);
   await expect(a.page.getByText(c.displayName)).toHaveCount(0);
   await a.page.getByRole("button", { name: "決める" }).click();
   await a.page.getByRole("link", { name: "成立した予定を見る" }).click();
-  await expect(a.page.getByText(new RegExp(`${b.displayName}.*${c.displayName}|${c.displayName}.*${b.displayName}`))).toBeVisible();
+  await expect(sheet(a.page).getByText(b.displayName)).toBeVisible();
+  await expect(sheet(a.page).getByText(c.displayName)).toBeVisible();
 
   await openReceived(b.page, a);
-  await expect(b.page.getByText("成立", { exact: true })).toBeVisible();
+  await expect(sheet(b.page).getByText("成立", { exact: true })).toBeVisible();
   await b.page.getByRole("link", { name: "成立した予定を見る" }).click();
-  await expect(b.page.getByText(a.displayName)).toBeVisible();
-  await expect(b.page.getByText(c.displayName)).toBeVisible();
+  await expect(sheet(b.page).getByText(a.displayName)).toBeVisible();
+  await expect(sheet(b.page).getByText(c.displayName)).toBeVisible();
 
   await openReceived(c.page, a);
   await c.page.getByRole("link", { name: "成立した予定を見る" }).click();
-  await expect(c.page.getByText(a.displayName)).toBeVisible();
-  await expect(c.page.getByText(b.displayName)).toBeVisible();
+  await expect(sheet(c.page).getByText(a.displayName)).toBeVisible();
+  await expect(sheet(c.page).getByText(b.displayName)).toBeVisible();
 
   // A・B・C の「成立」に予定が出る
   for (const p of [a.page, b.page, c.page]) {
@@ -81,7 +82,7 @@ test("AがB・C・Dに募集 → BとCが応じる → Aには人数だけ → �
   }
 
   await openReceived(d.page, a);
-  await expect(d.page.getByText("募集中")).toBeVisible();
+  await expect(sheet(d.page).getByText("募集中")).toBeVisible();
   await expect(d.page.getByRole("button", { name: "応じる" })).toBeVisible();
 });
 
@@ -93,7 +94,7 @@ test("誰も応じないまま期限が過ぎる → Aには「期限が過ぎ�
   await expireBroadcast(a, id);
 
   await a.page.goto(`/broadcasts/${id}`);
-  await expect(a.page.getByText("期限が過ぎました")).toBeVisible();
+  await expect(sheet(a.page).getByText("期限が過ぎました")).toBeVisible();
   await a.page.getByRole("link", { name: "もう一度募集する" }).click();
   await expect(a.page.getByLabel(b.displayName)).toBeChecked();
   await expect(a.page.getByLabel(c.displayName)).toBeChecked();
@@ -101,7 +102,7 @@ test("誰も応じないまま期限が過ぎる → Aには「期限が過ぎ�
 
   for (const f of [b, c]) {
     await openReceived(f.page, a);
-    await expect(f.page.getByText("締め切りました")).toBeVisible();
+    await expect(sheet(f.page).getByText("締め切りました")).toBeVisible();
   }
 });
 
@@ -113,7 +114,7 @@ test("3人の予定でBが「やっぱり難しい」→ Bの「成立」から�
   for (const f of [b, c]) {
     await openReceived(f.page, a);
     await f.page.getByRole("button", { name: "応じる" }).click();
-    await expect(f.page.getByText("応じました")).toBeVisible();
+    await expect(sheet(f.page).getByText("応じました")).toBeVisible();
   }
   await a.page.goto(`/broadcasts/${id}`);
   await a.page.getByRole("button", { name: "決める" }).click();
@@ -122,7 +123,7 @@ test("3人の予定でBが「やっぱり難しい」→ Bの「成立」から�
   await openReceived(b.page, a);
   await b.page.getByRole("link", { name: "成立した予定を見る" }).click();
   await b.page.getByRole("button", { name: "やっぱり難しい" }).click();
-  await expect(b.page.getByText("やっぱり難しくなりました")).toBeVisible();
+  await expect(sheet(b.page).getByText("やっぱり難しくなりました")).toBeVisible();
 
   await meetupsOf(b.page);
   await expect(b.page.getByText("これからの成立した予定はありません")).toBeVisible();
