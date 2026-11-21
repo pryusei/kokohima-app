@@ -4,13 +4,20 @@ import { useState } from "react";
 import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
-import { Link, Nav } from "../components/Nav";
-import { broadcastStatusClass, broadcastStatusText, formatRange } from "../invitations/format";
+import { broadcastStatusText, broadcastStatusTone, formatRange } from "../invitations/format";
 import { broadcastQuery } from "../invitations/queries";
-import { displayNameOf } from "./FriendsPage";
-import { LinkPreviewCard } from "../invitations/LinkPreviewCard";
+import { displayNameOf } from "../account/me";
+import { Avatar } from "../ui/Avatar";
+import { Badge } from "../ui/Badge";
+import { SheetScreen } from "../ui/BottomSheet";
+import { ButtonLink, SendButton } from "../ui/Button";
+import { LoadError, Loading, Note } from "../ui/feedback";
+import { HeadCount } from "../ui/HeadCount";
+import { Link } from "../ui/Link";
+import { LinkCard } from "../ui/LinkCard";
 
-// 募集の詳細（仮。docs/specs/T-05-broadcast.md「画面」）。宛先の人には人数・名前・ほかの宛先を出さない
+// 募集の詳細（docs/specs/T-05-broadcast.md「画面」、キャンバス「14 募集の詳細」）。宛先の人には人数・名前・ほかの宛先を出さない
+// 後ろに誘いタブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
 
 type Action = "respond" | "withdraw" | "decide";
 
@@ -50,33 +57,40 @@ function Actions({ b }: { b: Broadcast }) {
   });
 
   const button = (action: Action, label: string, primary = false) => (
-    <button
-      type="button"
-      disabled={act.isPending}
-      className={primary ? "rounded-lg bg-amber-300 px-4 py-2 disabled:opacity-50" : "rounded-lg border px-4 py-2 disabled:opacity-50"}
-      onClick={() => act.mutate(action)}
-    >
+    <SendButton variant={primary ? "primary" : "ghost"} block disabled={act.isPending} onClick={() => act.mutate(action)}>
       {label}
-    </button>
+    </SendButton>
   );
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      {b.direction === "sent" && b.status === "open" && (
+        <div className="flex flex-col gap-2 rounded-l bg-surface-sunken p-4">
+          <HeadCount count={b.responseCount ?? 0} />
+          <Note>誰が応じたかは、決めるまで表示されません</Note>
+        </div>
+      )}
       {b.direction === "sent" && b.status === "open" && (b.responseCount ?? 0) >= 1 && button("decide", "決める", true)}
+      {b.direction === "sent" && b.status === "open" && (b.responseCount ?? 0) >= 1 && (
+        <Note>決めると、参加する人どうしに名前が開示され、予定が成立します。</Note>
+      )}
       {b.direction === "sent" && b.status === "expired" && (
-        <Link to={`/broadcasts/new?from=${b.id}`} className="self-start rounded-lg border px-4 py-2">
+        <ButtonLink to={`/broadcasts/new?from=${b.id}`} block>
           もう一度募集する
-        </Link>
+        </ButtonLink>
       )}
       {b.direction === "received" && b.status === "open" &&
         (b.respondedByMe ? button("withdraw", "応じるのをやめる") : button("respond", "応じる", true))}
+      {b.direction === "received" && b.status === "open" && !b.respondedByMe && (
+        <Note>応じても、募集した人には人数だけが伝わります。応じなければ、そのままで大丈夫です。</Note>
+      )}
       {b.meetupId && (
-        <Link to={`/meetups/${b.meetupId}`} className="underline">
+        <Link to={`/meetups/${b.meetupId}`} className="text-action underline">
           成立した予定を見る
         </Link>
       )}
       {failed && (
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className="text-s text-ink-muted">
           {failed}
         </p>
       )}
@@ -89,37 +103,52 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
 
   if (broadcast.error instanceof ApiError && broadcast.error.status === 404) {
     return (
-      <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-        <Nav />
-        <p className="text-slate-600">この募集は見つかりませんでした。</p>
-      </main>
+      <SheetScreen title="暇な人いる？" label="募集" parent="/invites">
+        <p role="status">この募集は見つかりませんでした。</p>
+      </SheetScreen>
     );
   }
   const b = broadcast.data;
+  const owner = b?.direction === "received" ? displayNameOf(b.owner.displayName) : null;
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
-      <h1 className="text-2xl font-bold">暇な人いる？</h1>
-      <Nav />
-      {b && (
-        <section className="flex flex-col gap-2">
-          <p>
-            {b.direction === "received" ? (
-              <>
-                募集した人：<span className="font-bold">{displayNameOf(b.owner.displayName)}</span>
-              </>
-            ) : (
-              <>宛先：{b.recipients?.length ?? 0}人</>
-            )}
-          </p>
-          <p>{formatRange(b)}</p>
-          {b.area && <p>エリア：{b.area}</p>}
-          {b.message && <p className="whitespace-pre-wrap">{b.message}</p>}
-          <LinkPreviewCard url={b.url} preview={b.linkPreview} />
-          <p className={broadcastStatusClass(b.status)}>{broadcastStatusText(b)}</p>
-          <Actions b={b} />
-        </section>
+    <SheetScreen
+      label={owner ? `${owner}さんの募集` : "暇な人いる？"}
+      parent="/invites"
+      title={
+        <div className="flex items-center gap-3">
+          {b?.direction === "received" && <Avatar name={b.owner.displayName} />}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <h2 className="truncate text-l font-bold">{owner ? `${owner}さんの募集` : "暇な人いる？"}</h2>
+            {owner && <span className="text-s text-ink-muted">暇な人いる？</span>}
+          </div>
+          {/* 募集者の募集中は、人数を下の HeadCount で大きく出すので、バッジは「募集中」だけにする */}
+          {b && (
+            <Badge tone={broadcastStatusTone(b)}>
+              {b.direction === "sent" && b.status === "open" ? "募集中" : broadcastStatusText(b)}
+            </Badge>
+          )}
+        </div>
+      }
+    >
+      {broadcast.isPending && <Loading />}
+      {broadcast.isError && !(broadcast.error instanceof ApiError && broadcast.error.status === 404) && (
+        <LoadError retry={() => void broadcast.refetch()} />
       )}
-    </main>
+      {b && (
+        <>
+          <p className="text-ink-muted">
+            {b.direction === "received" ? <>募集した人：{owner}</> : <>宛先：{b.recipients?.length ?? 0}人</>}
+          </p>
+          <div className="flex flex-col gap-1">
+            <p className="text-xl font-bold tabular-nums">{formatRange(b)}</p>
+            {b.area && <p className="text-ink-muted">エリア：{b.area}</p>}
+          </div>
+          {b.message && <p className="whitespace-pre-wrap">{b.message}</p>}
+          <LinkCard url={b.url} preview={b.linkPreview} />
+          <Actions b={b} />
+        </>
+      )}
+    </SheetScreen>
   );
 }
