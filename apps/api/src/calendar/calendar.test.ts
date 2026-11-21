@@ -1060,7 +1060,7 @@ describe("outbox を Queue に流す", () => {
     expect(other?.processed_at).toBeNull();
   });
 
-  it("100件ずつ流す。処理済みにする SQL は値100個の制限に収まる（1回の実行で繰り返すのは docs/specs/T-13-data-growth.md）", async () => {
+  it("100件ずつ流す。処理済みにする SQL は値100個の制限に収まる（1回の実行で繰り返すのは docs/specs/T-12-data-growth.md）", async () => {
     const ids = Array.from({ length: 120 }, () => crypto.randomUUID());
     await env.DB.batch(
       ids.map((id, n) =>

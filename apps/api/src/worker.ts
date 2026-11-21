@@ -9,7 +9,7 @@ import { cleanupExpired, dispatchOutbox, runStep } from "./jobs/dispatch";
 export const CRON_OUTBOX = "* * * * *";
 export const CRON_CALENDAR_SYNC = "*/15 * * * *";
 
-/** 各処理は独立させ、1つが失敗しても後の処理は走る。失敗は cron_step_failed のログに出す（docs/specs/T-13-data-growth.md） */
+/** 各処理は独立させ、1つが失敗しても後の処理は走る。失敗は cron_step_failed のログに出す（docs/specs/T-12-data-growth.md） */
 export async function runScheduled(cron: string, env: Bindings, deps: AppDeps) {
   const ctx = { env, deps };
   if (cron === CRON_CALENDAR_SYNC) {

@@ -1,4 +1,4 @@
-// SQL がインデックスを使うかを確かめる道具（docs/specs/T-13-data-growth.md）。
+// SQL がインデックスを使うかを確かめる道具（docs/specs/T-12-data-growth.md）。
 // 本物の関数を呼び、その中で prepare された SQL と bind された値を記録して、EXPLAIN QUERY PLAN にかける
 
 type Recorded = { sql: string; binds: unknown[] };

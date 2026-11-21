@@ -1,4 +1,4 @@
--- データの増加への備え（docs/specs/T-13-data-growth.md）。毎分の掃除が表全体を読まないためのインデックス
+-- データの増加への備え（docs/specs/T-12-data-growth.md）。毎分の掃除が表全体を読まないためのインデックス
 -- 期限切れの .ics のトークンの掃除（DELETE ... WHERE expires_at <= ?）
 CREATE INDEX ics_tokens_expires ON ics_tokens (expires_at);
 -- 古い日の数の掃除（DELETE ... WHERE day < ?）。主キー (user_id, day, channel) は先頭が user_id なので使えない

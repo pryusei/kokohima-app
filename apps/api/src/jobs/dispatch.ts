@@ -38,7 +38,7 @@ export const dispatchedTypes = (env: Bindings): readonly string[] =>
   notificationStartAt(env) === null ? CALENDAR_TYPES : DISPATCHED_TYPES;
 
 export const DISPATCH_BATCH = 100;
-/** 1回の実行で繰り返す回数の上限。1分に最大1000件（docs/specs/T-13-data-growth.md） */
+/** 1回の実行で繰り返す回数の上限。1分に最大1000件（docs/specs/T-12-data-growth.md） */
 export const DISPATCH_MAX_ROUNDS = 10;
 /** 実行を始めてからこれを過ぎたら、次の回に入らない（次の Cron の実行と重ならないように） */
 export const DISPATCH_TIME_BUDGET_MS = 20 * 1000;
@@ -60,7 +60,7 @@ async function skipOldNotificationRows(ctx: Ctx) {
 
 /**
  * 100件ずつ流すのを、未処理の行がなくなるまで（最大 DISPATCH_MAX_ROUNDS 回・DISPATCH_TIME_BUDGET_MS まで）繰り返す。送った数。
- * 打ち切ったら件数だけのログを出す（docs/specs/T-13-data-growth.md「ログの一覧」）
+ * 打ち切ったら件数だけのログを出す（docs/specs/T-12-data-growth.md「ログの一覧」）
  */
 export async function dispatchOutbox(ctx: Ctx) {
   await skipOldNotificationRows(ctx);
@@ -109,7 +109,7 @@ async function dispatchOnce(ctx: Ctx) {
 export async function cleanupExpired(ctx: Ctx) {
   const now = ctx.deps.now();
   const d1 = ctx.env.DB;
-  // 1つが失敗しても残りは走る（docs/specs/T-13-data-growth.md「定期処理の独立とログ」）
+  // 1つが失敗しても残りは走る（docs/specs/T-12-data-growth.md「定期処理の独立とログ」）
   await runStep("cleanup_oauth_states", () => deleteExpiredOauthStates(d1, now - OAUTH_STATE_TTL_MS));
   await runStep("cleanup_ics_tokens", () => deleteExpiredIcsTokens(d1, now));
   await runStep("cleanup_login_records", () => deleteExpiredLoginRecords(identityDb(d1), now));

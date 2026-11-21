@@ -2,7 +2,7 @@ import { MAX_LENGTH_MS } from "../domain/validation";
 import { MINUTE_MS } from "../domain/zonedTime";
 
 // 手動の枠は長さが最大 MAX_LENGTH_MS（24時間）。範囲 [from, to) と重なる枠は必ず from - MAX_LENGTH_MS < starts_at < to を満たすので、
-// 重なりの条件にこの条件を足して、インデックス (user_id, starts_at, id) の範囲だけを読む（結果は変わらない。docs/specs/T-13-data-growth.md）
+// 重なりの条件にこの条件を足して、インデックス (user_id, starts_at, id) の範囲だけを読む（結果は変わらない。docs/specs/T-12-data-growth.md）
 
 // availability のD1アクセス（docs/specs/T-03-availability.md）
 // 友達の枠は「前提」の3条件をSQLに入れて取得する。friendships は読み取りだけ（T-02の「前提」の例外）
@@ -294,7 +294,7 @@ export function calendarCancelStatements(
   return statements;
 }
 
-// ---- 終わった枠の掃除（T-13） ----
+// ---- 終わった枠の掃除（T-12） ----
 
 /** 始まりが startedBefore より前の手動の枠を消す（上限つき）。消した数 */
 export async function deleteManualStartedBefore(d1: D1Database, startedBefore: number, limit: number) {

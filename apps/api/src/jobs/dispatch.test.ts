@@ -18,7 +18,7 @@ import {
   OUTBOX_RETENTION_MS,
 } from "./dispatch";
 
-// データの増加への備え（docs/specs/T-13-data-growth.md）。時計は 2026-10-10T00:00:00Z
+// データの増加への備え（docs/specs/T-12-data-growth.md）。時計は 2026-10-10T00:00:00Z
 
 let h: Awaited<ReturnType<typeof createHarness>>;
 let logs: string[];
