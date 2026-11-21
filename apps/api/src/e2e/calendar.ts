@@ -7,6 +7,7 @@ import { problem } from "../http/problem";
 import { handleJob } from "../jobs/consumer";
 import { dispatchedTypes } from "../jobs/dispatch";
 import { sha256 } from "../shared/crypto";
+import { e2eOgpFetch } from "./linkPreview";
 import { e2eDeliverPending, e2eNotificationFetch } from "./notifications";
 
 // E2E用の偽の Google（docs/specs/T-06-calendar.md「E2E用の偽のGoogle」）。src/e2e/entry.ts からだけ読み込む
@@ -64,12 +65,14 @@ async function fakeGoogle(url: URL, init: RequestInit | undefined): Promise<Resp
   return json({}, 404);
 }
 
-/** E2E のエントリの fetch。偽の Google・偽のメール配信・偽のプッシュの宛先だけをここで受ける */
+/** E2E のエントリの fetch。偽の Google・偽のメール配信・偽のプッシュ・偽のサイトの宛先だけをここで受ける */
 export const e2eFetch: typeof fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url);
   if (url.host === FAKE_HOST) return fakeGoogle(url, init);
   const delivery = await e2eNotificationFetch(url, init);
   if (delivery) return delivery;
+  const ogp = e2eOgpFetch(url);
+  if (ogp) return ogp;
   return fetch(input, init);
 };
 
@@ -121,11 +124,14 @@ export async function e2eCalendarSync(c: Context<AppEnv>) {
 
 /**
  * outbox のうち、Queue に流す型の未処理の行を、Queue を通さずにすぐ処理する。
- * ローカルの DB に前の実行の行がたまっていても、いま作った行まで届くよう、なくなるまでくり返す
+ * ローカルの DB に前の実行の行がたまっていても、いま作った行まで届くよう、なくなるまでくり返す。
+ * 並んで走るテストの drain が同じ行を同時に処理すると、リンクのプレビューの取得の権利が取れず一時的な失敗になる（T-08）。
+ * 失敗した行は処理済みにせずに残し、同じ回の中でもう一度試す（Queue の再試行の代わり）
  */
 export async function e2eOutboxDrain(c: Context<AppEnv>) {
   const ctx = { env: c.env, deps: c.var.deps };
   let processed = 0;
+  let failed = 0;
   for (let round = 0; round < 50; round++) {
     const { results } = await c.env.DB.prepare(
       `SELECT id, type, payload, created_at FROM outbox
@@ -134,13 +140,22 @@ export async function e2eOutboxDrain(c: Context<AppEnv>) {
       .bind(JSON.stringify(dispatchedTypes(c.env)))
       .all<{ id: string; type: string; payload: string; created_at: number }>();
     if (results.length === 0) break;
+    let done = 0;
+    failed = 0;
     for (const r of results) {
-      await handleJob(ctx, { kind: "outbox", id: r.id, type: r.type, payload: r.payload, createdAt: r.created_at });
+      try {
+        await handleJob(ctx, { kind: "outbox", id: r.id, type: r.type, payload: r.payload, createdAt: r.created_at });
+      } catch {
+        failed++;
+        continue;
+      }
       await c.env.DB.prepare("UPDATE outbox SET processed_at = ?1 WHERE id = ?2").bind(ctx.deps.now(), r.id).run();
+      done++;
     }
-    processed += results.length;
+    processed += done;
+    if (failed > 0) await new Promise((r) => setTimeout(r, 100));
   }
   // お知らせ（T-07）も、Queue を待たずに届ける
   const delivered = await e2eDeliverPending(c);
-  return c.json({ processed, delivered });
+  return c.json({ processed, failed, delivered });
 }

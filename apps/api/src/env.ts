@@ -36,6 +36,10 @@ export type Bindings = {
   /** おおよその回数の上限（Rate Limiting）。認証なしの経路は IP、認証のある経路は利用者 ID をキーにする */
   RL_PUBLIC?: RateLimit;
   RL_USER?: RateLimit;
+  /** リンクのプレビューの画像（R2。docs/specs/T-08-link-preview.md） */
+  OGP_IMAGES: R2Bucket;
+  /** アプリ自身の登録ドメイン（カンマ区切りの小文字のホスト名）。このドメインとそのサブドメインは取りに行かない */
+  LINK_PREVIEW_OWN_DOMAINS: string;
   E2E_MODE?: string;
 };
 
@@ -70,7 +74,21 @@ export type AppDeps = {
   rateLimit: (env: Bindings, limiter: RateLimiterName, key: string) => Promise<boolean>;
   /** KV のキャッシュを使うか（E2E では使わない） */
   cacheEnabled: boolean;
+  linkPreview: {
+    /** 名前解決（DNS over HTTPS）。E2E だけ偽物に差し替える */
+    resolve: (deps: AppDeps, host: string) => Promise<ResolveResult>;
+    /** 取りに行ってよい URL の判定で追加で許すホスト（E2E の偽のサイトだけ。本番は空） */
+    extraHosts: readonly string[];
+    /** タイムアウト（ミリ秒）。1回の取得（本文を読み終えるまで）・ページか画像の全体・名前解決の1回。テストでだけ短くする */
+    timeouts: { fetchMs: number; totalMs: number; dnsMs: number };
+  };
 };
+
+/** 名前解決の結果。addresses は A・AAAA の data。not_found は NXDOMAIN、error は SERVFAIL・タイムアウトなど */
+export type ResolveResult =
+  | { kind: "ok"; addresses: string[] }
+  | { kind: "not_found" }
+  | { kind: "error" };
 
 /** Google の各エンドポイント。E2E では偽の経路に向ける（docs/specs/T-06-calendar.md「E2E用の偽のGoogle」） */
 export type GoogleEndpoints = {

@@ -4,6 +4,7 @@ import { createApp, defaultDeps } from "../src/app";
 import type { AppDeps, Bindings, JobMessage } from "../src/env";
 import { createFakeDelivery } from "./fake-delivery";
 import { createFakeGoogle } from "./fake-google";
+import { createFakeWeb } from "./fake-web";
 
 // identity のテスト用の道具。本番のコードからは読み込まない（*.test.ts からだけ使う）
 
@@ -39,6 +40,7 @@ export async function createHarness() {
   };
   const google = createFakeGoogle();
   const delivery = createFakeDelivery();
+  const web = createFakeWeb();
 
   /** 次にトークンエンドポイントが返すIDトークンの作り方。テストごとに差し替える */
   let tokenResponder: (req: { provider: ProviderName; body: URLSearchParams }) => Promise<Response> = async () =>
@@ -49,6 +51,7 @@ export async function createHarness() {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (google.handles(new URL(url), init)) return google.handle(new URL(url), init);
     if (delivery.handles(new URL(url))) return delivery.handle(new URL(url), init);
+    if (web.handles(new URL(url))) return web.handle(new URL(url), init);
     const provider: ProviderName | null = url.startsWith("https://oauth2.googleapis.com/token")
       ? "google"
       : url.startsWith("https://appleid.apple.com/auth/token")
@@ -78,6 +81,8 @@ export async function createHarness() {
       apple: createLocalJWKSet({ keys: [await jwk("apple")] }),
     },
     now: () => clock.now,
+    // テストではタイムアウトを短くする（タイムアウトのテストを速くするため）
+    linkPreview: { ...base.linkPreview, timeouts: { fetchMs: 300, totalMs: 600, dnsMs: 300 } },
   };
   const app = createApp(deps);
 
@@ -168,6 +173,7 @@ export async function createHarness() {
     bindings,
     google,
     delivery,
+    web,
     jobs,
     deps,
     limiter,

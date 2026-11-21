@@ -7,9 +7,10 @@ import { keys } from "../api/keys";
 import { createIcsLink } from "../calendar/queries";
 import { redirectTo } from "./CalendarSettingsPage";
 import { Nav } from "../components/Nav";
-import { formatRange, linkLabel } from "../invitations/format";
+import { formatRange } from "../invitations/format";
 import { meetupQuery } from "../invitations/queries";
 import { displayNameOf } from "./FriendsPage";
+import { LinkPreviewCard } from "../invitations/LinkPreviewCard";
 
 // 成立した予定（仮。docs/specs/T-04-direct-invite.md「画面」）。「やっぱり難しい」は確認なしで送る
 
@@ -66,7 +67,6 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
     );
   }
   const m = meetup.data;
-  const host = m ? linkLabel(m.url) : null;
   // 開始後はキャンセルできないので、ボタンを出さない（決定事項4）
   const cancellable = m?.status === "confirmed" && Date.parse(m.startsAt) > openedAt;
 
@@ -80,11 +80,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
           <p>{formatRange(m)}</p>
           {m.area && <p>エリア：{m.area}</p>}
           {m.message && <p className="whitespace-pre-wrap">{m.message}</p>}
-          {m.url && host && (
-            <a href={m.url} target="_blank" rel="noopener noreferrer nofollow" className="underline">
-              {host}
-            </a>
-          )}
+          <LinkPreviewCard url={m.url} preview={m.linkPreview} />
           {m.status === "cancelled" ? (
             <p className="text-slate-600">やっぱり難しくなりました</p>
           ) : (

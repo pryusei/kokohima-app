@@ -30,6 +30,7 @@ const broadcast = (over: Record<string, unknown> = {}) => ({
   area: "渋谷",
   message: null,
   url: null,
+  linkPreview: null,
   expiresAt: "2026-10-10T10:00:00.000Z",
   createdAt: "2026-10-10T00:00:00.000Z",
   recipients: [friend(1), friend(2)].map(({ id, displayName, avatarUrl }) => ({ id, displayName, avatarUrl })),

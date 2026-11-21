@@ -6,9 +6,10 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { addDays, formatDate, formatTime, localDateOf, localInstant } from "../availability/format";
 import { Link, Nav } from "../components/Nav";
-import { formatRange, KIND_LABELS, linkLabel, statusClass, statusText } from "../invitations/format";
+import { formatRange, KIND_LABELS, statusClass, statusText } from "../invitations/format";
 import { inviteQuery } from "../invitations/queries";
 import { displayNameOf } from "./FriendsPage";
+import { LinkPreviewCard } from "../invitations/LinkPreviewCard";
 
 // 誘いの詳細と返答（仮。docs/specs/T-04-direct-invite.md「画面」）
 
@@ -108,7 +109,6 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
     );
   }
   const d = invite.data;
-  const host = d ? linkLabel(d.url) : null;
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-4 p-6">
@@ -123,11 +123,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
           <p>{formatRange(d)}</p>
           {d.area && <p>エリア：{d.area}</p>}
           {d.message && <p className="whitespace-pre-wrap">{d.message}</p>}
-          {d.url && host && (
-            <a href={d.url} target="_blank" rel="noopener noreferrer nofollow" className="underline">
-              {host}
-            </a>
-          )}
+          <LinkPreviewCard url={d.url} preview={d.linkPreview} />
           <p className={statusClass(d.status)}>{statusText(d)}</p>
           {d.status === "pending" && (
             <p className="text-sm text-slate-600">
