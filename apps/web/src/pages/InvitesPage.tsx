@@ -8,13 +8,12 @@ import {
   statusTone,
 } from "../invitations/format";
 import { broadcastsQuery, invitesQuery, meetupsQuery } from "../invitations/queries";
-import { useLocation } from "../router";
 import { ButtonLink } from "../ui/Button";
 import { EmptyState, LoadError, Loading } from "../ui/feedback";
 import { BroadcastCard, InviteCard } from "../ui/InviteCard";
 import { Link } from "../ui/Link";
 import { Section, TabScreen } from "../ui/Navigation";
-import { displayNameOf } from "./FriendsPage";
+import { displayNameOf } from "../account/me";
 
 // 誘いタブ（docs/specs/T-04-direct-invite.md・T-05-broadcast.md「画面」、キャンバス「6 誘い」）：受信・送信・募集・成立
 
@@ -121,8 +120,8 @@ function MeetupList() {
   );
 }
 
-export function InvitesPage() {
-  const { search } = useLocation();
+/** search は ?tab= を含む URL の検索部分。シートの後ろに出すときは、開いたときの値を App が渡す */
+export function InvitesPage({ search }: { search: string }) {
   const requested = new URLSearchParams(search).get("tab");
   const tab: Tab = TABS.some((t) => t.id === requested) ? (requested as Tab) : "received";
 

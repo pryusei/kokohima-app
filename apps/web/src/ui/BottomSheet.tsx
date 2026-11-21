@@ -1,10 +1,12 @@
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { goBack } from "../router";
 import { OfflineBanner } from "./feedback";
 
 // 下から出るシート（docs/specs/T-11-design.md「画面のつながり」、デザインシステム「BottomSheet」）
 // つまみを押す・下に引く、後ろの暗い部分を押す、Esc で閉じる。確認のダイアログは出さない。
-// 開いている間はフォーカスをシートの中に閉じ込め、閉じたら開いたボタンに戻す
+// 開いている間はフォーカスをシートの中に閉じ込め、閉じたら開いたボタンに戻す。
+// シートは body の直下に描き、開いている間はアプリの本体（#root）を inert にする（URL を持たないシートでも、後ろに Tab で入れないように）
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const DRAG_CLOSE_PX = 60;
@@ -14,6 +16,7 @@ type Props = { title: ReactNode; label: string; onClose: () => void; children: R
 export function BottomSheet({ title, label, onClose, children }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const dragFrom = useRef<number | null>(null);
+  const pressedOnScrim = useRef(false);
 
   // Esc は、押したボタンが送信中に押せなくなってフォーカスがシートの外（body）に出たときも効くように、文書全体で受ける
   const close = useRef(onClose);
@@ -22,13 +25,18 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   }, [onClose]);
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const root = document.getElementById("root");
+    const wasInert = root?.inert ?? false;
+    if (root) root.inert = true;
     dialog.current?.focus();
     const onEscape = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") close.current();
+      // 日本語入力の変換を取り消す Esc では閉じない
+      if (e.key === "Escape" && !e.isComposing) close.current();
     };
     document.addEventListener("keydown", onEscape);
     return () => {
       document.removeEventListener("keydown", onEscape);
+      if (root) root.inert = wasInert;
       if (opener?.isConnected) opener.focus();
     };
   }, []);
@@ -52,21 +60,28 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
     }
   };
 
-  const onPointerDown = (e: PointerEvent) => {
+  // つまみを下に引いて閉じる。マウスでもつまみの外で離したときに pointerup が届くように、pointer を捕まえる
+  const onGripDown = (e: PointerEvent<HTMLButtonElement>) => {
     dragFrom.current = e.clientY;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
   };
-  const onPointerUp = (e: PointerEvent) => {
+  const onGripUp = (e: PointerEvent<HTMLButtonElement>) => {
     const from = dragFrom.current;
     dragFrom.current = null;
     if (from !== null && e.clientY - from >= DRAG_CLOSE_PX) onClose();
   };
 
-  return (
+  return createPortal(
     <div
       data-testid="sheet-scrim"
       className="fixed inset-0 z-30 flex flex-col justify-end bg-scrim"
+      // 押し始めも離したのも暗い部分のときだけ閉じる（シートの中で文字を選んで外で離したときに閉じない）
+      onPointerDown={(e) => {
+        pressedOnScrim.current = e.target === e.currentTarget;
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && pressedOnScrim.current) onClose();
+        pressedOnScrim.current = false;
       }}
     >
       <div
@@ -83,8 +98,8 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
           aria-label="閉じる"
           className="mx-auto grid h-6 w-16 shrink-0 touch-none place-items-center rounded-full"
           onClick={onClose}
-          onPointerDown={onPointerDown}
-          onPointerUp={onPointerUp}
+          onPointerDown={onGripDown}
+          onPointerUp={onGripUp}
         >
           <span aria-hidden="true" className="h-1 w-9 rounded-full bg-line-strong" />
         </button>
@@ -92,7 +107,8 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
         {typeof title === "string" ? <h2 className="text-xl font-bold">{title}</h2> : title}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

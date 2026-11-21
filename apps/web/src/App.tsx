@@ -17,7 +17,7 @@ import { MeetupDetailPage } from "./pages/MeetupDetailPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { AccountSettingsPage, PresetSettingsPage, SettingsPage } from "./pages/SettingsPage";
-import { navigate, useLocation } from "./router";
+import { behindTab, navigate, useLocation } from "./router";
 import { Button } from "./ui/Button";
 import { Loading } from "./ui/feedback";
 import type { TabPath } from "./ui/Navigation";
@@ -27,12 +27,14 @@ function Redirect({ to }: { to: string }) {
   return null;
 }
 
-const TAB_PAGES: Record<TabPath, () => ReactNode> = {
+const TAB_PAGES: Record<TabPath, (search: string) => ReactNode> = {
   "/": () => <EveryonePage />,
   "/availability": () => <AvailabilityPage />,
-  "/invites": () => <InvitesPage />,
+  "/invites": (search) => <InvitesPage search={search} />,
   "/friends": () => <FriendsPage />,
 };
+
+const isTab = (path: string): path is TabPath => path in TAB_PAGES;
 
 /** URL を持つシートと、その後ろに出すタブ（docs/specs/T-11-design.md「画面のつながり」の表） */
 function sheetOf(pathname: string, search: string): { tab: TabPath; sheet: ReactNode } | null {
@@ -54,18 +56,26 @@ function sheetOf(pathname: string, search: string): { tab: TabPath; sheet: React
 }
 
 /**
- * タブの画面。シートを開いている間は、後ろのタブを inert にする。
+ * タブの画面。シートを開いている間は、後ろのタブを inert にする（シートは body の直下に描く）。
  * タブの画面は同じ位置に描くので、シートを閉じても状態とフォーカスを戻す先（開いたボタン）が残る
  */
-function TabHost({ tab, sheet }: { tab: TabPath; sheet: ReactNode | null }) {
+function TabHost({ tab, search, sheet }: { tab: TabPath; search: string; sheet: ReactNode | null }) {
   return (
     <>
       <div inert={sheet ? true : undefined} aria-hidden={sheet ? true : undefined}>
-        {TAB_PAGES[tab]()}
+        {TAB_PAGES[tab](search)}
       </div>
       {sheet}
     </>
   );
+}
+
+/** シートの後ろに出すタブ。アプリの中から開いたら、開いたときのタブ（?tab= も）のまま。外から直接開いたら表のタブ */
+function behindOf(fallback: TabPath) {
+  const behind = behindTab();
+  if (!behind) return { tab: fallback, search: "" };
+  const url = new URL(behind, window.location.origin);
+  return isTab(url.pathname) ? { tab: url.pathname, search: url.search } : { tab: fallback, search: "" };
 }
 
 export function App() {
@@ -111,7 +121,9 @@ export function App() {
   if (pathname === "/settings/account") return <AccountSettingsPage />;
 
   const sheet = sheetOf(pathname, search);
-  if (sheet) return <TabHost tab={sheet.tab} sheet={sheet.sheet} />;
-  const tab = (Object.keys(TAB_PAGES) as TabPath[]).find((t) => t === pathname) ?? "/";
-  return <TabHost tab={tab} sheet={null} />;
+  if (sheet) {
+    const behind = behindOf(sheet.tab);
+    return <TabHost tab={behind.tab} search={behind.search} sheet={sheet.sheet} />;
+  }
+  return <TabHost tab={isTab(pathname) ? pathname : "/"} search={search} sheet={null} />;
 }

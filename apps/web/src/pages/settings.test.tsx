@@ -67,5 +67,8 @@ describe("設定", () => {
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/me" && c.init.method === "PATCH")).toBe(true));
     const patch = calls.find((c) => c.init.method === "PATCH");
     expect(JSON.parse(String(patch?.init.body))).toEqual({ displayName: "ゆうき" });
+    // 保存してもフォームは作り直されず、「保存しました」と入力した値が残る
+    expect(await within(section).findByText("保存しました")).toBeVisible();
+    expect(within(section).getByLabelText("表示名")).toHaveValue("ゆうき");
   });
 });

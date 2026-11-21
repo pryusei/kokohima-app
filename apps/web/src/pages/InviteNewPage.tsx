@@ -24,7 +24,7 @@ import { SheetScreen } from "../ui/BottomSheet";
 import { Badge } from "../ui/Badge";
 import { buttonClass, SendButton } from "../ui/Button";
 import { inputClass, labelClass } from "../ui/form";
-import { displayNameOf } from "./FriendsPage";
+import { displayNameOf } from "../account/me";
 
 // 誘いの作成（docs/specs/T-04-direct-invite.md「画面」、キャンバス「10 誘いの作成」）。送る前のリンクのプレビューは出さない（T-08 決定事項1）
 // 後ろに「みんな」を出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
@@ -99,7 +99,8 @@ export function InviteNewPage() {
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (invite) => {
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
-      if (invite) navigate(`/invites/${invite.id}`, { replace: true });
+      // 送信中にシートを閉じていたら（Esc など）、戻った先の画面を詳細で置き換えない
+      if (invite && window.location.pathname === "/invites/new") navigate(`/invites/${invite.id}`, { replace: true });
     },
   });
 

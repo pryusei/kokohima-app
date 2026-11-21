@@ -8,11 +8,11 @@ import { createIcsLink } from "../calendar/queries";
 import { redirectTo } from "./CalendarSettingsPage";
 import { formatRange } from "../invitations/format";
 import { meetupQuery } from "../invitations/queries";
-import { displayNameOf } from "./FriendsPage";
+import { displayNameOf } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
-import { Button, SendButton } from "../ui/Button";
+import { SendButton } from "../ui/Button";
 import { LoadError, Loading, Note } from "../ui/feedback";
 import { LinkCard } from "../ui/LinkCard";
 
@@ -109,9 +109,9 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
           </div>
           {m.message && <p className="whitespace-pre-wrap">{m.message}</p>}
           <LinkCard url={m.url} preview={m.linkPreview} />
-          <Button block onClick={() => ics.mutate()}>
+          <SendButton block onClick={() => ics.mutate()}>
             カレンダーに追加（.ics）
-          </Button>
+          </SendButton>
           {icsFailed && (
             <p role="status" className="text-s text-ink-muted">
               {icsFailed === "limited"

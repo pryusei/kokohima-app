@@ -9,8 +9,9 @@ import { LoadError, Loading, Note } from "../ui/feedback";
 import { Link } from "../ui/Link";
 import { Section, SubScreen } from "../ui/Navigation";
 import { useOnline } from "../ui/online";
-import { PresetForm } from "./AvailabilityPage";
-import { DisplayNameForm, meQuery } from "./FriendsPage";
+import { PresetForm } from "../availability/PresetForm";
+import { DisplayNameForm } from "../account/DisplayNameForm";
+import { meQuery } from "../account/me";
 
 // 設定（docs/specs/T-11-design.md「画面のつながり」、キャンバス「19 設定」「21 時間帯プリセット」「23 アカウント」）
 // 友達タブの「アカウント」の節から開く。初回設定・退会・ログインの方法の連携は、それぞれのタスクで作る（#43・#37・#45）
@@ -85,7 +86,7 @@ export function AccountSettingsPage() {
     <SubScreen title="アカウント" back="/settings">
       <Section title="表示名">
         <div className="rounded-l bg-surface p-4 shadow-card">
-          {me.data && <DisplayNameForm key={me.data.displayName ?? ""} initial={me.data.displayName ?? ""} />}
+          {me.data && <DisplayNameForm initial={me.data.displayName ?? ""} />}
         </div>
       </Section>
       <Section title="ログアウト">

@@ -7,7 +7,7 @@ import { keys } from "../api/keys";
 import { addDays, formatDate, formatTime, localDateOf, localInstant } from "../availability/format";
 import { formatRange, KIND_LABELS, statusText, statusTone } from "../invitations/format";
 import { inviteQuery } from "../invitations/queries";
-import { displayNameOf } from "./FriendsPage";
+import { displayNameOf } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";

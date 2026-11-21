@@ -6,7 +6,7 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { broadcastStatusText, broadcastStatusTone, formatRange } from "../invitations/format";
 import { broadcastQuery } from "../invitations/queries";
-import { displayNameOf } from "./FriendsPage";
+import { displayNameOf } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";

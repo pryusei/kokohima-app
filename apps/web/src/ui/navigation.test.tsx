@@ -8,6 +8,7 @@ import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
 import { AvailabilityChip } from "./AvailabilityChip";
 import { BottomSheet } from "./BottomSheet";
 import { HeadCount } from "./HeadCount";
+import { Switch } from "./Switch";
 
 // 画面のつながり・シート・部品（docs/specs/T-11-design.md「画面のつながり」「オフライン」、テスト計画）
 
@@ -92,7 +93,7 @@ describe("router", () => {
   it("navigate は history.state に印を付ける。goBack は印があるときだけ戻る", () => {
     const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
     navigate("/invites");
-    expect(window.history.state).toEqual({ inApp: true });
+    expect(window.history.state).toEqual({ inApp: true, behind: "/" });
     goBack("/");
     expect(back).toHaveBeenCalledTimes(1);
     window.history.replaceState(null, "", "/meetups/x");
@@ -187,5 +188,117 @@ describe("オフライン", () => {
     act(() => window.dispatchEvent(new Event("online")));
     await waitFor(() => expect(night).toBeEnabled());
     expect(screen.queryByText("オフラインです。つながると最新の内容になります")).toBeNull();
+  });
+});
+
+describe("レビューの指摘（pryusei/kokohima-app#95）", () => {
+  it("誘いタブの「送信」から詳細を開いても、後ろは「送信」のまま。閉じると開いたカードにフォーカスが戻る", async () => {
+    window.history.replaceState(null, "", "/invites?tab=sent");
+    const sent = {
+      id: INVITE_ID,
+      kind: "kokodou",
+      direction: "sent",
+      status: "pending",
+      counterpart: { id: FRIEND_ID, displayName: "あき", avatarUrl: null },
+      startsAt: "2026-10-10T10:00:00.000Z",
+      endsAt: "2026-10-10T14:00:00.000Z",
+      area: null,
+      message: null,
+      url: null,
+      linkPreview: null,
+      expiresAt: "2026-10-10T09:00:00.000Z",
+      counterProposal: null,
+      meetupId: null,
+      createdAt: "2026-10-07T00:00:00.000Z",
+    };
+    mockFetch({
+      ...tabs,
+      "/api/v1/direct-invites": json({ items: [sent], nextCursor: null }),
+      [`/api/v1/direct-invites/${INVITE_ID}`]: json(sent),
+    });
+    renderApp();
+    const card = await screen.findByRole("link", { name: /あきさんへ/ });
+    await userEvent.click(card);
+    await screen.findByRole("dialog");
+    const behind = document.querySelector("[inert]") as HTMLElement;
+    expect(within(behind).getByRole("link", { name: "送信", hidden: true })).toHaveAttribute("aria-current", "page");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(window.location.search).toBe("?tab=sent");
+    await waitFor(() => expect(screen.getByRole("link", { name: /あきさんへ/ })).toHaveFocus());
+  });
+
+  it("日本語入力の変換を取り消す Esc では、シートを閉じない", async () => {
+    const onClose = vi.fn();
+    render(
+      <BottomSheet title="試し" label="試し" onClose={onClose}>
+        <input aria-label="ひとこと" />
+      </BottomSheet>,
+    );
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("シートの中で押し始めて暗い部分で離しても閉じない", () => {
+    const onClose = vi.fn();
+    render(
+      <BottomSheet title="試し" label="試し" onClose={onClose}>
+        <p>本文</p>
+      </BottomSheet>,
+    );
+    const scrim = screen.getByTestId("sheet-scrim");
+    act(() => {
+      screen.getByText("本文").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+      scrim.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    act(() => {
+      scrim.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+      scrim.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("シートを開いている間は、アプリの本体（#root）が inert になる（URL を持たないシートでも）", () => {
+    const root = document.createElement("div");
+    root.id = "root";
+    document.body.appendChild(root);
+    const { unmount } = render(
+      <BottomSheet title="試し" label="試し" onClose={() => {}}>
+        <p>本文</p>
+      </BottomSheet>,
+      { container: root },
+    );
+    expect(root.inert).toBe(true);
+    expect(screen.getByRole("dialog").closest("#root")).toBeNull();
+    unmount();
+    expect(root.inert).toBe(false);
+    root.remove();
+  });
+
+  it("オフラインの間は「自分の暇を見せる」などのスイッチと、取り消し・削除のボタンを押せない", async () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    window.history.replaceState(null, "", "/availability");
+    mockFetch({
+      ...tabs,
+      "/api/v1/availabilities": json({
+        items: [{ id: "44444444-4444-4444-8444-444444444444", startsAt: "2026-10-10T10:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z", label: "night", source: "manual", date: null }],
+        nextCursor: null,
+      }),
+    });
+    renderApp();
+    expect(await screen.findByRole("button", { name: "取り消す" })).toBeDisabled();
+    onLine.mockRestore();
+    const view = render(<Switch checked onChange={() => {}}>自分の暇を見せる</Switch>);
+    expect(within(view.container).getByRole("switch")).toBeEnabled();
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    act(() => window.dispatchEvent(new Event("offline")));
+    expect(within(view.container).getByRole("switch")).toBeDisabled();
   });
 });

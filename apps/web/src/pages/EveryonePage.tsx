@@ -9,7 +9,7 @@ import { ButtonLink } from "../ui/Button";
 import { EmptyState, LoadError, Loading } from "../ui/feedback";
 import { Link } from "../ui/Link";
 import { TabScreen } from "../ui/Navigation";
-import { displayNameOf } from "./FriendsPage";
+import { displayNameOf } from "../account/me";
 
 // ホーム＝「みんな」（docs/specs/T-03-availability.md「画面」、キャンバス「4 みんな」）
 

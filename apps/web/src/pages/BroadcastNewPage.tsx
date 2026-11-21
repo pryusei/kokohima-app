@@ -24,7 +24,7 @@ import { EXPIRES, rangeOf, sendErrorText } from "../invitations/form";
 import { nextQuarter } from "../invitations/format";
 import { broadcastQuery } from "../invitations/queries";
 import { navigate, useLocation } from "../router";
-import { displayNameOf } from "./FriendsPage";
+import { displayNameOf } from "../account/me";
 
 // 募集の作成（docs/specs/T-05-broadcast.md「画面」、キャンバス「11 募集の作成」）。後ろに「みんな」を出したシートで開く。「もう一度募集する」は ?from=<募集のID> で開く
 
@@ -120,7 +120,8 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: keys.broadcasts.all() });
-      if (created) navigate(`/broadcasts/${created.id}`, { replace: true });
+      // 送信中にシートを閉じていたら（Esc など）、戻った先の画面を詳細で置き換えない
+      if (created && window.location.pathname === "/broadcasts/new") navigate(`/broadcasts/${created.id}`, { replace: true });
     },
   });
 

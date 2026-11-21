@@ -13,7 +13,7 @@ import { Button, ButtonLink, SendButton } from "../ui/Button";
 import { LoadError, Loading, Note } from "../ui/feedback";
 import { Section } from "../ui/Navigation";
 import { Switch } from "../ui/Switch";
-import { displayNameOf } from "./FriendsPage";
+import { displayNameOf } from "../account/me";
 
 // 友達の詳細（docs/specs/T-03-availability.md「画面」、キャンバス「16 友達の詳細」）
 // 後ろに友達タブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）

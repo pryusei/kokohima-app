@@ -1,6 +1,5 @@
 import {
   myAvailabilitySchema,
-  presetsSchema,
   recurrenceRuleSchema,
   type MyAvailability,
   type PresetName,
@@ -14,6 +13,7 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import {
   addDays,
+  asEnd,
   formatDate,
   formatSlot,
   localDateOf,
@@ -48,9 +48,6 @@ function createErrorText(error: unknown) {
   }
   return "作れませんでした。通信状態を確認して、もう一度お試しください。";
 }
-
-/** 時刻の入力の "00:00" を終了に使うときは 24:00 とみなす */
-const asEnd = (hhmm: string) => (hhmm === "00:00" ? "24:00" : hhmm);
 
 function AddAvailabilitySheet({ presets, onClose }: { presets: Presets | undefined; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -188,9 +185,9 @@ function MyAvailabilities() {
                 <span className="font-bold tabular-nums">{formatDate(localDateOf(item.startsAt))}</span>
                 <AvailabilityChip text={formatSlot(item)} recurring={item.source === "recurrence"} />
               </span>
-              <Button variant="ghost" size="s" onClick={() => remove.mutate(item)}>
+              <SendButton variant="ghost" size="s" onClick={() => remove.mutate(item)}>
                 {item.source === "manual" ? "取り消す" : "この日だけ外す"}
-              </Button>
+              </SendButton>
             </li>
           ))}
         </ul>
@@ -204,15 +201,13 @@ function ruleText(rule: RecurrenceRuleDto) {
   return `毎週${WEEKDAYS[rule.weekday]}曜 ${rule.label ? `${PRESET_LABELS[rule.label]} ${time}` : time}`;
 }
 
-function Recurrence() {
-  const [adding, setAdding] = useState(false);
+/** くり返しの追加のシート。フォームと送信の状態はシートが持つ（閉じて開き直すと、前回の入力やエラーは残らない）。成功したら閉じる */
+function AddRecurrenceSheet({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const rules = useQuery(rulesQuery());
   const [weekday, setWeekday] = useState(6);
   const [mode, setMode] = useState<PresetName | "custom">("night");
   const [start, setStart] = useState("19:00");
   const [end, setEnd] = useState("23:00");
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.availability.all() });
 
   const ruleIdempotency = useIdempotencyKey();
   const create = useMutation({
@@ -224,52 +219,15 @@ function Recurrence() {
       });
     },
     onSettled: (_data, error) => ruleIdempotency.settle(error),
-    onSuccess: invalidate,
-  });
-  const remove = useMutation({
-    mutationFn: (id: string) => apiSend("DELETE", `/api/v1/recurrence-rules/${id}`, undefined),
-    onSuccess: invalidate,
-  });
-  const restore = useMutation({
-    mutationFn: ({ id, date }: { id: string; date: string }) =>
-      apiSend("DELETE", `/api/v1/recurrence-rules/${id}/exceptions/${date}`, undefined),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
+      onClose();
+    },
   });
 
   return (
-    <Section
-      title="くり返し"
-      aside={
-        <Button variant="ghost" size="s" onClick={() => setAdding(true)}>
-          くり返しを追加する
-        </Button>
-      }
-    >
-      {rules.data && rules.data.items.length > 0 && (
-        <ul aria-label="くり返し" className="rounded-l bg-surface px-4 shadow-card">
-          {rules.data.items.map((rule) => (
-            <li key={rule.id} className="flex flex-col gap-1 border-b border-line py-3 last:border-b-0">
-              <div className="flex items-center justify-between gap-2">
-                <span className="tabular-nums">{ruleText(rule)}</span>
-                <Button variant="ghost" size="s" onClick={() => remove.mutate(rule.id)}>
-                  削除
-                </Button>
-              </div>
-              {rule.exceptions.map((date) => (
-                <div key={date} className="flex items-center justify-between gap-2 text-s text-ink-muted">
-                  <span>{formatDate(date)}は外しています</span>
-                  <Button variant="ghost" size="s" onClick={() => restore.mutate({ id: rule.id, date })}>
-                    戻す
-                  </Button>
-                </div>
-              ))}
-            </li>
-          ))}
-        </ul>
-      )}
-      {adding && (
-        <BottomSheet title="くり返しを追加" label="くり返しを追加" onClose={() => setAdding(false)}>
-          <Note>毎週の決まった暇な時間。特定の日だけ外すこともできます。</Note>
+    <BottomSheet title="くり返しを追加" label="くり返しを追加" onClose={onClose}>
+      <Note>毎週の決まった暇な時間。特定の日だけ外すこともできます。</Note>
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
@@ -320,65 +278,58 @@ function Recurrence() {
             : "作れませんでした。15分単位で、30分以上、日をまたがない時間を選んでください。"}
         </p>
       )}
-        </BottomSheet>
-      )}
-    </Section>
+    </BottomSheet>
   );
 }
 
-/** 時間帯プリセットの境界の変更（設定の「時間帯プリセット」で使う） */
-export function PresetForm({ initial }: { initial: Presets }) {
+function Recurrence() {
+  const [adding, setAdding] = useState(false);
   const queryClient = useQueryClient();
-  const [value, setValue] = useState(initial);
-  const save = useMutation({
-    mutationFn: () => apiSend("PUT", "/api/v1/me/presets", value, presetsSchema),
-    onSuccess: (presets) => queryClient.setQueryData(keys.availability.presets(), presets),
+  const rules = useQuery(rulesQuery());
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.availability.all() });
+  const remove = useMutation({
+    mutationFn: (id: string) => apiSend("DELETE", `/api/v1/recurrence-rules/${id}`, undefined),
+    onSuccess: invalidate,
   });
-  const set = (name: PresetName, field: "start" | "end", hhmm: string) =>
-    setValue((v) => ({ ...v, [name]: { ...v[name], [field]: field === "end" ? asEnd(hhmm) : hhmm } }));
+  const restore = useMutation({
+    mutationFn: ({ id, date }: { id: string; date: string }) =>
+      apiSend("DELETE", `/api/v1/recurrence-rules/${id}/exceptions/${date}`, undefined),
+    onSuccess: invalidate,
+  });
 
   return (
-    <form
-      className="flex flex-col gap-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        save.mutate();
-      }}
+    <Section
+      title="くり返し"
+      aside={
+        <Button variant="ghost" size="s" onClick={() => setAdding(true)}>
+          くり返しを追加する
+        </Button>
+      }
     >
-      {PRESET_NAMES.map((name) => (
-        <fieldset key={name} className="flex items-center gap-2 border-b border-line pb-3">
-          <legend className="sr-only">{PRESET_LABELS[name]}</legend>
-          <span className="w-12 font-bold">{PRESET_LABELS[name]}</span>
-          <input
-            type="time"
-            step={900}
-            className={inputClass}
-            aria-label={`${PRESET_LABELS[name]}の開始`}
-            value={value[name].start}
-            onChange={(e) => set(name, "start", e.target.value)}
-          />
-          〜
-          <input
-            type="time"
-            step={900}
-            className={inputClass}
-            aria-label={`${PRESET_LABELS[name]}の終了`}
-            value={value[name].end === "24:00" ? "00:00" : value[name].end}
-            onChange={(e) => set(name, "end", e.target.value)}
-          />
-        </fieldset>
-      ))}
-      <Note>変えても、すでにあるここ暇とくり返しの時刻は変わりません。</Note>
-      <SendButton type="submit" variant="primary" block disabled={save.isPending}>
-        時間帯を保存
-      </SendButton>
-      {save.isError && (
-        <p role="status" className="text-s text-ink-muted">
-          保存できませんでした。15分単位で、30分以上、日をまたがない時間を選んでください。
-        </p>
+      {rules.data && rules.data.items.length > 0 && (
+        <ul aria-label="くり返し" className="rounded-l bg-surface px-4 shadow-card">
+          {rules.data.items.map((rule) => (
+            <li key={rule.id} className="flex flex-col gap-1 border-b border-line py-3 last:border-b-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="tabular-nums">{ruleText(rule)}</span>
+                <SendButton variant="ghost" size="s" onClick={() => remove.mutate(rule.id)}>
+                  削除
+                </SendButton>
+              </div>
+              {rule.exceptions.map((date) => (
+                <div key={date} className="flex items-center justify-between gap-2 text-s text-ink-muted">
+                  <span>{formatDate(date)}は外しています</span>
+                  <SendButton variant="ghost" size="s" onClick={() => restore.mutate({ id: rule.id, date })}>
+                    戻す
+                  </SendButton>
+                </div>
+              ))}
+            </li>
+          ))}
+        </ul>
       )}
-      {save.isSuccess && <p role="status" className="text-s text-ink-muted">保存しました</p>}
-    </form>
+      {adding && <AddRecurrenceSheet onClose={() => setAdding(false)} />}
+    </Section>
   );
 }
 
