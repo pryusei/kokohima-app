@@ -55,7 +55,11 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `login_codes` | `code_hash`（PK）、`user_id`（FK）、`provider`、`binding_hash`、`return_to`、`expires_at` | コールバックから完了までの一時データ。60秒で失効。使ったら削除 |
 | `outbox` | `id`（UUID、PK）、`type`、`payload`（JSON）、`created_at`、`processed_at`（null可） | 外部連携の共通の箱。今回は書き込みのみ |
 
-- 期限切れの `oauth_transactions`・`login_codes` は、Cron（毎分の `cleanupExpired`）で消す。失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens` の掃除は別タスク（利用者ごとに1行残す方針と一緒に決める。issue #38）
+- 期限切れの `oauth_transactions`・`login_codes` は、Cron（毎分の `cleanupExpired`）で消す。
+- 同じ Cron で、失効（`revoked_at`）か期限切れ（`expires_at`）から30日を過ぎた `sessions` と、期限切れから30日を過ぎた `refresh_tokens` を消す（1回に500行まで。issue #54）。
+  - 利用者ごとに、最初に作ったセッションの行（`created_at`・`id` の順で最初）は消さない。T-07 の新端末のログインの判定（`hasEarlierSession`）が「その人のこれより前のセッションがあるか」で最初のログインを見分けるため。最初の行を残せば、後から作るどのセッションにも「前のセッション」がある。
+  - セッションを消すと、その更新用トークンとプッシュの購読も外部キーの CASCADE で消える。
+  - 期限切れの更新用トークンは、使用済みかどうかに関係なく「更新」の手順3で拒否されるので、消しても振る舞いは変わらない。
 
 ## 振る舞い
 
@@ -215,6 +219,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - [x] `requireAuth`：期限切れ・署名不正・未知の `kid`・`alg=none` を拒否し、応答は同じ
 - [x] 他人のIDでは取得・更新できない：`GET /me` はBearerの本人だけを返し、queryやbodyのIDは無視される。ユーザーAの `logout-all` でユーザーBのセッションは失効しない
 - [x] `SessionStarted` が `outbox` に書かれる。ペイロードにメールアドレスやトークンを含まない
+- [x] 掃除：失効・期限切れから30日を過ぎたセッションと更新用トークンを消す。利用者の最初のセッションは残し、掃除の後も新しいセッションは「前のセッションがある」と判定される
 - [x] E2E用：`E2E_MODE` が `1` 以外なら `/__e2e__/login` は404
 - [x] フロント：起動時の更新や、401の後の更新がネットワークエラー・5xxのときはログアウト状態にしない
 - [x] フロント：ログアウト・全端末ログアウトが通信できなければ、ログイン中のまま再試行を促す。全端末ログアウトはアクセストークンが切れていれば更新してから送る
@@ -235,7 +240,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - 初回設定（表示名とアイコン）。今回は `displayName`・`avatarUrl` がnullのまま
 - 監査ログ（ログインの30日保持）。監査ログの仕組みとまとめて別タスクにする（決定事項6）
 - レート制限：ログインの開始は T-10 で IP ごとの上限を付ける（超えたら `/login?error=login_failed`）。コールバック・`complete`・`refresh` は1回限りの値を消費するので付けない。WAF のレート制限はエッジのセキュリティのタスクで行う（決定事項7）
-- 期限切れデータの掃除（Cron）
+- 期限切れデータの掃除のうち、ログインの記録とセッション以外（ほかの表の保持期間は issue #38）
 - 最終的な画面デザイン
 
 ## 決定事項（仕様書PRのレビューで合意）
@@ -263,3 +268,4 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | 2026-11-15 | ログアウト・全端末ログアウト・再利用の検知で、プッシュの購読を消す。フロントは、ログアウトの前にこの端末の購読を解除し、ログイン中にアプリを開くたび購読を送り直す | T-07 の実装PR（docs/specs/T-07-notification.md） |
 | 2026-11-17 | ログインの開始のレート制限を T-10 で付けることにした（コールバック・complete・refresh には付けない） | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |
 | 2026-11-21 | テスト計画のチェックを付けた（すべての項目に対応する単体テスト・E2Eがあることを確かめた）。E2E の1つめの流れの表示を、今のホーム（みんな）に合わせた | 全体の点検（pryusei/kokohima-app#50） |
+| 2026-11-21 | 失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens` の掃除を実装した（利用者ごとに最初のセッションを残す） | セキュリティの点検（pryusei/kokohima-app#54） |
