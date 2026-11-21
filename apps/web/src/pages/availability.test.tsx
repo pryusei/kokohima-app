@@ -1,4 +1,7 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { focusManager } from "@tanstack/react-query";
+import { ApiError } from "../api/client";
+import { everyoneQuery } from "../availability/queries";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -106,6 +109,55 @@ describe("みんな", () => {
     const pages = calls.filter((c) => c.url.startsWith("/api/v1/friend-availabilities"));
     expect(pages).toHaveLength(2);
     expect(pages[1]?.url).toContain("cursor=next-1");
+  });
+});
+
+describe("みんな：回数の上限（docs/specs/T-14-friend-availabilities-ratelimit.md）", () => {
+  const limited = json({ type: "about:blank", title: "Too Many Requests", status: 429, code: "rate_limited" }, 429);
+  const okPage = json({
+    items: [{ friend, startsAt: "2026-10-10T10:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z", label: "night", overlapsMine: false }],
+    nextCursor: null,
+  });
+
+  it("429 なら取り直さない。ほかの失敗は3回まで取り直す", () => {
+    const { retry } = everyoneQuery("2026-10-10");
+    expect(retry(0, new ApiError(429, "rate_limited"))).toBe(false);
+    expect(retry(0, new ApiError(500))).toBe(true);
+    expect(retry(2, new Error("network"))).toBe(true);
+    expect(retry(3, new ApiError(500))).toBe(false);
+  });
+
+  it("前に読めた内容がなければ、静かな文言を出し、「もう一度」を出さず、取り直さない", async () => {
+    window.history.replaceState(null, "", "/");
+    const { calls } = mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/friend-availabilities": limited,
+    });
+    renderApp();
+    expect(await screen.findByText("少し時間をおいて、もう一度開いてください")).toBeVisible();
+    expect(screen.queryByText("読み込めませんでした。もう一度お試しください")).toBeNull();
+    expect(screen.queryByRole("button", { name: "もう一度" })).toBeNull();
+    expect(calls.filter((c) => c.url.startsWith("/api/v1/friend-availabilities"))).toHaveLength(1);
+  });
+
+  it("前に読めた内容があれば、429 でも出したままにし、失敗の文言を出さない", async () => {
+    window.history.replaceState(null, "", "/");
+    const { calls } = mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/friend-availabilities": [okPage, limited],
+    });
+    renderApp();
+    expect(await screen.findByText("夜 19:00〜23:00")).toBeVisible();
+    // タブに戻ったときの取り直し
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(calls.filter((c) => c.url.startsWith("/api/v1/friend-availabilities"))).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText("夜 19:00〜23:00")).toBeVisible());
+    expect(screen.queryByText("読み込めませんでした。もう一度お試しください")).toBeNull();
+    expect(screen.queryByText("少し時間をおいて、もう一度開いてください")).toBeNull();
+    act(() => focusManager.setFocused(undefined));
   });
 });
 
