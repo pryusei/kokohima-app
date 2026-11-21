@@ -7,6 +7,7 @@ import { problem } from "../http/problem";
 import { handleJob } from "../jobs/consumer";
 import { dispatchedTypes } from "../jobs/dispatch";
 import { sha256 } from "../shared/crypto";
+import { TransientError } from "../link-preview/domain/url";
 import { e2eOgpFetch } from "./linkPreview";
 import { e2eDeliverPending, e2eNotificationFetch } from "./notifications";
 
@@ -145,7 +146,9 @@ export async function e2eOutboxDrain(c: Context<AppEnv>) {
     for (const r of results) {
       try {
         await handleJob(ctx, { kind: "outbox", id: r.id, type: r.type, payload: r.payload, createdAt: r.created_at });
-      } catch {
+      } catch (e) {
+        // 一時的な失敗（同じ行を同時に処理した）だけを残して再び試す。ほかの失敗はそのまま返す
+        if (!(e instanceof TransientError)) throw e;
         failed++;
         continue;
       }

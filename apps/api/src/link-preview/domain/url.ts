@@ -30,11 +30,16 @@ export class TransientError extends Error {
   }
 }
 
-/** `LINK_PREVIEW_OWN_DOMAINS` を読む。空・読めない値は null（取りに行かない） */
+/**
+ * `LINK_PREVIEW_OWN_DOMAINS` を読む。空・読めない値は null（取りに行かない）。
+ * 本番で使えない予約の名前（.invalid・.example）は、置き換え忘れのプレースホルダーとみなして読めない値にする
+ */
 export function parseOwnDomains(value: string | undefined): string[] | null {
   if (!value) return null;
   const domains = value.split(",").map((d) => d.trim());
-  const valid = (d: string) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(d);
+  const placeholder = (d: string) => /(^|\.)(invalid|example)$/.test(d);
+  const valid = (d: string) =>
+    /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(d) && !placeholder(d);
   if (domains.length === 0 || !domains.every(valid)) return null;
   return domains;
 }
@@ -71,7 +76,8 @@ export function fetchableUrl(raw: string, policy: FetchPolicy, base?: string): {
   const defaultPort = url.protocol === "http:" ? "80" : "443";
   if (url.port !== "" && url.port !== defaultPort) return null;
   const host = url.hostname.toLowerCase().replace(/\.$/, "");
-  if (host === "" || isIpLiteral(host)) return null;
+  // 末尾のドットを2つ以上付けた名前（x.workers.dev..）など、空のラベルが残るものは取らない
+  if (host === "" || host.split(".").some((l) => l === "") || isIpLiteral(host)) return null;
   url.hash = "";
   if (policy.extraHosts.includes(host)) return { href: url.href, host };
   if (!host.includes(".")) return null;

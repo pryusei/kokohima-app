@@ -121,7 +121,7 @@
    - この UPDATE が0行だったら（権利を引き継いだ側が先に終えた、または掃除で行が消えた）、その行を読み直す。
      - `ok`・`failed` になっていれば、その行を参照して終える（自分の結果は書かない）。自分が R2 に置いた画像は、台帳の掃除で消える。
      - 行がない、またはまだ `fetching` なら、一時的な失敗として投げる（次の試行で、使い回すか権利を取り直す）。
-4. 一時的な失敗（取得先の5xx・429・タイムアウト・名前解決の失敗・ほかの処理が取得中）は投げて、Queue の再試行に任せる。
+4. 一時的な失敗（取得先の5xx・429・タイムアウト・名前解決の失敗・ほかの処理が取得中・取得の途中の思わぬ例外）は投げて、Queue の再試行に任せる。
    - 権利を取った処理が一時的な失敗で投げるときは、投げる前に権利を手放す：`DELETE FROM link_previews WHERE id = ? AND status = 'fetching' AND claimed_at = ?`（自分が取った時刻。引き継がれていたら消さない）。手放さないと、同じメッセージの再試行が自分の権利に阻まれ、10分を過ぎるまで（今の再試行の間隔では6回めまで）取りに行けないため。手放すのに失敗しても、10分の引き継ぎで救われる。
    - consumer は `handleJob` にメッセージの試行の回数（`message.attempts`）を渡す。最後の試行（`attempts > MAX_RETRIES`。`message.attempts` は1から数えるので、最初の1回と再試行5回で6回め）でも失敗したら、`failed` の行を書いて参照し、投げずに終える（退避キューに送らない）。権利を持っていれば、その行を条件付き UPDATE で `failed` にする（新しい行は入れない）。
    - E2E の drain など試行の回数がない呼び出しは、最後の試行として扱わない。
@@ -131,12 +131,12 @@
 ### 取りに行ってよい URL（domain）
 - WHATWG URL で解析した後の値で判定する（`127.1`・`0x7f000001`・全角の文字などは、解析で正規化されてから判定される）。
 - スキームは `http`・`https`。ポートは指定なしか、80（http）・443（https）だけ。userinfo なし。
-- ホスト名の末尾の `.` は除いてから判定する。
+- ホスト名の末尾の `.` は1つ除いてから判定する。除いたあとに空のラベルが残るもの（`x.workers.dev..` など）は取らない。
 - ホストが IP アドレス（IPv4・IPv6）なら取らない。
 - ホストが `localhost`、`.localhost`・`.local`・`.internal`・`.home.arpa`・`.test`・`.invalid`・`.example`・`.onion` で終わるもの、ドットを含まないものは取らない。
 - アプリ自身のドメイン（設定値 `LINK_PREVIEW_OWN_DOMAINS` に書いたもの）とそのサブドメイン、`workers.dev` とそのサブドメインは取らない。
   - 登録ドメイン（`APP_ORIGIN` のホストから求める）には Public Suffix List が要るので、コードでは求めない。登録ドメインを人が設定値に書き、domain の判定の関数には引数で渡す（domain は設定を読まない）。
-  - `LINK_PREVIEW_OWN_DOMAINS` はカンマ区切りの小文字のホスト名。空・読めない値なら、取りに行かずに一時的な失敗として投げる（設定の誤りで自分のドメインに向かないように。最後の試行では `failed`）。
+  - `LINK_PREVIEW_OWN_DOMAINS` はカンマ区切りの小文字のホスト名。`.invalid`・`.example` で終わる値は置き換え忘れのプレースホルダーとみなして読めない値にする。空・読めない値なら、取りに行かずに一時的な失敗として投げる（設定の誤りで自分のドメインに向かないように。最後の試行では `failed`）。
 
 ### 名前解決の検査（infra。決定事項2）
 - 取りに行く前に、ホスト名を DNS over HTTPS（`https://cloudflare-dns.com/dns-query`、`Accept: application/dns-json`）で A・AAAA の両方を引く。1回のタイムアウトは3秒。
@@ -149,7 +149,7 @@
 - `apps/api/src/http/rateLimit.ts` の `clientKeyOf`（読めない値で上限をかけない作り）は流用しない。
 
 ### 取得（infra）
-- `redirect: "manual"`。3xx は `Location` を絶対の URL にして、取りに行ってよい URL か・名前解決の検査を通るかを毎回確かめる。リダイレクトは3回まで。
+- `redirect: "manual"`。3xx は `Location` を絶対の URL にして（`Location` がない・解析できなければ `failed`）、取りに行ってよい URL か・名前解決の検査を通るかを毎回確かめる。リダイレクトは3回まで。
 - タイムアウトは、1回の取得ごとに本文を読み終えるまでで5秒、ページ全体（名前解決とリダイレクトを含む）で10秒。画像も同じ（画像全体で10秒）。
 - 要求のヘッダー：`User-Agent: kokohima-link-preview/1.0`、`Accept: text/html,application/xhtml+xml`、`Accept-Language: ja`。Cookie・Authorization・Referer は付けない。
 - 応答の `Content-Type` が `text/html` か `application/xhtml+xml` でなければ `failed`。
@@ -157,10 +157,11 @@
 - 200 以外（3xx を除く）の応答は、4xx（429 を除く）なら `failed`、5xx・429 なら一時的な失敗。
 
 ### 解析（domain）
+- コメントと script・style の中身は読まない（閉じがなければ残りを捨てる）。タグの読み取りは左から1回の走査で行い、閉じのないタグが多数あっても、ページの大きさに比例する時間で終える。
 - `<head>` の中の `<meta property="og:title|og:description|og:site_name|og:image">`（`name` 属性も見る）、なければ `<title>`・`<meta name="description">`。
 - 文字列は、HTML の文字参照を戻し、制御文字・書式文字を除き、連続する空白を1つにし、長さの上限（タイトル200・説明300・サイト名100）で切る。
 - タイトルも説明もなければ `failed`。
-- `og:image` は、ページの URL からの相対を絶対の URL にし、取りに行ってよい URL か確かめる（http のページの画像も可）。
+- `og:image` は、リダイレクトを追ったあとのページの URL からの相対を絶対の URL にし、取りに行ってよい URL か確かめる（http のページの画像も可）。
 
 ### 画像（infra）
 - ページと同じ検査（URL・名前解決・リダイレクト3回・タイムアウト）で取る。`Accept: image/jpeg,image/png,image/webp,image/gif`。
@@ -189,7 +190,7 @@
 
 ### E2E用の偽のサイト
 - E2E のエントリで、`ogp.e2e.invalid` あての `fetch` を偽のサイトに向ける（T-06 の `e2eFetch` に足す）。偽のサイトは `/page`（OGP と画像あり）・`/og.png`・それ以外は404。
-- E2E の outbox の drain（`/__e2e__/outbox/drain`）は、並んで走るテストが同じ行を同時に処理して一時的な失敗になったとき、その行を処理済みにせずに残し、同じ回の中でもう一度試す（Queue の再試行の代わり）。
+- E2E の outbox の drain（`/__e2e__/outbox/drain`）は、並んで走るテストが同じ行を同時に処理して一時的な失敗になったとき、その行を処理済みにせずに残し、同じ回の中でもう一度試す（Queue の再試行の代わり）。一時的な失敗でない例外は、今までどおりそのまま返す。
 - `.invalid` は取りに行ってよい URL ではないので、E2E のエントリだけ `AppDeps.linkPreview` の `extraHosts` で偽のホストを許し、`resolve` で名前解決の検査を公開のアドレスを返す偽物に差し替える。タイムアウト（`timeouts`）も `AppDeps.linkPreview` に持ち、単体テストでだけ短くする（`createWorker(overrides)` を通して `apps/api/src/e2e/entry.ts` からだけ。T-07 の `extraPushHosts` と同じ）。既定の `AppDeps` では許さない。
 - CI の本番ビルドの検査に、偽のホスト名と E2E の名前を足す。
 
@@ -267,3 +268,4 @@
 | 2026-11-21 | Workers の `TextDecoder` の文字コードを確かめた結果を足した。自分のドメインを設定値 `LINK_PREVIEW_OWN_DOMAINS` で渡す。権利を引き継がれた側が終えるときの振る舞いを足した | 仕様書PRのレビュー（pryusei/kokohima-app#75） |
 | 2026-11-21 | IPv6 の拒否に `3fff::/20`（文書用）を足した。`MAX_ATTEMPTS` を、意味に合わせて `MAX_RETRIES` に改めることにした（実装PRで直すもの） | 仕様書PRのレビュー（pryusei/kokohima-app#75） |
 | 2026-11-21 | 実装した。決定事項と確認事項を合意済みにし、掃除の上限（100）、E2E の偽のサイトの経路と drain の再試行、`AppDeps.linkPreview` のタイムアウトを書いた | 実装PR |
+| 2026-11-21 | 実装PRのレビューを反映：空のラベルの残るホスト名を拒む、`LINK_PREVIEW_OWN_DOMAINS` のプレースホルダーは読めない値、解析できない `Location` は `failed`、取得の途中の思わぬ例外は一時的な失敗、相対の `og:image` はリダイレクトのあとの URL から、コメントと script・style を読まない左から1回の走査、E2E の drain は一時的な失敗だけを残して再び試す | 実装PRのレビュー（セキュリティ・仕様） |

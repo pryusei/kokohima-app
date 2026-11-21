@@ -44,12 +44,15 @@ export function headOf(html: string): string {
   return end === -1 ? html : html.slice(0, end);
 }
 
+/** ASCII の英字だけを小文字にする（長さが変わらないので、元の文字列と同じ位置で切り出せる） */
+const asciiLower = (text: string) => text.replace(/[A-Z]/g, (c) => c.toLowerCase());
+
 /**
  * コメントと script・style の中身を除く。左から1回だけ見ていく（閉じがなければ残りを捨てて終える）ので、
  * 閉じのない開始が多数あっても、ページの大きさに比例する時間で終わる
  */
 export function stripIgnored(text: string): string {
-  const lower = text.toLowerCase();
+  const lower = asciiLower(text);
   let out = "";
   let i = 0;
   for (;;) {
@@ -74,7 +77,7 @@ export function stripIgnored(text: string): string {
 
 /** <meta ...> のタグを左から順に。閉じの > がなければそこで終える（ページの大きさに比例する時間） */
 export function* metaTags(text: string): Generator<string> {
-  const lower = text.toLowerCase();
+  const lower = asciiLower(text);
   let i = 0;
   for (;;) {
     const start = lower.indexOf("<meta", i);
@@ -93,7 +96,7 @@ export function* metaTags(text: string): Generator<string> {
 
 /** 最初の <title> の中身。閉じがなければ null */
 export function titleOf(text: string): string | null {
-  const lower = text.toLowerCase();
+  const lower = asciiLower(text);
   let i = 0;
   for (;;) {
     const start = lower.indexOf("<title", i);

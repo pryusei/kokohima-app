@@ -198,6 +198,19 @@ describe("取得から表示まで", () => {
     expect(all?.n).toBe(accepted);
   });
 
+  it("募集の送信が拒否された（宛先に友達でない人がいる）ときは LinkAttached を書かない", async () => {
+    const owner = await u.user();
+    const f = await u.user();
+    const stranger = await u.user();
+    await u.befriend(owner, f);
+    const res = await u.call("POST", "/api/v1/broadcasts", { token: owner.token, body: { recipientIds: [f.id, stranger.id], ...nextRange(), url: `https://${host()}/` } });
+    expect(res.status).toBe(404);
+    const n = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM outbox o WHERE o.type = 'LinkAttached' AND NOT EXISTS (SELECT 1 FROM broadcasts b WHERE b.id = json_extract(o.payload, '$.subjectId')) AND json_extract(o.payload, '$.subjectType') = 'broadcast'",
+    ).first<number>("n");
+    expect(n).toBe(0);
+  });
+
   it("募集のリンクも、宛先の人と募集者に同じプレビューが出る", async () => {
     const owner = await u.user("あき");
     const f1 = await u.user();
@@ -250,6 +263,34 @@ describe("取得から表示まで", () => {
     expect(await res.text()).not.toContain("タイトル");
     const list = await (await u.call("GET", "/api/v1/direct-invites?box=received", { token: c.token })).text();
     expect(list).not.toContain(created.id);
+    // 成立した予定も、参加者でない人には404
+    const res2 = await u.call("POST", `/api/v1/direct-invites/${created.id}/responses`, { token: b.token, body: { response: "accept" } });
+    const meetupId = directInviteSchema.parse(await res2.json()).meetupId ?? "";
+    const m = await u.call("GET", `/api/v1/meetups/${meetupId}`, { token: c.token });
+    expect(m.status).toBe(404);
+    expect(await m.text()).not.toContain("タイトル");
+    const meetups = await (await u.call("GET", "/api/v1/meetups", { token: c.token })).text();
+    expect(meetups).not.toContain(meetupId);
+    expect(meetups).not.toContain("タイトル");
+  });
+
+  it("他人の ID では取得できない：募集の宛先でない人には404（プレビューも出ない）", async () => {
+    const owner = await u.user();
+    const [f1, f2, c] = [await u.user(), await u.user(), await u.user()];
+    await u.befriend(owner, f1);
+    await u.befriend(owner, f2);
+    await u.befriend(owner, c);
+    const url = `https://${host()}/`;
+    h.web.page(url, () => html(ogpHead("募集だけのタイトル")));
+    const res = await u.call("POST", "/api/v1/broadcasts", { token: owner.token, body: { recipientIds: [f1.id, f2.id], ...nextRange(), url } });
+    const created = broadcastSchema.parse(await res.json());
+    await deliver(created.id, 1);
+    const got = await u.call("GET", `/api/v1/broadcasts/${created.id}`, { token: c.token });
+    expect(got.status).toBe(404);
+    expect(await got.text()).not.toContain("募集だけのタイトル");
+    const list = await (await u.call("GET", "/api/v1/broadcasts?box=received", { token: c.token })).text();
+    expect(list).not.toContain(created.id);
+    expect(list).not.toContain("募集だけのタイトル");
   });
 
   it("pending・failed のときは項目がすべて null。T-08 より前の誘い（参照の行がない）は pending", async () => {
@@ -358,6 +399,33 @@ describe("同じ URL", () => {
     expect(rows[0]?.status).toBe("ok");
   });
 
+  it("権利を引き継がれた側が先に終えていたら、その結果を参照して終える。行がない・まだ fetching なら投げる", async () => {
+    const { a, b } = await pair();
+    const setRow = (hash: string, sql: string) => env.DB.prepare(sql).bind(hash).run();
+    // 取得の途中で、ほかの処理が行を ok にした
+    const done = host();
+    const doneUrl = `https://${done}/`;
+    const doneHash = await hashOf(doneUrl);
+    h.web.page(doneUrl, async () => {
+      await setRow(doneHash, "UPDATE link_previews SET status = 'ok', title = '先に終えた側', fetched_at = 1 WHERE url_hash = ?1");
+      return html(ogpHead("自分の結果"));
+    });
+    const c1 = await invite(a, b, doneUrl);
+    await deliver(c1.id, 1);
+    expect((await getInvite(b, c1.id)).linkPreview?.title).toBe("先に終えた側");
+    // 取得の途中で、行が消えた（掃除）
+    const gone = host();
+    const goneUrl = `https://${gone}/`;
+    const goneHash = await hashOf(goneUrl);
+    h.web.page(goneUrl, async () => {
+      await setRow(goneHash, "DELETE FROM link_previews WHERE url_hash = ?1");
+      return html(ogpHead());
+    });
+    const c2 = await invite(a, b, goneUrl);
+    await expect(deliver(c2.id, 1)).rejects.toBeInstanceOf(TransientError);
+    expect((await getInvite(b, c2.id)).linkPreview?.status).toBe("pending");
+  });
+
   it("10分以内の fetching の行があれば一時的な失敗。最後の試行では failed にして投げない", async () => {
     const { a, b } = await pair();
     const url = `https://${host()}/busy`;
@@ -450,7 +518,37 @@ describe("一時的な失敗と再試行", () => {
     await expect(deliver(created.id, 1)).rejects.toBeInstanceOf(TransientError);
   });
 
-  it("LINK_PREVIEW_OWN_DOMAINS が空なら取りに行かず一時的な失敗、最後の試行では failed", async () => {
+  it("全体のタイムアウト（リダイレクトを含めて totalMs）は一時的な失敗", async () => {
+    const { a, b } = await pair();
+    const site = host();
+    const slow = (to: string) => async () => {
+      await new Promise((r) => setTimeout(r, 250));
+      return new Response(null, { status: 302, headers: { Location: to } });
+    };
+    // 1回ごとは fetchMs（300ms）に収まるが、合わせると totalMs（600ms）を超える
+    h.web.page(`https://${site}/1`, slow("/2"));
+    h.web.page(`https://${site}/2`, slow("/3"));
+    h.web.page(`https://${site}/3`, slow("/4"));
+    h.web.page(`https://${site}/4`, () => html(ogpHead()));
+    const created = await invite(a, b, `https://${site}/1`);
+    await expect(deliver(created.id, 1)).rejects.toBeInstanceOf(TransientError);
+  });
+
+  it("思わぬ例外も一時的な失敗として権利を手放し、最後の試行では failed", async () => {
+    const { a, b } = await pair();
+    const url = `https://${host()}/boom`;
+    h.web.page(url, () => {
+      throw new Error("boom");
+    });
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const created = await invite(a, b, url);
+    await expect(deliver(created.id, 1)).rejects.toBeInstanceOf(TransientError);
+    expect((await previewRows(await hashOf(url))).results).toHaveLength(0);
+    await deliver(created.id, MAX_RETRIES + 1);
+    expect((await getInvite(b, created.id)).linkPreview?.status).toBe("failed");
+  });
+
+  it("LINK_PREVIEW_OWN_DOMAINS が空・プレースホルダーのままなら取りに行かず一時的な失敗、最後の試行では failed", async () => {
     const { a, b } = await pair();
     const site = host();
     const url = `https://${site}/`;
@@ -459,6 +557,8 @@ describe("一時的な失敗と再試行", () => {
     const ctx = { env: { ...h.bindings, LINK_PREVIEW_OWN_DOMAINS: "" }, deps: h.deps };
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     await expect(handleLinkAttached(ctx, { type: "direct_invite", id: created.id }, false)).rejects.toBeInstanceOf(TransientError);
+    const placeholder = { env: { ...h.bindings, LINK_PREVIEW_OWN_DOMAINS: "example.invalid" }, deps: h.deps };
+    await expect(handleLinkAttached(placeholder, { type: "direct_invite", id: created.id }, false)).rejects.toBeInstanceOf(TransientError);
     await handleLinkAttached(ctx, { type: "direct_invite", id: created.id }, true);
     expect(h.web.countFor(site)).toBe(0);
     expect((await getInvite(b, created.id)).linkPreview?.status).toBe("failed");
@@ -519,6 +619,11 @@ describe("取りに行かない URL", () => {
     const three = await invite(a, b, `https://${site}/r1`);
     await deliver(three.id, 1);
     expect((await getInvite(b, three.id)).linkPreview?.title).toBe("3回のあと");
+    // 解析できない Location は failed（例外にしない）
+    h.web.page(`https://${site}/bad`, redirect("http://["));
+    const bad = await invite(a, b, `https://${site}/bad`);
+    await deliver(bad.id, 1);
+    expect((await getInvite(b, bad.id)).linkPreview?.status).toBe("failed");
     const four = await invite(a, b, `https://${site}/r0`);
     await deliver(four.id, 1);
     expect((await getInvite(b, four.id)).linkPreview?.status).toBe("failed");
@@ -627,6 +732,18 @@ describe("画像", () => {
     for (const respond of cases) {
       expect(await withImage(respond)).toEqual(okPreview({ title: "ページ", siteName: "サイト", imageUrl: null }));
     }
+  });
+
+  it("相対の og:image は、リダイレクトを追ったあとのページから解決する", async () => {
+    const { a, b } = await pair();
+    const from = host();
+    const to = host();
+    h.web.page(`https://${from}/`, () => new Response(null, { status: 301, headers: { Location: `https://${to}/shop/` } }));
+    h.web.page(`https://${to}/shop/`, () => html(ogpHead("ページ", "og.png")));
+    h.web.page(`https://${to}/shop/og.png`, () => new Response(images.png(10, 10), { headers: { "Content-Type": "image/png" } }));
+    const created = await invite(a, b, `https://${from}/`);
+    await deliver(created.id, 1);
+    expect((await getInvite(b, created.id)).linkPreview?.imageUrl).toMatch(/^\/api\/v1\/link-previews\/images\//);
   });
 
   it("画像の URL が内部を向いていたら取らない", async () => {

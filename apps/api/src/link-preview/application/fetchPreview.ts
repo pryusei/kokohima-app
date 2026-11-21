@@ -64,7 +64,8 @@ async function fetchPage(ctx: Ctx, url: string, policy: FetchPolicy): Promise<Pa
   if (html === null) return { kind: "failed" };
   const ogp = parseOgp(html);
   if (!ogp) return { kind: "failed" };
-  const image = ogp.image ? fetchableUrl(ogp.image, policy, url) : null;
+  // 相対の og:image は、リダイレクトを追ったあとのページの URL から解決する
+  const image = ogp.image ? fetchableUrl(ogp.image, policy, r.url) : null;
   const stored = image ? await storeImage(ctx, image.href, policy).catch(() => null) : null;
   return {
     kind: "ok",
@@ -128,7 +129,14 @@ export async function handleLinkAttached(ctx: Ctx, subject: repo.Subject, last: 
 
   // 取りに行ってよい URL でなければ、取らずに failed
   const target = fetchableUrl(normalized, policy);
-  const result: PageResult = target ? await fetchPage(ctx, target.href, policy) : { kind: "failed" };
+  let result: PageResult;
+  try {
+    result = target ? await fetchPage(ctx, target.href, policy) : { kind: "failed" };
+  } catch (e) {
+    // 思わぬ例外も一時的な失敗として扱い、権利を手放す（最後の試行では failed）
+    console.log(JSON.stringify({ event: "link_preview_fetch", outcome: "error", name: (e as Error).name }));
+    result = { kind: "transient" };
+  }
   if (result.kind === "transient") {
     if (last) return failLast(previewId);
     await repo.release(d1, previewId, claimedAt).catch(() => undefined);

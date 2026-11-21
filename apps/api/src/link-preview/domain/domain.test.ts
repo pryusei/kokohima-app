@@ -53,6 +53,10 @@ describe("取りに行ってよい URL", () => {
       "http://abc.onion/",
       "http://intranet/",
       "http://ｌｏｃａｌｈｏｓｔ/",
+      "http://localhost../",
+      "http://foo.local../",
+      "http://127.0.0.1../",
+      "https://example..com/",
     ]) {
       expect(ok(u), u).toBe(false);
     }
@@ -66,6 +70,8 @@ describe("取りに行ってよい URL", () => {
     expect(ok("https://kokohima.app.evil.com/")).toBe(true);
     expect(ok("https://workers.dev/")).toBe(false);
     expect(ok("https://x.y.workers.dev/")).toBe(false);
+    expect(ok("https://x.workers.dev../")).toBe(false);
+    expect(ok("https://api.kokohima.app../")).toBe(false);
   });
 
   it("追加で許すホストは、内部向けの接尾辞でも通す（E2E）", () => {
@@ -85,6 +91,10 @@ describe("取りに行ってよい URL", () => {
     expect(parseOwnDomains("Kokohima.app")).toBeNull();
     expect(parseOwnDomains("kokohima.app,,x.jp")).toBeNull();
     expect(parseOwnDomains("https://kokohima.app")).toBeNull();
+    // 置き換え忘れのプレースホルダー（予約の名前）は読めない値
+    expect(parseOwnDomains("example.invalid")).toBeNull();
+    expect(parseOwnDomains("kokohima.app,staging.example")).toBeNull();
+    expect(parseOwnDomains("localhost")).toEqual(["localhost"]);
   });
 });
 
@@ -187,6 +197,9 @@ describe("解析", () => {
     expect(parseOgp(unclosed)?.title).toBe("題");
     expect(parseOgp(page(`<meta property="og:title" content="x">${"<title>".repeat(100_000)}`))?.title).toBe("x");
     expect(Date.now() - t2).toBeLessThan(1000);
+    // 小文字にすると長さが変わる文字（İ）があっても、位置がずれない
+    expect(stripIgnored("İİ<!--x-->b<script>c</script>d")).toBe("İİbd");
+    expect(parseOgp(page(`<title>İİ題</title><meta property="og:description" content="İ説">`))).toMatchObject({ title: "İİ題", description: "İ説" });
     expect(stripIgnored("a<!--x-->b<script>c</script >d<style>e</STYLE>f<scripts>g")).toBe("abdf<scripts>g");
   });
 

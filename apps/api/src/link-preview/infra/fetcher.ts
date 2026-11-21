@@ -9,7 +9,8 @@ export const MAX_REDIRECTS = 3;
 const USER_AGENT = "kokohima-link-preview/1.0";
 
 export type FetchOutcome =
-  | { kind: "ok"; contentType: string; body: Uint8Array; truncated: boolean }
+  /** url はリダイレクトを追ったあとの URL */
+  | { kind: "ok"; url: string; contentType: string; body: Uint8Array; truncated: boolean }
   /** 取りに行かない・取れない（再試行しても同じ） */
   | { kind: "failed"; status?: number }
   /** 一時的な失敗（再試行で直りうる） */
@@ -105,7 +106,11 @@ export async function fetchChecked(deps: AppDeps, startUrl: string, options: Opt
           await res.body?.cancel().catch(() => undefined);
           const location = res.headers.get("Location");
           if (!location) return { kind: "failed", status: res.status };
-          return { kind: "redirect", location: new URL(location, target.href).href };
+          try {
+            return { kind: "redirect", location: new URL(location, target.href).href };
+          } catch {
+            return { kind: "failed", status: res.status };
+          }
         }
         if (res.status !== 200) {
           await res.body?.cancel().catch(() => undefined);
@@ -114,7 +119,7 @@ export async function fetchChecked(deps: AppDeps, startUrl: string, options: Opt
         }
         try {
           const { body, truncated } = await readBody(res, options.maxBytes);
-          return { kind: "ok", contentType: res.headers.get("Content-Type") ?? "", body, truncated };
+          return { kind: "ok", url: target.href, contentType: res.headers.get("Content-Type") ?? "", body, truncated };
         } catch {
           return { kind: "transient" };
         }
