@@ -61,6 +61,7 @@
 | `POST /api/v1/invite-links/lookup` | `invite_lookup` | IP | 同上 | `RL_PUBLIC` | 429 `rate_limited` |
 | `GET /api/v1/ics/{token}` | `ics` | IP | 同上 | `RL_PUBLIC` | 429（本文なし。OS のカレンダーが開く経路のため） |
 | `GET /api/v1/calendar/free-slots` | `free_slots` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited` |
+| `GET /api/v1/friend-availabilities` | `friend_availabilities` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited`（T-14） |
 | `GET /api/v1/link-previews/images/{imageId}` | `link_image` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429（本文なし。`<img>` が読む経路のため。T-08） |
 | `POST /api/v1/meetups/{id}/ics-links` | — | 利用者 ID | 直近5分で20本（厳密） | D1（`ics_tokens` の行の数） | 429 `rate_limited` |
 
@@ -252,3 +253,4 @@
 | 2026-11-17 | 実装した。KV の書き込みは待つ形にした、`CF-Connecting-IP` がないときはどの環境でも上限をかけない、`ApiError` は `code` を持つ、カレンダーの空きのクエリは429のあと取り直さない、に直した。テストの実行環境で確かめたことを書いた | 実装PR |
 | 2026-11-17 | 実装PRのレビューを反映：IPv6 は /64 にまとめて数える、バインディングがない・判定に失敗したときは記録を残して通す、`namespace_id` の番号、画面ごとの冪等キーの衝突の文言、429 のあとに取り直さないことを書いた | 実装PRのレビュー（セキュリティ・仕様） |
 | 2026-11-21 | T-08 の OGP は KV を使わず D1 で兼ねることにした（概要・部品の役割・決定事項1）。回数の上限の表に `link_image` を足した | T-08 の決定事項4（pryusei/kokohima-app#75） |
+| 2026-11-21 | 回数の上限の表に `friend_availabilities` を足した | T-14 の実装PR（docs/specs/T-14-friend-availabilities-ratelimit.md） |
