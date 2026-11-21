@@ -79,13 +79,13 @@
 
 | アラート | 意味 | 最初にすること |
 | --- | --- | --- |
-| `refresh_token_reuse` | 更新用トークンの再利用。盗用の疑い。そのセッションは失効済み | 同じ時間帯の `login_failed`・`rate_limited` を見る。続くなら、その利用者のセッションをすべて失効させることを検討する |
+| `refresh_token_reuse` | 更新用トークンの再利用。盗用の疑い。そのセッションは失効済み | 同じ時間帯の `login_failed`・`rate_limited` を見る |
 | `job_dead_lettered` | 通知・カレンダーの書き込み・OGP の取得などが再試行を使い切った | 「3. 退避キューの調べ方とやり直し方」へ |
 | `cron_step_failed` | 定期処理の同じ失敗が続いている | ログの `step` と `name`（例外の名前）を見る。D1 か Queue の障害なら、`health_degraded` も出ているはず |
 | `calendar_decrypt_failed` | カレンダーの認証情報を復号できない | `CALENDAR_TOKEN_KEYS`・`CALENDAR_TOKEN_CURRENT_KID` の設定（`wrangler secret`・vars）を確かめる |
 | Workers Issues | 想定外の例外、アプリのログを通らない失敗（捕まえていない例外、CPU 時間の超過など） | Issues の画面で例外の名前と発生の数を見る。`unhandled_error` のログの `requestId` で、その要求のログを引く |
 | 外からの死活確認 | `/api/v1/health/ready` か `/` が続けて失敗した | Workers Logs で `health_degraded` の `reason` を見る（`db`：D1 の障害、`cron_minutely`・`cron_calendar_sync`：定期処理の停止、`outbox_backlog`：outbox の滞留）。`/` だけなら Web の配信を見る |
-| `outbox_dispatch_capped` | outbox を流す量が1回の上限（1000件か20秒）に達した | 続くなら上限の見直し（docs/specs/T-12-data-growth.md） |
+| `outbox_dispatch_capped` | outbox を流す量が1回の実行の上限（10回＝1000件か、20秒）に達した | 続くなら上限の見直し（docs/specs/T-12-data-growth.md） |
 | `calendar_sync_assign_full` | カレンダーの確認の割り当てが上限（1000人）で埋まった | 続くなら上限の見直し（T-12） |
 | `rate_limited` | 回数の上限の超過が多い | `group` を見る。悪用か、上限が低すぎるか |
 | `login_failed` | ログインの失敗が多い | 同じ時間帯の `rate_limited`（`auth_start`）を見る |
@@ -106,7 +106,7 @@
 | `notification_deliver` | お知らせの `event_id`（＝ outbox の `id`）を調べ、その outbox の行の `processed_at` を NULL に戻す。届け終えていない分だけが送り直される（T-07） |
 | `calendar_sync` | 何もしない。15分以内に、次の割り当てで確かめ直される |
 
-- `processed_at` を戻すのは、人が次のように行う（`<id>` は outbox の行の ID）。consumer はどの処理も冪等なので、二重に流れても結果は変わらない（T-06）。
+- `processed_at` を戻すのは、人が次のように行う（`<id>` は outbox の行の ID。ログの `id` の値を、引用符などを足さずにそのまま貼る）。consumer はどの処理も冪等なので、二重に流れても結果は変わらない（T-06）。
 
 ```bash
 pnpm --filter api exec wrangler d1 execute kokohima-prod --remote --env prod --command "UPDATE outbox SET processed_at = NULL WHERE id = '<id>'"

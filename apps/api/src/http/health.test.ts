@@ -68,6 +68,25 @@ describe("定期処理が動いた記録", () => {
     expect(await runAt("minutely")).toBe(h.clock.now);
   });
 
+  it("15分ごとの割り当てが例外を投げても、calendar_sync を記録する", async () => {
+    const db = new Proxy(env.DB, {
+      get(target, prop, receiver) {
+        if (prop === "prepare") {
+          return (sql: string) => {
+            if (sql.includes("FROM calendar_connections")) throw new TypeError("boom");
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await runScheduled("*/15 * * * *", { ...h.bindings, DB: db }, h.deps);
+    const failed = warns.filter((l) => l.includes('"event":"cron_step_failed"')).map((l) => JSON.parse(l) as unknown);
+    expect(failed).toEqual([{ event: "cron_step_failed", step: "assign_syncs", name: "TypeError" }]);
+    expect(await runAt("calendar_sync")).toBe(h.clock.now);
+  });
+
   it("記録の書き込みが失敗すると cron_step_failed（heartbeat）を出し、runScheduled は投げない", async () => {
     const db = new Proxy(env.DB, {
       get(target, prop, receiver) {
