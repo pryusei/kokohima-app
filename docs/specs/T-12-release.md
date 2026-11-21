@@ -38,6 +38,7 @@
 - infra/README.md：「環境」の staging の記述（最初のリリースでは作らない）、初回の手順を prod の例に、カスタムドメインの DNS は Workers が管理すること（決定事項6）。
 - T-11 の仕様書：「Apple のボタンは `VITE_APPLE_LOGIN_ENABLED` が `"1"` のときだけ出す（T-12）」を1行足す。T-11 の実装が新しいログインの画面・招待の画面に置き換えても、この条件を残すため。T-11 の実装PRが先にマージされていたら、新しい画面に同じ条件を入れる。
 - wrangler の staging の環境に「最初のリリースではデプロイしない」の注釈。
+- `.gitignore`：`!apps/web/.env.development` の例外。
 
 ## API
 `api-conventions` スキルに従う。経路の追加はない。変わるのは次の2つ。
@@ -72,7 +73,7 @@
 ### セキュリティのヘッダー
 - すべての応答（画面・API）に付ける。
   - API（`/api/`）の応答では、経路がすでに付けたヘッダーは上書きしない（T-08 の画像の経路の CSP・`Cache-Control` など）。
-  - 画面（静的アセット）の応答では、下のヘッダーと `Cache-Control` を常に上書きする（静的アセットの既定のヘッダーや、将来置かれうる `_headers` より、コードの値を優先する）。`ASSETS.fetch` の応答のヘッダーは変えられないことがあるので、`new Response(res.body, res)` で作り直してから付ける。
+  - 画面（静的アセット）の応答では、下のセキュリティのヘッダーを常に上書きする（静的アセットの既定のヘッダーや、将来置かれうる `_headers` より、コードの値を優先する）。`Cache-Control` は下の「キャッシュ」のとおり（`/sw.js` と HTML だけ上書きし、ほかは静的アセットの既定のまま）。`ASSETS.fetch` の応答のヘッダーは変えられないことがあるので、`new Response(res.body, res)` で作り直してから付ける。
   - `Strict-Transport-Security: max-age=63072000; includeSubDomains`（`.app` はドメイン全体で HTTPS が必須だが、ほかのブラウザ・ツールのために付ける。`.app` は TLD ごと preload の一覧に入っているので、`preload` は付けない）
   - `X-Content-Type-Options: nosniff`
   - `Referrer-Policy: no-referrer`
@@ -91,9 +92,9 @@
   - ローカル・e2e・単体テストは `"1"`（今の Apple のテストを残す）、staging・prod は `"0"`。置き場は wrangler.jsonc のトップレベルの `vars`、`env.e2e.vars`（e2e はトップレベルの vars を引き継がない）、`env.staging.vars`・`env.prod.vars`、`vitest.config.ts` の bindings。
   - `env.ts` の `Bindings` に `APPLE_LOGIN_ENABLED?: string` と `ASSETS?: Fetcher` を足す。
 - 止めたときの経路の振る舞いは上の「API」の表のとおり。Apple の秘密（`APPLE_PRIVATE_KEY` など）が未設定でも、止めた環境では読まない。
-  - 判定は、経路（routes）と application（`startLogin`・`handleCallback`）の両方に置く。経路では、本文の解析（`parseBody`）・`startLogin`・結びつけ Cookie の発行より前に判定する（「何も読まず、何も書かない」を順番で保証する。`Set-Cookie` も出さない）。
+  - 判定は、経路（routes）と application（`startLogin`・`handleCallback`）の両方に置く。経路では、本文の解析（`parseBody`）・`startLogin`・結びつけ Cookie の発行より前に判定する（「何も読まず、何も書かない」を順番で保証する。新しい結びつけ Cookie は発行しない。`loginFailed` と同じく、結びつけ Cookie を消す `Set-Cookie` だけは出る）。
 - 画面：ビルドのときの変数 `VITE_APPLE_LOGIN_ENABLED` が `"1"` のときだけ「Appleでログイン」を出す（ログインの画面と招待の画面）。既定は出さない。
-  - 置き場は、コミットする `apps/web/.env.development`（`VITE_APPLE_LOGIN_ENABLED=1`）だけ。`vite build` は production のモードなので読まない。`apps/web/.env` には書かない（`vite build` でも読まれるため）。E2E は vite の開発のサーバーなので、`.env.development` で `"1"` になる。
+  - 置き場は、コミットする `apps/web/.env.development`（`VITE_APPLE_LOGIN_ENABLED=1`）だけ。今の `.gitignore` の `.env.*` に当たるので、`.gitignore` に `!apps/web/.env.development` の例外を足す（秘密を書かないファイルなのでコミットしてよい。ほかの `.env.*` は今までどおり無視する）。`vite build` は production のモードなので読まない。`apps/web/.env` には書かない（`vite build` でも読まれるため）。E2E は vite の開発のサーバーなので、`.env.development` で `"1"` になる。
   - Web の単体テスト（Vitest は test のモードで `.env.development` を読まない）は `vi.stubEnv` で切り替える。`ImportMetaEnv` の型に `VITE_APPLE_LOGIN_ENABLED?: string` を足す。
 - Google のログイン・既存の Apple のアカウントの扱い（T-01）は変えない。
 
@@ -159,7 +160,7 @@
    - Cloudflare の DNS に、カスタムドメインの記録が Workers によって作られている（作られていなければ、仕様を見直す）。
    - `https://kokohima-api-prod.<サブドメイン>.workers.dev` が開かない。
    - `GET /api/v1/health` に共通のヘッダーと `default-src 'none'` の CSP が付く。画面の応答に画面用の CSP が付く。
-   - `GET /api/v1/auth/apple/start` が `/login?error=login_failed` への303で、`Set-Cookie` が付かない。`POST /api/v1/auth/apple/callback` が404。
+   - `GET /api/v1/auth/apple/start` が `/login?error=login_failed` への303で、新しい結びつけ Cookie が付かない（消す `Set-Cookie` だけ）。`POST /api/v1/auth/apple/callback` が404。
    - `POST /` と `POST /__e2e__/login` が405。
    - `wrangler secret list --env prod` に Apple の秘密と `E2E_MODE` がなく、vars にも `E2E_MODE` がない。
    - ブラウザのコンソールに CSP の違反が0件であることを、次の流れで確かめる：Google でログイン、招待を開いて友達になる、通知の購読、カレンダーの連携、リンクのプレビューの画像、Service Worker の登録。
@@ -169,7 +170,7 @@
 ## 認可と秘匿
 - 閲覧者IDの使い方：変わらない（API の経路は今のまま）。
 - 他人のデータに届かないことの保証：変わらない。静的アセットは誰に対しても同じファイルで、利用者のデータを含まない。
-- 区別させない応答：変わらない。Apple を止めた環境の `start` は、T-01 の失敗と同じ303にする（止めていることと、Apple の設定の誤りを区別させない）。
+- 区別させない応答：変わらない。Apple を止めていることは隠さない（動いている `start` は Apple への302を返すので、外から区別できる。隠す対象ではない）。止めた `start` は、画面の扱いをそろえるために T-01 の失敗と同じ303にする。
 - ブラウザ：CSP でインラインの script と外のオリジンからの読み込みを止め、XSS の被害を小さくする。`frame-ancestors 'none'` と `X-Frame-Options` で、ほかのサイトに埋め込まれて押させる攻撃を防ぐ。`Referrer-Policy: no-referrer` で、外へのリンクにアプリの URL を渡さない。
 - 外に出す窓口：`kokohima.app` だけ（`workers.dev`・プレビューの URL を閉じる）。
 
@@ -179,7 +180,7 @@
 - [ ] 他人のIDでは取得・更新できない：対象外（新しい経路・データの取得を足さない。既存の経路のテストはそのまま通る）。
 - [ ] 振り分け：`/api/` は Hono のアプリ、それ以外の `GET`・`HEAD` は `ASSETS`（偽物）、`POST`・`OPTIONS` などは405と `Allow`（`POST /__e2e__/login` も405）。`ASSETS` がないときは今までどおり Hono のアプリ。`/api`・`/apix`・`//api/v1/me`・`/%61pi/v1/me`・`/API/v1/me` は画面の側に回る。`/api/` の下で Hono が404を返したとき、`index.html` に置き換わらない。
 - [ ] ヘッダー：画面の側の応答（HTML・SVG・304）に画面用の CSP と共通のヘッダー。偽の `ASSETS` が弱い CSP や `Cache-Control` を付けて返しても、コードの値で上書きされる（偽物はヘッダーを変えられない応答を返し、作り直しを確かめる）。API の応答に共通のヘッダーと `default-src 'none'` の CSP。API の経路が付けたヘッダー（T-08 の画像の CSP・`Cache-Control`）は上書きしない。`/sw.js` と HTML は `Cache-Control: no-cache`（偽の `ASSETS` が `Cache-Control: public, max-age=...` を返しても）。HEAD と405の応答にも共通のヘッダー。identity の callback が付けた `Referrer-Policy` を上書きしない。E2E のエントリ（`createWorker` を共有）の API の応答にもヘッダーが付く。
-- [ ] Apple を止める：`APPLE_LOGIN_ENABLED` が `"0"`・未設定・ほかの値なら、`start` は `/login?error=login_failed` への303で、`oauth_transactions` を書かず `Set-Cookie` も出さない。`callback` は本文を読まずに problem+json の404。回数の上限（`auth_start`）は Apple を止めても先に効く（既存の rateLimit のテストが通る）。application の `startLogin`・`handleCallback` も Apple なら失敗を返す。`"1"` なら今までどおり（既存のテストが通る）。
+- [ ] Apple を止める：`APPLE_LOGIN_ENABLED` が `"0"`・未設定・ほかの値なら、`start` は `/login?error=login_failed` への303で、`oauth_transactions` を書かず、新しい結びつけ Cookie を発行しない（`loginFailed` と同じく、消す `Set-Cookie` だけが出る）。`callback` は本文を読まずに problem+json の404。回数の上限（`auth_start`）は Apple を止めても先に効く（既存の rateLimit のテストが通る）。application の `startLogin`・`handleCallback` も Apple なら失敗を返す。`"1"` なら今までどおり（既存のテストが通る）。
 - [ ] Web：`VITE_APPLE_LOGIN_ENABLED` がないとき、ログインの画面と招待の画面に「Appleでログイン」が出ない。`"1"` なら出る。
 ### CI の検査（実装PRで足す）
 - [ ] ビルドと設定：`build:prod` のあと、`apps/web/dist/index.html` があり、インラインの script・style・E2E 用の名前・`Appleでログイン`・`_headers`・`_redirects` がない。wrangler の設定の項目（`run_worker_first`・`not_found_handling`・`workers_dev`・`preview_urls`・e2e の `routes`）が仕様のとおり。
@@ -217,3 +218,4 @@
 | 2026-11-21 | 初版 | 友達向けの最初のリリース（利用者と決めた） |
 | 2026-11-21 | staging を作らないことにした。セキュリティのレビューを反映：画面の応答のヘッダーは常に上書き、CSP は画面の側の全応答に、振り分けの端の場合、wrangler の設定の CI の検査、トップレベルの `workers_dev: false`、Apple の判定の位置、`VITE_APPLE_LOGIN_ENABLED` の置き場、`VAPID_SUBJECT`、ゾーンの設定・鍵・Google の「テスト」の制約・デプロイのあとの確認と戻し方 | 利用者の回答、仕様書PRのレビュー（セキュリティ） |
 | 2026-11-21 | 仕様のレビューを反映：Apple を止めた `start`・`callback` の応答の形と順番、設定値の置き場（vars・vitest・`.env.development`）、`NOTIFICATION_START_AT` は `"1"`、転記の PR の順番、API トークンの分け方・有料プラン・Terraform の初回・Google Calendar API・Resend の DNS を Terraform で、本番と同じ形の画面の CSP の E2E、`db:migrate:prod`、実装PRで直す文書の追加、決定事項6・7 | 仕様書PRのレビュー（仕様） |
+| 2026-11-21 | Apple を止めた `start` は消す `Set-Cookie` だけを出す（`loginFailed` と同じ）、止めていることは隠さない、画面の `Cache-Control` は `/sw.js` と HTML だけ上書き、`.gitignore` の例外 | 仕様書PRのレビュー（pryusei/kokohima-app#83） |
