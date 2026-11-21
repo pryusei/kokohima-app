@@ -1,6 +1,6 @@
 # T-13 仕様書：監視とアラート（ログの通知・死活監視・退避キューの調べ方）
 
-- 状態：合意済み（仕様書PRマージ）
+- 状態：実装済み（実装PRマージ）
 - タスク票：docs/tasks/T-13-monitoring.md
 - 関係する要件：要求定義書「技術の選定」の監視、「AI時代の攻撃を前提にした運用」（異常のアラート）、「残りの論点」（異常検知のアラートの条件と通知先）、NF-02、NF-03
 - 関係する issue：pryusei/kokohima-app#85。関連は #42（利用料アラート）、#41（監査ログ）、#52（本番までに人が行う作業）
@@ -46,10 +46,10 @@
 - 503 は Problem Details の形で返す。`code` は `unavailable`（新しく足す。`api-conventions` スキルの表に実装PRで追記する）。
   - 応答に、どの条件で落ちたか・時刻・件数を入れない。どの条件でも同じ本文にする。
 - 回数の上限：IP ごとに `RL_PUBLIC`（1分に30回）を使う。グループ名は `health_ready`（T-10 の仕組み）。
-- `Cache-Control: no-store` を付ける。
+- 200 と 503 の応答に `Cache-Control: no-store` を付ける（429 は、ほかの経路と共通の応答のまま）。
 
 ## データ
-- マイグレーション `0012_cron_runs.sql`（T-12 の `0011_data_growth.sql` の次。実装の順番が変わったら番号を合わせる）で、表を1つ足す。
+- マイグレーション `0012_cron_runs.sql` で、表を1つ足す。
 
 | 表 | 列 | 説明 |
 | --- | --- | --- |
@@ -79,8 +79,8 @@
 
 - 境界：ちょうど5分・45分・10分は 200（「より前」のときだけ 503）。
 - outbox の滞留で見るのは、いま Queue に流す型（`dispatchedTypes`）の行だけ。流す型がまだない未処理の行は残り続けるので（T-12）、数えない。
-  - 既存のインデックス `outbox_unprocessed (processed_at, created_at)` で読む。
-- 503 のときは、理由だけのログを1行出す：`{ event: "health_degraded", reason }`。複数に当てはまるときは、表の上から最初の1つ。
+  - 既存のインデックス `outbox_type_unprocessed (type, processed_at, created_at)` で読む（型で絞って、未処理の最古の行を探す）。
+- 503 のときは、理由だけのログを1行出す：`{ event: "health_degraded", reason }`。重さは warn（想定した状態の知らせ。「3.」の分け方）。複数に当てはまるときは、表の上から最初の1つ。
 - 読むだけで、何も書かない。認証は要らない。利用者のデータには触れない。
 
 ### 3. ログの追加と、重さの見直し
@@ -99,6 +99,7 @@
 - ほかのログの名前と項目は変えない。ログの書き方（1行の JSON、`event` で種類を表す）も変えない。
   - Monitors で `event` の値で絞れない場合の扱いは「確認事項」。
 - wrangler の設定に `observability.issues.enabled: true` を足す（トップレベルと prod）。`invocation_logs: false`（T-06）は変えない。
+  - プロジェクトの wrangler（4.161 系）は、この設定を警告なしで受け付ける（`build:prod` で確かめた）。単体テストの実行のときだけ、テスト用のパッケージが中に持つ古い wrangler（4.124）が「知らない項目」と警告を出す。動作には影響しない。
 
 ### 4. アラートの一覧
 - 通知先は Slack の2つのチャンネルに分ける。どちらも非公開のチャンネルにする。
@@ -151,10 +152,10 @@
 - Monitors・Issues の自動の通知・通知先の webhook は、Cloudflare の管理画面で人が設定する。Terraform では管理しない。
   - 理由：Monitors と Issues の自動の通知を Terraform で書けるかは、公式ドキュメントで確かめられなかった。Slack の webhook の URL は秘密情報で、Terraform の変数や状態ファイルに入れたくない（`infra/README.md`「秘密情報は `wrangler secret` のみ」）。
   - 「管理画面で手動変更しない」（`infra/README.md`）の例外になる。代わりに、設定の内容（モニターの名前・条件・閾値・通知先のチャンネル）を手順書に書き、変えるときは手順書を直す PR を出してから管理画面を変える。
-  - 実装PRで、プロバイダ v5 にこれらのリソースがあると確かめられたら、秘密情報を含まない部分（Monitors の条件）を Terraform に移すことを検討する（別タスク）。
+  - Monitors と Issues の自動の通知を Terraform（プロバイダ v5）で書けるかは、実装PRでは確かめていない。書けると分かったら、秘密情報を含まない部分（Monitors の条件）を Terraform に移すことを検討する（別タスク。`infra-change` スキルに従い、プロバイダの公式ドキュメントで確かめてから）。
 - Slack の webhook の URL は、Cloudflare の管理画面と外の監視サービスにだけ登録する。リポジトリ・Terraform・issue・Slack の本文に書かない。漏れたら、Slack 側で作り直す。
 
-### 7. 手順書（`docs/runbooks/monitoring.md`。実装PRで足す）
+### 7. 手順書（`docs/runbooks/monitoring.md`）
 次の内容を書く。
 
 1. **設定**：Slack のチャンネルと Incoming Webhook の作り方、Cloudflare の通知先の登録、Monitors の一覧（上の表のとおりの名前・条件・閾値）、Issues の自動の通知、外の監視サービスの設定。
@@ -176,9 +177,9 @@
 - `processed_at` を戻すのは、人が `wrangler d1 execute --remote` で行う。consumer はどの処理も冪等なので、二重に流れても結果は変わらない（T-06）。
 - メッセージの本文を見るのは最後の手段にする。ログと outbox の行で足りることが多い。どうしても要るときだけ、退避キューに HTTP で読む consumer を付けて、API で読む。
   - 読むのは1回だけにし、読んだあと ack しない（見えない時間が過ぎるとキューに戻る）。
-  - ack せずに何度も読むと、試行の回数が増え、consumer の再試行の上限に達してメッセージが消えるおそれがある（退避キューには、その先の退避キューがない）。上限の既定値と、達したときの扱いは実装PRで確かめ、手順書に「consumer を付けるときの再試行の上限の設定」を書く。
+  - ack せずに何度も読むと、試行の回数が増え、consumer の再試行の上限に達してメッセージが消えるおそれがある（退避キューには、その先の退避キューがない）。上限の既定値と、達したときの扱いは、本番で設定するときに確かめ、手順書に結果を書く。
   - 調べ終えたら、consumer を外す。
-  - 本文には outbox の payload（時刻などの行動の情報）が入る。Slack・issue・PR に貼らない。
+  - 本文には outbox の payload（時刻などの行動の情報）や利用者ID（`calendar_sync`）が入る。Slack・issue・PR に貼らない。
   - 読むための API トークンは、Queues の読み書きだけに絞り、使い終えたら消す。
 - 退避キューのメッセージは4日で消える。消える前に調べられなくても、outbox の行（7日）からやり直せる。
 - 退避キューを自動で読む処理は作らない（スコープ外）。
@@ -208,21 +209,21 @@
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 記録：毎分の処理の後に `minutely`、15分ごとの割り当ての後に `calendar_sync` の `last_run_at` がいまの時刻になる（時刻は `deps.now`）
-- [ ] 記録：途中の処理が例外を投げても、記録される
-- [ ] 記録：記録の書き込みが失敗すると `cron_step_failed`（`step: "heartbeat"`）が出て、`runScheduled` は投げない
-- [ ] 死活確認：すべて新しければ 200 `{ "status": "ok" }`。認証なしで呼べる
-- [ ] 死活確認：`minutely` が5分より前なら 503、ちょうど5分なら 200。行がなければ 503
-- [ ] 死活確認：`calendar_sync` が45分より前なら 503、ちょうど45分なら 200
-- [ ] 死活確認：流す型の未処理の最古の行が10分より前なら 503、ちょうど10分なら 200。処理済みの行と、流す型でない未処理の行では 503 にならない
-- [ ] 死活確認：D1 の読み取りが失敗すると 503
-- [ ] 死活確認：503 の本文はどの理由でも同じで、`code` は `unavailable`。理由・時刻・件数・利用者IDを含まない。`Cache-Control: no-store` が付く
-- [ ] 死活確認：503 のとき `health_degraded` が `reason` だけで出る。200 のときは出ない
-- [ ] 死活確認：回数の上限を超えると 429
-- [ ] ログ：`job_failed`・`job_dead_lettered`・`cron_step_failed` は warn、`unhandled_error` は error で出る。項目は変わらない
-- [ ] ログ：サービス全体のメール数の上限で送らなかったとき `notification_mail_global_limit` が `kind` だけで出る。利用者ごとの上限では出ない
-- [ ] 設定：wrangler の設定で、トップレベルと prod の `observability.issues.enabled` が true、`invocation_logs` が false のまま
-- [ ] 他人のIDでは取得・更新できない：追加する API が利用者のデータを返さない（上の本文のテスト）。既存のテストが通る
+- [x] 記録：毎分の処理の後に `minutely`、15分ごとの割り当ての後に `calendar_sync` の `last_run_at` がいまの時刻になる（時刻は `deps.now`）
+- [x] 記録：途中の処理が例外を投げても、記録される
+- [x] 記録：記録の書き込みが失敗すると `cron_step_failed`（`step: "heartbeat"`）が出て、`runScheduled` は投げない
+- [x] 死活確認：すべて新しければ 200 `{ "status": "ok" }`。認証なしで呼べる
+- [x] 死活確認：`minutely` が5分より前なら 503、ちょうど5分なら 200。行がなければ 503
+- [x] 死活確認：`calendar_sync` が45分より前なら 503、ちょうど45分なら 200
+- [x] 死活確認：流す型の未処理の最古の行が10分より前なら 503、ちょうど10分なら 200。処理済みの行と、流す型でない未処理の行では 503 にならない
+- [x] 死活確認：D1 の読み取りが失敗すると 503
+- [x] 死活確認：503 の本文はどの理由でも同じで、`code` は `unavailable`。理由・時刻・件数・利用者IDを含まない。`Cache-Control: no-store` が付く
+- [x] 死活確認：503 のとき `health_degraded` が `reason` だけで出る。200 のときは出ない
+- [x] 死活確認：回数の上限を超えると 429
+- [x] ログ：`job_failed`・`job_dead_lettered`・`cron_step_failed` は warn、`unhandled_error` は error で出る。項目は変わらない
+- [x] ログ：サービス全体のメール数の上限で送らなかったとき `notification_mail_global_limit` が `kind` だけで出る。利用者ごとの上限では出ない
+- [x] 設定：wrangler の設定で、トップレベルと prod の `observability.issues.enabled` が true、`invocation_logs` が false のまま
+- [x] 他人のIDでは取得・更新できない：追加する API が利用者のデータを返さない（上の本文のテスト）。既存のテストが通る
 
 ### E2Eテスト（対象にする利用者の流れ）
 - 対象なし。利用者の画面と流れは変わらない。既存の E2E が通ることで、流れが壊れていないことを確かめる。
@@ -248,23 +249,24 @@
 - [x] Monitors・Issues の設定を管理画面で人が行うこと（「6.」の例外）：受け入れる。設定の内容は手順書を正とする。
 - [x] 閾値（「4.」の表）：この値で始め、運用で見直す。
 
-実装PRで確かめること（合意の妨げにはしない。結果で仕様が変わる場合は、実装PRの中でこの仕様書を直す）：
+本番で設定するときに確かめること（Cloudflare の管理画面と外のサービスで、人が確かめる。手順書「設定するときに確かめること」に結果を書く。結果で仕様が変わる場合は、この仕様書を直す PR を出す）：
 - Monitors が、いまのプランで Workers Logs（`logs.workersLogs`）を読めるか。読めない場合は、Tail Worker から Slack に送る形に仕様を変える（仕様書を直してから実装する）。
 - Monitors で `event` の値で絞れるか。いまのログは JSON を文字列にして出している。項目として絞れない場合は、本文の文字列の一致で絞るか、ログをオブジェクトのまま出す形に変える。
 - Monitors の実行の間隔の下限（1分か10分か）と、作れる数の上限。
-- Workers Issues が、queue と scheduled の呼び出しの失敗も拾うか。通知の本文に個人情報が入りうるか。入りうる場合は、Issues の Slack への通知をやめ、管理画面で見るだけにする。そのときは、`unhandled_error` の Monitors（15分に1件以上）を足す。
+- Workers Issues が、queue と scheduled の呼び出しの失敗も拾うか。問題の詳細と通知の本文に、個人情報や、リクエストの URL（トークンが入る経路がある。T-06 決定事項14）が入りうるか。Slack への通知を作る前に確かめる。入りうる場合は、Issues の Slack への通知をやめ、管理画面で見るだけにする。そのときは、`unhandled_error` の Monitors（15分に1件以上）を足す。
 - warn のログが Workers Issues に上がらないこと（公式の説明のとおりか）。上がる場合は、二重に届くことを手順書に書くか、Issues の通知の条件で絞る。
 - 退避キューに付ける HTTP の consumer の、再試行の上限の既定値と、上限に達したときの扱い（メッセージが消えるか）。
 - Workers Logs の料金が 2026-12-01 から変わる（Cloudflare Observability の料金になる）。いまのログの量で費用が出ないか。
 - Better Stack の無料の枠の条件（監視の数・確認の間隔・Slack とメールへの通知・続けて失敗したときだけ通知する設定・利用の制限）。この仕様書を書いた時点では、料金のページを直接は確かめられていない（確認の間隔だけ公式のドキュメントで確かめた）。登録するときに公式で確かめ、条件が合わなければ仕様書を直す。
-- wrangler のバージョン（いまは 4.161 系）で `observability.issues.enabled` が検証を通るか。
 
 ## 実装PRで書き換える仕様書
 - docs/requirements.md：「技術の選定」の監視の行（Workers Logs＋Monitors・Issues＋外からの死活監視。利用料アラートは #42）、「残りの論点」の「異常検知のアラートの条件と通知先」にチェックを付ける。
 - `api-conventions` スキル：エラーの表に 503 `unavailable` を足す。
+- docs/specs/T-10-idempotency-cache-ratelimit.md：「回数の上限を付ける経路」の表に `health_ready` を足す。
 - docs/specs/T-06-calendar.md・T-07-notification.md：`job_failed`・`job_dead_lettered` の重さと、`notification_mail_global_limit` のログ。
 - docs/specs/T-12-data-growth.md：「#85 のアラートの対象の候補」「退避キューを読む手段はまだない」を、この仕様書への参照に直す。`cron_step_failed` を warn で出すことを足す。
-- `infra/README.md`：「管理画面で手動変更しない」に、通知の設定の例外と手順書への参照を足す。`docs/README.md` に `runbooks/` を足す。
+- `docs/README.md` に `runbooks/` を足す。
+- `infra/README.md`：「管理画面で手動変更しない」に、通知の設定の例外と手順書への参照を足す。**これは T-13 の実装PRでは行わず、インフラの別のPRで行う**。`infra/` を触ると Terraform の plan のワークフローが動くが、いまは既存のファイル（`infra/terraform/modules/kokohima/versions.tf`）の書式の検査で落ちるため。書式の修正と一緒に足す。それまで、例外の正はこの仕様書の「6.」と手順書の冒頭。
 - issue #52（本番までに人が行う作業）に、Slack・Cloudflare の通知・外の監視の設定を足す。
 
 ## 変更履歴
@@ -273,3 +275,6 @@
 | 2026-11-21 | 下書き | 仕様の点検で見つかった「監視とアラートの仕様がない」（#85） |
 | 2026-11-21 | Monitors と Workers Issues の受け持ちをログの重さで分ける（二重の通知をなくす）。退避キューを HTTP で読むときの注意と、確かめる項目を足す。本番のドメインの出どころを書く | PR のレビュー |
 | 2026-11-21 | 確認事項を解消し、合意済みにする。外の監視サービスを Better Stack に決める | 4つの確認事項を決定（外の監視サービスは利用者と決めた。ほかは案のとおり） |
+| 2026-11-21 | 実装した。テスト計画のチェックを付け、状態を実装済みにした。`health_degraded` の重さ（warn）、outbox の滞留を読むインデックス、wrangler が `observability.issues` を受け付けることを書いた。管理画面と外のサービスで確かめる項目は、手順書に移して人が確かめる形にした | 実装PR |
+| 2026-11-21 | `infra/README.md` への例外の追記を、インフラの別のPRに回した（Terraform のワークフローが、既存のファイルの書式の検査で落ちるため） | 実装PRの CI |
+| 2026-11-21 | T-10 の回数の上限の表に `health_ready` を足すことを書いた。`no-store` を付ける応答（200 と 503）と、Terraform に移す検討の前提をはっきりさせた | 実装PRのレビュー |

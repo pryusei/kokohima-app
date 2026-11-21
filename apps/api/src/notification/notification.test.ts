@@ -465,8 +465,12 @@ describe("送り先と上限", () => {
     // 11件め：プッシュが使えずメールに切り替えるが、メールの上限に達している
     const dead = await subscribe(b);
     h.delivery.state.pushStatus.set(dead, 410);
+    const log = vi.spyOn(console, "log");
     await flush(await invite(a, b, T("04:00"), T("05:00")));
     expect((await rowsOf(b)).at(-1)).toMatchObject({ channel: "email", outcome: "limited" });
+    // 利用者ごとの上限では、全体の上限のログは出ない（docs/specs/T-13-monitoring.md）
+    expect(log.mock.calls.flat().join("\n")).not.toContain("notification_mail_global_limit");
+    log.mockRestore();
     expect(mailsTo(b)).toHaveLength(1);
     expect((await list(b))[0]?.kind).toBe("invite_received");
     // 日付（東京）が変わると戻る
@@ -910,8 +914,13 @@ describe("上限の組（決定事項8）", () => {
   it("全体のメール数は段階で止める：誘い・募集・友達は70通、予定・カレンダーは90通、新端末のログインは常に送る", async () => {
     const { a, b } = await pair();
     await setCount("", "email", 70);
+    const log = vi.spyOn(console, "log");
     await flush(await invite(a, b));
     expect((await rowsOf(b)).at(-1)).toMatchObject({ kind: "invite_received", outcome: "limited" });
+    // 全体の上限で送らなかったときは、種類だけのログが出る（docs/specs/T-13-monitoring.md）。宛先・利用者IDは出さない
+    const limitLogs = log.mock.calls.flat().map(String).filter((l) => l.includes("notification_mail_global_limit"));
+    expect(limitLogs.map((l) => JSON.parse(l) as unknown)).toEqual([{ event: "notification_mail_global_limit", kind: "invite_received" }]);
+    log.mockRestore();
 
     const id = await invite(a, b, T("04:00"), T("05:00"));
     await respond(b, id, { response: "accept" });

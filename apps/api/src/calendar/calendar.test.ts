@@ -1216,6 +1216,7 @@ describe("ログ", () => {
   it("確認・書き込み・解除・consumer の失敗のログに、トークン・payload の中身が出ない", async () => {
     const log = vi.spyOn(console, "log");
     const err = vi.spyOn(console, "error");
+    const warn = vi.spyOn(console, "warn");
     const a = await authenticated();
     const b = await authenticated("べに");
     await u.befriend(a, b);
@@ -1234,11 +1235,12 @@ describe("ログ", () => {
     await handleBatch(h.ctx, { messages: [message] } as unknown as MessageBatch<never>);
     expect(message.retry).toHaveBeenCalled();
     await u.call("DELETE", "/api/v1/calendar/connections/google", { token: a.token });
-    const logged = [...log.mock.calls, ...err.mock.calls].flat().join("\n");
+    const logged = [...log.mock.calls, ...err.mock.calls, ...warn.mock.calls].flat().join("\n");
     expect(logged).toContain("job_dead_lettered");
     expect(logged).not.toMatch(/secret-user|refresh-|access-|v1\.cal-1|Bearer/);
     log.mockRestore();
     err.mockRestore();
+    warn.mockRestore();
   });
 });
 

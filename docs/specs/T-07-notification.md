@@ -276,6 +276,7 @@
    - 超えたら送らずに `delivered_at` と `outcome = 'limited'` を書く。お知らせ一覧には残る。
    - メールは、サービス全体の1日の数（vars の `MAIL_DAILY_LIMIT`、UTC の日付）も確かめる（決定事項8）。
      - メールを送る前に、全体の数を1つ増やす。組ごとに使える上限を超えていたら、送らずに `outcome = 'limited'` を書く。
+     - この上限で送らなかったときは、種類だけのログ `{ event: "notification_mail_global_limit", kind }` を出す（T-13。docs/specs/T-13-monitoring.md）。
      - 誘い・募集・友達は `MAIL_DAILY_LIMIT - 20` まで、予定・カレンダーは `MAIL_DAILY_LIMIT` まで。残りの20通は、予定・カレンダー・新端末のログインの分。
      - `new_login` も全体の数に数えるが、超えていても送る（安全の通知を優先する）。
      - 利用者ごとの上限で止まったお知らせは、全体の数に数えない。
@@ -571,3 +572,4 @@
 | 2026-11-15 | 「秘匿」の「見せない」の設定の書き方を、T-06 決定事項15（見せない相手には自動の断りが起きない）に合わせた | pryusei/kokohima-app#53 |
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-21 | `notification_daily_counts` の掃除のためのインデックス `(day)` を書いた | T-12 の実装PR（docs/specs/T-12-data-growth.md） |
+| 2026-11-21 | サービス全体の1日のメール数の上限で送らなかったときのログ（`notification_mail_global_limit`）を足した | T-13 の実装PR（docs/specs/T-13-monitoring.md） |

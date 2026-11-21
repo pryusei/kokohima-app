@@ -43,7 +43,7 @@
   - 1回の実行で消すのは最大1000行（`DELETE FROM outbox WHERE id IN (SELECT id FROM outbox WHERE processed_at < ? LIMIT 1000)`）。
   - 未処理の行（`processed_at IS NULL`）は消さない。流す型がまだない行も残す（ほかのタスクで型を足したときに流すため）。
   - 7日にする理由：退避キューに入ったメッセージを調べるとき、元の行を見られるようにするため。退避キューの既定の保持期間（4日）より長くしておく。`AvailabilityCancelledByCalendar` の payload に入る時刻などの行動の情報は、7日で消える（T-06 決定事項12で先送りした掃除）。
-  - ただし、退避キューを読む手段と調べる手順はまだない（#85）。それができるまでは、7日のあいだ行が残るだけで、調べる流れはない。
+  - 退避キューの調べ方と、outbox の行からのやり直し方は、T-13 で手順書にした（docs/runbooks/monitoring.md「退避キューの調べ方とやり直し方」）。
 
 ### 2. カレンダーの確認の割り当て（T-06「定期の確認と自動取り消し」の変更）
 - 15分ごとに割り当てる数の上限を、200人から1000人に上げる。1時間に確かめられるのは最大4000人分になる。連携している人が1000人までなら、1人あたりの間隔は15分のまま。
@@ -79,11 +79,11 @@
   - 各処理を個別に `try` で囲み、1つが例外を投げても、後の処理は走る。
   - `cleanupExpired` の中の掃除（連携の state、.ics のトークン、ログインの記録、セッションと更新用トークン、冪等キー、お知らせ、リンクのプレビュー、この仕様書で足す outbox とここ暇）も、1つずつ独立させる。
 - 失敗したら、構造化したログを1行出す：`{ event: "cron_step_failed", step, name }`。
-  - `step` は処理の名前。`dispatch_outbox`・`assign_syncs`・`cleanup_oauth_states`・`cleanup_ics_tokens`・`cleanup_login_records`・`cleanup_sessions`・`cleanup_idempotency_keys`・`cleanup_notifications`・`cleanup_link_previews`・`cleanup_outbox`・`cleanup_availabilities`。
+  - `step` は処理の名前。`dispatch_outbox`・`assign_syncs`・`cleanup_oauth_states`・`cleanup_ics_tokens`・`cleanup_login_records`・`cleanup_sessions`・`cleanup_idempotency_keys`・`cleanup_notifications`・`cleanup_link_previews`・`cleanup_outbox`・`cleanup_availabilities`。 T-13 で、定期処理の最後に動いた記録を書く `heartbeat` が足された（docs/specs/T-13-monitoring.md）。
   - `name` は例外の名前（`Error.name`）だけ。`Error` でない値が投げられたときは `"unknown"`。メッセージ・スタック・SQL の値・payload は出さない（個人情報やトークンを含みうるため）。
-- 例外を握りつぶしたあとも、Cron の実行自体は成功として終える。失敗はログで気づく（ログのアラートは #85）。
+- 例外を握りつぶしたあとも、Cron の実行自体は成功として終える。失敗はログで気づく（ログのアラートは T-13。docs/specs/T-13-monitoring.md）。ログの重さは warn。
 
-### ログの一覧（#85 のアラートの対象の候補）
+### ログの一覧（アラートの条件は docs/specs/T-13-monitoring.md「アラートの一覧」）
 | event | 出すとき | 項目 |
 | --- | --- | --- |
 | `outbox_dispatch_capped` | outbox を10回か20秒で打ち切った | `reason`（`count`・`time`）、`sent` |
@@ -152,3 +152,4 @@
 | 2026-11-21 | 確認事項を解消し、合意済みにする | 3つの確認事項をすべて案のとおりに決定 |
 | 2026-11-21 | 実装済みにする。掃除の一覧にセッションを足し、`step` の名前を確定する。タスクIDが他のタスクと重なることを書く | 実装PR。セッションの掃除が #82 で入ったため |
 | 2026-11-21 | ちょうど1000件のときのログ、`Error` でない例外の `name`、掃除の期間の決め方を書き、T-07・T-08 のインデックスの記述も直す対象に足す | 実装PRの仕様レビュー |
+| 2026-11-21 | #85 への参照を、T-13 の仕様書と手順書への参照に直した。`cron_step_failed` を warn で出すことを書いた。定期処理の最後に、動いた記録を書く処理（`step: "heartbeat"`）が T-13 で足された | T-13 の実装PR |

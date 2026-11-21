@@ -130,7 +130,11 @@ async function sendByEmail(
   // サービス全体の1日のメール数（UTC の日付）。組ごとに使える上限が違い、新端末のログインは超えていても送る
   const globalLimit = globalEmailLimitFor(limits.tier, parseMailDailyLimit(ctx.env.MAIL_DAILY_LIMIT));
   const utcDay = new Date(now).toISOString().slice(0, 10);
-  if (!(await repo.claimGlobalEmailCount(ctx.env.DB, n.id, utcDay, globalLimit))) return "limited";
+  if (!(await repo.claimGlobalEmailCount(ctx.env.DB, n.id, utcDay, globalLimit))) {
+    // 上限に達したことに気づけるよう、種類だけを出す（宛先・利用者IDは出さない。docs/specs/T-13-monitoring.md）
+    log("notification_mail_global_limit", { kind: n.kind });
+    return "limited";
+  }
 
   const mail = mailFor({ kind: n.kind, device: n.device, createdAt: n.created_at }, { origin: ctx.env.APP_ORIGIN, timezone });
   const result = await sendMail(ctx.env, ctx.deps, { to, mail, idempotencyKey: n.id });

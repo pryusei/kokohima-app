@@ -382,6 +382,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - Queue のメッセージは `{ kind: "outbox", id, type, payload }` か `{ kind: "calendar_sync", userId, provider }`。consumer は `kind` と `type` で処理を振り分ける。
 - 再試行は最大5回で、間隔を広げていく。それでも失敗したら退避キューに送る。
   - 退避キューのメッセージは処理しない。ログには `kind`・`type`・`id` だけを出す。
+  - 失敗のログ（`job_failed`・`job_dead_lettered`）は warn で出す（T-13。docs/specs/T-13-monitoring.md「ログの追加と、重さの見直し」）。退避キューの調べ方とやり直し方は docs/runbooks/monitoring.md。
 - ログには、payload の中身（ID以外）、トークン、Googleの応答の本文を出さない。
 
 ### .ics
@@ -674,3 +675,4 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | 2026-11-21 | テスト計画のチェックを付けた（すべての項目に対応する単体テスト・E2Eがあることを確かめた）。「知らない鍵IDは一時的な失敗」の単体テストがなかったので足した | 全体の点検（pryusei/kokohima-app#50） |
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-21 | 確認の割り当てを最大1000件に、outbox の送出を1回の実行で最大10回の繰り返しにし、処理済みの行の掃除と Cron の各処理の独立を足す | docs/specs/T-12-data-growth.md |
+| 2026-11-21 | `job_failed`・`job_dead_lettered` を warn で出すことと、退避キューの手順書への参照を足した | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
