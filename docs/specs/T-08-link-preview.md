@@ -67,7 +67,7 @@
 | `claimed_at` | INTEGER | 取得の権利を取った時刻 |
 | `fetched_at` | INTEGER | 取得を終えた時刻（`ok`・`failed`） |
 
-- インデックス：`(url_hash, fetched_at)`。`url_hash` に対して `status = 'fetching'` の行は1つだけ（部分の UNIQUE インデックス `WHERE status = 'fetching'`）。
+- インデックス：`(url_hash, fetched_at)`、`(status, fetched_at)`・`(status, claimed_at)`（古い結果の行の掃除のため。docs/specs/T-13-data-growth.md で足す）。`url_hash` に対して `status = 'fetching'` の行は1つだけ（部分の UNIQUE インデックス `WHERE status = 'fetching'`）。
 - URL そのものは持たない（誘い・募集の `url` 列にある）。
 
 ### `link_preview_images`（R2 に置いた画像の台帳）
@@ -269,3 +269,4 @@
 | 2026-11-21 | 「実装PRで直すもの」から docs/design/claude-design-prompts.md を外した（デザインのプロンプトの更新で先に直したため） | pryusei/kokohima-app#51 |
 | 2026-11-21 | 実装した。決定事項と確認事項を合意済みにし、掃除の上限（100）、E2E の偽のサイトの経路と drain の再試行、`AppDeps.linkPreview` のタイムアウトを書いた | 実装PR |
 | 2026-11-21 | 実装PRのレビューを反映：空のラベルの残るホスト名を拒む、`LINK_PREVIEW_OWN_DOMAINS` のプレースホルダーは読めない値、解析できない `Location` は `failed`、取得の途中の思わぬ例外は一時的な失敗、相対の `og:image` はリダイレクトのあとの URL から、コメントと script・style を読まない左から1回の走査、E2E の drain は一時的な失敗だけを残して再び試す | 実装PRのレビュー（セキュリティ・仕様） |
+| 2026-11-21 | 古い結果の行の掃除のためのインデックス `(status, fetched_at)`・`(status, claimed_at)` を書いた | T-13 の実装PR（docs/specs/T-13-data-growth.md） |
