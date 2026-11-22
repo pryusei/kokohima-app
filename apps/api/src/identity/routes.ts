@@ -1,4 +1,10 @@
-import { authCompleteRequestSchema, authStartQuerySchema, updateMeRequestSchema, withdrawRequestSchema } from "@kokohima/shared";
+import {
+  authCompleteRequestSchema,
+  authStartQuerySchema,
+  PROBLEM_CONTENT_TYPE,
+  updateMeRequestSchema,
+  withdrawRequestSchema,
+} from "@kokohima/shared";
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../env";
 import { clearInviteCookie } from "../http/inviteCookie";
@@ -117,9 +123,11 @@ export function identityRoutes() {
     const body = withdrawRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return validationFailed(c, body.error);
     const result = await withdraw(ctx(c), c.var.viewer);
-    if (result === "unauthenticated") return unauthenticated(c);
-    if (result === "reauth_required") {
-      return problem(c.get("requestId"), 403, "reauth_required", "Forbidden");
+    if (result.kind === "unauthenticated") return unauthenticated(c);
+    if (result.kind === "reauth_required") {
+      // 拡張の項目：ログインし直す方法（閲覧者本人の情報）
+      const body = { ...(await problem(c.get("requestId"), 403, "reauth_required", "Forbidden").json<object>()), reauthProvider: result.provider };
+      return c.json(body, 403, { "Content-Type": PROBLEM_CONTENT_TYPE });
     }
     clearRefreshCookie(c);
     clearBindingCookie(c);

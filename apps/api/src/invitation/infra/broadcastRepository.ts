@@ -217,6 +217,8 @@ export async function decideBroadcast(
       .prepare(
         `UPDATE broadcasts SET status = 'decided', decided_at = ?1, transition_id = ?2
          WHERE id = ?3 AND owner_id = ?4 AND status = 'open' AND expires_at > ?1
+           -- 退会と同時に送られた「決める」で、退会した募集者の予定を作らない（T-16）
+           AND NOT EXISTS (SELECT 1 FROM users WHERE id = ?4 AND withdrawn_at IS NOT NULL)
            AND EXISTS (SELECT 1 FROM broadcast_recipients WHERE broadcast_id = ?3 AND responded_at IS NOT NULL
                        AND EXISTS (SELECT 1 FROM users u WHERE u.id = broadcast_recipients.user_id AND u.withdrawn_at IS NULL))`,
       )

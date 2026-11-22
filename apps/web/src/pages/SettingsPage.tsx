@@ -12,7 +12,7 @@ import { Section, SubScreen } from "../ui/Navigation";
 import { useOnline } from "../ui/online";
 import { PresetForm } from "../availability/PresetForm";
 import { DisplayNameForm } from "../account/DisplayNameForm";
-import { meQuery } from "../account/me";
+import { displayNameOf, meQuery } from "../account/me";
 
 // 設定（docs/specs/T-11-design.md「画面のつながり」、キャンバス「19 設定」「21 時間帯プリセット」「23 アカウント」）
 // 友達タブの「アカウント」の節から開く。初回設定・ログインの方法の連携は、それぞれのタスクで作る（#43・#45）。退会は T-16
@@ -81,7 +81,7 @@ export const WITHDRAW_RETURN_TO = "/settings/account?withdraw=1";
 export const reauthRedirect = { go: (url: string) => window.location.assign(url) };
 
 /** 退会（docs/specs/T-16-withdrawal.md「画面」）。ほかの操作から離して置き、確認の画面を通す。赤を使わない */
-function WithdrawSection({ reopen }: { reopen: boolean }) {
+function WithdrawSection({ reopen, name }: { reopen: boolean; name: string | null }) {
   const { withdraw } = useAuth();
   const online = useOnline();
   const [open, setOpen] = useState(reopen);
@@ -91,12 +91,13 @@ function WithdrawSection({ reopen }: { reopen: boolean }) {
     setSending(true);
     setFailed(false);
     const outcome = await withdraw();
-    if (outcome === "reauth") {
-      // 直前のログインを求める。戻ってきたら確認の画面をもう一度出す
-      reauthRedirect.go(`/api/v1/auth/google/start?returnTo=${encodeURIComponent(WITHDRAW_RETURN_TO)}`);
+    if (outcome.kind === "reauth") {
+      // 直前のログインを、今と同じ方法で求める（別の方法は別の利用者になる）。戻ってきたら確認の画面をもう一度出す
+      const returnTo = encodeURIComponent(WITHDRAW_RETURN_TO);
+      reauthRedirect.go(outcome.provider ? `/api/v1/auth/${outcome.provider}/start?returnTo=${returnTo}` : `/login?returnTo=${returnTo}`);
       return;
     }
-    if (outcome === "failed") {
+    if (outcome.kind === "failed") {
       setSending(false);
       setFailed(true);
     }
@@ -112,6 +113,7 @@ function WithdrawSection({ reopen }: { reopen: boolean }) {
       {open && (
         <BottomSheet title="退会しますか？" label="退会の確認" onClose={() => setOpen(false)}>
           <div className="flex flex-col gap-4">
+            {name !== null && <p className="font-bold">{name}さんのアカウントを退会します。</p>}
             <p>退会すると、次のものが消えます。</p>
             <ul className="list-disc pl-6">
               <li>名前</li>
@@ -180,7 +182,10 @@ export function AccountSettingsPage({ search = "" }: { search?: string }) {
           )}
         </div>
       </Section>
-      <WithdrawSection reopen={new URLSearchParams(search).get("withdraw") === "1"} />
+      <WithdrawSection
+        reopen={new URLSearchParams(search).get("withdraw") === "1"}
+        name={me.data ? displayNameOf(me.data.displayName) : null}
+      />
     </SubScreen>
   );
 }

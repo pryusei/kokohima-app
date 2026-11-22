@@ -9,6 +9,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string | null = null,
+    /** Problem Details の本文（読めたときだけ。拡張の項目を読むときに使う） */
+    readonly problem: Record<string, unknown> | null = null,
   ) {
     super(`API error ${status}`);
   }
@@ -18,10 +20,10 @@ export class ApiError extends Error {
 export const isIdempotencyConflict = (error: unknown) =>
   error instanceof ApiError && (error.code === "request_in_progress" || error.code === "idempotency_key_mismatch");
 
-async function problemCode(res: Response): Promise<string | null> {
+async function problemOf(res: Response): Promise<Record<string, unknown> | null> {
   try {
-    const body = (await res.clone().json()) as { code?: unknown };
-    return typeof body.code === "string" ? body.code : null;
+    const body: unknown = await res.clone().json();
+    return body && typeof body === "object" ? (body as Record<string, unknown>) : null;
   } catch {
     return null;
   }
@@ -76,7 +78,10 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       throw new ApiError(401);
     }
   }
-  if (!res.ok) throw new ApiError(res.status, await problemCode(res));
+  if (!res.ok) {
+    const body = await problemOf(res);
+    throw new ApiError(res.status, typeof body?.code === "string" ? body.code : null, body);
+  }
   return res;
 }
 

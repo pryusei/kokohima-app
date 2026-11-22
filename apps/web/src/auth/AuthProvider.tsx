@@ -26,7 +26,12 @@ type AuthContextValue = {
   withdraw: () => Promise<WithdrawOutcome>;
 };
 
-export type WithdrawOutcome = "done" | "reauth" | "gone" | "failed";
+export type WithdrawOutcome =
+  | { kind: "done" }
+  /** provider：ログインし直す方法。null ならログインの画面で選んでもらう */
+  | { kind: "reauth"; provider: "google" | "apple" | null }
+  | { kind: "gone" }
+  | { kind: "failed" };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -122,16 +127,19 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
         try {
           await apiFetch("/api/v1/me/withdrawal", { method: "POST", body: JSON.stringify({ confirm: "withdraw" }) });
         } catch (err) {
-          if (err instanceof ApiError && err.status === 403 && err.code === "reauth_required") return "reauth";
+          if (err instanceof ApiError && err.status === 403 && err.code === "reauth_required") {
+            const p = err.problem?.reauthProvider;
+            return { kind: "reauth", provider: p === "google" || p === "apple" ? p : null };
+          }
           // 401：応答が届かずに押し直したときなど（apiFetch がログアウト状態にする）
-          if (err instanceof ApiError && err.status === 401) return "gone";
-          return "failed";
+          if (err instanceof ApiError && err.status === 401) return { kind: "gone" };
+          return { kind: "failed" };
         }
         await unsubscribeLocally();
         broadcastLogout();
         navigate("/login?withdrawn=1", { replace: true });
         becomeAnonymous();
-        return "done";
+        return { kind: "done" };
       },
     }),
     [status, check, becomeAnonymous],

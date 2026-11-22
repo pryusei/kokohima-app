@@ -32,8 +32,8 @@ function stubPush() {
   return { unsubscribe };
 }
 
-const problem = (status: number, code: string) => () =>
-  new Response(JSON.stringify({ type: "about:blank", title: "x", status, code, requestId: "r" }), {
+const problem = (status: number, code: string, extra: Record<string, unknown> = {}) => () =>
+  new Response(JSON.stringify({ type: "about:blank", title: "x", status, code, requestId: "r", ...extra }), {
     status,
     headers: { "Content-Type": "application/problem+json" },
   });
@@ -81,25 +81,40 @@ describe("退会", () => {
     expect(tokenStore.get()).toBeNull();
   });
 
-  it("403 reauth_required：Google のログインへ移り、戻り先で確認の画面をもう一度出す", async () => {
+  it("403 reauth_required：今と同じ方法（Apple）のログインへ移り、戻り先で確認の画面をもう一度出す", async () => {
     window.history.replaceState(null, "", "/settings/account");
     const go = vi.spyOn(reauthRedirect, "go").mockImplementation(() => {});
     mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
       "/api/v1/me": json(ME),
-      "/api/v1/me/withdrawal": problem(403, "reauth_required"),
+      "/api/v1/me/withdrawal": problem(403, "reauth_required", { reauthProvider: "apple" }),
     });
     const view = renderApp();
     const dialog = await openConfirm();
     await userEvent.click(within(dialog).getByRole("button", { name: "退会する" }));
     await waitFor(() =>
-      expect(go).toHaveBeenCalledWith(`/api/v1/auth/google/start?returnTo=${encodeURIComponent("/settings/account?withdraw=1")}`),
+      expect(go).toHaveBeenCalledWith(`/api/v1/auth/apple/start?returnTo=${encodeURIComponent("/settings/account?withdraw=1")}`),
     );
     view.unmount();
 
     window.history.replaceState(null, "", "/settings/account?withdraw=1");
     renderApp();
     expect(await screen.findByRole("dialog", { name: "退会の確認" })).toBeVisible();
+  });
+
+  it("403 で方法が分からなければ（null）、ログインの画面で選んでもらう。確認の画面に今の表示名を出す", async () => {
+    window.history.replaceState(null, "", "/settings/account");
+    const go = vi.spyOn(reauthRedirect, "go").mockImplementation(() => {});
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/me": json(ME),
+      "/api/v1/me/withdrawal": problem(403, "reauth_required", { reauthProvider: null }),
+    });
+    renderApp();
+    const dialog = await openConfirm();
+    expect(within(dialog).getByText("ゆうさんのアカウントを退会します。")).toBeVisible();
+    await userEvent.click(within(dialog).getByRole("button", { name: "退会する" }));
+    await waitFor(() => expect(go).toHaveBeenCalledWith(`/login?returnTo=${encodeURIComponent("/settings/account?withdraw=1")}`));
   });
 
   it("401：ログインの画面へ（文言は出さない）。そのほかの失敗は静かな文言", async () => {
@@ -117,6 +132,39 @@ describe("退会", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "退会する" }));
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
     expect(screen.queryByText("退会しました。")).toBeNull();
+  });
+
+  it("誘いの一覧でも、退会した相手は「退会したユーザー」（さんを付けない）", async () => {
+    window.history.replaceState(null, "", "/invites?tab=sent");
+    const invite = {
+      id: "55555555-5555-4555-8555-555555555555",
+      kind: "asobo",
+      direction: "sent",
+      counterpart: gone,
+      status: "expired",
+      startsAt: "2026-10-10T10:00:00.000Z",
+      endsAt: "2026-10-10T14:00:00.000Z",
+      area: null,
+      message: null,
+      url: null,
+      linkPreview: null,
+      expiresAt: "2026-10-10T00:00:00.000Z",
+      counterProposal: null,
+      meetupId: null,
+      createdAt: "2026-10-09T00:00:00.000Z",
+    };
+    const empty = json({ items: [], nextCursor: null });
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/direct-invites": json({ items: [invite], nextCursor: null }),
+      [`/api/v1/direct-invites/${invite.id}`]: json(invite),
+      "/api/v1/broadcasts": empty,
+      "/api/v1/meetups": empty,
+    });
+    renderApp();
+    expect(await screen.findByText("退会したユーザーへ")).toBeVisible();
+    expect(screen.queryByText(/名前未設定/)).toBeNull();
   });
 
   it("相手が退会した人なら「退会したユーザー」と出す（「名前未設定の友達」と区別する）", async () => {

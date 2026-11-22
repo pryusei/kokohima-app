@@ -22,15 +22,26 @@ export const REAUTH_WINDOW_MS = 10 * 60 * 1000;
 export const WITHDRAWAL_RETRY_AFTER_MS = 60 * 60 * 1000;
 export const WITHDRAWAL_RETRY_LIMIT = 5;
 
-export type WithdrawResult = "ok" | "unauthenticated" | "reauth_required";
+/** ログインし直しに使える方法。それ以外（E2E のテスト用ログインなど）は null で返し、画面はログインの画面へ移す */
+const REAUTH_PROVIDERS = ["google", "apple"] as const;
+export type ReauthProvider = (typeof REAUTH_PROVIDERS)[number];
+
+export type WithdrawResult =
+  | { kind: "ok" }
+  | { kind: "unauthenticated" }
+  | { kind: "reauth_required"; provider: ReauthProvider | null };
 
 /** 入口を止める段。閲覧者本人だけを退会させる */
 export async function withdraw(ctx: Ctx, viewer: Viewer): Promise<WithdrawResult> {
   const now = ctx.deps.now();
   const db = repo.db(ctx.env.DB);
   const loginAt = await repo.activeSessionCreatedAt(db, viewer, now);
-  if (loginAt === null) return "unauthenticated";
-  if (now - loginAt > REAUTH_WINDOW_MS) return "reauth_required";
+  if (loginAt === null) return { kind: "unauthenticated" };
+  if (now - loginAt > REAUTH_WINDOW_MS) {
+    // 同じ方法でログインし直してもらう（別の方法は別の利用者になる。F-01）
+    const provider = await repo.identityProviderOf(ctx.env.DB, viewer.userId);
+    return { kind: "reauth_required", provider: REAUTH_PROVIDERS.find((p) => p === provider) ?? null };
+  }
   const d1 = ctx.env.DB;
   const userId = viewer.userId;
   await d1.batch([
@@ -44,7 +55,7 @@ export async function withdraw(ctx: Ctx, viewer: Viewer): Promise<WithdrawResult
     ...calendarPurge(d1, userId),
   ]);
   console.info(JSON.stringify({ event: "user_withdrew" }));
-  return "ok";
+  return { kind: "ok" };
 }
 
 /**

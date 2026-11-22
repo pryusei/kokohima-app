@@ -12,7 +12,6 @@ const friend = (n: number, name = `友${n}`) => ({
   id: uuid(n),
   displayName: name,
   avatarUrl: null,
-  withdrawn: false,
   sharesMyAvailability: true,
   friendsSince: "2026-10-07T00:00:00.000Z",
 });

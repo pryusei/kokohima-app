@@ -385,6 +385,12 @@ export async function activeSessionCreatedAt(db: Db, viewer: { userId: string; s
   return row?.createdAt ?? null;
 }
 
+/** 利用者のログインの方法（アカウント連携がないので1つ。T-16 のログインし直しで使う）。なければ null */
+export async function identityProviderOf(d1: D1Database, userId: string) {
+  const row = await d1.prepare("SELECT provider FROM user_identities WHERE user_id = ? LIMIT 1").bind(userId).first<{ provider: string }>();
+  return row?.provider ?? null;
+}
+
 /** 本人だけに関わる outbox の型（端末の情報やここ暇の時刻が入る。T-16） */
 export const PERSONAL_OUTBOX_TYPES = [
   "SessionStarted",

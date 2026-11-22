@@ -3,7 +3,10 @@ import { directInviteSchema, broadcastSchema, notificationPageSchema } from "@ko
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cookieValue, createHarness, ORIGIN } from "../../test/identity-harness";
 import { makeUsers, type User } from "../../test/users";
-import { connectionsDueForSync } from "../calendar/infra/repository";
+import { activeConnectionsOf, connectionsDueForSync } from "../calendar/infra/repository";
+import { eventContent } from "../calendar/application/eventContent";
+import { meetupForCalendar } from "../invitation/application/calendarFacing";
+import { decideBroadcast } from "../invitation/infra/broadcastRepository";
 import { handleJob } from "../jobs/consumer";
 import { cleanupExpired } from "../jobs/dispatch";
 import { createFromEvent } from "../notification/application/delivery";
@@ -554,3 +557,189 @@ async function reloginAs(who: User) {
   await env.DB.prepare("UPDATE sessions SET created_at = ?2 WHERE user_id = ?1").bind(who.id, h.clock.now).run();
   return who;
 }
+
+describe("レビューで足した確認", () => {
+  it("入口を止める段：本人のほかの表・本人の outbox の型も消え、相手の予定・参加者・宛先・相手あてのお知らせは残る", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    const c = await u.user();
+    await u.befriend(a, b);
+    await u.befriend(a, c);
+    await u.befriend(b, c);
+    // 本人あてのお知らせ（友達追加）と、相手あてのお知らせ
+    await deliver("FriendshipEstablished", a.id);
+    expect(await count("notifications WHERE user_id = ?", a.id)).toBeGreaterThan(0);
+    const othersNotifications = await count("notifications WHERE user_id IN (?, ?)", b.id, c.id);
+    expect(othersNotifications).toBeGreaterThan(0);
+    // 本人の表
+    const presets = { day: { start: "10:00", end: "17:00" }, evening: { start: "17:00", end: "21:00" }, night: { start: "21:00", end: "24:00" } };
+    expect((await u.call("PUT", "/api/v1/me/presets", { token: a.token, body: presets })).status).toBe(200);
+    expect(
+      (await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { startsAt: T("10:00"), endsAt: T("12:00") }, headers: { "Idempotency-Key": crypto.randomUUID() } })).status,
+    ).toBe(201);
+    const meetupId = await meetupOf(b, a);
+    expect((await u.call("POST", `/api/v1/meetups/${meetupId}/ics-links`, { token: a.token })).status).toBe(200);
+    expect((await u.call("POST", "/api/v1/calendar/google/authorizations", { token: a.token })).status).toBe(200);
+    const bc = await broadcastOf(b, [a, c]);
+    const sessionId = (await env.DB.prepare("SELECT id FROM sessions WHERE user_id = ?").bind(a.id).first<{ id: string }>())?.id;
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO push_subscriptions (id, user_id, session_id, endpoint_hash, endpoint_enc, created_at) VALUES (?1, ?2, ?3, ?4, 'x', ?5)").bind(
+        crypto.randomUUID(),
+        a.id,
+        sessionId,
+        crypto.randomUUID(),
+        h.clock.now,
+      ),
+      env.DB.prepare("INSERT INTO notification_daily_counts (user_id, day, channel, count) VALUES (?1, '2026-10-10', 'push', 1)").bind(a.id),
+      env.DB.prepare("INSERT INTO login_codes (code_hash, user_id, provider, binding_hash, return_to, expires_at) VALUES (?1, ?2, 'google', 'b', '/', ?3)").bind(
+        crypto.randomUUID(),
+        a.id,
+        h.clock.now + HOUR,
+      ),
+      env.DB.prepare("INSERT INTO outbox (id, type, payload, created_at) VALUES (?1, 'CalendarConnected', ?2, ?3)").bind(crypto.randomUUID(), JSON.stringify({ userId: a.id }), h.clock.now),
+      env.DB.prepare("INSERT INTO outbox (id, type, payload, created_at) VALUES (?1, 'AvailabilityCancelledByCalendar', ?2, ?3)").bind(crypto.randomUUID(), JSON.stringify({ userId: a.id }), h.clock.now),
+    ]);
+
+    expect((await withdraw(a)).status).toBe(204);
+    for (const table of ["presets", "push_subscriptions", "notification_daily_counts", "idempotency_keys", "ics_tokens", "calendar_oauth_states", "login_codes", "notifications"]) {
+      expect(await count(`${table} WHERE user_id = ?`, a.id), table).toBe(0);
+    }
+    expect(await count("outbox WHERE type IN ('CalendarConnected', 'AvailabilityCancelledByCalendar') AND json_extract(payload, '$.userId') = ?", a.id)).toBe(0);
+    // 相手の行
+    expect(await count("meetups WHERE id = ?", meetupId)).toBe(1);
+    expect(await count("meetup_participants WHERE meetup_id = ?", meetupId)).toBe(2);
+    expect(await count("broadcast_recipients WHERE broadcast_id = ?", bc.id)).toBe(2);
+    expect(await count("notifications WHERE user_id IN (?, ?)", b.id, c.id)).toBe(othersNotifications);
+  });
+
+  it("ログインし直しは同じ方法で求める（403 の本文の reauthProvider）", async () => {
+    for (const provider of ["google", "apple"] as const) {
+      const r = await h.login(provider, `sub-${crypto.randomUUID()}`);
+      h.clock.now += REAUTH_WINDOW_MS + 1;
+      const refreshed = await h.refresh(r.refreshToken);
+      const token = ((await refreshed.json()) as { accessToken: string }).accessToken;
+      const res = await u.call("POST", "/api/v1/me/withdrawal", { token, body: { confirm: "withdraw" } });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ code: "reauth_required", reauthProvider: provider });
+    }
+  });
+
+  it("これからの予定：開始ちょうど・すでに抜けた予定は触らない。残りが1人以下になる募集の予定は予定ごと取り消す", async () => {
+    const owner = await u.user();
+    const x = await u.user();
+    const y = await u.user();
+    await u.befriend(owner, x);
+    await u.befriend(owner, y);
+    // owner と x だけの募集の予定（x が退会すると残りは1人）
+    const pair = await broadcastOf(owner, [x, y]);
+    await respondTo(x, pair.id);
+    const pairMeetup = broadcastSchema.parse(await (await u.call("POST", `/api/v1/broadcasts/${pair.id}/decide`, { token: owner.token })).json()).meetupId ?? "";
+    // 開始ちょうどになる予定
+    const atStart = await meetupOf(owner, x, T("00:30", "10"), T("01:30", "10"));
+    // x がすでに抜けた予定（3人）
+    const trio = await broadcastOf(owner, [x, y]);
+    await respondTo(x, trio.id);
+    await respondTo(y, trio.id);
+    const trioMeetup = broadcastSchema.parse(await (await u.call("POST", `/api/v1/broadcasts/${trio.id}/decide`, { token: owner.token })).json()).meetupId ?? "";
+    expect((await u.call("POST", `/api/v1/meetups/${trioMeetup}/cancel`, { token: x.token })).status).toBe(200);
+    const leftBefore = await count("outbox WHERE type = 'MeetupLeft' AND json_extract(payload, '$.meetupId') = ?", trioMeetup);
+
+    h.clock.now = Date.parse(T("00:30", "10"));
+    await u.advance(0, x);
+    await reloginAs(x);
+    await withdraw(x);
+    await completeWithdrawalOf(x);
+    expect(await meetupStatus(pairMeetup)).toBe("cancelled");
+    expect(await meetupStatus(atStart)).toBe("confirmed");
+    expect(await meetupStatus(trioMeetup)).toBe("confirmed");
+    expect(await count("outbox WHERE type = 'MeetupLeft' AND json_extract(payload, '$.meetupId') = ?", trioMeetup)).toBe(leftBefore);
+  });
+
+  it("counter_proposed：退会した人が送信者でも skipped で通知なし。代わりの時間の開始を過ぎたものは触らない", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    await u.befriend(a, b);
+    const live = await sendInvite(a, b, T("11:00"), T("12:00"));
+    await u.call("POST", `/api/v1/direct-invites/${live.id}/responses`, { token: b.token, body: { response: "counter", startsAt: T("15:00"), endsAt: T("16:00") } });
+    const past = await sendInvite(a, b, T("13:00"), T("14:00"));
+    await u.call("POST", `/api/v1/direct-invites/${past.id}/responses`, { token: b.token, body: { response: "counter", startsAt: T("00:30", "10"), endsAt: T("01:00", "10") } });
+    h.clock.now = Date.parse(T("00:45", "10"));
+    await u.advance(0, a, b);
+    await reloginAs(a);
+    await withdraw(a);
+    await completeWithdrawalOf(a);
+    expect((await inviteRow(live.id))?.status).toBe("skipped");
+    expect((await inviteRow(past.id))?.status).toBe("counter_proposed");
+    expect(await count("outbox WHERE type = 'DirectInviteSkipped' AND json_extract(payload, '$.inviteId') IN (?, ?)", live.id, past.id)).toBe(0);
+    const seen = directInviteSchema.parse(await (await u.call("GET", `/api/v1/direct-invites/${past.id}`, { token: b.token })).json());
+    expect(seen.status).toBe("expired");
+  });
+
+  it("退会のあと、残りの書き込みの経路もどれも401", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    const c = await u.user();
+    await u.befriend(a, b);
+    await u.befriend(b, c);
+    const toA = await sendInvite(b, a);
+    const bc = await broadcastOf(b, [a, c]);
+    const mine = await broadcastOf(b, [a, c]);
+    await withdraw(a);
+    const id = crypto.randomUUID();
+    const writes: [string, string, unknown?][] = [
+      ["POST", `/api/v1/direct-invites/${toA.id}/responses`, { response: "accept" }],
+      ["POST", `/api/v1/direct-invites/${toA.id}/decide`, { decision: "accept" }],
+      ["POST", "/api/v1/broadcasts", { recipientIds: [b.id, c.id], startsAt: T("11:00"), endsAt: T("13:00") }],
+      ["POST", `/api/v1/broadcasts/${bc.id}/responses`],
+      ["DELETE", `/api/v1/broadcasts/${bc.id}/responses/me`],
+      ["POST", `/api/v1/broadcasts/${mine.id}/decide`],
+      ["DELETE", `/api/v1/availabilities/${id}`],
+      ["DELETE", `/api/v1/recurrence-rules/${id}`],
+      ["POST", `/api/v1/recurrence-rules/${id}/exceptions`, { date: "2026-10-12" }],
+      ["DELETE", `/api/v1/recurrence-rules/${id}/exceptions/2026-10-12`],
+      ["DELETE", "/api/v1/calendar/connections/google"],
+      ["POST", "/api/v1/push/subscriptions", { endpoint: "https://fcm.googleapis.com/fcm/send/x" }],
+      ["POST", "/api/v1/invite-links/accept", { linkId: id }],
+      ["POST", "/api/v1/auth/logout-all"],
+    ];
+    for (const [method, path, body] of writes) {
+      expect((await u.call(method, path, { token: a.token, body })).status, `${method} ${path}`).toBe(401);
+    }
+  });
+
+  it("相手の「みんな」から消え、カレンダーの書き込みは退会した人の連携を扱わない。退会した募集者の「決める」は予定を作らない", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    const c = await u.user();
+    await u.befriend(a, b);
+    await u.befriend(a, c);
+    expect((await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { startsAt: T("10:00"), endsAt: T("12:00") } })).status).toBe(201);
+    const slots = async () =>
+      ((await (await u.call("GET", `/api/v1/friend-availabilities?from=${new Date(h.clock.now).toISOString()}&to=${new Date(h.clock.now + 7 * 24 * HOUR).toISOString()}`, { token: b.token })).json()) as { items: { friend: { id: string } }[] }).items.map((i) => i.friend.id);
+    expect(await slots()).toContain(a.id);
+    await env.DB.prepare(
+      "INSERT INTO calendar_connections (user_id, provider, status, refresh_token_enc, connected_at, updated_at) VALUES (?1, 'google', 'active', 'x', ?2, ?2)",
+    ).bind(a.id, h.clock.now).run();
+    const bc = await broadcastOf(a, [b, c]);
+    await respondTo(b, bc.id);
+    await withdraw(a);
+    expect(await slots()).not.toContain(a.id);
+    expect(await activeConnectionsOf(env.DB, [a.id], "google")).toEqual([]);
+    // 「決める」が退会と同時に送られて、セッションの確認を通っていた場合
+    const ok = await decideBroadcast(env.DB, a.id, bc.id, { meetupId: crypto.randomUUID(), decidedEventId: crypto.randomUUID(), confirmedEventId: crypto.randomUUID() }, h.clock.now);
+    expect(ok).toBe(false);
+    expect(await count("meetups WHERE broadcast_id = ?", bc.id)).toBe(0);
+  });
+
+  it("カレンダー（.ics・Google）に書くタイトルは、退会した人を「退会したユーザー」にする", async () => {
+    const a = await u.user("あき");
+    const b = await u.user();
+    await u.befriend(a, b);
+    const meetupId = await meetupOf(b, a);
+    await withdraw(a);
+    const meetup = await meetupForCalendar(h.ctx, meetupId);
+    expect(meetup).not.toBeNull();
+    const content = await eventContent(h.ctx, meetup!, b.id);
+    expect(content.title).toBe("ここ暇：退会したユーザー");
+  });
+});

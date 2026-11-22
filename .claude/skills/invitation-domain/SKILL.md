@@ -30,7 +30,7 @@ pending →（CounterProposal）counter_proposed →（送信者が決める）c
 pending →（Decline、またはここ暇の自動取り消し）declined
 pending →（期限）expired
 pending（退会した人が送信者）→（退会による打ち切り：期限を今にする。通知なし）expired
-counter_proposed →（どちらかが退会）skipped（通知なし）
+counter_proposed →（代わりの時間の開始前に、どちらかが退会）skipped（通知なし）
 
 - `expired` は保存せず、読むときに決める（期限と代わりの時間の開始で判定する）
 

@@ -624,7 +624,7 @@ export function receivedPendingInvites(d1: D1Database, userId: string, now: numb
   );
 }
 
-/** 送った pending・募集者の open の打ち切り、counter_proposed の skipped、書いた内容の消去（通知なし） */
+/** 送った pending・募集者の open の打ち切りと、counter_proposed の skipped（通知なし。どれも期限前のものだけ） */
 export function withdrawalCloseStatements(d1: D1Database, userId: string, now: number): D1PreparedStatement[] {
   return [
     d1
@@ -634,7 +634,7 @@ export function withdrawalCloseStatements(d1: D1Database, userId: string, now: n
     d1
       .prepare(
         `UPDATE direct_invites SET status = 'skipped', decided_at = ?2
-         WHERE (sender_id = ?1 OR recipient_id = ?1) AND status = 'counter_proposed'`,
+         WHERE (sender_id = ?1 OR recipient_id = ?1) AND status = 'counter_proposed' AND counter_starts_at > ?2`,
       )
       .bind(userId, now),
     d1
@@ -643,6 +643,7 @@ export function withdrawalCloseStatements(d1: D1Database, userId: string, now: n
   ];
 }
 
+/** 退会した人が送った誘い・作った募集の、書いた内容（エリア・ひとこと・リンク）を消す */
 export function withdrawalEraseContentStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
   return [
     d1.prepare("UPDATE direct_invites SET area = NULL, message = NULL, url = NULL WHERE sender_id = ?").bind(userId),
