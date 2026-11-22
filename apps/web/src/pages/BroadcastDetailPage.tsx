@@ -6,7 +6,7 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { broadcastStatusText, broadcastStatusTone, formatRange } from "../invitations/format";
 import { broadcastQuery } from "../invitations/queries";
-import { displayNameOf } from "../account/me";
+import { honorificOf, nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
@@ -109,17 +109,18 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
     );
   }
   const b = broadcast.data;
-  const owner = b?.direction === "received" ? displayNameOf(b.owner.displayName) : null;
+  const owner = b?.direction === "received" ? nameOfProfile(b.owner) : null;
+  const ownerNamed = b?.direction === "received" ? honorificOf(b.owner) : null;
 
   return (
     <SheetScreen
-      label={owner ? `${owner}さんの募集` : "暇な人いる？"}
+      label={ownerNamed ? `${ownerNamed}の募集` : "暇な人いる？"}
       parent="/invites"
       title={
         <div className="flex items-center gap-3">
           {b?.direction === "received" && <Avatar name={b.owner.displayName} />}
           <div className="flex min-w-0 flex-1 flex-col">
-            <h2 className="truncate text-l font-bold">{owner ? `${owner}さんの募集` : "暇な人いる？"}</h2>
+            <h2 className="truncate text-l font-bold">{ownerNamed ? `${ownerNamed}の募集` : "暇な人いる？"}</h2>
             {owner && <span className="text-s text-ink-muted">暇な人いる？</span>}
           </div>
           {/* 募集者の募集中は、人数を下の HeadCount で大きく出すので、バッジは「募集中」だけにする */}

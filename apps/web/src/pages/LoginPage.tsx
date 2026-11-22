@@ -4,6 +4,7 @@ import { buttonClass } from "../ui/Button";
 export function LoginPage({ search }: { search: string }) {
   const params = new URLSearchParams(search);
   const failed = params.get("error") === "login_failed";
+  const withdrawn = params.get("withdrawn") === "1";
   const returnTo = params.get("returnTo") ?? "/";
   const startUrl = (provider: "google" | "apple") =>
     `/api/v1/auth/${provider}/start?returnTo=${encodeURIComponent(returnTo)}`;
@@ -20,6 +21,11 @@ export function LoginPage({ search }: { search: string }) {
         </p>
       </div>
       <h2 className="sr-only">ログイン</h2>
+      {withdrawn && (
+        <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
+          退会しました。
+        </p>
+      )}
       {failed && (
         // 断りや失敗は赤やエラー色で驚かせない
         <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">

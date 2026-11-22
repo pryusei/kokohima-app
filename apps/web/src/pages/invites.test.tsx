@@ -9,7 +9,7 @@ import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
 const FRIEND_ID = "22222222-2222-4222-8222-222222222222";
 const INVITE_ID = "55555555-5555-4555-8555-555555555555";
 const MEETUP_ID = "66666666-6666-4666-8666-666666666666";
-const friend = { id: FRIEND_ID, displayName: "あき", avatarUrl: null };
+const friend = { id: FRIEND_ID, displayName: "あき", avatarUrl: null, withdrawn: false };
 const empty = json({ items: [], nextCursor: null });
 const presets = json({
   day: { start: "11:00", end: "15:00" },
