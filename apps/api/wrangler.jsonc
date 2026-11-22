@@ -9,7 +9,9 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   // リクエストの URL にトークンが入る経路がある（OAuth のコールバックの code、.ics のパス）ので、
   // URL を含む呼び出しのログを出さない（docs/specs/T-06-calendar.md 決定事項14）。アプリの console のログは残る
-  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  // issues：捕まえていない例外・5xx・error のログを Workers Issues にまとめ、自動の通知で Slack に送る（docs/specs/T-13-monitoring.md）。
+  // 設定に書かないと次のデプロイで無効に戻る
+  "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
   // workers.dev とプレビューの URL を閉じる。各環境に継承される（docs/specs/T-12-release.md）。e2e の環境を誤ってデプロイしても公開されないように
   "workers_dev": false,
   "preview_urls": false,
@@ -228,6 +230,8 @@
         "not_found_handling": "single-page-application",
         "run_worker_first": true
       },
+      // 本番でも Workers Issues を有効にする（docs/specs/T-13-monitoring.md）。invocation_logs は T-06 のとおり出さない
+      "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
       "vars": {
         "APP_ORIGIN": "https://kokohima.app",
         // TODO: 本番の OAuth クライアント ID を転記する（docs/specs/T-12-release.md「人が行う作業」3）

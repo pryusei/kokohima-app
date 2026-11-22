@@ -1,6 +1,6 @@
 # T-13 仕様書：監視とアラート（ログの通知・死活監視・退避キューの調べ方）
 
-- 状態：合意済み（仕様書PRマージ）
+- 状態：実装済み（実装PRマージ）
 - タスク票：docs/tasks/T-13-monitoring.md
 - 関係する要件：要求定義書「技術の選定」の監視、「AI時代の攻撃を前提にした運用」（異常のアラート）、「残りの論点」（異常検知のアラートの条件と通知先）、NF-02、NF-03
 - 関係する issue：pryusei/kokohima-app#85。関連は #42（利用料アラート）、#41（監査ログ）、#52（本番までに人が行う作業）
@@ -97,7 +97,7 @@
 - サービス全体の1日のメール数の上限（`MAIL_DAILY_LIMIT`、T-07 決定事項8）で送らなかったとき、ログを出す：`{ event: "notification_mail_global_limit", kind }`。
   - `kind` はお知らせの種類だけ。宛先・利用者IDは出さない。利用者ごとの上限（`limited`）では出さない。
 - ほかのログの名前と項目は変えない。ログの書き方（1行の JSON、`event` で種類を表す）も変えない。
-  - Monitors で `event` の値で絞れない場合の扱いは「確認事項」。
+  - Monitors では、ログの本文（`$metadata.message`）が `"event":"<名前>"` を含むことで絞る（JSON の文字列が項目に分かれて読めるかは公式で確かめられなかったため。下の「実装PRで確かめたこと」）。ログの書き方は変えない。
 - wrangler の設定に `observability.issues.enabled: true` を足す（トップレベルと prod）。`invocation_logs: false`（T-06）は変えない。
 
 ### 4. アラートの一覧
@@ -208,21 +208,21 @@
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 記録：毎分の処理の後に `minutely`、15分ごとの割り当ての後に `calendar_sync` の `last_run_at` がいまの時刻になる（時刻は `deps.now`）
-- [ ] 記録：途中の処理が例外を投げても、記録される
-- [ ] 記録：記録の書き込みが失敗すると `cron_step_failed`（`step: "heartbeat"`）が出て、`runScheduled` は投げない
-- [ ] 死活確認：すべて新しければ 200 `{ "status": "ok" }`。認証なしで呼べる
-- [ ] 死活確認：`minutely` が5分より前なら 503、ちょうど5分なら 200。行がなければ 503
-- [ ] 死活確認：`calendar_sync` が45分より前なら 503、ちょうど45分なら 200
-- [ ] 死活確認：流す型の未処理の最古の行が10分より前なら 503、ちょうど10分なら 200。処理済みの行と、流す型でない未処理の行では 503 にならない
-- [ ] 死活確認：D1 の読み取りが失敗すると 503
-- [ ] 死活確認：503 の本文はどの理由でも同じで、`code` は `unavailable`。理由・時刻・件数・利用者IDを含まない。`Cache-Control: no-store` が付く
-- [ ] 死活確認：503 のとき `health_degraded` が `reason` だけで出る。200 のときは出ない
-- [ ] 死活確認：回数の上限を超えると 429
-- [ ] ログ：`job_failed`・`job_dead_lettered`・`cron_step_failed` は warn、`unhandled_error` は error で出る。項目は変わらない
-- [ ] ログ：サービス全体のメール数の上限で送らなかったとき `notification_mail_global_limit` が `kind` だけで出る。利用者ごとの上限では出ない
-- [ ] 設定：wrangler の設定で、トップレベルと prod の `observability.issues.enabled` が true、`invocation_logs` が false のまま
-- [ ] 他人のIDでは取得・更新できない：追加する API が利用者のデータを返さない（上の本文のテスト）。既存のテストが通る
+- [x] 記録：毎分の処理の後に `minutely`、15分ごとの割り当ての後に `calendar_sync` の `last_run_at` がいまの時刻になる（時刻は `deps.now`）
+- [x] 記録：途中の処理が例外を投げても、記録される
+- [x] 記録：記録の書き込みが失敗すると `cron_step_failed`（`step: "heartbeat"`）が出て、`runScheduled` は投げない
+- [x] 死活確認：すべて新しければ 200 `{ "status": "ok" }`。認証なしで呼べる
+- [x] 死活確認：`minutely` が5分より前なら 503、ちょうど5分なら 200。行がなければ 503
+- [x] 死活確認：`calendar_sync` が45分より前なら 503、ちょうど45分なら 200
+- [x] 死活確認：流す型の未処理の最古の行が10分より前なら 503、ちょうど10分なら 200。処理済みの行と、流す型でない未処理の行では 503 にならない
+- [x] 死活確認：D1 の読み取りが失敗すると 503
+- [x] 死活確認：503 の本文はどの理由でも同じで、`code` は `unavailable`。理由・時刻・件数・利用者IDを含まない。`Cache-Control: no-store` が付く
+- [x] 死活確認：503 のとき `health_degraded` が `reason` だけで出る。200 のときは出ない
+- [x] 死活確認：回数の上限を超えると 429
+- [x] ログ：`job_failed`・`job_dead_lettered`・`cron_step_failed` は warn、`unhandled_error` は error で出る。項目は変わらない
+- [x] ログ：サービス全体のメール数の上限で送らなかったとき `notification_mail_global_limit` が `kind` だけで出る。利用者ごとの上限では出ない
+- [x] 設定：wrangler の設定で、トップレベルと prod の `observability.issues.enabled` が true、`invocation_logs` が false のまま
+- [x] 他人のIDでは取得・更新できない：追加する API が利用者のデータを返さない（上の本文のテスト）。既存のテストが通る
 
 ### E2Eテスト（対象にする利用者の流れ）
 - 対象なし。利用者の画面と流れは変わらない。既存の E2E が通ることで、流れが壊れていないことを確かめる。
@@ -248,16 +248,15 @@
 - [x] Monitors・Issues の設定を管理画面で人が行うこと（「6.」の例外）：受け入れる。設定の内容は手順書を正とする。
 - [x] 閾値（「4.」の表）：この値で始め、運用で見直す。
 
-実装PRで確かめること（合意の妨げにはしない。結果で仕様が変わる場合は、実装PRの中でこの仕様書を直す）：
-- Monitors が、いまのプランで Workers Logs（`logs.workersLogs`）を読めるか。読めない場合は、Tail Worker から Slack に送る形に仕様を変える（仕様書を直してから実装する）。
-- Monitors で `event` の値で絞れるか。いまのログは JSON を文字列にして出している。項目として絞れない場合は、本文の文字列の一致で絞るか、ログをオブジェクトのまま出す形に変える。
-- Monitors の実行の間隔の下限（1分か10分か）と、作れる数の上限。
-- Workers Issues が、queue と scheduled の呼び出しの失敗も拾うか。通知の本文に個人情報が入りうるか。入りうる場合は、Issues の Slack への通知をやめ、管理画面で見るだけにする。そのときは、`unhandled_error` の Monitors（15分に1件以上）を足す。
-- warn のログが Workers Issues に上がらないこと（公式の説明のとおりか）。上がる場合は、二重に届くことを手順書に書くか、Issues の通知の条件で絞る。
-- 退避キューに付ける HTTP の consumer の、再試行の上限の既定値と、上限に達したときの扱い（メッセージが消えるか）。
-- Workers Logs の料金が 2026-12-01 から変わる（Cloudflare Observability の料金になる）。いまのログの量で費用が出ないか。
-- Better Stack の無料の枠の条件（監視の数・確認の間隔・Slack とメールへの通知・続けて失敗したときだけ通知する設定・利用の制限）。この仕様書を書いた時点では、料金のページを直接は確かめられていない（確認の間隔だけ公式のドキュメントで確かめた）。登録するときに公式で確かめ、条件が合わなければ仕様書を直す。
-- wrangler のバージョン（いまは 4.161 系）で `observability.issues.enabled` が検証を通るか。
+実装PRで確かめたこと（2026-11-21、公式ドキュメント）：
+- Monitors が Workers Logs を読めるか：データセット `logs.workersLogs` はある。ただし「使えるデータセットはプランと権限による」とだけあり、有料の Workers のプランで使えるかは書かれていない（https://developers.cloudflare.com/analytics/sql-api/datasets/、https://developers.cloudflare.com/notifications/monitors/）。**未確認**。設定するときに管理画面で選べなければ、Tail Worker から Slack に送る形に仕様を変える（仕様書を直してから実装する）。
+- `event` の値で絞れるか：Workers Logs は JSON の項目を自動で取り出すとあるが、公式の例はオブジェクトをそのまま `console.warn` に渡す形で、文字列にした JSON が項目に分かれるかは書かれていない。**未確認**。そのため、本文（`$metadata.message`）が `"event":"<名前>"` を含むことで絞る（Query Builder で `$metadata.message` を絞り込みに使える。https://developers.cloudflare.com/workers/observability/query-builder/）。ログの書き方は変えない。
+- Monitors の実行の間隔：多くのデータセットは1分、Log Explorer のデータセットは10分が下限。作れる数の上限は書かれていない（**未確認**）。
+- Workers Issues：捕まえていない例外・失敗した呼び出し・5xx・error のログと、`Error` やスタックを含むログを拾う。queue と scheduled の呼び出しの失敗を拾うかは明記されていない（「呼び出しの失敗」と書かれているので含むと読める。**未確認**）。warn のログは、`Error` やスタックを含まなければ対象にならないと読める（明記はない）。通知の本文には、例外のメッセージ・スタック・要求の情報が入りうる。→ 手順書で、実際の通知の本文を確かめ、個人情報が入りうるなら Issues の Slack への通知をやめて `unhandled_error` のモニターを足す手順にした（https://developers.cloudflare.com/workers/observability/issues/、https://developers.cloudflare.com/workers/observability/issues/automations/）。
+- 退避キューに付ける HTTP の consumer：`max_retries` の既定は3。上限に達したメッセージは、その先の退避キューがなければ消える。ack しないと見えない時間（既定30秒）の後に戻り、試行の回数が増える。→ 手順書に「付けるときに `max_retries` を大きめにする」と書いた（https://developers.cloudflare.com/queues/configuration/batching-retries/、https://developers.cloudflare.com/queues/configuration/pull-consumers/）。
+- Workers Logs の料金：2026-12-01 から Cloudflare Observability の料金になる。有料プランは請求期間ごとに取り込み50GB・保存10GB-month まで込み（https://developers.cloudflare.com/observability/pricing/）。いまのログの量では込みの範囲に収まる見込み。Monitors 自体に費用がかかるかは書かれていない（**未確認**）。
+- Better Stack の無料の枠：確認の間隔は3分から（https://betterstack.com/docs/uptime/check-frequency/）。続けて失敗したときだけ通知する設定は「Confirmation period」（時間で指定）。監視の数・Slack とメールへの通知・利用の制限は、料金のページを直接確かめられなかった（**未確認**）。登録するときに公式で確かめる手順を手順書に書いた。
+- wrangler のバージョン：`wrangler deploy --dry-run --env prod`（4.161.0）は `observability.issues` を警告なしで通した。単体テストの実行環境（`@cloudflare/vitest-pool-workers` が持つ wrangler）は「Unexpected fields found in observability field: "issues"」の警告を出すが、テストは通る（実行環境の wrangler が古いため。Workers Issues はテストでは使わない）。
 
 ## 実装PRで書き換える仕様書
 - docs/requirements.md：「技術の選定」の監視の行（Workers Logs＋Monitors・Issues＋外からの死活監視。利用料アラートは #42）、「残りの論点」の「異常検知のアラートの条件と通知先」にチェックを付ける。
@@ -273,3 +272,4 @@
 | 2026-11-21 | 下書き | 仕様の点検で見つかった「監視とアラートの仕様がない」（#85） |
 | 2026-11-21 | Monitors と Workers Issues の受け持ちをログの重さで分ける（二重の通知をなくす）。退避キューを HTTP で読むときの注意と、確かめる項目を足す。本番のドメインの出どころを書く | PR のレビュー |
 | 2026-11-21 | 確認事項を解消し、合意済みにする。外の監視サービスを Better Stack に決める | 4つの確認事項を決定（外の監視サービスは利用者と決めた。ほかは案のとおり） |
+| 2026-11-21 | 実装した。Monitors は本文の文字列の一致で `event` を絞ることにし、実装PRで確かめたことを書いた。手順書（docs/runbooks/monitoring.md）を足した | 実装PR |

@@ -3,7 +3,7 @@ import { assignSyncs } from "./calendar/application/sync";
 import type { AppDeps, Bindings, JobMessage } from "./env";
 import { isApiPath, withApiHeaders, withPageHeaders } from "./http/securityHeaders";
 import { handleBatch } from "./jobs/consumer";
-import { cleanupExpired, dispatchOutbox, runStep } from "./jobs/dispatch";
+import { cleanupExpired, dispatchOutbox, recordCronRun, runStep } from "./jobs/dispatch";
 
 // Worker の入口（fetch・scheduled・queue）。本番とE2Eで共有する。E2E用の経路はここに足さない
 
@@ -15,10 +15,13 @@ export async function runScheduled(cron: string, env: Bindings, deps: AppDeps) {
   const ctx = { env, deps };
   if (cron === CRON_CALENDAR_SYNC) {
     await runStep("assign_syncs", () => assignSyncs(ctx));
+    // 途中の処理が失敗していても、定期処理が動いたことは記録する（停止は /api/v1/health/ready で外から見る。T-13）
+    await runStep("heartbeat", () => recordCronRun(env.DB, "calendar_sync", deps.now()));
     return;
   }
   await runStep("dispatch_outbox", () => dispatchOutbox(ctx));
   await cleanupExpired(ctx);
+  await runStep("heartbeat", () => recordCronRun(env.DB, "minutely", deps.now()));
 }
 
 /**

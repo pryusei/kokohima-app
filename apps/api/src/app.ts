@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { requestId } from "hono/request-id";
 import { createRemoteJWKSet } from "jose";
 import { GOOGLE_ENDPOINTS, type AppDeps, type AppEnv } from "./env";
+import { healthReady } from "./http/health";
 import { problem } from "./http/problem";
+import { rateLimit } from "./http/rateLimit";
 import { availabilityRoutes } from "./availability/routes";
 import { calendarRoutes } from "./calendar/routes";
 import { identityRoutes } from "./identity/routes";
@@ -56,6 +58,8 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
   });
 
   app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
+  // 深い死活確認（D1 を読むので IP ごとに回数の上限をかける。docs/specs/T-13-monitoring.md）
+  app.get("/api/v1/health/ready", rateLimit({ group: "health_ready", limiter: "RL_PUBLIC", by: "ip" }), healthReady);
   app.route("/api/v1", identityRoutes());
   app.route("/api/v1", socialRoutes());
   app.route("/api/v1", availabilityRoutes());
