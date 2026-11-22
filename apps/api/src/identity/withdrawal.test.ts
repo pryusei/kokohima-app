@@ -259,9 +259,11 @@ describe("退会のあと", () => {
     expect((await u.call("POST", "/api/v1/me/withdrawal", { token: first.accessToken, body: { confirm: "withdraw" } })).status).toBe(204);
 
     expect((await h.complete(decodeURIComponent(loginCode), s.binding)).status).toBe(401);
-    await h.request(`/api/v1/calendar/google/callback?${new URLSearchParams({ code: "auth-code", state })}`, {
+    // 連携の途中の state は退会で消えているので、callback は失敗になる
+    const cal = await h.request(`/api/v1/calendar/google/callback?${new URLSearchParams({ code: "auth-code", state })}`, {
       headers: { Cookie: `__Host-kh_cal=${calBinding}` },
     });
+    expect(cal.headers.get("Location")).toBe("https://app.test/settings/calendar?calendar=failed");
     expect(await count("calendar_connections WHERE user_id = ?", me.id)).toBe(0);
     expect(await count("sessions WHERE user_id = ?", me.id)).toBe(0);
     // アクセストークンの確認をすり抜けた要求があっても、リポジトリの条件で書かない
@@ -285,6 +287,25 @@ describe("退会のあと", () => {
     });
     expect(created).toBe(false);
     expect(await count("sessions WHERE user_id = ?", me.id)).toBe(0);
+  });
+});
+
+describe("退会と同時のカレンダーの連携", () => {
+  it("callback が state を取り出したあとに退会が入ると、保存せずに失敗し、受け取った許可を revoke する", async () => {
+    const a = await u.user();
+    const auth = await u.call("POST", "/api/v1/calendar/google/authorizations", { token: a.token });
+    const state = new URL(((await auth.json()) as { authorizeUrl: string }).authorizeUrl).searchParams.get("state") ?? "";
+    const binding = cookieValue(auth, "__Host-kh_cal") ?? "";
+    // 競合の再現：state の行は残したまま、退会の印だけが先に立った状態
+    await env.DB.prepare("UPDATE users SET withdrawn_at = ? WHERE id = ?").bind(h.clock.now, a.id).run();
+    const revokedBefore = h.google.state.revoked.size;
+    const res = await h.request(`/api/v1/calendar/google/callback?${new URLSearchParams({ code: "auth-code", state })}`, {
+      headers: { Cookie: `__Host-kh_cal=${binding}` },
+    });
+    expect(res.headers.get("Location")).toBe("https://app.test/settings/calendar?calendar=failed");
+    expect(h.google.state.revoked.size).toBe(revokedBefore + 1);
+    expect(await count("calendar_connections WHERE user_id = ?", a.id)).toBe(0);
+    expect(await count("outbox WHERE type = 'CalendarConnected' AND json_extract(payload, '$.userId') = ?", a.id)).toBe(0);
   });
 });
 
@@ -359,7 +380,7 @@ describe("後始末の段", () => {
     expect(await count("outbox WHERE type = 'MeetupCancelled' AND json_extract(payload, '$.meetupId') = ?", meetupId)).toBe(1);
   });
 
-  it("返事待ち：受けた pending は declined、送った pending は期限切れ、counter_proposed は skipped、open の募集は締め切り。期限を過ぎた誘いは触らない", async () => {
+  it("返事待ち：受けた pending は declined、送った pending は期限切れ、受信者として返した counter_proposed は触らない、open の募集は締め切り。期限を過ぎた誘いは触らない", async () => {
     const a = await u.user();
     const b = await u.user();
     const c = await u.user();
@@ -375,7 +396,7 @@ describe("後始末の段", () => {
     });
     const bc = await broadcastOf(a, [b, c]);
     h.clock.now += 2 * HOUR;
-    await u.advance(0, a, b);
+    await u.advance(0, a, b, c);
     await reloginAs(a);
     const oldExpiry = (await inviteRow(old.id))?.expires_at;
 
@@ -384,7 +405,9 @@ describe("後始末の段", () => {
     expect((await inviteRow(received.id))?.status).toBe("declined");
     expect(await count("outbox WHERE type = 'DirectInviteDeclined' AND json_extract(payload, '$.inviteId') = ?", received.id)).toBe(1);
     expect(await inviteRow(sent.id)).toMatchObject({ status: "pending", expires_at: h.clock.now });
-    expect((await inviteRow(countered.id))?.status).toBe("skipped");
+    // 退会した人が受信者の counter_proposed は触らない（送信者に「見送りました」と出さない）
+    expect((await inviteRow(countered.id))?.status).toBe("counter_proposed");
+    expect((await u.call("POST", `/api/v1/direct-invites/${countered.id}/decide`, { token: c.token, body: { decision: "accept" } })).status).toBe(409);
     expect((await inviteRow(old.id))?.expires_at).toBe(oldExpiry);
     // 相手には期限切れ・締め切りに見える
     const seen = directInviteSchema.parse(await (await u.call("GET", `/api/v1/direct-invites/${sent.id}`, { token: b.token })).json());

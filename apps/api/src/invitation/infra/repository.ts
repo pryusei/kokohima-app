@@ -630,11 +630,13 @@ export function withdrawalCloseStatements(d1: D1Database, userId: string, now: n
     d1
       .prepare("UPDATE direct_invites SET expires_at = ?2 WHERE sender_id = ?1 AND status = 'pending' AND expires_at > ?2")
       .bind(userId, now),
-    // counter_proposed は期限が代わりの時間の開始で決まるので、保存する状態で終える
+    // 退会した人が送信者の counter_proposed は、決める人がいなくなるので skipped（受信者には「見送りになりました」）。
+    // 退会した人が受信者のものは触らない（送信者に「見送りました」と出さない。代わりの時間の開始で期限切れになる。
+    // それまでの「決める」は、退会した人を含むので409）
     d1
       .prepare(
         `UPDATE direct_invites SET status = 'skipped', decided_at = ?2
-         WHERE (sender_id = ?1 OR recipient_id = ?1) AND status = 'counter_proposed' AND counter_starts_at > ?2`,
+         WHERE sender_id = ?1 AND status = 'counter_proposed' AND counter_starts_at > ?2`,
       )
       .bind(userId, now),
     d1

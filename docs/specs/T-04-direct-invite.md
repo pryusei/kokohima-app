@@ -87,7 +87,7 @@
 | `meetup_participants` | `meetup_id`（FK、`ON DELETE CASCADE`）、`user_id`（FK users、`ON DELETE CASCADE`） | PK(`meetup_id`, `user_id`)、INDEX(`user_id`, `meetup_id`) |
 
 - 断りの理由の列は作らない
-- 退会（T-16）：利用者の行を消さずに ID だけ残すので、FK の CASCADE は変えない（`SET NULL` は採らなかった）。これからの予定は本人の「やっぱり難しい」と同じ、受けた `pending` は「今回は難しい」、送った `pending` は「退会による打ち切り」（期限を今にする。通知なし）、`counter_proposed` はどちら側でも `skipped`（通知なし）。退会した人を含む「行く」「この時間で決める」は409
+- 退会（T-16）：利用者の行を消さずに ID だけ残すので、FK の CASCADE は変えない（`SET NULL` は採らなかった）。これからの予定は本人の「やっぱり難しい」と同じ、受けた `pending` は「今回は難しい」、送った `pending` は「退会による打ち切り」（期限を今にする。通知なし）、送信者が退会した `counter_proposed` は `skipped`（通知なし。受信者が退会したものは期限で `expired`）。退会した人を含む「行く」「この時間で決める」は409
 
 ## 振る舞い
 

@@ -111,7 +111,7 @@ export async function completeConnect(
     return fail("encrypt");
   }
   // 前の更新用トークンは失効させずに上書きして捨てる（決定事項13）
-  await repo.saveConnection(
+  const saved = await repo.saveConnection(
     ctx.env.DB,
     { userId: tx.user_id, provider: tx.provider, refreshTokenEnc, now },
     {
@@ -119,6 +119,15 @@ export async function completeConnect(
       payload: JSON.stringify({ userId: tx.user_id, provider: tx.provider, occurredAt: iso(now) }),
     },
   );
+  if (!saved) {
+    // 退会と同時に進んでいた callback（T-16）。退会した人の連携は残らないので、受け取った許可を失効させる
+    try {
+      await provider.revoke(tokens.refreshToken);
+    } catch {
+      log("calendar_revoke_skipped", {});
+    }
+    return fail("user_withdrawn");
+  }
   log("calendar_connected", { provider: tx.provider });
   return true;
 }

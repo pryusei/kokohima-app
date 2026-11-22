@@ -75,8 +75,8 @@ export async function saveConnection(
   d1: D1Database,
   row: { userId: string; provider: Provider; refreshTokenEnc: string; now: number },
   event: { id: string; payload: string },
-) {
-  await d1.batch([
+): Promise<boolean> {
+  const [saved] = await d1.batch([
     d1
       .prepare(
         `INSERT INTO calendar_connections (user_id, provider, status, refresh_token_enc, connected_at, updated_at)
@@ -94,6 +94,8 @@ export async function saveConnection(
       )
       .bind(event.id, event.payload, row.now, row.userId),
   ]);
+  // 書けたら true。退会した人（T-16）には書かないので false
+  return saved?.meta.changes === 1;
 }
 
 // ---- 解除と失効 ----

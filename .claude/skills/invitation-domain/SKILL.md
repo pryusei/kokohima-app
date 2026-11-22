@@ -30,7 +30,7 @@ pending →（CounterProposal）counter_proposed →（送信者が決める）c
 pending →（Decline、またはここ暇の自動取り消し）declined
 pending →（期限）expired
 pending（退会した人が送信者）→（退会による打ち切り：期限を今にする。通知なし）expired
-counter_proposed →（代わりの時間の開始前に、どちらかが退会）skipped（通知なし）
+counter_proposed →（代わりの時間の開始前に、送信者が退会）skipped（通知なし。受信者が退会したものは触らず、期限で expired）
 
 - `expired` は保存せず、読むときに決める（期限と代わりの時間の開始で判定する）
 
@@ -72,4 +72,4 @@ open →（募集者が退会：退会による打ち切りで期限を今にす
 | （期限切れ） | 保存せず読むときに決める。通知しないのでイベントは作らない |
 | MeetupLeft | 募集の予定から1人が抜けた。抜けた人のカレンダーから消し、残りの人のタイトルを直す（T-06）。残った参加者に通知（T-07） |
 | MeetupCancelled | カレンダーから削除（T-06）、押した人を除く参加者に定型文で通知（T-07） |
-| UserWithdrew | 退会の後始末（T-16）。これからの予定は本人の「やっぱり難しい」、受けた pending は「今回は難しい」、送った pending と open の募集は退会による打ち切り、counter_proposed は skipped、書いた内容を消す。相手への知らせは MeetupCancelled・MeetupLeft・DirectInviteDeclined で行う |
+| UserWithdrew | 退会の後始末（T-16）。これからの予定は本人の「やっぱり難しい」、受けた pending は「今回は難しい」、送った pending と open の募集は退会による打ち切り、送った counter_proposed は skipped、書いた内容を消す。相手への知らせは MeetupCancelled・MeetupLeft・DirectInviteDeclined で行う |
