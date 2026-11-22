@@ -36,8 +36,8 @@
   4. `Content-Type` が `application/json`（`; charset=utf-8` などの引数は許す）でなければ400 `validation_failed`。
   5. `clientErrorReportSchema` で検証。違えば400 `validation_failed`。
   6. 全体の回数の上限（検証を通った要求だけで数える。検証に落ちた要求・IP ごとで落ちた要求は全体の枠を使わない）。超えたら429。
-- この経路では、上限を超えたときの `rate_limited` のログを出さない（`rateLimit` に、超えたときのログを止める設定を足す）。偽の報告でログを増やさせないため。代わりに、全体の上限で落としたときだけ、`{ event: "client_error_dropped" }` を、1つの Worker の実行環境（isolate）で60秒に1行まで出す（本物の報告が落ちていることに運用者が気づけるように）。
-- 上限を判定できないとき（バインディングがない・`limit()` の例外・`CF-Connecting-IP` が読めない）は、ほかの経路と違って通さずに204で捨て、`client_error` も `rate_limit_skipped` も出さない（この経路は落としても利用者に害がないため）。
+- この経路では、上限を超えたときの `rate_limited` のログを出さない（`rateLimit` に、超えたときのログを止める設定を足す）。偽の報告でログを増やさせないため。代わりに、全体の上限で落としたときだけ、`console.warn(JSON.stringify({ event: "client_error_dropped" }))` を、1つの Worker の実行環境（isolate）で60秒に1行まで出す（本物の報告が落ちていることに運用者が気づけるように。60秒の判定は `deps.now()` の時刻で行い、テストでは時刻を差し替え、isolate の中の状態をテストの間で戻す関数を用意する）。
+- 上限を判定できないとき（バインディングがない・`limit()` の例外・`CF-Connecting-IP` が読めない）は、ほかの経路と違って通さずに204で捨て、`client_error` は出さない（この経路は落としても利用者に害がないため）。ただし `rate_limit_skipped`（`reason`）は今までどおり出す（外からは起こせない設定の漏れ・障害に気づけるように）。このため `AppDeps.rateLimit` の戻り値を `"allowed" | "limited" | "unavailable"` に変え、`rateLimit` のミドルウェアが「判定できない」をほかの経路では通し、この経路では捨てられるようにする。
 - `Idempotency-Key` は受け付けない（同じ報告が2回届いてもログが1行増えるだけ。T-10 の「受け付けない経路と理由」の「何度送っても結果が同じ」に足す）。
 
 `clientErrorReportSchema`（`packages/shared`。`.strict()`。知らない項目があれば400）。自由な文字列は受けず、どの項目も決めた値の一覧から選ぶ（画面の側の誤りで個人情報が入っても、サーバーで止まるように）：
@@ -95,7 +95,7 @@
 
 ### 6. 監視
 - T-13 の「3. ログの追加と、重さの見直し」に `client_error`（warn）を足す。
-- T-13 の「4. アラートの一覧」の「気づけばよい（`#kokohima-notices`）」に、`client_error`（1時間に5件以上）を足す。手順書（`docs/runbooks/monitoring.md`）の Monitors の表に足し、`kind`・`route`・`appVersion` で絞ってログを見る手順を書く。
+- T-13 の「4. アラートの一覧」の「気づけばよい（`#kokohima-notices`）」に、`client_error`（1時間に5件以上）と `client_error_dropped`（1時間に1件以上）を足す。手順書（`docs/runbooks/monitoring.md`）の Monitors の表に足し、`kind`・`route`・`appVersion` で絞ってログを見る手順を書く。
 - `rate_limited` のモニターは、この経路では超えたときのログを出さないので、影響を受けない。
 
 ## 認可と秘匿
@@ -113,8 +113,8 @@
 - [ ] API 境界値：本文がちょうど1024バイト（空白で埋めた正しい JSON で作る）は204、1025バイトは400。`Content-Type` に `; charset=utf-8` が付いても通る。`Content-Length` がない・偽りの本文でも、読み込んだ長さで400
 - [ ] API：同じオリジンでない・`Origin` がない要求は401で、回数の上限を使わない
 - [ ] API：ログインしていなくても204。利用者 A のトークンを付けても、応答とログに A の ID もデータも出ない（不正なトークンでも204）
-- [ ] API 回数の上限：IP ごとと全体のそれぞれで429（`Retry-After`）。超えたときに `rate_limited` も `client_error` もログが出ない。検証に落ちた要求は全体の枠を使わない。全体で落としたときは `client_error_dropped` が60秒に1行まで
-- [ ] API：上限を判定できないとき（バインディングがない・例外）は204で捨て、`client_error` も `rate_limit_skipped` も出ない
+- [ ] API 回数の上限：IP ごとと全体のそれぞれで429（`Retry-After`）。超えたときに `rate_limited` も `client_error` もログが出ない。検証に落ちた要求は全体の枠を使わない。全体で落としたときは `client_error_dropped` が60秒に1行まで。`client_error_dropped` は warn で出て、時刻を進めると次の1行が出る
+- [ ] API：上限を判定できないとき（バインディングがない・例外）は204で捨て、`client_error` は出さず、`rate_limit_skipped` は出る
 - [ ] Web：`route` の当てはめ（タブ・シートの経路、UUID などの ID は形によらず `:id`、`/invites/new` と `/broadcasts/new` は `:id` にしない、知らないパスは `other`、query とフラグメントを使わない、`/invite`）
 - [ ] Web：`name` の当てはめ（一覧にある名前、一覧にない名前は `other`、`Error` でない値は `other`）。例外のメッセージ・スタックを送らない（メッセージに表示名やトークンのような文字列を入れた例外で確かめる）
 - [ ] Web：同じエラーは1回、1ページで10件目まで送り、11件目は送らない。オフラインの間は送らず、枠も使わない（オンラインに戻ったあとのエラーは送る）
@@ -135,12 +135,12 @@
 ## 実装PRで直すもの
 - 要求定義書：「技術の選定」の監視の行に、画面のエラー（自前の受け口・ログだけ）。
 - T-07：「プッシュの購読と Service Worker」に、購読と登録の失敗を報告すること。
-- T-10：回数の上限の表に `client_errors`（専用のバインディング `RL_CLIENT_ERRORS_IP`・`RL_CLIENT_ERRORS_GLOBAL`、`rateLimit` の `by: "global"` と超えたときのログを止める設定）、「受け付けない経路と理由」に `POST /client-errors`。
+- T-10：回数の上限の表に `client_errors`（専用のバインディング `RL_CLIENT_ERRORS_IP`・`RL_CLIENT_ERRORS_GLOBAL`、`rateLimit` の `by: "global"` と超えたときのログを止める設定、`AppDeps.rateLimit` の戻り値を3つの値に。`namespace_id` の一覧に下の番号）、「受け付けない経路と理由」に `POST /client-errors`。
 - T-11：壊れたときの画面。
 - T-12 リリース：画面の CSP を変えないこと（同じオリジンに送る）を一言。
-- T-13：「3.」に `client_error`、「4.」に `client_error` のアラート。手順書（`docs/runbooks/monitoring.md`）の Monitors の表と調べ方、iOS で確かめる手順。
+- T-13：「3.」に `client_error`、「4.」に `client_error` と `client_error_dropped` のアラート。手順書（`docs/runbooks/monitoring.md`）の Monitors の表と調べ方、iOS で確かめる手順。
 - `api-conventions` スキル：認証なしで受ける経路（同じオリジン・IP の回数の上限）の例。
-- wrangler の設定（4つの環境）と `vitest.config.ts` に、2つのバインディング（`namespace_id` は `infra-change` スキルに従って決める）。`RateLimiterName` に足す。
+- wrangler の各環境（既定・e2e・assets・staging・prod）に、2つのバインディング。`namespace_id` は T-10 の「設定値」の規則で、既定 1003・1004、e2e 1103・1104、assets 1203・1204、staging 2003・2004、prod 3003・3004。`vitest.config.ts` は wrangler の既定の環境を読むので、既定の環境に書けば単体テストでも使える。`RateLimiterName` に足す。`AppDeps.rateLimit` を差し替えている `apps/api/src/e2e/entry.ts` と `apps/api/test/identity-harness.ts` も、新しい戻り値に合わせる。任意で、`check-wrangler-config.mjs`（T-12）が各環境に `RL_*` のバインディングがあることを調べる。
 
 ## スコープ外
 - 外部のエラー収集サービス（利用者と決めた）。
@@ -158,3 +158,4 @@
 | 2026-11-22 | 下書き | pryusei/kokohima-app#88（利用者の回答：自前の API でログだけ、ログインしていない画面も集める、壊れたら静かな画面と「読み込み直す」） |
 | 2026-11-22 | `route`・`name` を決めた値の一覧から選ぶ形に、`appVersion` の形を固定、上限を超えた分のログを出さない・全体の上限、処理の順番、本文の上限を400で（新しい code を足さない）、`ApiError` を送らない、ErrorBoundary の位置、`sendBeacon`・`no-cors` を使わない、T-12 リリースの後に実装、テスト計画と直す文書を足す | 仕様書PRの前のレビュー（セキュリティ・仕様） |
 | 2026-11-22 | 専用の回数の上限2つ（IP ごと10回・全体60回）と処理の順番（全体は検証のあと）、`client_error_dropped`、判定できないときは捨てる、オフラインでは送らず `online` の項目をやめる、API の置き場所、1024バイトと `charset`、`sendBeacon` を使わない理由、リスナーの登録の順番、人が確かめること（Workers Logs の自動の項目・Issues） | 仕様書PRのレビュー（pryusei/kokohima-app#109） |
+| 2026-11-22 | `client_error_dropped` を warn で出してアラートを足す、判定できないときも `rate_limit_skipped` は出す（`AppDeps.rateLimit` を3つの値に）、wrangler の5つの環境と `namespace_id` の番号 | 仕様書PRのレビュー（2回目） |
