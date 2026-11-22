@@ -86,11 +86,12 @@
   - `eval`・`new Function` も許さない。Zod は最初の検証で `new Function` を試し、捕まえても CSP の違反が報告されるので、画面の入口（`apps/web/src/main.tsx` が最初に読む `zodConfig.ts`）で `config({ jitless: true })` にする（検証の結果は変わらない。本番と同じ形の E2E で見つけた）。
   - 画像は自分のオリジンだけ（OGP の画像は T-08 で自分のオリジンから出している。アバターの URL は今は外から読まない）。
 - API の応答（`/api/`）で、経路が CSP を付けていなければ `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` を付ける（JSON をブラウザで開いても何も読み込ませない）。
+- `ASSETS` のバインディングがない環境（ローカル・E2E・単体テスト）では、Hono が返すすべての応答（`/__e2e__/*` も含む）を API の応答として扱い、API のヘッダーを付ける。
 - キャッシュ：画面の側の応答のうち、パスが `/sw.js` の応答と、`Content-Type` が `text/html` の応答（SPA の入口。`Content-Type` がない304は、パスが `/`・`.html` で終わる・拡張子がない（SPA の経路）なら HTML とみなす）には `Cache-Control: no-cache` を付ける（Service Worker と画面の入口が古いまま残らないように）。ほかの画面のファイルは、静的アセットの既定のまま。
 
 ### Apple のログインを止める
 - 変数 `APPLE_LOGIN_ENABLED`（秘密ではない）。`"1"` のときだけ Apple の経路が動く。ほかの値・未設定は止める（fail closed）。
-  - ローカル・e2e・単体テストは `"1"`（今の Apple のテストを残す）、staging・prod は `"0"`。置き場は wrangler.jsonc のトップレベルの `vars`、`env.e2e.vars`（e2e はトップレベルの vars を引き継がない）、`env.staging.vars`・`env.prod.vars`、`vitest.config.ts` の bindings。
+  - ローカル・e2e・assets・単体テストは `"1"`（今の Apple のテストを残す）、staging・prod は `"0"`。置き場は wrangler.jsonc のトップレベルの `vars`、`env.e2e.vars`・`env.assets.vars`（env の vars はトップレベルの vars を引き継がない）、`env.staging.vars`・`env.prod.vars`、`vitest.config.ts` の bindings。
   - `env.ts` の `Bindings` に `APPLE_LOGIN_ENABLED?: string` と `ASSETS?: Fetcher` を足す。
 - 止めたときの経路の振る舞いは上の「API」の表のとおり。Apple の秘密（`APPLE_PRIVATE_KEY` など）が未設定でも、止めた環境では読まない。
   - 判定は、経路（routes）と application（`startLogin`・`handleCallback`）の両方に置く。経路では、本文の解析（`parseBody`）・`startLogin`・結びつけ Cookie の発行より前に判定する（「何も読まず、何も書かない」を順番で保証する。新しい結びつけ Cookie は発行しない。`loginFailed` と同じく、結びつけ Cookie を消す `Set-Cookie` だけは出る）。
@@ -127,6 +128,7 @@
   - `apps/web/dist/index.html` にインラインの script・style（`style=` の属性を含む）がないこと。
   - wrangler の設定：prod の `assets.run_worker_first` が `true`・`not_found_handling` が `single-page-application`・`binding` が `ASSETS`、トップレベルと prod の `workers_dev`・`preview_urls` が `false`、prod の `routes` が `kokohima.app`（`custom_domain`）だけ、prod の `APPLE_LOGIN_ENABLED` が `"0"` で `E2E_MODE` がない、トップレベルと prod の `main` が `src/index.ts`、どの環境も `workers_dev`・`preview_urls` を `true` にしない、prod 以外の環境とトップレベルに `routes` がない（設定が変わってヘッダーが付かなくなるのを CI で気づくため）。
 - `pnpm --filter api deploy:prod`（新しく足す）：`apps/web` をビルドし、CI と同じ検査（画面のビルド・wrangler の設定・`--dry-run` で作った API のビルドに E2E 用の経路がないこと。`apps/api/scripts/check-*.mjs`）を通してから `wrangler deploy --env prod`。手元の `.env.local` などが本番のビルドに入り込んでも、ここで止まる。人だけが実行する（Claude は実行しない）。
+  - `deploy:prod` だけ、転記を忘れた値も検査する（`check-wrangler-config.mjs --deploy`）：prod の `vars.GOOGLE_CLIENT_ID`・`vars.VAPID_PUBLIC_KEY` が空、または prod の D1 の `database_id`・KV の `id` がすべて0の仮の値なら止まる。CI の `build:prod` は TODO のままの設定でビルドするので、この検査を付けない。
 - `pnpm --filter api db:migrate:prod`（新しく足す）：`wrangler d1 migrations apply DB --remote --env prod`（prod の `DB` のバインディング＝`kokohima-prod`）。人だけが実行する。
 
 ### 人が行う作業（デプロイの前。#52 に載せる）
@@ -163,6 +165,7 @@
    - `GET /api/v1/health` に共通のヘッダーと `default-src 'none'` の CSP が付く。画面の応答に画面用の CSP が付く。
    - `GET /api/v1/auth/apple/start` が `/login?error=login_failed` への303で、新しい結びつけ Cookie が付かない（消す `Set-Cookie` だけ）。`POST /api/v1/auth/apple/callback` が404。
    - `POST /` と `POST /__e2e__/login` が405。
+   - `curl -I https://kokohima.app//example.com/index.html` などの `//` で始まるパスが、ほかのサイトへのリダイレクト（`Location` が `//example.com/...` や `https://example.com/...`）にならない（画面の `index.html` か、`kokohima.app` の中への応答）。
    - `wrangler secret list --env prod` に Apple の秘密と `E2E_MODE` がなく、vars にも `E2E_MODE` がない。
    - ブラウザのコンソールに CSP の違反が0件であることを、次の流れで確かめる：Google でログイン、招待を開いて友達になる、通知の購読、カレンダーの連携、リンクのプレビューの画像、Service Worker の登録。
    - 問題があれば `wrangler rollback --env prod` で戻す。
@@ -188,8 +191,8 @@
 
 ### E2Eテスト（対象にする利用者の流れ）
 - [x] 既存の E2E がすべて通る（ローカルの開発と E2E は `VITE_APPLE_LOGIN_ENABLED=1`・`APPLE_LOGIN_ENABLED=1` で、今の流れのまま）。
-- [x] 本番と同じ形（ビルドした画面を静的アセットとして同じ Worker から出す）で、ログインの画面と SPA の経路（`/invites/xxx`）を開くと、画面が出て、CSP の違反が0件で、画面用の CSP と共通のヘッダーが付く。
-  - wrangler に、ローカルでだけ使う環境 `assets`（`main` は本番と同じ `src/index.ts`、`assets` は prod と同じ設定、vars は e2e と同じ形）を足し、Playwright の別の project（`release`）で `wrangler dev --env assets` に向けて開く。ログインはしない（テスト用ログインの経路を本番のエントリに入れないため）。
+- [x] 本番と同じ形（ビルドした画面を静的アセットとして同じ Worker から出す）で、ログインの画面と SPA の経路（`/invites/xxx`）と招待リンクの受け口（`/invite`。未ログインでも `InvitePage` を描画する）を開くと、画面が出て、CSP の違反が0件で、画面用の CSP と共通のヘッダーが付く。
+  - wrangler に、ローカルでだけ使う環境 `assets`（`main` は本番と同じ `src/index.ts`、`assets` は prod と同じ設定、vars は e2e と同じ形）を足し、Playwright の別の project（`release`）で `wrangler dev --env assets` に向けて開く。ローカルの D1 は `database_id` ごとに分かれるので、assets の `database_id` は e2e と別の仮の値にする（同時に起動する E2E とデータを共有しない）。秘密は `scripts/write-e2e-dev-vars.mjs .dev.vars.assets` で別のファイルに生成する。ログインはしない（テスト用ログインの経路を本番のエントリに入れないため）。
   - CSP の違反は `securitypolicyviolation` のイベントとコンソールで数える。
 - カスタムドメインと `workers.dev` を閉じたことは本番でしか確かめられないので、「人が行う作業」の9で確かめる。
 
@@ -222,3 +225,4 @@
 | 2026-11-21 | 実装した。Zod の `jitless`（CSP の `eval` の違反を出さない）を足し、決定事項と確認事項を合意済みにした | 実装PR |
 | 2026-11-21 | 実装PRのレビューを反映：`assets` を書く環境、`Content-Type` のない応答は304だけ HTML とみなす、wrangler の設定の検査の項目、`db:migrate:prod` のコマンド | 実装PRのレビュー（仕様） |
 | 2026-11-21 | 実装PRのセキュリティのレビューを反映：deploy:prod でも API のビルドの E2E の名前と `main` を検査、どの環境も workers.dev を開けない検査、Apple のボタンは目印 `data-provider="apple-login"` で検査 | 実装PRのレビュー（セキュリティ） |
+| 2026-11-22 | 実装PRのレビューを反映：deploy:prod だけで転記を忘れた値を検査（`--deploy`）、`ASSETS` がないときの API のヘッダーの扱い、デプロイのあとの `//` のパスの確認、本番と同じ形の E2E に `/invite`、assets の環境のローカルの D1 を e2e と分ける | 実装PRのレビュー |
