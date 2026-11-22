@@ -24,7 +24,14 @@ async function watchViolations(page: Page) {
   return async () => [...messages, ...(await page.evaluate(() => (globalThis as unknown as PageGlobal).__cspViolations))];
 }
 
-for (const path of ["/login", "/invites/00000000-0000-4000-8000-000000000000"]) {
+// /invite は未ログインでも InvitePage を描画する（トークンがないので「使えません」）。ほかは未ログインなのでログインの画面
+const pages: { path: string; rendered: (page: Page) => ReturnType<Page["getByRole"]> }[] = [
+  { path: "/login", rendered: (page) => page.getByRole("link", { name: "Googleでログイン" }) },
+  { path: "/invites/00000000-0000-4000-8000-000000000000", rendered: (page) => page.getByRole("link", { name: "Googleでログイン" }) },
+  { path: "/invite", rendered: (page) => page.getByRole("status").filter({ hasText: "このリンクは使えません" }) },
+];
+
+for (const { path, rendered } of pages) {
   test(`本番と同じ形で ${path} を開くと、画面が出て、CSP の違反がなく、ヘッダーが付く`, async ({ page }) => {
     const violations = await watchViolations(page);
     const res = await page.goto(path);
@@ -35,8 +42,8 @@ for (const path of ["/login", "/invites/00000000-0000-4000-8000-000000000000"]) 
     expect(headers["x-content-type-options"]).toBe("nosniff");
     expect(headers["strict-transport-security"]).toContain("max-age=");
     expect(headers["cache-control"]).toBe("no-cache");
-    // 画面が描画される（未ログインなのでログインの画面）
-    await expect(page.getByRole("link", { name: "Googleでログイン" })).toBeVisible();
+    // 画面が描画される
+    await expect(rendered(page)).toBeVisible();
     // 本番のビルドには Apple のボタンがない
     await expect(page.getByRole("link", { name: "Appleでログイン" })).toHaveCount(0);
     await page.waitForLoadState("networkidle");

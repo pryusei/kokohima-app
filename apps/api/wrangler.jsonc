@@ -118,7 +118,8 @@
       ]
     },
     // 本番と同じ形（ビルドした画面を静的アセットとして同じ Worker から出す）をローカルで確かめる環境（docs/specs/T-12-release.md「E2Eテスト」）。
-    // デプロイしない。main は本番と同じ src/index.ts（テスト用ログインの経路を含まない）。秘密は .dev.vars.e2e を写して使う
+    // デプロイしない。main は本番と同じ src/index.ts（テスト用ログインの経路を含まない）。
+    // 秘密は dev:assets が scripts/write-e2e-dev-vars.mjs .dev.vars.assets で生成する（e2e の .dev.vars.e2e とは別のファイル）
     "assets": {
       "main": "src/index.ts",
       "assets": {
@@ -165,7 +166,8 @@
         {
           "binding": "DB",
           "database_name": "kokohima-assets",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          // ローカルの D1 は database_id ごとに分かれる。e2e（すべて0）と別の値にして、同時に起動する E2E とデータを共有しない
+          "database_id": "00000000-0000-0000-0000-000000000a55",
           "migrations_dir": "migrations"
         }
       ]

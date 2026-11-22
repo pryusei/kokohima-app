@@ -42,7 +42,7 @@ export type Bindings = {
   LINK_PREVIEW_OWN_DOMAINS: string;
   /** Sign in with Apple を動かすか（"1" のときだけ。docs/specs/T-12-release.md） */
   APPLE_LOGIN_ENABLED?: string;
-  /** 画面（apps/web のビルド）の静的アセット。prod の環境にだけある（docs/specs/T-12-release.md「振り分け」） */
+  /** 画面（apps/web のビルド）の静的アセット。prod と、ローカル専用の assets の環境にだけある（docs/specs/T-12-release.md「振り分け」） */
   ASSETS?: Fetcher;
   E2E_MODE?: string;
 };

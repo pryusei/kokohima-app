@@ -1,5 +1,7 @@
 // wrangler の設定の検査（docs/specs/T-12-release.md「ビルドとデプロイのコマンド」）。
 // 設定が変わって、画面がヘッダーなしで返ったり、workers.dev に公開されたりするのを CI で気づくため
+// --deploy（deploy:prod だけで付ける）：prod の転記を忘れた値（空の vars、すべて0の D1・KV の ID）が残っていたら止める。
+// CI の build:prod は TODO のままの設定でビルドするので、この検査は付けない
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +47,20 @@ for (const [name, e] of Object.entries(c.env ?? {})) {
   if (name !== "prod") expect(e.routes === undefined && e.route === undefined, `${name} の環境に routes がない`);
 }
 expect(c.routes === undefined && c.route === undefined, "トップレベルに routes がない");
+
+if (process.argv.includes("--deploy")) {
+  for (const name of ["GOOGLE_CLIENT_ID", "VAPID_PUBLIC_KEY"]) {
+    const v = prod.vars?.[name];
+    expect(typeof v === "string" && v.trim() !== "", `prod の vars.${name} が空（転記していない）`);
+  }
+  const isZeroPlaceholder = (id) => typeof id !== "string" || /^[0-]*$/.test(id);
+  for (const d of prod.d1_databases ?? []) {
+    expect(!isZeroPlaceholder(d.database_id), `prod の D1（${d.binding}）の database_id がすべて0の仮の値（転記していない）`);
+  }
+  for (const k of prod.kv_namespaces ?? []) {
+    expect(!isZeroPlaceholder(k.id), `prod の KV（${k.binding}）の id がすべて0の仮の値（転記していない）`);
+  }
+}
 
 if (errors.length > 0) {
   for (const e of errors) console.error(`::error::wrangler.jsonc：${e}`);
