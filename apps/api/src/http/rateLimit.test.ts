@@ -72,6 +72,70 @@ describe("Rate Limiting の経路", () => {
     expect(h.limiter.calls).toEqual([{ limiter: "RL_USER", key: `free_slots:${a.id}` }]);
   });
 
+  describe("「みんな」の空き（docs/specs/T-14-friend-availabilities-ratelimit.md）", () => {
+    const path = `/api/v1/friend-availabilities?from=${T("00:00", "10")}&to=${T("00:00", "12")}`;
+
+    it("上限の内なら今までどおり200。利用者 ID で friend_availabilities を数える", async () => {
+      const a = await u.user("あき");
+      h.limiter.calls.length = 0;
+      h.limiter.allow = () => true;
+      const res = await u.call("GET", path, { token: a.token });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ items: [], nextCursor: null });
+      expect(h.limiter.calls).toEqual([{ limiter: "RL_USER", key: `friend_availabilities:${a.id}` }]);
+    });
+
+    it("超えたら429 rate_limited・Retry-After: 60・Problem Details", async () => {
+      const a = await u.user("あき");
+      deny();
+      const res = await u.call("GET", path, { token: a.token });
+      expect(res.status).toBe(429);
+      expect(res.headers.get("Retry-After")).toBe("60");
+      expect(res.headers.get("Content-Type")).toContain("application/problem+json");
+      expect(((await res.json()) as { code: string }).code).toBe("rate_limited");
+    });
+
+    it("別の利用者・別のまとまり（free_slots）の回数に影響しない", async () => {
+      const a = await u.user("あき");
+      const b = await u.user("べに");
+      h.limiter.allow = (_name, key) => key !== `friend_availabilities:${a.id}`;
+      expect((await u.call("GET", path, { token: a.token })).status).toBe(429);
+      expect((await u.call("GET", path, { token: b.token })).status).toBe(200);
+      const free = await u.call("GET", `/api/v1/calendar/free-slots?from=${T("00:00", "10")}&to=${T("00:00", "12")}`, { token: a.token });
+      expect(free.status).toBe(200);
+    });
+
+    it("未認証は401で、回数に数えない", async () => {
+      h.limiter.calls.length = 0;
+      deny();
+      const res = await h.request(path);
+      expect(res.status).toBe(401);
+      expect(h.limiter.calls).toEqual([]);
+    });
+
+    it("超えたときのログは、まとまりの名前だけで、利用者 ID を出さない", async () => {
+      const a = await u.user("あき");
+      const log = vi.spyOn(console, "log");
+      deny();
+      await u.call("GET", path, { token: a.token });
+      const logged = log.mock.calls.flat().join("\n");
+      expect(logged).toContain('"event":"rate_limited","group":"friend_availabilities"');
+      expect(logged).not.toContain(a.id);
+      log.mockRestore();
+    });
+  });
+
+  it("友達1人分の空きには付けない（docs/specs/T-14-friend-availabilities-ratelimit.md 決定事項2）", async () => {
+    const a = await u.user("あき");
+    const b = await u.user("べに");
+    await u.befriend(a, b);
+    h.limiter.calls.length = 0;
+    deny();
+    const res = await u.call("GET", `/api/v1/friends/${b.id}/availabilities?from=${T("00:00", "10")}&to=${T("00:00", "12")}`, { token: a.token });
+    expect(res.status).toBe(200);
+    expect(h.limiter.calls).toEqual([]);
+  });
+
   it("1回限りの値を消費する経路・refresh・連携の開始には付けない（IP を付けて送っても数えない）", async () => {
     const a = await u.user("あき");
     h.limiter.calls.length = 0;

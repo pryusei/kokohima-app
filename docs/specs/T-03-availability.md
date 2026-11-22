@@ -44,7 +44,7 @@
 | DELETE | `/api/v1/recurrence-rules/{id}` | Bearer | なし | 204 | 404 |
 | POST | `/api/v1/recurrence-rules/{id}/exceptions` | Bearer | JSON：`{ date: "YYYY-MM-DD" }`（ルールのタイムゾーンでの日付） | 204（その日だけ外す） | 400（ルールの曜日でない、過去、60日より先）、404 |
 | DELETE | `/api/v1/recurrence-rules/{id}/exceptions/{date}` | Bearer | なし | 204（外したのを戻す） | 404 |
-| GET | `/api/v1/friend-availabilities` | Bearer | query：`from`、`to`（最長14日）、`cursor` | 200：`{ items: friendAvailabilitySchema[], nextCursor }`（500件ずつ） | 400 |
+| GET | `/api/v1/friend-availabilities` | Bearer | query：`from`、`to`（最長14日）、`cursor` | 200：`{ items: friendAvailabilitySchema[], nextCursor }`（500件ずつ） | 400、429 `rate_limited`（利用者IDごとに60秒に20回。T-14） |
 | GET | `/api/v1/friends/{friendId}` | Bearer | なし | 200：`friendSchema`（T-02と同じ形） | 404（友達でない） |
 | GET | `/api/v1/friends/{friendId}/availabilities` | Bearer | query：`from`、`to`（最長31日） | 200：`{ items: slotSchema[], nextCursor: null }` | 400、404（友達でない。片方向の行しかない場合も） |
 
@@ -86,7 +86,7 @@
 | `recurrence_exceptions` | `rule_id`（FK、削除時は一緒に消す）、`local_date`（`YYYY-MM-DD`）、`created_at` | PK(`rule_id`, `local_date`) |
 
 - ここ暇の取り消しは行を消す（履歴は持たない。行動の情報を残さないため）
-- 過去の枠は表示しない（`ends_at <= now` は一覧に出さない）。過去の行の掃除はCronで行う（別タスク。今回はインデックスだけ）
+- 過去の枠は表示しない（`ends_at <= now` は一覧に出さない）。過去の行は、始まりが2日より前になったら毎分の Cron で消す（1回に最大1000行。docs/specs/T-12-data-growth.md）
 
 ## 振る舞い
 
@@ -202,7 +202,7 @@
 - エリア（誘いの項目）
 - タイムゾーンと言語の変更（要求定義書の残りの論点）
 - 日をまたぐプリセット・くり返し（決定事項3）
-- 過去の枠の掃除（Cron）
+- 過去の枠の掃除（Cron）→ T-12 で対応
 - 監査ログ
 - 最終的な画面デザイン
 
@@ -226,3 +226,5 @@
 | 2026-10-08 | 手動の枠の重なりの判定を、終了していない枠に限った | 実装PRのレビュー（pryusei/kokohima-app#12） |
 | 2026-11-17 | `Idempotency-Key` を T-10 で受け付ける経路を書いた | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
+| 2026-11-21 | 過去の枠の掃除と、検索に開始日時の条件を足すことを T-12 で対応 | docs/specs/T-12-data-growth.md |
+| 2026-11-21 | `/friend-availabilities` の主なエラーに 429 を足した | T-14 の実装PR（docs/specs/T-14-friend-availabilities-ratelimit.md） |
