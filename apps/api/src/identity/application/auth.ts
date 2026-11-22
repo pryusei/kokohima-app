@@ -76,7 +76,7 @@ export async function handleCallback(
     );
 
     const loginCode = randomToken();
-    await repo.saveLoginCode(db, {
+    const saved = await repo.saveLoginCode(db, {
       codeHash: await sha256(loginCode),
       userId,
       provider,
@@ -84,6 +84,8 @@ export async function handleCallback(
       returnTo: tx.returnTo,
       expiresAt: ctx.deps.now() + LOGIN_CODE_TTL_MS,
     });
+    // 退会した人（T-16）には完了コードを作らない
+    if (!saved) throw new LoginFailed("withdrawn");
     return loginCode;
   } catch (err) {
     const reason = err instanceof LoginFailed ? err.reason : "unexpected";
@@ -105,22 +107,23 @@ export async function completeLogin(
   if (!row) return null;
   if (!bindingCookie || !timingSafeEqual(await sha256(bindingCookie), row.bindingHash)) return null;
   const issued = await createSession(ctx, row.userId, row.provider as Provider, userAgent);
+  if (!issued) return null;
   return { ...issued, returnTo: sanitizeReturnTo(row.returnTo, ctx.env.APP_ORIGIN) };
 }
 
-/** 新しいセッション（更新用トークンの系列）を作る。通常のログインとE2E用のログインで共有する */
+/** 新しいセッション（更新用トークンの系列）を作る。通常のログインとE2E用のログインで共有する。退会した人（T-16）なら null */
 export async function createSession(
   ctx: Ctx,
   userId: string,
   provider: Provider,
   userAgent: string | undefined,
-): Promise<IssuedSession> {
+): Promise<IssuedSession | null> {
   const now = ctx.deps.now();
   const sessionId = crypto.randomUUID();
   const sessionExpiresAt = now + SESSION_TTL_MS;
   const refreshToken = randomToken();
   const refreshExpiresAt = nextTokenExpiry(now, sessionExpiresAt);
-  await repo.createSessionRows(repo.db(ctx.env.DB), {
+  const created = await repo.createSessionRows(repo.db(ctx.env.DB), {
     sessionId,
     userId,
     tokenHash: await sha256(refreshToken),
@@ -135,6 +138,7 @@ export async function createSession(
     },
     now,
   });
+  if (!created) return null;
   const access = await issueAccessToken(ctx.env, { userId, sessionId }, now);
   return { refreshToken, refreshExpiresAt, ...access };
 }
@@ -223,6 +227,16 @@ export async function updateDisplayName(ctx: Ctx, viewerId: string, displayName:
  * パスやbodyのIDをそのまま渡してはいけない（docs/specs/T-02-friends.md「前提」）
  */
 export async function getPublicProfiles(env: Bindings, userIds: string[]) {
+  const rows = await repo.findPublicProfiles(repo.db(env.DB), userIds);
+  // 友達に関わる応答では、退会した人を区別させない（`withdrawn` を出さない。T-16）
+  return new Map([...rows].map(([id, r]) => [id, { id: r.id, displayName: r.displayName, avatarUrl: r.avatarUrl }]));
+}
+
+/**
+ * 履歴の相手向け（誘い・募集・予定・お知らせ・.ics）：公開プロフィールに `withdrawn` を足したもの（T-16）。
+ * 渡してよい ID は getPublicProfiles と同じ
+ */
+export async function getHistoryProfiles(env: Bindings, userIds: string[]) {
   return repo.findPublicProfiles(repo.db(env.DB), userIds);
 }
 

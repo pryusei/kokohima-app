@@ -2,12 +2,12 @@ import type {
   CreateDirectInviteRequest,
   DirectInvite,
   Meetup,
-  PublicProfile,
+  HistoryProfile,
   RespondDirectInviteRequest,
 } from "@kokohima/shared";
 import { visibleSlotsFor } from "../../availability/application/availability";
 import type { AppDeps, Bindings } from "../../env";
-import { getPublicProfiles } from "../../identity/application/auth";
+import { getHistoryProfiles } from "../../identity/application/auth";
 import { previewsFor } from "../../link-preview/application/previews";
 import type { Cursor } from "../../shared/cursor";
 import {
@@ -35,7 +35,7 @@ type Ctx = { env: Bindings; deps: AppDeps };
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /** 退会などで公開プロフィールが読めない相手（今は利用者の削除で誘いも消えるので、通常は起きない） */
-const unknownProfile = (id: string): PublicProfile => ({ id, displayName: null, avatarUrl: null });
+const unknownProfile = (id: string): HistoryProfile => ({ id, displayName: null, avatarUrl: null, withdrawn: false });
 
 /** outbox のイベント。payload は ID と occurredAt だけ（ひとこと・エリア・URL・時刻は入れない） */
 const event = (type: string, payload: Record<string, unknown>) => ({
@@ -47,7 +47,7 @@ const event = (type: string, payload: Record<string, unknown>) => ({
 function toInviteDto(
   row: repo.InviteRow,
   viewerId: string,
-  profiles: Map<string, PublicProfile>,
+  profiles: Map<string, HistoryProfile>,
   now: number,
   linkPreview: DirectInvite["linkPreview"],
 ): DirectInvite {
@@ -81,7 +81,7 @@ function toInviteDto(
 async function inviteDtos(ctx: Ctx, viewerId: string, rows: repo.InviteRow[]) {
   // 渡すのは、閲覧者が参加者として SQL で絞った誘いの相手のIDだけ
   const ids = [...new Set(rows.map((r) => (r.recipient_id === viewerId ? r.sender_id : r.recipient_id)))];
-  const profiles = await getPublicProfiles(ctx.env, ids);
+  const profiles = await getHistoryProfiles(ctx.env, ids);
   // 渡すのは、閲覧者が参加者として SQL で絞った誘いだけ
   const previews = await previewsFor(
     ctx.env.DB,
@@ -342,7 +342,7 @@ async function meetupDtos(ctx: Ctx, viewerId: string, rows: repo.MeetupRow[]): P
   );
   // 渡すのは、閲覧者が参加者として SQL で絞った予定の参加者のIDだけ
   const others = new Set([...participants.values()].flat().filter((id) => id !== viewerId));
-  const profiles = await getPublicProfiles(ctx.env, [...others]);
+  const profiles = await getHistoryProfiles(ctx.env, [...others]);
   // 予定は元の誘い・募集の参照を使う
   const previews = await previewsFor(
     ctx.env.DB,

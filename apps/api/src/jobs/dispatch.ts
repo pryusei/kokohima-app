@@ -8,6 +8,7 @@ import { deleteExpiredIdempotencyKeys } from "../shared/idempotency";
 import { cleanupLinkPreviews } from "../link-preview/application/previews";
 import { deleteManualStartedBefore } from "../availability/infra/repository";
 import { MAX_LENGTH_MS } from "../availability/domain/validation";
+import { retryIncompleteWithdrawals } from "../identity/application/withdrawal";
 
 // outbox を Queues に流す（docs/specs/T-06-calendar.md「outbox を Queues に流す」）
 // 送ってから処理済みにする。途中で止まっても行は未処理のまま残り、次の実行で送り直す（少なくとも1回は届く）
@@ -25,6 +26,7 @@ export const CALENDAR_TYPES = [
   "CalendarConnected",
   "AvailabilityCancelledByCalendar",
   "LinkAttached",
+  "UserWithdrew",
 ] as const;
 
 /** 取り出す型（T-06 の型と、T-07 の通知だけの型） */
@@ -121,6 +123,8 @@ export async function cleanupExpired(ctx: Ctx) {
   await runStep("cleanup_availabilities", () =>
     deleteManualStartedBefore(d1, now - AVAILABILITY_RETENTION_MS, CLEANUP_BATCH),
   );
+  // 退会の後始末の取りこぼし（docs/specs/T-16-withdrawal.md）
+  await runStep("retry_withdrawals", () => retryIncompleteWithdrawals(ctx));
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -148,7 +152,17 @@ export async function runStep(step: string, fn: () => Promise<unknown>) {
   try {
     await fn();
   } catch (e) {
-    // Monitors で数えるログなので warn（error にすると Workers Issues にも上がり、通知が二重になる。docs/specs/T-13-monitoring.md）
+    // warn で出す（Monitors が数える。Workers Issues と二重にしない。docs/specs/T-13-monitoring.md「3.」）
     console.warn(JSON.stringify({ event: "cron_step_failed", step, name: e instanceof Error ? e.name : "unknown" }));
   }
+}
+
+export type CronName = "minutely" | "calendar_sync";
+
+/** 定期処理が終わりまで動いた時刻を記録する（docs/specs/T-13-monitoring.md「定期処理が動いた記録」） */
+export async function recordCronRun(d1: D1Database, name: CronName, now: number) {
+  await d1
+    .prepare("INSERT INTO cron_runs (name, last_run_at) VALUES (?1, ?2) ON CONFLICT(name) DO UPDATE SET last_run_at = excluded.last_run_at")
+    .bind(name, now)
+    .run();
 }

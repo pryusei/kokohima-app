@@ -9,6 +9,9 @@ export const users = sqliteTable("users", {
   timezone: text("timezone").notNull().default("Asia/Tokyo"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
+  /** 退会した時刻（T-16）。NULL なら利用中 */
+  withdrawnAt: integer("withdrawn_at"),
+  withdrawalCompletedAt: integer("withdrawal_completed_at"),
 });
 
 export const userIdentities = sqliteTable("user_identities", {

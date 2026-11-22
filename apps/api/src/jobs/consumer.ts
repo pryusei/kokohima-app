@@ -5,6 +5,7 @@ import { reconcileMeetup, reconcileUpcomingOf } from "../calendar/application/wr
 import { declineForCancelledAvailability } from "../invitation/application/calendarFacing";
 import { handleLinkAttached } from "../link-preview/application/fetchPreview";
 import { createFromEvent, deliver } from "../notification/application/delivery";
+import { completeWithdrawal } from "../identity/application/withdrawal";
 
 // Queue の consumer（docs/specs/T-06-calendar.md）。kind と type で振り分ける。どの処理も冪等にしてあるので、
 // 二重に届いても結果は同じ。ログには kind・type・id だけを出し、payload の中身は出さない
@@ -21,6 +22,7 @@ const cancelledPayload = z.object({
   ranges: z.array(z.object({ startsAt: z.iso.datetime(), endsAt: z.iso.datetime() })),
   occurredAt: z.iso.datetime(),
 });
+const withdrewPayload = z.object({ userId: z.string() });
 const linkAttachedPayload = z.object({ subjectType: z.enum(["direct_invite", "broadcast"]), subjectId: z.string() });
 
 /**
@@ -29,6 +31,9 @@ const linkAttachedPayload = z.object({ subjectType: z.enum(["direct_invite", "br
  */
 async function handleCalendarSide(ctx: Ctx, type: string, payload: unknown, attempts: number | undefined) {
   switch (type) {
+    case "UserWithdrew":
+      await completeWithdrawal(ctx, withdrewPayload.parse(payload).userId);
+      return;
     case "LinkAttached": {
       const p = linkAttachedPayload.parse(payload);
       await handleLinkAttached(ctx, { type: p.subjectType, id: p.subjectId }, attempts !== undefined && attempts > MAX_RETRIES);
@@ -106,7 +111,7 @@ export async function handleBatch(ctx: Ctx, batch: MessageBatch<JobMessage>) {
       message.ack();
     } catch (e) {
       const fields = { ...describe(message.body), attempts: message.attempts, error: e instanceof Error ? e.name : "unknown" };
-      // Monitors で数えるログなので warn（error にすると Workers Issues にも上がり、通知が二重になる。docs/specs/T-13-monitoring.md）
+      // warn で出す：Monitors が event で数えて通知する。error にすると Workers Issues からも届き、二重になる（docs/specs/T-13-monitoring.md「3.」）
       console.warn(JSON.stringify({ event: message.attempts > MAX_RETRIES ? "job_dead_lettered" : "job_failed", ...fields }));
       message.retry({ delaySeconds: Math.min(30 * 2 ** (message.attempts - 1), 3600) });
     }

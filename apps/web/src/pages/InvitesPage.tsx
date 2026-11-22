@@ -13,7 +13,7 @@ import { EmptyState, LoadError, Loading } from "../ui/feedback";
 import { BroadcastCard, InviteCard } from "../ui/InviteCard";
 import { Link } from "../ui/Link";
 import { Section, TabScreen } from "../ui/Navigation";
-import { displayNameOf } from "../account/me";
+import { honorificOf, nameOfProfile } from "../account/me";
 
 // 誘いタブ（docs/specs/T-04-direct-invite.md・T-05-broadcast.md「画面」、キャンバス「6 誘い」）：受信・送信・募集・成立
 
@@ -35,13 +35,13 @@ function InviteList({ box }: { box: "received" | "sent" }) {
   return (
     <ul aria-label={box === "received" ? "受信した誘い" : "送信した誘い"} className="flex flex-col gap-4">
       {invites.data.items.map((invite) => {
-        const name = displayNameOf(invite.counterpart.displayName);
+        const name = nameOfProfile(invite.counterpart);
         return (
           <li key={invite.id}>
             <InviteCard
               to={`/invites/${invite.id}`}
               avatarName={invite.counterpart.displayName}
-              title={box === "sent" ? `${name}さんへ` : name}
+              title={box === "sent" ? `${honorificOf(invite.counterpart)}へ` : name}
               subtitle={KIND_LABELS[invite.kind]}
               when={formatRange(invite)}
               note={invite.message}
@@ -69,7 +69,7 @@ function BroadcastList({ box }: { box: "received" | "sent" }) {
             <BroadcastCard
               to={`/broadcasts/${b.id}`}
               avatarName={box === "received" ? b.owner.displayName : null}
-              title={box === "received" ? `${displayNameOf(b.owner.displayName)}さんの募集` : "暇な人いる？"}
+              title={box === "received" ? `${honorificOf(b.owner)}の募集` : "暇な人いる？"}
               subtitle={box === "received" ? "暇な人いる？" : "自分の募集"}
               when={formatRange(b)}
               note={b.message}
@@ -107,7 +107,7 @@ function MeetupList() {
           <InviteCard
             to={`/meetups/${m.id}`}
             avatarName={m.participants[0]?.displayName ?? null}
-            title={m.participants.map((p) => displayNameOf(p.displayName)).join("・")}
+            title={m.participants.map(nameOfProfile).join("・")}
             subtitle="予定"
             when={formatRange(m)}
             note={m.message}

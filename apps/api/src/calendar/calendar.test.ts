@@ -1216,6 +1216,7 @@ describe("ログ", () => {
   it("確認・書き込み・解除・consumer の失敗のログに、トークン・payload の中身が出ない", async () => {
     const log = vi.spyOn(console, "log");
     const err = vi.spyOn(console, "error");
+    // job_failed・job_dead_lettered は warn で出す（docs/specs/T-13-monitoring.md「3.」）
     const warn = vi.spyOn(console, "warn");
     const a = await authenticated();
     const b = await authenticated("べに");
@@ -1236,7 +1237,7 @@ describe("ログ", () => {
     expect(message.retry).toHaveBeenCalled();
     await u.call("DELETE", "/api/v1/calendar/connections/google", { token: a.token });
     const logged = [...log.mock.calls, ...err.mock.calls, ...warn.mock.calls].flat().join("\n");
-    expect(logged).toContain("job_dead_lettered");
+    expect(warn.mock.calls.flat().join("\n")).toContain("job_dead_lettered");
     expect(logged).not.toMatch(/secret-user|refresh-|access-|v1\.cal-1|Bearer/);
     log.mockRestore();
     err.mockRestore();

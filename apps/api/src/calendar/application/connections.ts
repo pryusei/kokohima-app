@@ -111,7 +111,7 @@ export async function completeConnect(
     return fail("encrypt");
   }
   // 前の更新用トークンは失効させずに上書きして捨てる（決定事項13）
-  await repo.saveConnection(
+  const saved = await repo.saveConnection(
     ctx.env.DB,
     { userId: tx.user_id, provider: tx.provider, refreshTokenEnc, now },
     {
@@ -119,6 +119,15 @@ export async function completeConnect(
       payload: JSON.stringify({ userId: tx.user_id, provider: tx.provider, occurredAt: iso(now) }),
     },
   );
+  if (!saved) {
+    // 退会と同時に進んでいた callback（T-16）。退会した人の連携は残らないので、受け取った許可を失効させる
+    try {
+      await provider.revoke(tokens.refreshToken);
+    } catch {
+      log("calendar_revoke_skipped", {});
+    }
+    return fail("user_withdrawn");
+  }
   log("calendar_connected", { provider: tx.provider });
   return true;
 }
@@ -185,4 +194,39 @@ export async function accessTokenFor(ctx: Ctx, row: repo.ConnectionRow): Promise
     }
     throw e;
   }
+}
+
+/** 退会（T-16）：本人の .ics の鍵と連携の途中の state を消す文。identity の退会の batch に入れる */
+export const withdrawalPurgeStatements = (d1: D1Database, userId: string) => repo.withdrawalPurgeStatements(d1, userId);
+
+/**
+ * 退会（T-16 後始末の段）：「ここ暇」カレンダーを消し、更新用トークンを revoke し、連携の行を消す。
+ * カレンダーの削除と revoke は失敗しても続ける（行は必ず消す）。何度呼んでも同じ結果になる
+ */
+export async function purgeCalendarForWithdrawal(ctx: Ctx, userId: string) {
+  const conn = await repo.findConnection(ctx.env.DB, userId, "google");
+  if (conn?.refresh_token_enc) {
+    const provider = providerFor(ctx);
+    let refreshToken: string | null = null;
+    try {
+      refreshToken = await decryptSecret(conn.refresh_token_enc, ctx.env.CALENDAR_TOKEN_KEYS, aadFor(userId, "google"));
+    } catch {
+      log("calendar_decrypt_failed", { kid: secretKid(conn.refresh_token_enc) });
+    }
+    if (refreshToken) {
+      if (conn.calendar_id) {
+        try {
+          await provider.deleteCalendar(await provider.accessToken(refreshToken), conn.calendar_id);
+        } catch {
+          log("calendar_delete_skipped", {});
+        }
+      }
+      try {
+        await provider.revoke(refreshToken);
+      } catch {
+        log("calendar_revoke_skipped", { kid: secretKid(conn.refresh_token_enc) });
+      }
+    }
+  }
+  await repo.deleteConnectionsOf(ctx.env.DB, userId);
 }

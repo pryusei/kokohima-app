@@ -355,3 +355,6 @@ export async function visibleSlotsFor(ctx: Ctx, viewerId: string, friendId: stri
   const byFriend = await collectVisible(ctx, viewerId, range, friendId);
   return mergeSlots(byFriend.get(friendId) ?? []);
 }
+
+/** 退会（T-16）：本人の時間帯・ここ暇・くり返しを消す文。identity の退会の batch に入れる */
+export const withdrawalPurgeStatements = (d1: D1Database, userId: string) => repo.withdrawalPurgeStatements(d1, userId);

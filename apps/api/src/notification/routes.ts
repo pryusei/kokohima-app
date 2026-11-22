@@ -7,7 +7,7 @@ import {
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../env";
 import { validationFailed } from "../http/validation";
-import { requireActiveSession, requireAuth } from "../identity/middleware";
+import { requireActiveSessionForWrites, requireAuth } from "../identity/middleware";
 import { decodeCursor, encodeCursor } from "../shared/cursor";
 import * as notifications from "./application/notifications";
 import { subscribe, unsubscribe } from "./application/subscriptions";
@@ -19,10 +19,10 @@ const json = (c: Context<AppEnv>) => c.req.json().catch(() => null);
 
 export function notificationRoutes() {
   const app = new Hono<AppEnv>();
-  app.use("/notifications", requireAuth);
-  app.use("/notifications/*", requireAuth);
-  app.use("/me/notification-preferences", requireAuth);
-  app.use("/push/*", requireAuth);
+  app.use("/notifications", requireAuth, requireActiveSessionForWrites);
+  app.use("/notifications/*", requireAuth, requireActiveSessionForWrites);
+  app.use("/me/notification-preferences", requireAuth, requireActiveSessionForWrites);
+  app.use("/push/*", requireAuth, requireActiveSessionForWrites);
 
   app.get("/notifications", async (c) => {
     const q = listQuerySchema.safeParse(c.req.query());
@@ -57,7 +57,7 @@ export function notificationRoutes() {
   app.get("/push/vapid-key", (c) => c.json({ publicKey: c.env.VAPID_PUBLIC_KEY }));
 
   // 失効したセッションでは登録させない（その端末に、お知らせの合図を届けないため）
-  app.post("/push/subscriptions", requireActiveSession, async (c) => {
+  app.post("/push/subscriptions", async (c) => {
     const body = pushSubscriptionRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
     const ok = await subscribe(ctx(c), c.var.viewer, body.data.endpoint);

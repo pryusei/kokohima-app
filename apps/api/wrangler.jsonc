@@ -9,7 +9,8 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   // リクエストの URL にトークンが入る経路がある（OAuth のコールバックの code、.ics のパス）ので、
   // URL を含む呼び出しのログを出さない（docs/specs/T-06-calendar.md 決定事項14）。アプリの console のログは残る
-  // issues：捕まえていない例外・5xx・error のログを Workers Issues にまとめる（docs/specs/T-13-monitoring.md）。設定に書かないと、次のデプロイで無効に戻る
+  // issues：捕まえていない例外・5xx・error のログを Workers Issues にまとめ、自動の通知で Slack に送る（docs/specs/T-13-monitoring.md）。
+  // 設定に書かないと次のデプロイで無効に戻る
   "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
 
   // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS、
@@ -156,7 +157,7 @@
     },
     "prod": {
       // TODO: 本番の値に置き換える（ドメイン、Google／AppleのクライアントID）
-      // トップレベルと同じ（継承される設定だが、本番で Workers Issues が外れないよう明示する。docs/specs/T-13-monitoring.md）
+      // 本番でも Workers Issues を有効にする（docs/specs/T-13-monitoring.md）。invocation_logs は T-06 のとおり出さない
       "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
       "vars": {
         "APP_ORIGIN": "https://prod.example.invalid",

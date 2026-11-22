@@ -17,14 +17,16 @@ export async function getSharingFor(d1: D1Database, ownerId: string, targetIds: 
   return result;
 }
 
+/** どちらかが退会していたら書かない（T-16。退会と同時の要求が、消した行を作り直さないように） */
 export async function setSharing(d1: D1Database, ownerId: string, targetId: string, visible: boolean, now: number) {
-  await drizzle(d1)
-    .insert(sharingPolicies)
-    .values({ ownerId, targetId, visible, updatedAt: now })
-    .onConflictDoUpdate({
-      target: [sharingPolicies.ownerId, sharingPolicies.targetId],
-      set: { visible, updatedAt: now },
-    });
+  await d1
+    .prepare(
+      `INSERT INTO sharing_policies (owner_id, target_id, visible, updated_at)
+       SELECT ?1, ?2, ?3, ?4 WHERE NOT EXISTS (SELECT 1 FROM users WHERE id IN (?1, ?2) AND withdrawn_at IS NOT NULL)
+       ON CONFLICT (owner_id, target_id) DO UPDATE SET visible = ?3, updated_at = ?4`,
+    )
+    .bind(ownerId, targetId, visible ? 1 : 0, now)
+    .run();
 }
 
 /**
@@ -48,4 +50,9 @@ export async function viewersWhoCanSee(d1: D1Database, ownerId: string, viewerId
     .bind(ownerId, JSON.stringify(viewerIds), since)
     .all<{ id: string }>();
   return new Set(results.map((r) => r.id));
+}
+
+/** 退会（T-16）：本人が片方の公開設定（両方向）を消す文。identity の退会の batch に入れる */
+export function withdrawalPurgeSharingStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
+  return [d1.prepare("DELETE FROM sharing_policies WHERE owner_id = ?1 OR target_id = ?1").bind(userId)];
 }

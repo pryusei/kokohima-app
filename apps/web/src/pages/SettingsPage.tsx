@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { presetsQuery } from "../availability/queries";
 import { useAuth } from "../auth/AuthProvider";
+import { BottomSheet } from "../ui/BottomSheet";
 import { connectionsQuery } from "../calendar/queries";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
@@ -11,10 +12,10 @@ import { Section, SubScreen } from "../ui/Navigation";
 import { useOnline } from "../ui/online";
 import { PresetForm } from "../availability/PresetForm";
 import { DisplayNameForm } from "../account/DisplayNameForm";
-import { meQuery } from "../account/me";
+import { displayNameOf, meQuery } from "../account/me";
 
 // 設定（docs/specs/T-11-design.md「画面のつながり」、キャンバス「19 設定」「21 時間帯プリセット」「23 アカウント」）
-// 友達タブの「アカウント」の節から開く。初回設定・退会・ログインの方法の連携は、それぞれのタスクで作る（#43・#37・#45）
+// 友達タブの「アカウント」の節から開く。初回設定・ログインの方法の連携は、それぞれのタスクで作る（#43・#45）。退会は T-16
 
 function Row({ to, label, value }: { to: string; label: string; value?: string }) {
   return (
@@ -73,7 +74,79 @@ export function PresetSettingsPage() {
   );
 }
 
-export function AccountSettingsPage() {
+/** ログインし直したあとに戻ってくる先（確認の画面をもう一度出す） */
+export const WITHDRAW_RETURN_TO = "/settings/account?withdraw=1";
+
+/** ログインの開始へ移る（テストで差し替える） */
+export const reauthRedirect = { go: (url: string) => window.location.assign(url) };
+
+/** 退会（docs/specs/T-16-withdrawal.md「画面」）。ほかの操作から離して置き、確認の画面を通す。赤を使わない */
+function WithdrawSection({ reopen, name }: { reopen: boolean; name: string | null }) {
+  const { withdraw } = useAuth();
+  const online = useOnline();
+  const [open, setOpen] = useState(reopen);
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const submit = async () => {
+    setSending(true);
+    setFailed(false);
+    const outcome = await withdraw();
+    if (outcome.kind === "reauth") {
+      // 直前のログインを、今と同じ方法で求める（別の方法は別の利用者になる）。戻ってきたら確認の画面をもう一度出す
+      const returnTo = encodeURIComponent(WITHDRAW_RETURN_TO);
+      reauthRedirect.go(outcome.provider ? `/api/v1/auth/${outcome.provider}/start?returnTo=${returnTo}` : `/login?returnTo=${returnTo}`);
+      return;
+    }
+    if (outcome.kind === "failed") {
+      setSending(false);
+      setFailed(true);
+    }
+  };
+  return (
+    <Section title="退会">
+      <div className="flex flex-col gap-2 rounded-l bg-surface p-4 shadow-card">
+        <Note>退会すると、ここ暇のデータが消えます。取り消せません。</Note>
+        <Button block disabled={!online} onClick={() => setOpen(true)}>
+          退会する
+        </Button>
+      </div>
+      {open && (
+        <BottomSheet title="退会しますか？" label="退会の確認" onClose={() => setOpen(false)}>
+          <div className="flex flex-col gap-4">
+            {name !== null && <p className="font-bold">{name}さんのアカウントを退会します。</p>}
+            <p>退会すると、次のものが消えます。</p>
+            <ul className="list-disc pl-6">
+              <li>名前</li>
+              <li>ここ暇（空いている時間）</li>
+              <li>友達</li>
+              <li>カレンダーの連携</li>
+              <li>お知らせ</li>
+              <li>書いたひとこと・エリア・リンク</li>
+            </ul>
+            <p>友達の誘い・募集・予定の履歴には「退会したユーザー」と残ります。</p>
+            <p>これからの成立した予定は「やっぱり難しい」になり、相手に知らせます。</p>
+            <p>退会は取り消せません。退会の前に、もう一度ログインしてもらうことがあります。</p>
+            {failed && (
+              <p role="status" className="text-ink-muted">
+                退会できませんでした。もう一度お試しください
+              </p>
+            )}
+            <div className="flex flex-col gap-2">
+              <Button block disabled={sending || !online} onClick={() => void submit()}>
+                退会する
+              </Button>
+              <Button block variant="ghost" disabled={sending} onClick={() => setOpen(false)}>
+                やめる
+              </Button>
+            </div>
+          </div>
+        </BottomSheet>
+      )}
+    </Section>
+  );
+}
+
+export function AccountSettingsPage({ search = "" }: { search?: string }) {
   const { logout, logoutAll } = useAuth();
   const online = useOnline();
   const me = useQuery(meQuery());
@@ -109,6 +182,10 @@ export function AccountSettingsPage() {
           )}
         </div>
       </Section>
+      <WithdrawSection
+        reopen={new URLSearchParams(search).get("withdraw") === "1"}
+        name={me.data ? displayNameOf(me.data.displayName) : null}
+      />
     </SubScreen>
   );
 }

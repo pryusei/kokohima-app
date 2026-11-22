@@ -1,146 +1,152 @@
 # 手順書：監視とアラート
 
-- 仕様の正：docs/specs/T-13-monitoring.md。この手順書は、その仕様を人が設定・運用するための手順。
-- Cloudflare の Monitors・Workers Issues の通知・通知先の webhook は、管理画面で人が設定する（Terraform では管理しない。仕様書「6. 設定の置き場所」の例外）。
-  - **この手順書の表が設定の正。** 変えるときは、先にこの手順書を直す PR を出し、マージしてから管理画面を変える。
-- 秘密情報（Slack の webhook の URL、API トークン）は、この手順書・リポジトリ・issue・Slack の本文に書かない。
+仕様の正は docs/specs/T-13-monitoring.md。この手順書は、その仕様を運用するための手順をまとめたもの。設定の内容（モニターの名前・条件・閾値・通知先）はこの手順書を正とし、変えるときは先にこの手順書を直す PR を出してから、管理画面を変える（`infra/README.md` の「管理画面で手動変更しない」の例外）。
 
-## 1. 設定（本番を公開する前に、人が1回行う）
+- 秘密情報（Slack の webhook の URL、API トークン）は、この手順書・リポジトリ・issue・PR・Slack の本文に書かない。
+- ログの本文（`sessionId`・`id` など）は Slack に流さない。Cloudflare の管理画面で見る。
+
+## 1. 設定
 
 ### 1-1. Slack
 1. 非公開のチャンネルを2つ作る。メンバーは運営者だけにする。
-   - `#kokohima-alerts`（すぐ見る）：スマホの通知をオン（すべてのメッセージ）にする。
+   - `#kokohima-alerts`（すぐ見る）：スマホの通知をオンにする。
    - `#kokohima-notices`（気づけばよい）：通知はオフでよい。1日1回見る。
-2. チャンネルごとに Incoming Webhook を1つ作る。URL は秘密情報として扱う。漏れたら、Slack 側で作り直して登録し直す。
+2. それぞれに Incoming Webhook を作る（Slack のアプリの設定 → Incoming Webhooks）。URL はパスワードと同じに扱い、次の2か所にだけ登録する。
+3. URL が漏れたら、Slack 側で webhook を作り直し、登録し直す。
 
-### 1-2. Cloudflare の通知先
-1. 管理画面の Notifications の通知先（webhook）に、Slack の Incoming Webhook の URL を2つ登録する。名前は `kokohima-alerts`・`kokohima-notices`。
-2. 登録のときのテスト送信が、それぞれのチャンネルに届くことを確かめる。
+### 1-2. Cloudflare の通知先（webhook）
+1. 管理画面の Notifications → Destinations → Webhooks で、2つの webhook を登録する。
+   - 名前：`kokohima-alerts`・`kokohima-notices`（チャンネル名と同じ）。
+   - URL：1-1 の Incoming Webhook の URL（Slack の URL は、そのまま登録できる）。
+2. 登録したら「テスト」で、それぞれのチャンネルに届くことを確かめる。
 
-### 1-3. Monitors（ログの条件）
-- 管理画面の Alerts > Monitors で、下の表のとおりに作る。
-  - 対象：Workers Logs。Worker は本番（`kokohima-api-prod`）だけに絞る。
-  - 数え方：`event` が表の値のログの件数（COUNT）。閾値は「以上」。
-  - 実行の間隔：選べるいちばん短いもの。同じ条件が続く間の再通知：1時間（既定）。
-  - モニターの名前は表のとおりにし、個人を表す値を入れない（通知にはモニターの名前と数だけが出る）。
+### 1-3. Monitors（Workers Logs を数える）
+- 管理画面の Notifications → Monitors で作る。対象のデータセットは本番の Worker の Workers Logs（`logs.workersLogs`）。
+- ログは1行の JSON を文字列にして出している（例：`{"event":"job_dead_lettered","kind":"outbox",...}`）。`event` で絞るときは、本文（`$metadata.message`）が `"event":"<名前>"` を含むことで絞る（JSON を項目に分けて読めるかは公式で確かめられていない。読めることが分かったら、項目で絞る形に直してよい）。
+  - `rate_limit_skipped` の行は、さらに本文が `"reason":"no_binding"` か `"reason":"error"` を含むことで絞る（`no_client_ip` は数えない）。
+- 評価の期間は下の表の「条件」の期間。実行の間隔は1分（データセットによっては10分が下限）。同じ条件が続く間の再通知は既定（1時間ごと）のまま。
+- モニターの名前に、個人を表す値を入れない。名前は下の表の「モニターの名前」をそのまま使う。
 
-| モニターの名前 | `event` | 条件 | 通知先 |
-| --- | --- | --- | --- |
-| `kokohima refresh_token_reuse` | `refresh_token_reuse` | 15分に1件以上 | `kokohima-alerts` |
-| `kokohima job_dead_lettered` | `job_dead_lettered` | 15分に1件以上 | `kokohima-alerts` |
-| `kokohima cron_step_failed` | `cron_step_failed` | 15分に3件以上 | `kokohima-alerts` |
-| `kokohima calendar_decrypt_failed` | `calendar_decrypt_failed` | 15分に1件以上 | `kokohima-alerts` |
-| `kokohima outbox_dispatch_capped` | `outbox_dispatch_capped` | 1時間に1件以上 | `kokohima-notices` |
-| `kokohima calendar_sync_assign_full` | `calendar_sync_assign_full` | 1時間に1件以上 | `kokohima-notices` |
-| `kokohima rate_limited` | `rate_limited` | 15分に50件以上 | `kokohima-notices` |
-| `kokohima login_failed` | `login_failed` | 15分に20件以上 | `kokohima-notices` |
-| `kokohima rate_limit_skipped` | `rate_limit_skipped`（`reason` が `no_binding` か `error`） | 1時間に1件以上 | `kokohima-notices` |
-| `kokohima notification_push_rejected` | `notification_push_rejected` | 1時間に10件以上 | `kokohima-notices` |
-| `kokohima notification_mail_rejected` | `notification_mail_rejected` | 1時間に10件以上 | `kokohima-notices` |
-| `kokohima notification_mail_global_limit` | `notification_mail_global_limit` | 1時間に1件以上 | `kokohima-notices` |
-| `kokohima calendar_sync_held` | `calendar_sync_held` | 1時間に5件以上 | `kokohima-notices` |
+**すぐ見る（通知先：`kokohima-alerts`）**
 
-- `unhandled_error` のモニターは作らない。Workers Issues が受け持つ（同じ1件で2通届かないようにするため）。
-
-### 1-4. Workers Issues
-1. 本番の Worker で Issues が有効になっていることを確かめる（wrangler の設定 `observability.issues.enabled`。デプロイで有効になる）。
-2. 自動の通知を作る前に、「1-6.」の「問題の詳細と通知の本文に、個人情報や URL が入りうるか」を確かめる。入るなら、通知は作らない（「1-6.」の対応に従う）。
-3. 自動の通知（Automations）を2つ作る。通知先はどちらも `kokohima-alerts`。
-   - 発生した数が1に達したとき（新しい問題）
-   - 24時間止まっていた問題が、また起きたとき
-
-### 1-5. 外からの死活監視（Better Stack）
-1. Better Stack（Uptime）にアカウントを作る。持つのは開発者本人だけにし、2段階認証を有効にする。
-2. 監視を2つ作る。確認の間隔は、無料の枠で選べるいちばん短いもの（3分）。5分より長くしない。
-   - `https://kokohima.app/api/v1/health/ready`：ステータスが 200 であること
-   - `https://kokohima.app/`：ステータスが 200 であること
-3. 2回続けて失敗したら通知し、戻ったときも通知する設定にする。
-4. 通知先は、メール（開発者本人）と `#kokohima-alerts`（Better Stack の Slack 連携か、Incoming Webhook）。Slack が止まっていても気づけるよう、メールを必ず入れる。
-5. サービスには URL のほかに何も渡さない（認証情報を渡さない）。
-
-### 1-6. 設定するときに確かめること
-仕様書を書いた時点で、公式ドキュメントでは確かめきれなかった点。結果をこの表に書く。仕様と合わなければ、仕様書とこの手順書を直す PR を出す。
-
-| 確かめること | 合わなかったとき | 結果 |
+| モニターの名前 | 絞る本文 | 条件 |
 | --- | --- | --- |
-| Monitors が、いまのプランで Workers Logs を読めるか | Tail Worker から Slack に送る形に仕様を変える | 未確認 |
-| Monitors で `event` の値で絞れるか（ログは JSON を文字列にして出している） | 本文の文字列の一致で絞る。それもできなければ、ログをオブジェクトのまま出す形に変える | 未確認 |
-| Monitors の実行の間隔の下限と、作れる数の上限 | 数が足りなければ、「気づけばよい」の側からまとめる | 未確認 |
-| warn のログが Workers Issues に上がらないか | 二重に届くことをこの手順書に書くか、Issues の通知の条件で絞る | 未確認 |
-| Workers Issues が、queue と scheduled の失敗も拾うか | 拾わない分は Monitors（`job_dead_lettered`・`cron_step_failed`）で見ている。追加は要らない | 未確認 |
-| Workers Issues の問題の詳細と通知の本文に、個人情報や、リクエストの URL（パス・クエリ）が入りうるか。URL にはトークンが入る経路がある（OAuth のコールバックの `code`、.ics のパス。呼び出しのログを切っている理由） | 通知に入るなら、Issues の Slack への通知をやめて管理画面で見るだけにし、`unhandled_error` のモニター（15分に1件以上、`kokohima-alerts`）を足す。管理画面の詳細にも URL が残るなら、Issues を無効に戻すことを検討する（仕様書を直す） | 未確認 |
-| Workers Logs の料金（2026-12-01 から Cloudflare Observability の料金）で、いまのログの量に費用が出ないか | ログの量を減らすか、費用を受け入れるかを決める | 未確認 |
-| Better Stack の無料の枠の条件（監視の数・間隔・Slack とメール・続けて失敗したときだけ通知・利用の制限） | 別のサービスにする（仕様書を直す） | 未確認 |
-| 退避キューに付ける HTTP の consumer の、再試行の上限の既定値と、上限に達したときの扱い | 「3. 退避キュー」の手順に、consumer を付けるときの設定を書き足す | 未確認 |
+| `refresh_token_reuse` | `"event":"refresh_token_reuse"` | 15分に1件以上 |
+| `job_dead_lettered` | `"event":"job_dead_lettered"` | 15分に1件以上 |
+| `cron_step_failed` | `"event":"cron_step_failed"` | 15分に3件以上 |
+| `calendar_decrypt_failed` | `"event":"calendar_decrypt_failed"` | 15分に1件以上 |
 
-### 1-7. 通知が届くことの確認
-- 自分のアカウントで、同じ更新用トークンを2回使い（`refresh_token_reuse`）、`#kokohima-alerts` に通知が届くこと。
-- Better Stack の確認先を一時的に存在しないパスに変え、メールと `#kokohima-alerts` に通知が届くこと。確かめたら戻す。
+**気づけばよい（通知先：`kokohima-notices`）**
+
+| モニターの名前 | 絞る本文 | 条件 |
+| --- | --- | --- |
+| `outbox_dispatch_capped` | `"event":"outbox_dispatch_capped"` | 1時間に1件以上 |
+| `calendar_sync_assign_full` | `"event":"calendar_sync_assign_full"` | 1時間に1件以上 |
+| `rate_limited` | `"event":"rate_limited"` | 15分に50件以上 |
+| `login_failed` | `"event":"login_failed"` | 15分に20件以上 |
+| `rate_limit_skipped` | `"event":"rate_limit_skipped"` かつ `"reason":"no_binding"`／`"reason":"error"` | 1時間に1件以上 |
+| `notification_push_rejected` | `"event":"notification_push_rejected"` | 1時間に10件以上 |
+| `notification_mail_rejected` | `"event":"notification_mail_rejected"` | 1時間に10件以上 |
+| `notification_mail_global_limit` | `"event":"notification_mail_global_limit"` | 1時間に1件以上 |
+| `calendar_sync_held` | `"event":"calendar_sync_held"` | 1時間に5件以上 |
+
+- 閾値は、友達だけ（100人まで）の運用を前提にした最初の値。変えたら、この表と仕様書の「アラートの一覧」を一緒に直す。
+- Monitors が数えるログは warn 以下で出している。error で出すと Workers Issues からも届き、二重になる（仕様書「3.」）。
+
+### 1-4. Workers Issues と自動の通知
+1. wrangler の設定で `observability.issues.enabled: true` にしてある（トップレベルと prod）。設定に書かないと次のデプロイで無効に戻るので、消さない。
+2. 管理画面の Workers → 本番の Worker → Issues → Automations で、自動の通知を2つ作る。通知先は `kokohima-alerts`。
+   - 新しい問題が1回起きたとき。
+   - 24時間止まっていた問題がまた起きたとき。
+3. 作ったら、実際に届いた通知の本文に個人情報が入っていないかを確かめる（例外の要約・スタックが入る）。入りうるなら、Issues の Slack への通知をやめて管理画面で見るだけにし、`unhandled_error` のモニター（本文が `"event":"unhandled_error"` を含む、15分に1件以上、`kokohima-alerts`）を 1-3 に足す。
+
+### 1-5. 外からの死活監視（Better Stack Uptime）
+1. Better Stack のアカウントを開発者本人だけで作り、2段階認証を有効にする。登録するとき、無料の枠の条件（監視の数・確認の間隔・Slack とメールへの通知・利用の制限）を料金のページで確かめる。合わなければ仕様書を直す。
+2. 監視を2つ作る。サービスには URL のほかに何も渡さない。
+   - `https://kokohima.app/api/v1/health/ready`：200 であること。
+   - `https://kokohima.app/`：200 であること。
+3. 確認の間隔は、無料の枠で選べるいちばん短いもの（3分）。5分より長くしない。
+4. 「Confirmation period」（失敗が続いたら通知するまでの時間）を、2回分（6分）にする。戻ったときも通知する。
+5. 通知先は、メール（開発者本人）と `#kokohima-alerts`（Better Stack の Slack 連携か、1-1 の Incoming Webhook）。Slack が止まっていても気づけるよう、メールを必ず入れる。
+
+### 1-6. 設定できたことを確かめる（人が行う）
+- わざと条件を満たすログを出し、Slack に届くこと（例：自分のアカウントで、使った更新用トークンをもう一度使う → `refresh_token_reuse`）。
+- Better Stack の確認先を一時的に存在しないパスに変え、メールと Slack に届くこと。確かめたら元に戻す。
 
 ## 2. アラートごとの最初の対応
 
-ログは、管理画面の Workers Logs（Query Builder）で、`event` と時間帯を指定して引く。ログに利用者ID・トークン・予定の中身は出ていない。
+ログの引き方：管理画面の Workers → 本番の Worker → Observability → Query Builder（Workers Logs）で、時間帯を指定し、本文（`$metadata.message`）に `"event":"<名前>"` を含むもので絞る。ログの保持は7日。
 
-| 通知 | 意味 | 最初にすること |
+| アラート | 意味 | 最初にすること |
 | --- | --- | --- |
-| `refresh_token_reuse` | 更新用トークンの再利用。盗用の疑い | そのセッションは失効済み。同じ時間帯の `login_failed`・`rate_limited` を見て、続いていないかを確かめる |
-| `job_dead_lettered` | 通知・カレンダーの書き込みなどが、再試行を使い切った | 「3. 退避キュー」へ |
-| `cron_step_failed` | 定期処理の同じ失敗が続いている | `step`（処理の名前）と `name`（例外の名前）を見る。`dispatch_outbox` なら通知とカレンダーの書き込みが止まっている |
-| `calendar_decrypt_failed` | カレンダーの認証情報を復号できない | `CALENDAR_TOKEN_KEYS`・`CALENDAR_TOKEN_CURRENT_KID` の設定を確かめる |
-| Workers Issues | API の想定外の例外（`unhandled_error`）か、アプリのログを通らない失敗 | Issues の画面で例外を見る。`unhandled_error` なら `requestId` と例外の名前でログを引く |
-| 死活確認の失敗 | Worker・D1 の障害、定期処理の停止、outbox の滞留 | `health_degraded` の `reason` を見る（下の表） |
-| 「気づけばよい」の通知 | 上限に達した・拒否が多い | 仕様書「4. アラートの一覧」の意味を見て、上限や設定の見直しを検討する |
-
-`health_degraded` の `reason`：
-
-| `reason` | 意味 | 見るもの |
-| --- | --- | --- |
-| `db` | D1 を読めない | Cloudflare の障害情報、D1 の状態 |
-| `cron_minutely` | 毎分の処理が5分より前から動いていない | Worker の Cron の設定と実行の履歴、直近のデプロイ |
-| `cron_calendar_sync` | 15分ごとの割り当てが45分より前から動いていない | 同上 |
-| `outbox_backlog` | 流す型の未処理の outbox の行が、10分より前から残っている | `cron_step_failed`（`step: "dispatch_outbox"`）と `outbox_dispatch_capped` |
-
-- 503 の応答には理由を入れていない。理由はログにだけ出る。
-- `health_degraded` は、死活確認の API が呼ばれたときにだけ出る。
+| `refresh_token_reuse` | 更新用トークンの再利用。盗用の疑い。そのセッションは失効済み | 同じ時間帯の `login_failed`・`rate_limited` を見る |
+| `job_dead_lettered` | 通知・カレンダーの書き込み・OGP の取得などが再試行を使い切った | 「3. 退避キューの調べ方とやり直し方」へ |
+| `cron_step_failed` | 定期処理の同じ失敗が続いている | ログの `step` と `name`（例外の名前）を見る。D1 か Queue の障害なら、`health_degraded` も出ているはず |
+| `calendar_decrypt_failed` | カレンダーの認証情報を復号できない | `CALENDAR_TOKEN_KEYS`・`CALENDAR_TOKEN_CURRENT_KID` の設定（`wrangler secret`・vars）を確かめる |
+| Workers Issues | 想定外の例外、アプリのログを通らない失敗（捕まえていない例外、CPU 時間の超過など） | Issues の画面で例外の名前と発生の数を見る。`unhandled_error` のログの `requestId` で、その要求のログを引く |
+| 外からの死活確認 | `/api/v1/health/ready` か `/` が続けて失敗した | Workers Logs で `health_degraded` の `reason` を見る（`db`：D1 の障害、`cron_minutely`・`cron_calendar_sync`：定期処理の停止、`outbox_backlog`：outbox の滞留）。`/` だけなら Web の配信を見る |
+| `outbox_dispatch_capped` | outbox を流す量が1回の実行の上限（10回＝1000件か、20秒）に達した | 続くなら上限の見直し（docs/specs/T-12-data-growth.md） |
+| `calendar_sync_assign_full` | カレンダーの確認の割り当てが上限（1000人）で埋まった | 続くなら上限の見直し（T-12） |
+| `rate_limited` | 回数の上限の超過が多い | `group` を見る。悪用か、上限が低すぎるか |
+| `login_failed` | ログインの失敗が多い | 同じ時間帯の `rate_limited`（`auth_start`）を見る |
+| `rate_limit_skipped` | 回数の上限が効いていない | wrangler の `ratelimits` の設定を確かめる |
+| `notification_push_rejected`・`notification_mail_rejected` | 送り先・配信サービスに拒否されている | `status` を見る。Resend の管理画面・プッシュの鍵（VAPID）を確かめる |
+| `notification_mail_global_limit` | サービス全体の1日のメール数の上限（`MAIL_DAILY_LIMIT`）に達した | 1日の量を見て、上限か Resend の枠の見直し |
+| `calendar_sync_held` | カレンダーの大きな変化での保留が多い（T-06） | 一時的なものか、同じ人で続いていないかを見る |
 
 ## 3. 退避キューの調べ方とやり直し方
 
-1. `job_dead_lettered` のログの `kind`・`type`・`id`・`error`（例外の名前）と、その前の `job_failed` を Workers Logs で見る。多くはこれで原因が分かる。
-2. 原因を直す（設定の誤り、外のサービスの障害など）。
-3. やり直す。退避キューのメッセージからではなく、outbox の行から行う（処理済みの行は7日残る）。
+1. `job_dead_lettered` の通知が来たら、Workers Logs で、そのログの `kind`・`type`・`id`・`error`（例外の名前）と、その前の `job_failed` を見る。多くはこれで原因が分かる。
+2. 原因を直す（設定の誤り、外のサービスの障害が終わるのを待つ、コードの修正のデプロイ）。
+3. やり直しは、退避キューのメッセージからではなく、outbox の行から行う（処理済みの行は7日残る。T-12）。
 
 | `kind` | やり直し方 |
 | --- | --- |
 | `outbox` | その `id` の outbox の行の `processed_at` を NULL に戻す。次の毎分の処理が流し直す |
-| `notification_deliver` | お知らせ（`notifications`）の `event_id`（＝ outbox の `id`）を調べ、その outbox の行の `processed_at` を NULL に戻す。届け終えていない分だけが送り直される |
+| `notification_deliver` | お知らせの `event_id`（＝ outbox の `id`）を調べ、その outbox の行の `processed_at` を NULL に戻す。届け終えていない分だけが送り直される（T-07） |
 | `calendar_sync` | 何もしない。15分以内に、次の割り当てで確かめ直される |
 
-- `processed_at` を戻すのは、人が行う。consumer はどの処理も冪等なので、二重に流れても結果は変わらない。
+- `processed_at` を戻すのは、人が次のように行う（`<id>` は outbox の行の ID。ログの `id` の値を、引用符などを足さずにそのまま貼る）。consumer はどの処理も冪等なので、二重に流れても結果は変わらない（T-06）。
 
 ```bash
-wrangler d1 execute kokohima-prod --remote --env prod --command "UPDATE outbox SET processed_at = NULL WHERE id = '<outbox の id>'"
+pnpm --filter api exec wrangler d1 execute kokohima-prod --remote --env prod --command "UPDATE outbox SET processed_at = NULL WHERE id = '<id>'"
 ```
 
-- メッセージの本文を見るのは最後の手段にする。どうしても要るときだけ、次のようにする。
-  1. 退避キュー（`kokohima-prod-outbox-dlq`）に、HTTP で読む consumer を付ける（`wrangler queues consumer http add kokohima-prod-outbox-dlq`）。
-  2. Queues の読み書きだけに絞った API トークンで、1回だけ読む。読んだあと ack しない（見えない時間が過ぎるとキューに戻る）。
-     - ack せずに何度も読むと、試行の回数が増え、メッセージが消えるおそれがある。読むのは1回だけにする。
-  3. 調べ終えたら、consumer を外し、API トークンを消す。
-  - 本文には outbox の payload（時刻などの行動の情報）や利用者ID（`calendar_sync`）が入る。Slack・issue・PR に貼らない。
+- お知らせの `event_id` を調べるときは、`notifications` の `id`（`notification_deliver` のログの `id`）で引く。
+
+### 3-1. メッセージの本文を見る（最後の手段）
+ログと outbox の行で足りることが多い。どうしても要るときだけ行う。
+
+1. Queues の読み書きだけに絞った API トークンを作る（使い終えたら消す）。
+2. 退避キュー（`kokohima-prod-outbox-dlq`）に、HTTP で読む consumer を付ける（`wrangler queues consumer http add kokohima-prod-outbox-dlq`）。
+   - 付けるとき、再試行の上限（`max_retries`）を大きめにする。既定は3で、ack せずに読むたびに試行の回数が増え、上限に達するとメッセージが消える（退避キューには、その先の退避キューがない）。
+3. API で1回だけ読み、ack しない（見えない時間（既定30秒）が過ぎるとキューに戻る）。
+4. 調べ終えたら、consumer を外し（`wrangler queues consumer http remove kokohima-prod-outbox-dlq`）、API トークンを消す。
+
+- 本文には outbox の payload（時刻などの行動の情報）が入る。Slack・issue・PR に貼らない。
 - 退避キューのメッセージは4日で消える。消える前に調べられなくても、outbox の行（7日）からやり直せる。
 
 ## 4. 問い合わせの調べ方
-- 最初のリリース（友達だけ）では、画面に問い合わせ番号（`requestId`）を出していない。
-- 友達から「うまく動かなかった」と聞いたら、起きた時刻（おおよそ）と、何をしていたかを聞く。その時間帯の `unhandled_error`・`job_dead_lettered`・`health_degraded` を Workers Logs で引く。
-- `unhandled_error` のログには `requestId` がある。ブラウザの開発者ツールで応答が見られる場合は、応答の `requestId` と突き合わせる。
-- ログには利用者IDを出していないので、「誰の操作か」はログからは引かない。必要なら時刻から D1 の行を見る。
+
+1. 友達から「うまく動かなかった」と聞いたら、起きた時刻（おおよそ）と、何をしていたかを聞く。
+2. その時間帯の `unhandled_error`・`job_dead_lettered`・`health_degraded` を Workers Logs で引く。
+3. `unhandled_error` のログには `requestId` がある。ブラウザの開発者ツールで応答が見られる場合は、応答の `requestId` と突き合わせる。
+4. ログには利用者IDを出していないので、「誰の操作か」はログからは引かない。必要なら時刻から D1 の行を見る。
+
+- 最初のリリース（友達だけ）では、画面に問い合わせ番号を出さない。一般公開の前に決め直す。
 
 ## 5. ログを見られる人
-- Workers Logs・Issues・Monitors を見られるのは、Cloudflare のアカウントのメンバーだけ。2段階認証を必ず有効にする。
-- 人を足すときは、読み取りだけの役割にし、下の表に書く。
-- Slack の2つのチャンネルと Better Stack のアカウントも、運営者だけにする。
-- ログの保持は Workers Logs の7日。それより長く残す仕組みは作っていない。
 
-| 人 | Cloudflare | Slack のチャンネル | Better Stack |
-| --- | --- | --- | --- |
-| 開発者本人 | 管理者 | 2つとも | 持つ |
+| 対象 | 見られる人 | 条件 |
+| --- | --- | --- |
+| Cloudflare のアカウント（Workers Logs・Issues・Monitors・D1） | 開発者本人 | 2段階認証を必ず有効にする |
+| Slack の `#kokohima-alerts`・`#kokohima-notices` | 開発者本人 | 非公開のチャンネル |
+| Better Stack | 開発者本人 | 2段階認証を必ず有効にする |
+
+- 人を足すときは、Cloudflare では読み取りだけの役割にし、この表に足す。
+- ログの保持は Workers Logs の7日。それより長く残す仕組み（Logpush など）は作らない。
+
+## 6. 費用
+
+- 2026-12-01 から、Workers Logs は Cloudflare Observability の料金になる（有料プランは請求期間ごとに取り込み50GB・保存10GB-month まで込み、超えた分は従量。https://developers.cloudflare.com/observability/pricing/ ）。いまのログの量（1行の短い JSON）では込みの範囲に収まる見込み。月に1回、管理画面で量を見る。
+- Workers Issues はオープンベータの間は無料。

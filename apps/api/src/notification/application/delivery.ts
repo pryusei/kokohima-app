@@ -131,7 +131,7 @@ async function sendByEmail(
   const globalLimit = globalEmailLimitFor(limits.tier, parseMailDailyLimit(ctx.env.MAIL_DAILY_LIMIT));
   const utcDay = new Date(now).toISOString().slice(0, 10);
   if (!(await repo.claimGlobalEmailCount(ctx.env.DB, n.id, utcDay, globalLimit))) {
-    // 上限に達したことに気づけるよう、種類だけを出す（宛先・利用者IDは出さない。docs/specs/T-13-monitoring.md）
+    // サービス全体の上限で送らなかった。種類だけを出す（宛先・利用者IDは出さない。docs/specs/T-13-monitoring.md「3.」）
     log("notification_mail_global_limit", { kind: n.kind });
     return "limited";
   }

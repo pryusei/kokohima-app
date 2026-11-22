@@ -465,12 +465,8 @@ describe("送り先と上限", () => {
     // 11件め：プッシュが使えずメールに切り替えるが、メールの上限に達している
     const dead = await subscribe(b);
     h.delivery.state.pushStatus.set(dead, 410);
-    const log = vi.spyOn(console, "log");
     await flush(await invite(a, b, T("04:00"), T("05:00")));
     expect((await rowsOf(b)).at(-1)).toMatchObject({ channel: "email", outcome: "limited" });
-    // 利用者ごとの上限では、全体の上限のログは出ない（docs/specs/T-13-monitoring.md）
-    expect(log.mock.calls.flat().join("\n")).not.toContain("notification_mail_global_limit");
-    log.mockRestore();
     expect(mailsTo(b)).toHaveLength(1);
     expect((await list(b))[0]?.kind).toBe("invite_received");
     // 日付（東京）が変わると戻る
@@ -838,6 +834,7 @@ describe("ログ", () => {
   it("メールアドレス・endpoint・API キー・相手の名前が出ない", async () => {
     const log = vi.spyOn(console, "log");
     const err = vi.spyOn(console, "error");
+    const warn = vi.spyOn(console, "warn");
     const { a, b } = await pair();
     const endpoint = await subscribe(b);
     await flush(await invite(a, b));
@@ -853,11 +850,12 @@ describe("ログ", () => {
     await env.DB.prepare("UPDATE notifications SET delivered_at = NULL WHERE id = ?1").bind(message.body.notificationId).run();
     await handleBatch(h.ctx, { messages: [message] } as unknown as MessageBatch<never>);
     expect(message.retry).toHaveBeenCalled();
-    const logged = [...log.mock.calls, ...err.mock.calls].flat().join("\n");
+    const logged = [...log.mock.calls, ...err.mock.calls, ...warn.mock.calls].flat().join("\n");
     expect(logged).toContain("notification_delivered");
     expect(logged).not.toMatch(/mail\.test|fcm\.googleapis|re_test_key|あき|べに|ひみつ/);
     log.mockRestore();
     err.mockRestore();
+    warn.mockRestore();
   });
 });
 
@@ -914,13 +912,8 @@ describe("上限の組（決定事項8）", () => {
   it("全体のメール数は段階で止める：誘い・募集・友達は70通、予定・カレンダーは90通、新端末のログインは常に送る", async () => {
     const { a, b } = await pair();
     await setCount("", "email", 70);
-    const log = vi.spyOn(console, "log");
     await flush(await invite(a, b));
     expect((await rowsOf(b)).at(-1)).toMatchObject({ kind: "invite_received", outcome: "limited" });
-    // 全体の上限で送らなかったときは、種類だけのログが出る（docs/specs/T-13-monitoring.md）。宛先・利用者IDは出さない
-    const limitLogs = log.mock.calls.flat().map(String).filter((l) => l.includes("notification_mail_global_limit"));
-    expect(limitLogs.map((l) => JSON.parse(l) as unknown)).toEqual([{ event: "notification_mail_global_limit", kind: "invite_received" }]);
-    log.mockRestore();
 
     const id = await invite(a, b, T("04:00"), T("05:00"));
     await respond(b, id, { response: "accept" });
@@ -943,6 +936,25 @@ describe("上限の組（決定事項8）", () => {
       count: number;
     }>();
     expect(total?.count).toBe(91);
+  });
+
+  it("全体のメール数の上限で送らなかったとき、notification_mail_global_limit を種類だけで出す。利用者ごとの上限では出さない（docs/specs/T-13-monitoring.md）", async () => {
+    const log = vi.spyOn(console, "log");
+    const { a, b } = await pair();
+    await setCount(b.id, "email", 10);
+    await flush(await invite(a, b));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ channel: "email", outcome: "limited" });
+    expect(log.mock.calls.flat().join("\n")).not.toContain("notification_mail_global_limit");
+
+    await setCount(b.id, "email", 0);
+    await setCount("", "email", 70);
+    log.mockClear();
+    await flush(await invite(a, b, T("04:00"), T("05:00")));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ channel: "email", outcome: "limited" });
+    const lines = log.mock.calls.flat().map(String).filter((l) => l.includes("notification_mail_global_limit"));
+    expect(lines.map((l) => JSON.parse(l))).toEqual([{ event: "notification_mail_global_limit", kind: "invite_received" }]);
+    expect(lines.join("\n")).not.toContain(b.id);
+    log.mockRestore();
   });
 
   it("MAIL_DAILY_LIMIT が正の整数でなければ90として扱う（誘いは70通で止まる）", async () => {

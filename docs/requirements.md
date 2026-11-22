@@ -64,7 +64,7 @@
 | F-14 | 成立後のキャンセル | 定型の「やっぱり難しい」を送るのみ。再調整はしない |
 | F-15 | リンクとOGPプレビュー | 誘いにURLを1件添付。送信時にOGPを取得・保存し、カードで表示。失敗時はドメインのみ |
 | F-16 | 通知 | Webプッシュとメール |
-| F-17 | 退会 | 本人のデータを削除。相手側の履歴は「退会したユーザー」と表示 |
+| F-17 | 退会 | 直前のログインを求め、すぐに消す（取り消し・猶予なし）。利用者の行は ID だけ残し、本人のデータ（名前・ここ暇・友達・連携・お知らせ・書いたひとこと・エリア・リンク）を削除。進行中の予定・誘い・募集は本人の「やっぱり難しい」と同じ扱い。相手側の履歴は「退会したユーザー」と表示（docs/specs/T-16-withdrawal.md） |
 
 ## 状態遷移とビジネスルール
 
@@ -167,7 +167,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | Webプッシュ | Workers（WebCrypto）で動く実装 | Node向けのライブラリはそのまま動かないことがある |
 | パッケージ管理 | pnpmのモノレポ（apps/web、apps/api、packages/shared） | 型とスキーマを1か所で管理する |
 | CI | GitHub Actions＋依存更新の自動プルリクエスト | 更新を日単位で回す運用に必要 |
-| 監視 | Workers Logs＋Cloudflare の Monitors・Workers Issues（Slack に通知）＋外からの死活監視（Better Stack）。docs/specs/T-13-monitoring.md。利用料アラートは #42 | 異常検知と、利用料の急増への備え |
+| 監視 | Workers Logs＋Monitors・Workers Issues（Slack に通知）＋外からの死活監視（Better Stack）。利用料アラートは #42 | 異常検知と、利用料の急増への備え（条件と通知先は docs/specs/T-13-monitoring.md、手順は docs/runbooks/monitoring.md） |
 | IaC | 暫定：Terraform（Cloudflareプロバイダv5）＋wrangler。Alchemyとの比較検証（T-00）で確定する。決定は `docs/decisions/0001-iac-tool.md` | 最初からコードで管理し、セキュリティ設定の再現性と変更履歴を確保する |
 
 ライブラリのバージョンや対応状況は変わりやすいため、採用時に公式ドキュメントで確認します。
@@ -208,7 +208,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | MeetupLeft | Invitation | 募集の予定から1人が抜けた。残った参加者に定型文で通知（T-07） |
 | MeetupCancelled | Invitation | カレンダーから削除し、押した人を除く参加者に定型文で通知（T-07） |
 | FriendshipEstablished | Social | 2人の両方に通知し、公開オフの導線を出す（T-07） |
-| UserWithdrew | Identity | 本人データを削除し、相手側は表示を置換 |
+| UserWithdrew | Identity | 退会の後始末のきっかけ（カレンダーを消して連携を解除、これからの予定・返事待ちの誘い・募集を終える、書いた内容を消す）。相手への知らせは既存のイベント（MeetupCancelled・MeetupLeft・DirectInviteDeclined）で行う（T-16） |
 
 ## 収益と拡張の方針
 
@@ -324,7 +324,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 **一般公開までに必須**
 - [ ] Googleの審査要件とプライバシーポリシーへの反映
 - [ ] 招待リンク発行など、その他のレート制限の値（ログインの開始・招待リンクの確認・.ics・カレンダーの空き・.ics リンクの発行は T-10、リンクのプレビューの画像の配信（`link_image`）は T-08 で決めた。運用で見直す）
-- [x] 異常検知のアラートの条件と通知先（docs/specs/T-13-monitoring.md「アラートの一覧」。通知先は Slack。設定は docs/runbooks/monitoring.md）
+- [x] 異常検知のアラートの条件と通知先（T-13。docs/specs/T-13-monitoring.md、docs/runbooks/monitoring.md）
 - [ ] 暗号鍵とJWT署名鍵のローテーション手順
 
 **公開後でよい**

@@ -1,5 +1,5 @@
-// テストで、ファイルの中身を文字列として読む（Vite の ?raw）。wrangler の設定の検査に使う
+// Vite の ?raw の取り込み（設定ファイルの中身をテストで確かめるため。src/http/health.test.ts）
 declare module "*?raw" {
-  const text: string;
-  export default text;
+  const content: string;
+  export default content;
 }

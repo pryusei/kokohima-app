@@ -27,7 +27,7 @@ export async function reserve(
   const result = await d1
     .prepare(
       `INSERT OR IGNORE INTO idempotency_keys (user_id, key, reservation_id, request_hash, state, created_at, expires_at)
-       VALUES (?1, ?2, ?3, ?4, 'in_progress', ?5, ?6)`,
+       SELECT ?1, ?2, ?3, ?4, 'in_progress', ?5, ?6 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)`,
     )
     .bind(row.userId, row.key, row.reservationId, row.requestHash, row.now, row.now + IDEMPOTENCY_TTL_MS)
     .run();
@@ -79,4 +79,9 @@ export async function release(d1: D1Database, ref: { userId: string; key: string
 
 export async function deleteExpiredIdempotencyKeys(d1: D1Database, now: number) {
   await d1.prepare("DELETE FROM idempotency_keys WHERE expires_at < ?1").bind(now).run();
+}
+
+/** 退会（T-16）：本人の冪等キーの行を消す文 */
+export function withdrawalPurgeIdempotencyStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
+  return [d1.prepare("DELETE FROM idempotency_keys WHERE user_id = ?").bind(userId)];
 }

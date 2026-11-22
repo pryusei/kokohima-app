@@ -51,6 +51,7 @@
   - 何度送っても結果が同じ：`POST /invite-links/{id}/revoke`（T-02）、`POST /broadcasts/{id}/responses`（T-05）、`POST /recurrence-rules/{id}/exceptions`（T-03）、`POST /notifications/read`・`POST /push/subscriptions`（T-07）、`POST /calendar/google/authorizations`（T-06）。
   - Cookie で結果が決まる：`POST /invite-links/accept`（招待 Cookie を消費する。再送は404 で害がない。T-02）。
   - 認証（T-01）と読み取り（`POST /invite-links/lookup`）。
+  - 退会 `POST /me/withdrawal`（T-16）。2回目はセッションがないので401になり、何も変わらない。
 - ヘッダーは任意。付いていなければ今までどおり処理する（古いクライアントと E2E を壊さない）。
 - 値は UUID（`z.uuid()`）。違えば400 `validation_failed`。
 
@@ -63,7 +64,6 @@
 | `GET /api/v1/calendar/free-slots` | `free_slots` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited` |
 | `GET /api/v1/friend-availabilities` | `friend_availabilities` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited`（T-14） |
 | `GET /api/v1/link-previews/images/{imageId}` | `link_image` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429（本文なし。`<img>` が読む経路のため。T-08） |
-| `GET /api/v1/health/ready` | `health_ready` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429 `rate_limited`（T-13） |
 | `POST /api/v1/meetups/{id}/ics-links` | — | 利用者 ID | 直近5分で20本（厳密） | D1（`ics_tokens` の行の数） | 429 `rate_limited` |
 
 - 付けない経路と理由：
@@ -255,4 +255,3 @@
 | 2026-11-17 | 実装PRのレビューを反映：IPv6 は /64 にまとめて数える、バインディングがない・判定に失敗したときは記録を残して通す、`namespace_id` の番号、画面ごとの冪等キーの衝突の文言、429 のあとに取り直さないことを書いた | 実装PRのレビュー（セキュリティ・仕様） |
 | 2026-11-21 | T-08 の OGP は KV を使わず D1 で兼ねることにした（概要・部品の役割・決定事項1）。回数の上限の表に `link_image` を足した | T-08 の決定事項4（pryusei/kokohima-app#75） |
 | 2026-11-21 | 回数の上限の表に `friend_availabilities` を足した | T-14 の実装PR（docs/specs/T-14-friend-availabilities-ratelimit.md） |
-| 2026-11-21 | 回数の上限の表に `health_ready` を足した | T-13 の実装PR（docs/specs/T-13-monitoring.md） |

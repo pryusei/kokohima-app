@@ -10,7 +10,7 @@ import { unreadLabel } from "../ui/Navigation";
 
 const ID = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
 const FRIEND = "11111111-1111-4111-8111-111111111111";
-const aki = { id: FRIEND, displayName: "あき", avatarUrl: null };
+const aki = { id: FRIEND, displayName: "あき", avatarUrl: null, withdrawn: false };
 const item = (n: number, kind: string, over: Record<string, unknown> = {}) => ({
   id: ID(n),
   kind,
