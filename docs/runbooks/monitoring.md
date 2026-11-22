@@ -57,7 +57,9 @@
 1. wrangler の設定で `observability.issues.enabled: true` にしてある（トップレベルと prod）。設定に書かないと次のデプロイで無効に戻るので、消さない。
 2. 自動の通知を作る前に、管理画面の Workers → 本番の Worker → Issues で、問題の詳細を1つ開く。**リクエストの URL（パス・クエリ）が表示されるか**を確かめる。
    - このアプリには、URL にトークンが入る経路がある（OAuth のコールバックの `code`、`.ics` のパス）。そのために、呼び出しのログ（`invocation_logs`）を切っている（docs/specs/T-06-calendar.md 決定事項14）。Issues が URL を残すと、同じものが別の場所に残る。
-   - 問題がまだ1つもなければ、先に 3 を行い、最初に届いた通知と、その問題の詳細で確かめる。
+   - 問題がまだ1つもなければ（最初のデプロイの直後など）、3 には進まない。Slack への自動の通知は作らずに、最初の問題が出るのを待つ。
+     - 待つあいだ、想定外の例外に気づけるよう、`unhandled_error` のモニター（本文が `"event":"unhandled_error"` を含む、15分に1件以上、`kokohima-alerts`）を 1-3 に足しておく。
+     - 最初の問題が出たら、その詳細で URL が表示されるかを確かめる。表示されなければ 3 に進み、足しておいた `unhandled_error` のモニターを消す（同じ1件で2通届かないようにするため）。
    - URL が表示されるなら、Slack への自動の通知は作らない（作っていたら消す）。Issues は管理画面で見るだけにし、`unhandled_error` のモニター（本文が `"event":"unhandled_error"` を含む、15分に1件以上、`kokohima-alerts`）を 1-3 に足す。管理画面の詳細に URL が残ること自体を受け入れるか、Issues を無効に戻すかは、仕様書を直す PR で決める。
 3. 管理画面の Workers → 本番の Worker → Issues → Automations で、自動の通知を2つ作る。通知先は `kokohima-alerts`。
    - 新しい問題が1回起きたとき。
