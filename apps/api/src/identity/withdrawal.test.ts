@@ -10,6 +10,7 @@ import { createFromEvent } from "../notification/application/delivery";
 import { WITHDRAWAL_BATCH } from "../invitation/application/withdrawal";
 import { REAUTH_WINDOW_MS } from "./application/withdrawal";
 import * as repo from "./infra/repository";
+import { insertManualWithinLimits } from "../availability/infra/repository";
 
 // 退会（docs/specs/T-16-withdrawal.md）。時計は 2026-10-10T00:00:00Z
 // テストの間で DB は共有されるので、関係する ID だけを読む
@@ -263,6 +264,13 @@ describe("退会のあと", () => {
     // アクセストークンの確認をすり抜けた要求があっても、リポジトリの条件で書かない
     await repo.updateDisplayName(repo.db(env.DB), me.id, "作り直し", h.clock.now);
     expect((await userRow(me.id))?.display_name).toBeNull();
+    const added = await insertManualWithinLimits(
+      env.DB,
+      { id: crypto.randomUUID(), userId: me.id, startsAt: Date.parse(T("10:00")), endsAt: Date.parse(T("12:00")), label: null, now: h.clock.now },
+      100,
+    );
+    expect(added).toBe(false);
+    expect(await count("availabilities WHERE user_id = ?", me.id)).toBe(0);
     const created = await repo.createSessionRows(repo.db(env.DB), {
       sessionId: crypto.randomUUID(),
       userId: me.id,

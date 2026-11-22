@@ -1,6 +1,6 @@
 # T-16 仕様書：退会
 
-- 状態：下書き
+- 状態：実装済み
 - タスク票：docs/tasks/T-16-withdrawal.md
 - 関係する要件：F-17、要求定義書のイベント表「UserWithdrew」、データの最小化。issue pryusei/kokohima-app#37
 
@@ -31,7 +31,8 @@
 - 確認の値 `"withdraw"` は、ほかの経路のつもりの要求や二重の押下で退会しないための目印。
 - `Idempotency-Key` は受け付けない（T-10 決定事項2の対象外の表に足す。2回目はセッションがないので401になり、何も変わらない）。
 - `GET /api/v1/me` は、退会した人（`withdrawn_at` あり）を404にする（T-01 の「404（退会の直後など）」）。
-- `publicProfileSchema`（T-02）に `withdrawn: boolean` を足す。退会した人は `withdrawn: true` で、名前とアイコンは null。T-15 の `avatarId` が先に入っていれば、その形に合わせる。項目の追加なので互換は壊れない。
+- 履歴の相手のプロフィール `historyProfileSchema`＝`publicProfileSchema`（T-02）＋`withdrawn: boolean` を足し、誘い・募集・予定・お知らせの DTO で使う。退会した人は `withdrawn: true` で、名前とアイコンは null。友達に関わる応答（友達の一覧・ここ暇・招待）は今の `publicProfileSchema` のまま（`withdrawn` を出さない）。T-15 の `avatarId` が先に入っていれば、その形に合わせる。項目の追加なので互換は壊れない。
+- エラーの code に `reauth_required`（403）を足す（`api-conventions` スキルの表）。
 
 ## データ（マイグレーション：その時点の次の空いている番号）
 - `users` に `withdrawn_at INTEGER`（NULL なら利用中）と `withdrawal_completed_at INTEGER`（後始末が終わった時刻）を足す。
@@ -70,29 +71,29 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 - **予定ができる遷移**：`acceptInvite`（行く）、`decideAccept`（この時間で決める）の条件に、送信者と受信者のどちらも `withdrawn_at IS NULL` を足す。退会したあとは 409 `invalid_state`（今の「状態が変わった」と同じ）。募集の `decide` は、参加者を `withdrawn_at IS NULL` の応じた人だけにし、それが0人なら今の「応じた人が0人」と同じ 409。
 - **ログイン**：`findOrCreateUser` のメールの更新、`saveLoginCode`、`createSessionRows` は `withdrawn_at IS NULL` の利用者だけ。`isSessionActive` と更新用トークンの確認は `users` を見て、退会した人なら無効。
 - **カレンダー**：`saveConnection` は `withdrawn_at IS NULL` の利用者だけに書く（進行中の連携の callback が、抜け殻に連携を作り直さない）。定期の確認の割り当て（`assignSyncs`）と予定の書き込み（`activeConnectionsOf`）は、退会した人の連携を扱わない。
-- **本人の表への書き込み**：`users` の表示名の更新、`presets`・`availabilities`・`recurrence_rules`・`notification_preferences`・`ics_tokens`・`idempotency_keys`・`push_subscriptions` への書き込みは、`EXISTS (SELECT 1 FROM users WHERE id = ? AND withdrawn_at IS NULL)` の条件付き。
+- **本人の表への書き込み**：`users` の表示名の更新、`presets`・`availabilities`・`recurrence_rules`・`notification_preferences`・`ics_tokens`・`idempotency_keys`・`push_subscriptions`・`invite_links`・`calendar_oauth_states` への書き込みは、`EXISTS (SELECT 1 FROM users WHERE id = ? AND withdrawn_at IS NULL)` の条件付き。`sharing_policies` と友達になる（`friendships`）は、両方の利用者が退会していないときだけ書く。
 - **お知らせ**：退会した人あてのお知らせは作らない（今の `INSERT ... WHERE EXISTS users` の条件に `withdrawn_at IS NULL` を足す）。
 - **リンクのプレビュー**：`insertRef` の条件に、誘い・募集の `url IS NOT NULL` を足す（書いた内容を消したあとに参照が作り直されないように）。
 - **公開プロフィール**：`findPublicProfiles` は、`withdrawn_at` があれば列の値によらず名前とアイコンを null、`withdrawn: true` で返す。
 
 ### 退会のあとのアクセストークン
 - アクセストークンは最長10分有効（T-01）で、退会しても手元に残る。
-- 書き込みの経路は、すべて `requireActiveSession` を通す（セッションがないので401）。冪等キーの処理より前に置く。今 `requireAuth` だけで通っている書き込みの経路（実装の時点で、この一覧を最新に合わせる）：
+- 書き込みの経路は、すべて `requireActiveSession` を通す（セッションがないので401）。冪等キーの処理より前に置く。availability・invitation・notification の経路は、`requireAuth` のあとに GET・HEAD 以外で確かめる `requireActiveSessionForWrites` をまとめて付ける。今 `requireAuth` だけで通っていた書き込みの経路：
   | context | 経路 |
   | --- | --- |
   | identity | `PATCH /me` |
   | social | `POST /invite-links/:id/revoke`、`DELETE /friends/:friendId`、`apps/api/src/social/routes.ts` のそのほかの POST |
   | availability | `PUT /me/presets`、`POST`・`DELETE /availabilities`、`POST`・`DELETE /recurrence-rules`、`POST`・`DELETE /recurrence-rules/:id/exceptions` |
   | invitation | `POST /direct-invites`、`POST /direct-invites/:id/responses`、`POST /direct-invites/:id/decide`、`POST /broadcasts`、`POST`・`DELETE /broadcasts/:id/responses(/me)`、`POST /broadcasts/:id/decide`、`POST /meetups/:id/cancel` |
-  | calendar | `POST /meetups/:id/ics-links`、`GET /calendar/google/callback`（GET だが書き込む） |
-  | notification | `POST /notifications/read`、`PATCH /me/notification-preferences`、`DELETE /push/subscriptions` |
+  | calendar | `POST /meetups/:id/ics-links`。`GET /calendar/google/callback` は Bearer を持たない（state に結びつけた利用者で書く）ので、`saveConnection` の条件（`withdrawn_at IS NULL`）で止める |
+  | notification | `POST /notifications/read`、`PATCH /me/notification-preferences`、`DELETE /push/subscriptions`（`POST /push/subscriptions` はもとから確かめる） |
 - 読み取りは、トークンが切れるまでの最長10分、自分の誘い・募集・予定の履歴（相手の ID・時刻、相手が書いたひとこと）が読める。本人がすでに受け取っていた内容なので受け入れる。`GET /me` は404。
 - KV の埋まりのキャッシュ（`freebusy:v1:<userId>:...`）は、最長5分で切れるまで残る（受け入れる。T-10）。
 
 ### 相手の画面での表示
 - 公開プロフィールは、退会した人を `withdrawn: true` で返す。`withdrawn` が出るのは、履歴の DTO（誘い・募集・予定の相手・参加者・宛先、お知らせの `actor`）だけ。
 - 友達に関わる応答（ここ暇・友達の一覧・誘いの送り先）では、退会した人は友達でない人と区別できない（友達の行がないため。今の404などと同じ）。
-- お知らせの `actor`：T-07 は相手が読めなければ `actor: null`（名前のない文言）にしている。退会した人は、`actor` を `withdrawn: true` のプロフィールで返し、文言は「退会したユーザー」にする。
+- お知らせの `actor`：T-07 は相手が読めなければ `actor: null`（名前のない文言）にしている。退会した人は、`actor` を `withdrawn: true` のプロフィールで返し、文言は「退会したユーザー」にする（「〇〇さん」の「さん」は付けない。例：「退会したユーザーは今回は難しいみたい」）。もとから相手を持たないお知らせ（`meetup_cancelled`・`meetup_left` など）は今の文言のまま。
 - Web は、`withdrawn` のとき名前の代わりに「退会したユーザー」と出す（「名前未設定の友達」とは区別する）。誘い・募集・予定・お知らせの一覧と詳細、`.ics` の本文のどれも同じ。赤やエラー色は使わない。
 - 募集者の宛先の一覧では、退会した人も「退会したユーザー」と出るが、応じた人数は変わらない（決めたこと6）。
 
@@ -112,26 +113,26 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 入口を止める段：`users` が抜け殻（名前・メール・アイコンが NULL、`timezone` が初期値、`withdrawn_at` あり）。表の行が消え、相手の誘い・予定・参加者・宛先・相手あてのお知らせは残る。本人の outbox の行（`SessionStarted` など）が消え、相手の行は残る。`UserWithdrew` が書かれる。
-- [ ] 直前のログイン：セッションのログインが10分より前なら403 `reauth_required` で何も変わらない。10分以内なら退会できる。境界（ちょうど10分）。
-- [ ] 入力：確認の値がない・違うと400 `validation_failed` で何も変わらない。同じオリジンでなければ拒否。
-- [ ] 他人のIDでは取得・更新できない：経路に ID を渡す口がなく、ほかの利用者のデータ（その人の友達・ここ暇・お知らせ）は消えない。
-- [ ] カレンダー：連携していれば「ここ暇」カレンダーを消し、revoke し、連携の行が消える。どちらかが失敗しても後始末は終わる。
-- [ ] これからの予定：個別の予定は `cancelled` と `MeetupCancelled`。募集の予定は退会した人だけが抜けて `MeetupLeft`。退会した人が募集者のとき、残りが1人以下になるときは `MeetupCancelled`。開始ちょうど・開始後の予定、抜けた予定は触らない。
-- [ ] 返事待ち：受けた `pending` は `declined` と `DirectInviteDeclined`。送った `pending` は通知なしで期限切れ。`counter_proposed` はどちら側でも `skipped`（通知なし）。期限を過ぎた誘いは触らない。募集者の `open` の募集は期限切れ（宛先の人には `closed`）。
-- [ ] 書いた内容：退会した人が送った誘いと作った募集の `area`・`message`・`url` が NULL になり、リンクのプレビューの参照も消える。相手が送った誘いの内容は残る。
-- [ ] 後始末の再試行：途中で失敗させると投げ、次の試行で終わりまで進み、`withdrawal_completed_at` が入る。上限を超える件数でも、再試行で全部終わる。毎分の掃除が、1時間を過ぎて終わっていない後始末を呼び直す。
-- [ ] 予定ができない：退会のあと、相手の「行く」（受けていた誘い）・「この時間で決める」が409で、予定ができない。応じていたのが退会した人だけの募集の「決める」は409。ほかに応じた人がいれば、退会した人を除いて予定ができる。退会の前後で、募集者に返る応じた人数が変わらない。
-- [ ] 同時の操作：退会のあとに、古い利用者で進んでいたログインの完了・カレンダーの連携の callback・表示名の更新・ここ暇の追加をしても、行が作り直されない。
-- [ ] アクセストークン：退会のあと、同じアクセストークンで表の書き込みの経路がどれも401。更新用トークンでの更新も401。`GET /me` は404。
-- [ ] ログインし直し：同じ Google の `sub` でログインすると、新しい利用者 ID になる。
-- [ ] 相手の表示：公開プロフィールが `withdrawn: true`（列に名前が残っていても null）。友達の一覧・「みんな」から消え、誘いは404。退会した人の ID を `actor_id` に持つお知らせは残り、`actor` が `withdrawn: true` で返る。
-- [ ] 退会した人を扱わない処理：退会のあとに処理されたイベントから、退会した人あてのお知らせを作らない。定期の確認とカレンダーの書き込みが、退会した人の連携を扱わない。書いた内容を消したあとに `LinkAttached` が処理されても、参照を作らない。
-- [ ] ログ：`user_withdrew` に ID・メール・名前が出ない。
-- [ ] Web：退会の確認の画面、403 で Google のログインへ移り戻ってくる、204 でプッシュの購読の解除・キャッシュの消去・ログインの画面と「退会しました」、401 でログインの画面、失敗の静かな文言。`withdrawn` の相手は「退会したユーザー」と出る（誘い・募集・予定・お知らせ）。
+- [x] 入口を止める段：`users` が抜け殻（名前・メール・アイコンが NULL、`timezone` が初期値、`withdrawn_at` あり）。表の行が消え、相手の誘い・予定・参加者・宛先・相手あてのお知らせは残る。本人の outbox の行（`SessionStarted` など）が消え、相手の行は残る。`UserWithdrew` が書かれる。
+- [x] 直前のログイン：セッションのログインが10分より前なら403 `reauth_required` で何も変わらない。10分以内なら退会できる。境界（ちょうど10分）。
+- [x] 入力：確認の値がない・違うと400 `validation_failed` で何も変わらない。同じオリジンでなければ拒否。
+- [x] 他人のIDでは取得・更新できない：経路に ID を渡す口がなく、ほかの利用者のデータ（その人の友達・ここ暇・お知らせ）は消えない。
+- [x] カレンダー：連携していれば「ここ暇」カレンダーを消し、revoke し、連携の行が消える。どちらかが失敗しても後始末は終わる。
+- [x] これからの予定：個別の予定は `cancelled` と `MeetupCancelled`。募集の予定は退会した人だけが抜けて `MeetupLeft`。退会した人が募集者のとき、残りが1人以下になるときは `MeetupCancelled`。開始ちょうど・開始後の予定、抜けた予定は触らない。
+- [x] 返事待ち：受けた `pending` は `declined` と `DirectInviteDeclined`。送った `pending` は通知なしで期限切れ。`counter_proposed` はどちら側でも `skipped`（通知なし）。期限を過ぎた誘いは触らない。募集者の `open` の募集は期限切れ（宛先の人には `closed`）。
+- [x] 書いた内容：退会した人が送った誘いと作った募集の `area`・`message`・`url` が NULL になり、リンクのプレビューの参照も消える。相手が送った誘いの内容は残る。
+- [x] 後始末の再試行：途中で失敗させると投げ、次の試行で終わりまで進み、`withdrawal_completed_at` が入る。上限を超える件数でも、再試行で全部終わる。毎分の掃除が、1時間を過ぎて終わっていない後始末を呼び直す。
+- [x] 予定ができない：退会のあと、相手の「行く」（受けていた誘い）・「この時間で決める」が409で、予定ができない。応じていたのが退会した人だけの募集の「決める」は409。ほかに応じた人がいれば、退会した人を除いて予定ができる。退会の前後で、募集者に返る応じた人数が変わらない。
+- [x] 同時の操作：退会のあとに、古い利用者で進んでいたログインの完了・カレンダーの連携の callback・表示名の更新・ここ暇の追加をしても、行が作り直されない。
+- [x] アクセストークン：退会のあと、同じアクセストークンで表の書き込みの経路がどれも401。更新用トークンでの更新も401。`GET /me` は404。
+- [x] ログインし直し：同じ Google の `sub` でログインすると、新しい利用者 ID になる。
+- [x] 相手の表示：公開プロフィールが `withdrawn: true`（列に名前が残っていても null）。友達の一覧・「みんな」から消え、誘いは404。退会した人の ID を `actor_id` に持つお知らせは残り、`actor` が `withdrawn: true` で返る。
+- [x] 退会した人を扱わない処理：退会のあとに処理されたイベントから、退会した人あてのお知らせを作らない。定期の確認とカレンダーの書き込みが、退会した人の連携を扱わない。書いた内容を消したあとに `LinkAttached` が処理されても、参照を作らない。
+- [x] ログ：`user_withdrew` に ID・メール・名前が出ない。
+- [x] Web：退会の確認の画面、403 で Google のログインへ移り戻ってくる、204 でプッシュの購読の解除・キャッシュの消去・ログインの画面と「退会しました」、401 でログインの画面、失敗の静かな文言。`withdrawn` の相手は「退会したユーザー」と出る（誘い・募集・予定・お知らせ）。
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] A と B が友達で、成立した予定がある → A が設定から退会（直前にテスト用ログインでログインし直す）→ A はログインの画面に「退会しました」。outbox を処理すると、B の成立した予定は「やっぱり難しい」になり、お知らせに「退会したユーザー」と出る。B の友達一覧から A が消える。
+- [x] A と B が友達で、成立した予定と、B から A への返事待ちの誘いがある → A が設定から退会（直前にテスト用ログインでログインし直す）→ A はログインの画面に「退会しました」。outbox を処理すると、B の成立した予定は「やっぱり難しい」になって参加者に「退会したユーザー」と出て、お知らせに「退会したユーザーは今回は難しいみたい」と出る。B の友達一覧から A が消える（`e2e/withdrawal.spec.ts`）。
 
 ## 実装PRで直すもの
 - 要求定義書：F-17 に「ID だけ残す」「書いた内容も消す」「進行中は『やっぱり難しい』と同じ」「直前のログイン」。イベント表の `UserWithdrew` を、後始末のきっかけで、相手への知らせは既存のイベント（`MeetupCancelled`・`MeetupLeft`・`DirectInviteDeclined`）で行う、に直す。
@@ -154,15 +155,17 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 
 ## 決定事項（仕様書PRのレビューで合意する）
 1〜6は「決めたこと（利用者の回答）」のとおり。
-7. 退会は2段に分ける。入口を止める段は要求の中の1つの batch、後始末の段は outbox の `UserWithdrew` を consumer で処理し、毎分の掃除で取りこぼしを拾う。相手への知らせは既存のイベントに任せる。（提案）
-8. 退会のあとのアクセストークンでの書き込みは、書き込みの経路すべてに `requireActiveSession` を通して止める。読み取りは、トークンが切れるまでの最長10分を受け入れる。（提案）
-9. 返事待ちの `counter_proposed` は `skipped`、送った `pending` と募集者の `open` の募集は「退会による打ち切り」（期限を今にする）で終える。通知は受けた `pending` の「今回は難しい」だけ。（提案）
+7. 退会は2段に分ける。入口を止める段は要求の中の1つの batch、後始末の段は outbox の `UserWithdrew` を consumer で処理し、毎分の掃除で取りこぼしを拾う。相手への知らせは既存のイベントに任せる。（合意：仕様書PRのマージ）
+8. 退会のあとのアクセストークンでの書き込みは、書き込みの経路すべてに `requireActiveSession` を通して止める。読み取りは、トークンが切れるまでの最長10分を受け入れる。（合意：仕様書PRのマージ）
+9. 返事待ちの `counter_proposed` は `skipped`、送った `pending` と募集者の `open` の募集は「退会による打ち切り」（期限を今にする）で終える。通知は受けた `pending` の「今回は難しい」だけ。（合意：仕様書PRのマージ）
+10. 履歴の相手だけに `withdrawn` を出すため、プロフィールのスキーマを `publicProfileSchema`（友達向け）と `historyProfileSchema`（履歴向け）に分ける。（実装PR）
 
 ## 確認事項（合意前に解消する）
-- 決定事項7〜9でよいか。
+- なし（決定事項7〜9は仕様書PR pryusei/kokohima-app#105 のマージで合意）
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-21 | 初版 | pryusei/kokohima-app#37 |
 | 2026-11-21 | 2段に分ける（入口を止める段・後始末の段）、直前のログイン、決まる前の募集の人数を変えない、`counter_proposed` は `skipped`、募集の予定の取り消しの場合、同時の操作で行を作り直さない条件、outbox の本人の行を消す、退会した人のカレンダーを消す、書き込みの経路の一覧、`POST /me/withdrawal` に、`GET /me` の404、直す文書の追加 | 仕様書PRのレビュー（セキュリティ・仕様）、利用者の回答 |
+| 2026-11-22 | 実装済みに。履歴の相手のプロフィールを分ける（決定事項10）、`reauth_required` の code、`requireActiveSessionForWrites`、カレンダーの callback は保存の条件で止める、書き込みの条件に招待リンク・連携の state・公開設定・友達になるを足す、お知らせの文言と E2E の確かめ方 | 実装PR |
