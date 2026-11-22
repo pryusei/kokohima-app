@@ -22,6 +22,7 @@ export async function insertInviteLinkWithinLimit(
     INSERT INTO invite_links (id, owner_id, token_hash, max_uses, uses, expires_at, created_at)
     SELECT ${row.id}, ${row.ownerId}, ${row.tokenHash}, ${row.maxUses}, ${row.uses}, ${row.expiresAt}, ${row.createdAt}
     WHERE (SELECT COUNT(*) FROM invite_links WHERE owner_id = ${row.ownerId} AND created_at > ${since}) < ${limit}
+      AND EXISTS (SELECT 1 FROM users WHERE id = ${row.ownerId} AND withdrawn_at IS NULL)
   `);
   return result.meta.changes === 1;
 }
@@ -115,9 +116,10 @@ export async function acceptInBatch(
       .prepare(
         `UPDATE invite_links SET uses = uses + 1
          WHERE id = ? AND uses < max_uses AND revoked_at IS NULL AND expires_at > ?
-           AND NOT EXISTS (SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ?)`,
+           AND NOT EXISTS (SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ?)
+           AND NOT EXISTS (SELECT 1 FROM users WHERE id IN (?, ?) AND withdrawn_at IS NOT NULL)`,
       )
-      .bind(linkId, now, acceptorId, inviterId),
+      .bind(linkId, now, acceptorId, inviterId, acceptorId, inviterId),
     d1
       .prepare("INSERT INTO friendships (user_id, friend_id, created_at) SELECT ?, ?, ? WHERE changes() = 1")
       .bind(acceptorId, inviterId, now),
@@ -174,4 +176,12 @@ export async function deleteFriendship(db: Db, userId: string, friendId: string)
     db.delete(friendships).where(and(eq(friendships.userId, friendId), eq(friendships.friendId, userId))),
   ]);
   return results[0].meta.changes === 1;
+}
+
+/** 退会（T-16 入口を止める段）：本人の招待リンクと、両方向の友達の行を消す文 */
+export function withdrawalPurgeStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
+  return [
+    d1.prepare("DELETE FROM invite_links WHERE owner_id = ?").bind(userId),
+    d1.prepare("DELETE FROM friendships WHERE user_id = ?1 OR friend_id = ?1").bind(userId),
+  ];
 }

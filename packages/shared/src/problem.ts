@@ -10,6 +10,7 @@ export const errorCodeSchema = z.enum([
   "rate_limited",
   "idempotency_key_mismatch",
   "request_in_progress",
+  "reauth_required",
   "internal_error",
   "unavailable",
 ]);

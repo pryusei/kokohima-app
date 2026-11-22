@@ -12,7 +12,7 @@ import { problem } from "../http/problem";
 import { idempotent } from "../http/idempotency";
 import { rateLimit } from "../http/rateLimit";
 import { validationFailed } from "../http/validation";
-import { requireAuth } from "../identity/middleware";
+import { requireActiveSessionForWrites, requireAuth } from "../identity/middleware";
 import { decodeCursor, encodeCursor } from "../shared/cursor";
 import * as av from "./application/availability";
 import { DAY_MS } from "./domain/zonedTime";
@@ -48,13 +48,13 @@ const slotDto = (s: { startsAt: number; endsAt: number; label: string | null }) 
 
 export function availabilityRoutes() {
   const app = new Hono<AppEnv>();
-  app.use("/me/presets", requireAuth);
-  app.use("/availabilities", requireAuth);
-  app.use("/availabilities/*", requireAuth);
-  app.use("/recurrence-rules", requireAuth);
-  app.use("/recurrence-rules/*", requireAuth);
-  app.use("/friend-availabilities", requireAuth);
-  app.use("/friends/:friendId/availabilities", requireAuth);
+  app.use("/me/presets", requireAuth, requireActiveSessionForWrites);
+  app.use("/availabilities", requireAuth, requireActiveSessionForWrites);
+  app.use("/availabilities/*", requireAuth, requireActiveSessionForWrites);
+  app.use("/recurrence-rules", requireAuth, requireActiveSessionForWrites);
+  app.use("/recurrence-rules/*", requireAuth, requireActiveSessionForWrites);
+  app.use("/friend-availabilities", requireAuth, requireActiveSessionForWrites);
+  app.use("/friends/:friendId/availabilities", requireAuth, requireActiveSessionForWrites);
 
   app.get("/me/presets", async (c) => c.json(await av.getPresets(ctx(c), c.var.viewer.userId)));
 

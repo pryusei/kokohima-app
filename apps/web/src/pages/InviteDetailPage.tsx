@@ -7,7 +7,7 @@ import { keys } from "../api/keys";
 import { addDays, formatDate, formatTime, localDateOf, localInstant } from "../availability/format";
 import { formatRange, KIND_LABELS, statusText, statusTone } from "../invitations/format";
 import { inviteQuery } from "../invitations/queries";
-import { displayNameOf } from "../account/me";
+import { honorificOf, nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
@@ -117,18 +117,19 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
     );
   }
   const d = invite.data;
-  const name = d ? displayNameOf(d.counterpart.displayName) : "";
+  const name = d ? nameOfProfile(d.counterpart) : "";
+  const named = d ? honorificOf(d.counterpart) : "";
 
   return (
     <SheetScreen
-      label={d ? `${name}さん${d.direction === "received" ? "からの誘い" : "への誘い"}` : "誘い"}
+      label={d ? `${named}${d.direction === "received" ? "からの誘い" : "への誘い"}` : "誘い"}
       parent="/invites"
       title={
         d ? (
           <div className="flex items-center gap-3">
             <Avatar name={d.counterpart.displayName} />
             <div className="flex min-w-0 flex-1 flex-col">
-              <h2 className="truncate text-l font-bold">{d.direction === "received" ? name : `${name}さんへ`}</h2>
+              <h2 className="truncate text-l font-bold">{d.direction === "received" ? name : `${named}へ`}</h2>
               <span className="text-s text-ink-muted">{KIND_LABELS[d.kind]}</span>
             </div>
             <Badge tone={statusTone(d.status)}>{statusText(d)}</Badge>

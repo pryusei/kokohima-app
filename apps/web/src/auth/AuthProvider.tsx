@@ -1,7 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError, apiFetch, setUnauthenticatedHandler } from "../api/client";
-import { removeSubscriptionBeforeLogout, resendSubscription } from "../notifications/push";
+import { removeSubscriptionBeforeLogout, resendSubscription, unsubscribeLocally } from "../notifications/push";
+import { navigate } from "../router";
 import { broadcastLogout, onAuthMessage, refreshAccessToken, type RefreshOutcome } from "./refresh";
 import { tokenStore } from "./tokenStore";
 
@@ -18,7 +19,19 @@ type AuthContextValue = {
   /** サーバーで失効を確かめられたら true。通信できなければ false（ログイン状態のまま） */
   logout: () => Promise<boolean>;
   logoutAll: () => Promise<boolean>;
+  /**
+   * 退会（docs/specs/T-16-withdrawal.md）。done：退会してログインの画面へ、reauth：ログインし直しが必要、
+   * gone：セッションがない（ログインの画面へ）、failed：そのほかの失敗
+   */
+  withdraw: () => Promise<WithdrawOutcome>;
 };
+
+export type WithdrawOutcome =
+  | { kind: "done" }
+  /** provider：ログインし直す方法。null ならログインの画面で選んでもらう */
+  | { kind: "reauth"; provider: "google" | "apple" | null }
+  | { kind: "gone" }
+  | { kind: "failed" };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -109,6 +122,24 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
         broadcastLogout();
         becomeAnonymous();
         return true;
+      },
+      withdraw: async () => {
+        try {
+          await apiFetch("/api/v1/me/withdrawal", { method: "POST", body: JSON.stringify({ confirm: "withdraw" }) });
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 403 && err.code === "reauth_required") {
+            const p = err.problem?.reauthProvider;
+            return { kind: "reauth", provider: p === "google" || p === "apple" ? p : null };
+          }
+          // 401：応答が届かずに押し直したときなど（apiFetch がログアウト状態にする）
+          if (err instanceof ApiError && err.status === 401) return { kind: "gone" };
+          return { kind: "failed" };
+        }
+        await unsubscribeLocally();
+        broadcastLogout();
+        navigate("/login?withdrawn=1", { replace: true });
+        becomeAnonymous();
+        return { kind: "done" };
       },
     }),
     [status, check, becomeAnonymous],

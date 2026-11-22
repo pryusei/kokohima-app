@@ -51,6 +51,7 @@
   - 何度送っても結果が同じ：`POST /invite-links/{id}/revoke`（T-02）、`POST /broadcasts/{id}/responses`（T-05）、`POST /recurrence-rules/{id}/exceptions`（T-03）、`POST /notifications/read`・`POST /push/subscriptions`（T-07）、`POST /calendar/google/authorizations`（T-06）。
   - Cookie で結果が決まる：`POST /invite-links/accept`（招待 Cookie を消費する。再送は404 で害がない。T-02）。
   - 認証（T-01）と読み取り（`POST /invite-links/lookup`）。
+  - 退会 `POST /me/withdrawal`（T-16）。2回目はセッションがないので401になり、何も変わらない。
 - ヘッダーは任意。付いていなければ今までどおり処理する（古いクライアントと E2E を壊さない）。
 - 値は UUID（`z.uuid()`）。違えば400 `validation_failed`。
 

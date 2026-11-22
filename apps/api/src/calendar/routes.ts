@@ -73,7 +73,7 @@ export function calendarRoutes() {
     return c.json(await freeSlots(ctx(c), c.var.viewer.userId, from, to));
   });
 
-  app.post("/meetups/:id/ics-links", requireAuth, async (c) => {
+  app.post("/meetups/:id/ics-links", requireAuth, requireActiveSession, async (c) => {
     const id = z.uuid().safeParse(c.req.param("id"));
     if (!id.success) return notFound(c);
     const link = await createIcsLink(ctx(c), c.var.viewer.userId, id.data);

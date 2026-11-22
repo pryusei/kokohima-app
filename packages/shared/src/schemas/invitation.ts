@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { pageSchema } from "./pagination";
-import { publicProfileSchema } from "./social";
+import { historyProfileSchema } from "./social";
 
 // 個別の誘いと成立した予定（docs/specs/T-04-direct-invite.md「API」）
 // 現在時刻によらない規則（15分単位・長さ・文字数・URLの形）だけをここで検証する。未来・60日以内・期限は API の domain
@@ -159,7 +159,7 @@ export const directInviteSchema = z.object({
   id: z.uuid(),
   kind: inviteKindSchema,
   direction: inviteBoxSchema,
-  counterpart: publicProfileSchema,
+  counterpart: historyProfileSchema,
   status: directInviteStatusSchema,
   startsAt: z.iso.datetime(),
   endsAt: z.iso.datetime(),
@@ -180,7 +180,7 @@ export const meetupSchema = z.object({
   startsAt: z.iso.datetime(),
   endsAt: z.iso.datetime(),
   status: z.enum(["confirmed", "cancelled"]),
-  participants: z.array(publicProfileSchema),
+  participants: z.array(historyProfileSchema),
   area: z.string().nullable(),
   message: z.string().nullable(),
   url: z.string().nullable(),
@@ -220,7 +220,7 @@ export type BroadcastStatus = z.infer<typeof broadcastStatusSchema>;
 export const broadcastSchema = z.object({
   id: z.uuid(),
   direction: inviteBoxSchema,
-  owner: publicProfileSchema,
+  owner: historyProfileSchema,
   status: broadcastStatusSchema,
   startsAt: z.iso.datetime(),
   endsAt: z.iso.datetime(),
@@ -230,7 +230,7 @@ export const broadcastSchema = z.object({
   linkPreview: linkPreviewSchema.nullable(),
   expiresAt: z.iso.datetime(),
   createdAt: z.iso.datetime(),
-  recipients: z.array(publicProfileSchema).nullable(),
+  recipients: z.array(historyProfileSchema).nullable(),
   responseCount: z.number().int().nullable(),
   respondedByMe: z.boolean().nullable(),
   meetupId: z.uuid().nullable(),

@@ -92,7 +92,7 @@ export function socialRoutes() {
     }
   });
 
-  app.post("/invite-links/:id/revoke", requireAuth, async (c) => {
+  app.post("/invite-links/:id/revoke", requireAuth, requireActiveSession, async (c) => {
     const id = uuid.safeParse(c.req.param("id"));
     if (!id.success || !(await social.revokeInviteLink(ctx(c), c.var.viewer.userId, id.data))) return notFound(c);
     return c.body(null, 204);
@@ -125,7 +125,7 @@ export function socialRoutes() {
     return friend ? c.json(friend) : notFound(c);
   });
 
-  app.delete("/friends/:friendId", requireAuth, async (c) => {
+  app.delete("/friends/:friendId", requireAuth, requireActiveSession, async (c) => {
     const friendId = uuid.safeParse(c.req.param("friendId"));
     if (!friendId.success || !(await social.unfriend(ctx(c), c.var.viewer.userId, friendId.data))) return notFound(c);
     return c.body(null, 204);

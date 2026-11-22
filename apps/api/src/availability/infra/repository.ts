@@ -49,7 +49,7 @@ export async function putPresets(d1: D1Database, userId: string, p: PresetRow, n
   await d1
     .prepare(
       `INSERT INTO presets (user_id, day_start, day_end, evening_start, evening_end, night_start, night_end, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
        ON CONFLICT (user_id) DO UPDATE SET day_start = ?2, day_end = ?3, evening_start = ?4, evening_end = ?5,
          night_start = ?6, night_end = ?7, updated_at = ?8`,
     )
@@ -74,7 +74,8 @@ export async function insertManualWithinLimits(
            WHERE user_id = ?2 AND starts_at > ?3 - ?9 AND starts_at < ?4
              AND ends_at > ?6 AND MIN(ends_at, ?4) - MAX(starts_at, ?3) >= ?7
          )
-         AND (SELECT COUNT(*) FROM availabilities WHERE user_id = ?2 AND starts_at > ?6 - ?9 AND ends_at > ?6) < ?8`,
+         AND (SELECT COUNT(*) FROM availabilities WHERE user_id = ?2 AND starts_at > ?6 - ?9 AND ends_at > ?6) < ?8
+         AND EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)`,
     )
     .bind(row.id, row.userId, row.startsAt, row.endsAt, row.label, row.now, MINUTE_MS, limit, MAX_LENGTH_MS)
     .run();
@@ -114,7 +115,8 @@ export async function insertRuleWithinLimits(
            SELECT 1 FROM recurrence_rules
            WHERE user_id = ?2 AND weekday = ?3 AND MIN(end_minute, ?5) - MAX(start_minute, ?4) >= 1
          )
-         AND (SELECT COUNT(*) FROM recurrence_rules WHERE user_id = ?2) < ?9`,
+         AND (SELECT COUNT(*) FROM recurrence_rules WHERE user_id = ?2) < ?9
+         AND EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)`,
     )
     .bind(row.id, row.userId, row.weekday, row.start_minute, row.end_minute, row.label, row.timezone, row.created_at, limit)
     .run();
@@ -303,4 +305,13 @@ export async function deleteManualStartedBefore(d1: D1Database, startedBefore: n
     .bind(startedBefore, limit)
     .run();
   return r.meta.changes;
+}
+
+/** 退会（T-16 入口を止める段）：本人の時間帯・ここ暇・くり返し（例外は CASCADE）を消す文 */
+export function withdrawalPurgeStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
+  return [
+    d1.prepare("DELETE FROM presets WHERE user_id = ?").bind(userId),
+    d1.prepare("DELETE FROM availabilities WHERE user_id = ?").bind(userId),
+    d1.prepare("DELETE FROM recurrence_rules WHERE user_id = ?").bind(userId),
+  ];
 }

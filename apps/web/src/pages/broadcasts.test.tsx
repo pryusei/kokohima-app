@@ -23,7 +23,7 @@ const presets = json({
 const broadcast = (over: Record<string, unknown> = {}) => ({
   id: ID,
   direction: "sent",
-  owner: { id: uuid(999), displayName: "あき", avatarUrl: null },
+  owner: { id: uuid(999), displayName: "あき", avatarUrl: null, withdrawn: false },
   status: "open",
   startsAt: "2026-10-10T10:00:00.000Z",
   endsAt: "2026-10-10T14:00:00.000Z",
@@ -33,7 +33,7 @@ const broadcast = (over: Record<string, unknown> = {}) => ({
   linkPreview: null,
   expiresAt: "2026-10-10T10:00:00.000Z",
   createdAt: "2026-10-10T00:00:00.000Z",
-  recipients: [friend(1), friend(2)].map(({ id, displayName, avatarUrl }) => ({ id, displayName, avatarUrl })),
+  recipients: [friend(1), friend(2)].map(({ id, displayName, avatarUrl }) => ({ id, displayName, avatarUrl, withdrawn: false })),
   responseCount: 0,
   respondedByMe: null,
   meetupId: null,
@@ -116,7 +116,7 @@ describe("募集の作成", () => {
       startsAt: "2026-10-09T10:00:00.000Z",
       endsAt: "2026-10-09T12:00:00.000Z",
       message: "ごはん",
-      recipients: [friend(1), friend(5)].map(({ id, displayName, avatarUrl }) => ({ id, displayName, avatarUrl })),
+      recipients: [friend(1), friend(5)].map(({ id, displayName, avatarUrl }) => ({ id, displayName, avatarUrl, withdrawn: false })),
     });
     newPage(`?from=${ID}`, [friend(1), friend(2)], { [`/api/v1/broadcasts/${ID}`]: json(past) });
     renderApp();

@@ -87,7 +87,7 @@
 | `meetup_participants` | `meetup_id`（FK、`ON DELETE CASCADE`）、`user_id`（FK users、`ON DELETE CASCADE`） | PK(`meetup_id`, `user_id`)、INDEX(`user_id`, `meetup_id`) |
 
 - 断りの理由の列は作らない
-- 退会したときの扱い（相手の履歴に「退会したユーザー」と出す）は退会のタスクで決める。今は利用者を削除すると、その人の誘いが消え、誘いから作った予定も `direct_invite_id` の CASCADE で一緒に消える（参加者の行も消える）。退会のタスクでは、FK を `SET NULL` に変えて履歴を残す方針を検討する
+- 退会（T-16）：利用者の行を消さずに ID だけ残すので、FK の CASCADE は変えない（`SET NULL` は採らなかった）。これからの予定は本人の「やっぱり難しい」と同じ、受けた `pending` は「今回は難しい」、送った `pending` は「退会による打ち切り」（期限を今にする。通知なし）、送信者が退会した `counter_proposed` は `skipped`（通知なし。受信者が退会したものは期限で `expired`）。退会した人を含む「行く」「この時間で決める」は409
 
 ## 振る舞い
 
@@ -215,7 +215,7 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
 - 返事待ちの誘いの取り下げ（決定事項5）、成立後の時間の変更（再調整しない。F-14）
 - 期限切れの行の掃除（Cron）
 - Idempotency-Key（T-10 で行う）
-- 退会したユーザーの表示
+- 退会したユーザーの表示（T-16 で対応）
 - ひとことの不適切利用への対策（要求定義書の未決事項）
 - 最終的な画面デザイン
 

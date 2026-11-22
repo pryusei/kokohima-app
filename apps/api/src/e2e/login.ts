@@ -29,6 +29,7 @@ export async function e2eLogin(c: Context<AppEnv>) {
   );
   if (parsed.data.displayName) await updateDisplayName(db(c.env.DB), userId, parsed.data.displayName, ctx.deps.now());
   const issued = await createSession(ctx, userId, "e2e", c.req.header("User-Agent"));
+  if (!issued) return problem(c.get("requestId"), 401, "unauthenticated", "Unauthorized");
   setRefreshCookie(c, issued.refreshToken, issued.refreshExpiresAt);
   return c.body(null, 204);
 }

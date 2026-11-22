@@ -8,6 +8,7 @@ import { deleteExpiredIdempotencyKeys } from "../shared/idempotency";
 import { cleanupLinkPreviews } from "../link-preview/application/previews";
 import { deleteManualStartedBefore } from "../availability/infra/repository";
 import { MAX_LENGTH_MS } from "../availability/domain/validation";
+import { retryIncompleteWithdrawals } from "../identity/application/withdrawal";
 
 // outbox を Queues に流す（docs/specs/T-06-calendar.md「outbox を Queues に流す」）
 // 送ってから処理済みにする。途中で止まっても行は未処理のまま残り、次の実行で送り直す（少なくとも1回は届く）
@@ -25,6 +26,7 @@ export const CALENDAR_TYPES = [
   "CalendarConnected",
   "AvailabilityCancelledByCalendar",
   "LinkAttached",
+  "UserWithdrew",
 ] as const;
 
 /** 取り出す型（T-06 の型と、T-07 の通知だけの型） */
@@ -121,6 +123,8 @@ export async function cleanupExpired(ctx: Ctx) {
   await runStep("cleanup_availabilities", () =>
     deleteManualStartedBefore(d1, now - AVAILABILITY_RETENTION_MS, CLEANUP_BATCH),
   );
+  // 退会の後始末の取りこぼし（docs/specs/T-16-withdrawal.md）
+  await runStep("retry_withdrawals", () => retryIncompleteWithdrawals(ctx));
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

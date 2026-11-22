@@ -118,7 +118,7 @@ export function App() {
   if (pathname === "/settings/calendar") return <CalendarSettingsPage search={search} />;
   if (pathname === "/settings/presets") return <PresetSettingsPage />;
   if (pathname === "/settings/notifications") return <NotificationSettingsPage />;
-  if (pathname === "/settings/account") return <AccountSettingsPage />;
+  if (pathname === "/settings/account") return <AccountSettingsPage search={search} />;
 
   const sheet = sheetOf(pathname, search);
   if (sheet) {
