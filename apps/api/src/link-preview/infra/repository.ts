@@ -96,11 +96,12 @@ export async function findPreview(d1: D1Database, id: string) {
 }
 
 /** 参照の行を書く。誘い・募集がない（処理の間に消えた）・すでにあるなら書かない。書けたら true */
+/** 誘い・募集にリンクが残っているときだけ（退会で書いた内容を消したあとに作り直さない。T-16） */
 export async function insertRef(d1: D1Database, subject: Subject, previewId: string, now: number) {
   const r = await d1
     .prepare(
       `INSERT OR IGNORE INTO link_preview_refs (id, ${refColumn(subject)}, preview_id, created_at)
-       SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM ${subjectTable(subject)} WHERE id = ?2)`,
+       SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM ${subjectTable(subject)} WHERE id = ?2 AND url IS NOT NULL)`,
     )
     .bind(crypto.randomUUID(), subject.id, previewId, now)
     .run();
@@ -179,4 +180,17 @@ export async function deleteImageLedger(d1: D1Database, imageIds: string[]) {
     )
     .bind(JSON.stringify(imageIds))
     .run();
+}
+
+/** 退会（T-16 後始末の段）：退会した人が送った誘い・作った募集の参照を消す文（結果の行は掃除で消える） */
+export function withdrawalDeleteRefsStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
+  return [
+    d1
+      .prepare(
+        `DELETE FROM link_preview_refs
+         WHERE direct_invite_id IN (SELECT id FROM direct_invites WHERE sender_id = ?1)
+            OR broadcast_id IN (SELECT id FROM broadcasts WHERE owner_id = ?1)`,
+      )
+      .bind(userId),
+  ];
 }

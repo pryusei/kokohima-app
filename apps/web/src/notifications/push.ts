@@ -70,3 +70,13 @@ export async function removeSubscriptionBeforeLogout() {
     // サーバー側で消える
   }
 }
+
+/** 退会のあと（T-16）：この端末の購読をブラウザでも解除する（サーバーの行は退会で消えている）。失敗しても何もしない */
+export async function unsubscribeLocally() {
+  try {
+    const subscription = await currentSubscription();
+    await subscription?.unsubscribe();
+  } catch {
+    // ブラウザが対応していない・すでに解除されている
+  }
+}

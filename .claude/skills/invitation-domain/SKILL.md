@@ -22,12 +22,15 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 | お知らせ | Notification | アプリの中で読む通知の1件（notification コンテキスト。docs/specs/T-07-notification.md）。プッシュとメールは「お知らせがある」ことだけを伝える |
 | リンクのプレビュー | LinkPreview | 誘い・募集に添えたリンクの OGP のカード（link-preview コンテキスト。docs/specs/T-08-link-preview.md）。取れるまでと取れなかったときはドメインだけ |
 | 見せる／見せない | SharingPolicy | 自分のここ暇を友達ごとに見せるか（初期値：見せる） |
+| 退会したユーザー | （プロフィールの withdrawn） | 履歴の相手が退会した人。「名前未設定の友達」と区別し、「さん」を付けない（docs/specs/T-16-withdrawal.md） |
 
 ## DirectInvite の状態
 pending →（Accept）confirmed → cancelled（やっぱり難しい）
 pending →（CounterProposal）counter_proposed →（送信者が決める）confirmed ／（見送る）skipped ／（決めないまま代わりの時間の開始）expired
 pending →（Decline、またはここ暇の自動取り消し）declined
 pending →（期限）expired
+pending（退会した人が送信者）→（退会による打ち切り：期限を今にする。通知なし）expired
+counter_proposed →（代わりの時間の開始前に、送信者が退会）skipped（通知なし。受信者が退会したものは触らず、期限で expired）
 
 - `expired` は保存せず、読むときに決める（期限と代わりの時間の開始で判定する）
 
@@ -40,6 +43,7 @@ pending →（期限）expired
 ## Broadcast の状態
 open →（Decide、応答者1人以上・募集者のみ）decided
 open →（期限）expired（保存しない。誰にも通知しない。再募集できる）
+open →（募集者が退会：退会による打ち切りで期限を今にする。通知なし）expired
 
 閲覧者ごとの状態（docs/specs/T-05-broadcast.md「状態」）：
 - 募集者：open ／ expired ／ decided
@@ -51,6 +55,7 @@ open →（期限）expired（保存しない。誰にも通知しない。再�
 - IMPORTANT: 参加者でない宛先の人には、決まったかどうか・応じた人がいるかを伝えない（応答の形・値・エラーをそろえる）
 - 宛先は2〜100人（1人だと人数で応じたかがわかる）
 - 募集の予定の「やっぱり難しい」は押した人だけが抜ける（MeetupLeft）。募集者が抜けるか残り1人以下で予定ごと取り消す（MeetupCancelled）
+- 決める前に応じた人が退会しても、応じた人数は変えない。「決める」で退会した人を参加者から外す（応じたのが退会した人だけなら409。T-16）
 - 予定の参加者は決定後に応答を変えられない。期限後は誰も応答できない（参加者でない宛先の人は、期限までは決定後も応じられる。決定事項6）
 
 ## ドメインイベント
@@ -67,3 +72,4 @@ open →（期限）expired（保存しない。誰にも通知しない。再�
 | （期限切れ） | 保存せず読むときに決める。通知しないのでイベントは作らない |
 | MeetupLeft | 募集の予定から1人が抜けた。抜けた人のカレンダーから消し、残りの人のタイトルを直す（T-06）。残った参加者に通知（T-07） |
 | MeetupCancelled | カレンダーから削除（T-06）、押した人を除く参加者に定型文で通知（T-07） |
+| UserWithdrew | 退会の後始末（T-16）。これからの予定は本人の「やっぱり難しい」、受けた pending は「今回は難しい」、送った pending と open の募集は退会による打ち切り、送った counter_proposed は skipped、書いた内容を消す。相手への知らせは MeetupCancelled・MeetupLeft・DirectInviteDeclined で行う |

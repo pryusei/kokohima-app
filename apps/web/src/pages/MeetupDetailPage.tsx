@@ -8,7 +8,7 @@ import { createIcsLink } from "../calendar/queries";
 import { redirectTo } from "./CalendarSettingsPage";
 import { formatRange } from "../invitations/format";
 import { meetupQuery } from "../invitations/queries";
-import { displayNameOf } from "../account/me";
+import { nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
@@ -102,7 +102,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
               {m.participants.map((p) => (
                 <li key={p.id} className="flex items-center gap-2">
                   <Avatar name={p.displayName} size="s" />
-                  {displayNameOf(p.displayName)}
+                  {nameOfProfile(p)}
                 </li>
               ))}
             </ul>

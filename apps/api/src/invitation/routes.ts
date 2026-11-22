@@ -12,7 +12,7 @@ import type { AppEnv } from "../env";
 import { problem } from "../http/problem";
 import { idempotent } from "../http/idempotency";
 import { validationFailed } from "../http/validation";
-import { requireAuth } from "../identity/middleware";
+import { requireActiveSessionForWrites, requireAuth } from "../identity/middleware";
 import { decodeCursor, encodeCursor } from "../shared/cursor";
 import * as broadcasts from "./application/broadcasts";
 import * as invites from "./application/directInvites";
@@ -53,12 +53,12 @@ function transition(c: Context<AppEnv>, result: invites.TransitionResult) {
 
 export function invitationRoutes() {
   const app = new Hono<AppEnv>();
-  app.use("/direct-invites", requireAuth);
-  app.use("/direct-invites/*", requireAuth);
-  app.use("/broadcasts", requireAuth);
-  app.use("/broadcasts/*", requireAuth);
-  app.use("/meetups", requireAuth);
-  app.use("/meetups/*", requireAuth);
+  app.use("/direct-invites", requireAuth, requireActiveSessionForWrites);
+  app.use("/direct-invites/*", requireAuth, requireActiveSessionForWrites);
+  app.use("/broadcasts", requireAuth, requireActiveSessionForWrites);
+  app.use("/broadcasts/*", requireAuth, requireActiveSessionForWrites);
+  app.use("/meetups", requireAuth, requireActiveSessionForWrites);
+  app.use("/meetups/*", requireAuth, requireActiveSessionForWrites);
 
   app.post("/direct-invites", idempotent, async (c) => {
     const body = createDirectInviteRequestSchema.safeParse(await json(c));

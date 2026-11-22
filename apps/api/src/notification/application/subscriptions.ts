@@ -42,3 +42,6 @@ export async function deleteSubscriptionsOfSession(ctx: Ctx, sessionId: string) 
 export async function deleteSubscriptionsOf(ctx: Ctx, userId: string) {
   await repo.deleteSubscriptionsOfUser(ctx.env.DB, userId);
 }
+
+/** 退会（T-16）：本人の通知の行を消す文。identity の退会の batch に入れる */
+export const withdrawalPurgeStatements = (d1: D1Database, userId: string) => repo.withdrawalPurgeStatements(d1, userId);

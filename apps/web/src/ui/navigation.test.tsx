@@ -199,7 +199,7 @@ describe("レビューの指摘（pryusei/kokohima-app#95）", () => {
       kind: "kokodou",
       direction: "sent",
       status: "pending",
-      counterpart: { id: FRIEND_ID, displayName: "あき", avatarUrl: null },
+      counterpart: { id: FRIEND_ID, displayName: "あき", avatarUrl: null, withdrawn: false },
       startsAt: "2026-10-10T10:00:00.000Z",
       endsAt: "2026-10-10T14:00:00.000Z",
       area: null,

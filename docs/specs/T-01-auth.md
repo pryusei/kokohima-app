@@ -26,7 +26,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | POST | `/api/v1/auth/refresh` | 更新用トークンCookie＋Origin | なし | 200：`refreshResponseSchema` `{ accessToken, expiresAt }` | 401 `unauthenticated` |
 | POST | `/api/v1/auth/logout` | 更新用トークンCookie＋Origin | なし | 204（Cookieを消す） | 401 `unauthenticated`（Origin不一致のみ。Cookieがない・無効でも204） |
 | POST | `/api/v1/auth/logout-all` | Bearer＋Origin | なし | 204（Cookieを消す） | 401 `unauthenticated` |
-| GET | `/api/v1/me` | Bearer | なし | 200：`meResponseSchema` `{ id, displayName, avatarUrl }` | 401 `unauthenticated`、404 `not_found`（トークンは有効だがユーザーの行がない。退会の直後など） |
+| GET | `/api/v1/me` | Bearer | なし | 200：`meResponseSchema` `{ id, displayName, avatarUrl }` | 401 `unauthenticated`、404 `not_found`（トークンは有効だがユーザーの行がない、または退会した。T-16） |
 | POST | `/__e2e__/login` | E2E環境のみ（下記） | JSON：`{ user: string }`（`^[a-z0-9-]{1,64}$`） | 204（更新用トークンCookieを発行） | 404 `not_found`（E2E環境以外）、400 `validation_failed` |
 
 - スキーマは `packages/shared/src/schemas/identity.ts`。`/__e2e__/login` の入力スキーマは `apps/api/src/e2e/` に置き、sharedには置かない
@@ -136,7 +136,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - `Authorization: Bearer <JWT>` を検証する（`alg` はHS256のみ、`kid` が未知なら失敗、`iss`・`aud`・`exp` を検証、許容誤差30秒）
 - 成功したら `c.var.viewer = { userId, sessionId }` を設定する。application層の関数は `viewerId` を引数で受け取る
 - 失敗したら401 `unauthenticated`。理由（期限切れ・署名不正など）は応答で区別しない
-- 重要な操作のための `requireActiveSession`：`requireAuth` に加えて、D1で `sessions.revoked_at IS NULL` かつ期限内であることを毎回確認する。今回は `logout-all` で使う（以降のタスクで、アカウント連携・退会などに使う）
+- 重要な操作のための `requireActiveSession`：`requireAuth` に加えて、D1で `sessions.revoked_at IS NULL` かつ期限内であることを毎回確認する。`logout-all`・退会（T-16）と、書き込みの経路すべて（T-16。読み取り以外のメソッドで確かめる `requireActiveSessionForWrites` を含む）で使う。退会した人のセッションは有効でない
 
 ### ログアウト
 - `logout`：Originを検査し、Cookieのトークンが属するセッションを失効させ、そのセッションのプッシュの購読を消し（T-07）、Cookieを消して204。Cookieがない・無効でも204（何度押しても同じ結果）
@@ -236,7 +236,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - 本物のGoogle／Appleでのログインは対象外（`e2e-testing` スキル）。人が手動で確認する
 
 ## スコープ外
-- アカウント連携（GoogleとAppleの統合。MVPの対象外。要求定義書 F-01、#45）、退会
+- アカウント連携（GoogleとAppleの統合。MVPの対象外。要求定義書 F-01、#45）。退会は T-16（設定のアカウントの画面、ログインし直すと新しい利用者になること、ログイン・セッションの作成で退会した人を扱わないこと）
 - 新端末ログインのメール通知（今回は `SessionStarted` を `outbox` に書くだけ）
 - 初回設定（表示名とアイコン）。今回は `displayName`・`avatarUrl` がnullのまま
 - 監査ログ（ログインの30日保持）。監査ログの仕組みとまとめて別タスクにする（決定事項6）

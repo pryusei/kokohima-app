@@ -18,7 +18,7 @@
   - 他人の表示名とアイコンは、`identity` の `getPublicProfiles(ids)` で取る。この関数は閲覧者の条件を持たないので、閲覧者で絞ったSQLの結果のID（友達一覧の相手、招待リンクの発行者）だけを渡す。パスやbodyのIDをそのまま渡さない（「データ取得は閲覧者IDを引数に取る」の例外。users を読むのは identity だけにするため）
   - 友達関係の確認は、閲覧者側の行（`user_id = 閲覧者`）で行う。両方向の行は `accept` の1つのバッチで一緒に書かれ、解除も1つのバッチで一緒に消すので、片方向の行は残らない。それでもT-03で「ここ暇を見せてよいか」を判定するときは、防御として両方向の行がそろっていることを条件にする
 - 認証は T-01 の `requireAuth` を使い、閲覧者IDは `c.var.viewer.userId` からだけ得る
-- 他人の情報は公開プロフィール（`id`、`displayName`、`avatarUrl`）だけを返す（api-conventions）
+- 他人の情報は公開プロフィール（`id`、`displayName`、`avatarUrl`）だけを返す（api-conventions）。履歴の相手（誘い・募集・予定・お知らせ）には、退会したかの `withdrawn` を足した `historyProfileSchema` を使う（T-16）。友達に関わる応答には `withdrawn` を出さない
 
 ## API
 `api-conventions` スキルに従う。例外は「例外」の欄に書く。

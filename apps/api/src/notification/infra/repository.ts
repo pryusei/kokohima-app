@@ -49,7 +49,7 @@ export async function insertDrafts(
            json_extract(r.value, '$.actorId'), json_extract(r.value, '$.subjectId'), json_extract(r.value, '$.count'),
            json_extract(r.value, '$.device'), ?2, ?3, ?4
          FROM json_each(?1) r
-         WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = json_extract(r.value, '$.userId'))`,
+         WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = json_extract(r.value, '$.userId') AND u.withdrawn_at IS NULL)`,
       )
       .bind(JSON.stringify(rows), eventId, occurredAt, now),
     d1
@@ -224,7 +224,7 @@ export async function putPreferences(d1: D1Database, userId: string, p: Record<C
   await d1
     .prepare(
       `INSERT INTO notification_preferences (user_id, invites, broadcasts, meetups, friends, calendar, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
        ON CONFLICT (user_id) DO UPDATE SET invites = ?2, broadcasts = ?3, meetups = ?4, friends = ?5, calendar = ?6,
          updated_at = ?7`,
     )
@@ -250,7 +250,7 @@ export async function upsertSubscription(
     d1
       .prepare(
         `INSERT INTO push_subscriptions (id, user_id, session_id, endpoint_hash, endpoint_enc, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)
          ON CONFLICT (endpoint_hash) DO UPDATE SET user_id = ?2, session_id = ?3, endpoint_enc = ?5, created_at = ?6`,
       )
       .bind(crypto.randomUUID(), row.userId, row.sessionId, row.endpointHash, row.endpointEnc, row.now),
@@ -296,4 +296,14 @@ export async function hasSubscription(d1: D1Database, userId: string) {
 
 export async function markSubscriptionSuccess(d1: D1Database, id: string, now: number) {
   await d1.prepare("UPDATE push_subscriptions SET last_success_at = ?2 WHERE id = ?1").bind(id, now).run();
+}
+
+/** 退会（T-16 入口を止める段）：本人の購読・設定・日ごとの数・本人あてのお知らせを消す文 */
+export function withdrawalPurgeStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
+  return [
+    d1.prepare("DELETE FROM push_subscriptions WHERE user_id = ?").bind(userId),
+    d1.prepare("DELETE FROM notification_preferences WHERE user_id = ?").bind(userId),
+    d1.prepare("DELETE FROM notification_daily_counts WHERE user_id = ?").bind(userId),
+    d1.prepare("DELETE FROM notifications WHERE user_id = ?").bind(userId),
+  ];
 }
