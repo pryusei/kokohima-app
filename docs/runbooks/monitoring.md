@@ -55,10 +55,16 @@
 
 ### 1-4. Workers Issues と自動の通知
 1. wrangler の設定で `observability.issues.enabled: true` にしてある（トップレベルと prod）。設定に書かないと次のデプロイで無効に戻るので、消さない。
-2. 管理画面の Workers → 本番の Worker → Issues → Automations で、自動の通知を2つ作る。通知先は `kokohima-alerts`。
+2. 自動の通知を作る前に、管理画面の Workers → 本番の Worker → Issues で、問題の詳細を1つ開く。**リクエストの URL（パス・クエリ）が表示されるか**を確かめる。
+   - このアプリには、URL にトークンが入る経路がある（OAuth のコールバックの `code`、`.ics` のパス）。そのために、呼び出しのログ（`invocation_logs`）を切っている（docs/specs/T-06-calendar.md 決定事項14）。Issues が URL を残すと、同じものが別の場所に残る。
+   - 問題がまだ1つもなければ（最初のデプロイの直後など）、3 には進まない。Slack への自動の通知は作らずに、最初の問題が出るのを待つ。
+     - 待つあいだ、想定外の例外に気づけるよう、`unhandled_error` のモニター（本文が `"event":"unhandled_error"` を含む、15分に1件以上、`kokohima-alerts`）を 1-3 に足しておく。
+     - 最初の問題が出たら、その詳細で URL が表示されるかを確かめる。表示されなければ 3 に進み、足しておいた `unhandled_error` のモニターを消す（同じ1件で2通届かないようにするため）。
+   - URL が表示されるなら、Slack への自動の通知は作らない（作っていたら消す）。Issues は管理画面で見るだけにし、`unhandled_error` のモニター（本文が `"event":"unhandled_error"` を含む、15分に1件以上、`kokohima-alerts`）を 1-3 に足す。管理画面の詳細に URL が残ること自体を受け入れるか、Issues を無効に戻すかは、仕様書を直す PR で決める。
+3. 管理画面の Workers → 本番の Worker → Issues → Automations で、自動の通知を2つ作る。通知先は `kokohima-alerts`。
    - 新しい問題が1回起きたとき。
    - 24時間止まっていた問題がまた起きたとき。
-3. 作ったら、実際に届いた通知の本文に個人情報が入っていないかを確かめる（例外の要約・スタックが入る）。入りうるなら、Issues の Slack への通知をやめて管理画面で見るだけにし、`unhandled_error` のモニター（本文が `"event":"unhandled_error"` を含む、15分に1件以上、`kokohima-alerts`）を 1-3 に足す。
+4. 作ったら、実際に届いた通知の本文に、個人情報とリクエストの URL が入っていないかを確かめる（例外の要約・スタックが入る）。入りうるなら、Issues の Slack への通知をやめて管理画面で見るだけにし、`unhandled_error` のモニター（本文が `"event":"unhandled_error"` を含む、15分に1件以上、`kokohima-alerts`）を 1-3 に足す。
 
 ### 1-5. 外からの死活監視（Better Stack Uptime）
 1. Better Stack のアカウントを開発者本人だけで作り、2段階認証を有効にする。登録するとき、無料の枠の条件（監視の数・確認の間隔・Slack とメールへの通知・利用の制限）を料金のページで確かめる。合わなければ仕様書を直す。
@@ -123,7 +129,7 @@ pnpm --filter api exec wrangler d1 execute kokohima-prod --remote --env prod --c
 3. API で1回だけ読み、ack しない（見えない時間（既定30秒）が過ぎるとキューに戻る）。
 4. 調べ終えたら、consumer を外し（`wrangler queues consumer http remove kokohima-prod-outbox-dlq`）、API トークンを消す。
 
-- 本文には outbox の payload（時刻などの行動の情報）が入る。Slack・issue・PR に貼らない。
+- 本文には outbox の payload（時刻などの行動の情報）や、利用者ID（`calendar_sync`）が入る。Slack・issue・PR に貼らない。
 - 退避キューのメッセージは4日で消える。消える前に調べられなくても、outbox の行（7日）からやり直せる。
 
 ## 4. 問い合わせの調べ方
