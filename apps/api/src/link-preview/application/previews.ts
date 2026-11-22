@@ -76,3 +76,7 @@ export async function cleanupLinkPreviews(ctx: Ctx) {
   }
   await repo.deleteImageLedger(d1, orphans);
 }
+
+/** 退会（T-16）：退会した人の誘い・募集の参照を消す文。invitation の後始末の batch に入れる */
+export const withdrawalDeleteRefsStatements = (d1: D1Database, userId: string) =>
+  repo.withdrawalDeleteRefsStatements(d1, userId);

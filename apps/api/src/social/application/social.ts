@@ -221,3 +221,6 @@ export async function getFriend(ctx: Ctx, viewerId: string, friendId: string) {
     friendsSince: iso(mine.createdAt),
   };
 }
+
+/** 退会（T-16）：本人の招待リンクと友達の行を消す文。identity の退会の batch に入れる */
+export const withdrawalPurgeStatements = (d1: D1Database, userId: string) => repo.withdrawalPurgeStatements(d1, userId);

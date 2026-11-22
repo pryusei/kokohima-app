@@ -1,6 +1,6 @@
-import type { Broadcast, CreateBroadcastRequest, PublicProfile } from "@kokohima/shared";
+import type { Broadcast, CreateBroadcastRequest, HistoryProfile } from "@kokohima/shared";
 import type { AppDeps, Bindings } from "../../env";
-import { getPublicProfiles } from "../../identity/application/auth";
+import { getHistoryProfiles } from "../../identity/application/auth";
 import { previewsFor } from "../../link-preview/application/previews";
 import type { Cursor } from "../../shared/cursor";
 import { decideError, ownerResponseCount, respondError, viewerStatus } from "../domain/broadcast";
@@ -20,7 +20,7 @@ import { attemptSend } from "./directInvites";
 type Ctx = { env: Bindings; deps: AppDeps };
 
 const iso = (ms: number) => new Date(ms).toISOString();
-const unknownProfile = (id: string): PublicProfile => ({ id, displayName: null, avatarUrl: null, withdrawn: false });
+const unknownProfile = (id: string): HistoryProfile => ({ id, displayName: null, avatarUrl: null, withdrawn: false });
 
 /**
  * 閲覧者から見た募集。募集者には人数と宛先を、宛先の人には自分の応答だけを返す。参加者でない宛先の人に返す値は、
@@ -29,7 +29,7 @@ const unknownProfile = (id: string): PublicProfile => ({ id, displayName: null, 
 function toDto(
   row: repo.BroadcastRow,
   viewerId: string,
-  profiles: Map<string, PublicProfile>,
+  profiles: Map<string, HistoryProfile>,
   recipients: Map<string, string[]>,
   now: number,
   linkPreview: Broadcast["linkPreview"],
@@ -67,7 +67,7 @@ async function dtos(ctx: Ctx, viewerId: string, rows: repo.BroadcastRow[]) {
   );
   const ids = new Set(rows.map((r) => r.owner_id));
   for (const list of recipients.values()) for (const id of list) ids.add(id);
-  const profiles = await getPublicProfiles(ctx.env, [...ids]);
+  const profiles = await getHistoryProfiles(ctx.env, [...ids]);
   // 渡すのは、閲覧者が募集者か宛先として SQL で絞った募集だけ
   const previews = await previewsFor(
     ctx.env.DB,

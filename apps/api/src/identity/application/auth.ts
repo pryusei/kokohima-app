@@ -227,6 +227,16 @@ export async function updateDisplayName(ctx: Ctx, viewerId: string, displayName:
  * パスやbodyのIDをそのまま渡してはいけない（docs/specs/T-02-friends.md「前提」）
  */
 export async function getPublicProfiles(env: Bindings, userIds: string[]) {
+  const rows = await repo.findPublicProfiles(repo.db(env.DB), userIds);
+  // 友達に関わる応答では、退会した人を区別させない（`withdrawn` を出さない。T-16）
+  return new Map([...rows].map(([id, r]) => [id, { id: r.id, displayName: r.displayName, avatarUrl: r.avatarUrl }]));
+}
+
+/**
+ * 履歴の相手向け（誘い・募集・予定・お知らせ・.ics）：公開プロフィールに `withdrawn` を足したもの（T-16）。
+ * 渡してよい ID は getPublicProfiles と同じ
+ */
+export async function getHistoryProfiles(env: Bindings, userIds: string[]) {
   return repo.findPublicProfiles(repo.db(env.DB), userIds);
 }
 

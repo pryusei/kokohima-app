@@ -1,5 +1,5 @@
 import type { MeetupForCalendar } from "../../invitation/application/calendarFacing";
-import { getPublicProfiles } from "../../identity/application/auth";
+import { getHistoryProfiles } from "../../identity/application/auth";
 import type { Ctx } from "./connections";
 
 // カレンダーに書く内容（docs/specs/T-06-calendar.md「書く内容」決定事項8）。Google と .ics で同じにする
@@ -11,7 +11,7 @@ export const WITHDRAWN_USER = "退会したユーザー";
 
 export async function eventContent(ctx: Ctx, meetup: MeetupForCalendar, forUserId: string) {
   const others = meetup.participants.filter((p) => !p.left && p.userId !== forUserId).map((p) => p.userId);
-  const profiles = await getPublicProfiles(ctx.env, others);
+  const profiles = await getHistoryProfiles(ctx.env, others);
   const names = others.map((id) => {
     const p = profiles.get(id);
     return p?.withdrawn ? WITHDRAWN_USER : (p?.displayName ?? UNNAMED_FRIEND);

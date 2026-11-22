@@ -1,4 +1,4 @@
-import { authCompleteRequestSchema, authStartQuerySchema, updateMeRequestSchema } from "@kokohima/shared";
+import { authCompleteRequestSchema, authStartQuerySchema, updateMeRequestSchema, withdrawRequestSchema } from "@kokohima/shared";
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../env";
 import { clearInviteCookie } from "../http/inviteCookie";
@@ -7,6 +7,7 @@ import { rateLimit } from "../http/rateLimit";
 import { validationFailed } from "../http/validation";
 import * as social from "../social/application/social";
 import * as auth from "./application/auth";
+import { withdraw } from "./application/withdrawal";
 import {
   clearBindingCookie,
   clearRefreshCookie,
@@ -111,7 +112,22 @@ export function identityRoutes() {
   });
 
   // 表示名の設定（T-02）。閲覧者自身の行だけを更新する
-  app.patch("/me", requireAuth, async (c) => {
+  // 退会（T-16）。閲覧者本人だけ。経路にも本文にも利用者の ID を受けない
+  app.post("/me/withdrawal", requireAuth, requireActiveSession, requireSameOrigin, async (c) => {
+    const body = withdrawRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return validationFailed(c, body.error);
+    const result = await withdraw(ctx(c), c.var.viewer);
+    if (result === "unauthenticated") return unauthenticated(c);
+    if (result === "reauth_required") {
+      return problem(c.get("requestId"), 403, "reauth_required", "Forbidden");
+    }
+    clearRefreshCookie(c);
+    clearBindingCookie(c);
+    clearInviteCookie(c);
+    return c.body(null, 204);
+  });
+
+  app.patch("/me", requireAuth, requireActiveSession, async (c) => {
     const body = updateMeRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return validationFailed(c, body.error);
     const me = await auth.updateDisplayName(ctx(c), c.var.viewer.userId, body.data.displayName);

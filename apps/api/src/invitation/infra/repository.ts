@@ -266,7 +266,8 @@ export async function acceptInvite(
     d1
       .prepare(
         `UPDATE direct_invites SET status = 'confirmed', responded_at = ?1, transition_id = ?2
-         WHERE id = ?3 AND recipient_id = ?4 AND status = 'pending' AND expires_at > ?1`,
+         WHERE id = ?3 AND recipient_id = ?4 AND status = 'pending' AND expires_at > ?1
+           AND NOT EXISTS (SELECT 1 FROM users WHERE id IN (sender_id, recipient_id) AND withdrawn_at IS NOT NULL)`,
       )
       .bind(now, tid, invite.id, invite.recipientId),
     ...meetupStatements(d1, invite, { id: meetupId, startsAt: invite.startsAt, endsAt: invite.endsAt }, tid, event, now),
@@ -310,7 +311,8 @@ export async function decideAccept(
     d1
       .prepare(
         `UPDATE direct_invites SET status = 'confirmed', decided_at = ?1, transition_id = ?2
-         WHERE id = ?3 AND sender_id = ?4 AND status = 'counter_proposed' AND counter_starts_at > ?1`,
+         WHERE id = ?3 AND sender_id = ?4 AND status = 'counter_proposed' AND counter_starts_at > ?1
+           AND NOT EXISTS (SELECT 1 FROM users WHERE id IN (sender_id, recipient_id) AND withdrawn_at IS NOT NULL)`,
       )
       .bind(now, tid, invite.id, invite.senderId),
     ...meetupStatements(
@@ -588,4 +590,62 @@ export async function findInviteActor(d1: D1Database, inviteId: string) {
     .first<{ sender_id: string; recipient_id: string; decided_at: number | null }>();
   if (!row) return null;
   return row.decided_at !== null ? row.sender_id : row.recipient_id;
+}
+
+// ---- 退会の後始末（T-16） ----
+
+async function idsOf(d1: D1Database, sql: string, ...binds: unknown[]) {
+  const { results } = await d1.prepare(sql).bind(...binds).all<{ id: string }>();
+  return results.map((r) => r.id);
+}
+
+/** 退会した人が参加者（抜けていない）で、開始が now より後の confirmed の予定 */
+export function upcomingMeetupsToCancel(d1: D1Database, userId: string, now: number, limit: number) {
+  return idsOf(
+    d1,
+    `SELECT m.id FROM meetups m JOIN meetup_participants p ON p.meetup_id = m.id
+     WHERE p.user_id = ?1 AND p.left_at IS NULL AND m.status = 'confirmed' AND m.starts_at > ?2
+     ORDER BY m.starts_at, m.id LIMIT ?3`,
+    userId,
+    now,
+    limit,
+  );
+}
+
+/** 退会した人が受信者の、期限前の pending */
+export function receivedPendingInvites(d1: D1Database, userId: string, now: number, limit: number) {
+  return idsOf(
+    d1,
+    `SELECT id FROM direct_invites WHERE recipient_id = ?1 AND status = 'pending' AND expires_at > ?2
+     ORDER BY expires_at, id LIMIT ?3`,
+    userId,
+    now,
+    limit,
+  );
+}
+
+/** 送った pending・募集者の open の打ち切り、counter_proposed の skipped、書いた内容の消去（通知なし） */
+export function withdrawalCloseStatements(d1: D1Database, userId: string, now: number): D1PreparedStatement[] {
+  return [
+    d1
+      .prepare("UPDATE direct_invites SET expires_at = ?2 WHERE sender_id = ?1 AND status = 'pending' AND expires_at > ?2")
+      .bind(userId, now),
+    // counter_proposed は期限が代わりの時間の開始で決まるので、保存する状態で終える
+    d1
+      .prepare(
+        `UPDATE direct_invites SET status = 'skipped', decided_at = ?2
+         WHERE (sender_id = ?1 OR recipient_id = ?1) AND status = 'counter_proposed'`,
+      )
+      .bind(userId, now),
+    d1
+      .prepare("UPDATE broadcasts SET expires_at = ?2 WHERE owner_id = ?1 AND status = 'open' AND expires_at > ?2")
+      .bind(userId, now),
+  ];
+}
+
+export function withdrawalEraseContentStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
+  return [
+    d1.prepare("UPDATE direct_invites SET area = NULL, message = NULL, url = NULL WHERE sender_id = ?").bind(userId),
+    d1.prepare("UPDATE broadcasts SET area = NULL, message = NULL, url = NULL WHERE owner_id = ?").bind(userId),
+  ];
 }

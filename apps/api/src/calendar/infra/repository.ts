@@ -41,7 +41,8 @@ export async function insertOauthStateWithinLimit(
     .prepare(
       `INSERT INTO calendar_oauth_states (state_hash, binding_hash, user_id, provider, code_verifier, expires_at, created_at)
        SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
-       WHERE (SELECT COUNT(*) FROM calendar_oauth_states WHERE user_id = ?3 AND created_at > ?8) < ?9`,
+       WHERE (SELECT COUNT(*) FROM calendar_oauth_states WHERE user_id = ?3 AND created_at > ?8) < ?9
+         AND EXISTS (SELECT 1 FROM users WHERE id = ?3 AND withdrawn_at IS NULL)`,
     )
     .bind(row.stateHash, row.bindingHash, row.userId, row.provider, row.codeVerifier, row.now + ttl, row.now, row.now - ttl, limit)
     .run();
@@ -79,15 +80,19 @@ export async function saveConnection(
     d1
       .prepare(
         `INSERT INTO calendar_connections (user_id, provider, status, refresh_token_enc, connected_at, updated_at)
-         VALUES (?1, ?2, 'active', ?3, ?4, ?4)
+         SELECT ?1, ?2, 'active', ?3, ?4, ?4 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
          ON CONFLICT (user_id, provider) DO UPDATE SET status = 'active', refresh_token_enc = ?3, connected_at = ?4,
            updated_at = ?4, busy_snapshot = NULL, snapshot_from = NULL, snapshot_to = NULL, last_synced_at = NULL,
            sync_id = NULL, sync_lease_until = NULL, large_change_held = 0`,
       )
       .bind(row.userId, row.provider, row.refreshTokenEnc, row.now),
     d1
-      .prepare("INSERT INTO outbox (id, type, payload, created_at) VALUES (?1, 'CalendarConnected', ?2, ?3)")
-      .bind(event.id, event.payload, row.now),
+      // 退会した人（T-16）には連携を作り直さない。進行中の連携の callback が、抜け殻に書かないように
+      .prepare(
+        `INSERT INTO outbox (id, type, payload, created_at)
+         SELECT ?1, 'CalendarConnected', ?2, ?3 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?4 AND withdrawn_at IS NULL)`,
+      )
+      .bind(event.id, event.payload, row.now, row.userId),
   ]);
 }
 
@@ -174,7 +179,8 @@ export async function activeConnectionsOf(d1: D1Database, userIds: string[], pro
   const { results } = await d1
     .prepare(
       `SELECT * FROM calendar_connections
-       WHERE provider = ?2 AND status = 'active' AND user_id IN (SELECT value FROM json_each(?1))`,
+       WHERE provider = ?2 AND status = 'active' AND user_id IN (SELECT value FROM json_each(?1))
+         AND EXISTS (SELECT 1 FROM users u WHERE u.id = calendar_connections.user_id AND u.withdrawn_at IS NULL)`,
     )
     .bind(JSON.stringify(userIds), provider)
     .all<ConnectionRow>();
@@ -190,6 +196,7 @@ export async function connectionsDueForSync(d1: D1Database, now: number, minAge:
     .prepare(
       `SELECT user_id, provider FROM calendar_connections
        WHERE status = 'active' AND (last_synced_at IS NULL OR last_synced_at <= ?1)
+         AND EXISTS (SELECT 1 FROM users u WHERE u.id = calendar_connections.user_id AND u.withdrawn_at IS NULL)
        ORDER BY last_synced_at LIMIT ?2`,
     )
     .bind(now - minAge, limit)
@@ -285,7 +292,8 @@ export async function insertIcsToken(
     .prepare(
       `INSERT INTO ics_tokens (token_hash, user_id, meetup_id, expires_at, created_at)
        SELECT ?1, ?2, ?3, ?4, ?5
-       WHERE (SELECT COUNT(*) FROM ics_tokens WHERE user_id = ?2 AND created_at > ?6) < ?7`,
+       WHERE (SELECT COUNT(*) FROM ics_tokens WHERE user_id = ?2 AND created_at > ?6) < ?7
+         AND EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)`,
     )
     .bind(row.tokenHash, row.userId, row.meetupId, row.expiresAt, row.now, row.now - quota.windowMs, quota.limit)
     .run();
@@ -311,4 +319,17 @@ export async function findIcsToken(d1: D1Database, tokenHash: string, now: numbe
 
 export async function deleteExpiredIcsTokens(d1: D1Database, now: number) {
   await d1.prepare("DELETE FROM ics_tokens WHERE expires_at <= ?1").bind(now).run();
+}
+
+/** 退会（T-16 入口を止める段）：本人の .ics の鍵と、連携の途中の state を消す文（連携の行は後始末の段で消す） */
+export function withdrawalPurgeStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
+  return [
+    d1.prepare("DELETE FROM ics_tokens WHERE user_id = ?").bind(userId),
+    d1.prepare("DELETE FROM calendar_oauth_states WHERE user_id = ?").bind(userId),
+  ];
+}
+
+/** 退会（T-16 後始末の段）：連携の行を消す */
+export async function deleteConnectionsOf(d1: D1Database, userId: string) {
+  await d1.prepare("DELETE FROM calendar_connections WHERE user_id = ?").bind(userId).run();
 }

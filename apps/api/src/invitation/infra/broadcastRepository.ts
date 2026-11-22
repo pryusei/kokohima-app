@@ -217,7 +217,8 @@ export async function decideBroadcast(
       .prepare(
         `UPDATE broadcasts SET status = 'decided', decided_at = ?1, transition_id = ?2
          WHERE id = ?3 AND owner_id = ?4 AND status = 'open' AND expires_at > ?1
-           AND EXISTS (SELECT 1 FROM broadcast_recipients WHERE broadcast_id = ?3 AND responded_at IS NOT NULL)`,
+           AND EXISTS (SELECT 1 FROM broadcast_recipients WHERE broadcast_id = ?3 AND responded_at IS NOT NULL
+                       AND EXISTS (SELECT 1 FROM users u WHERE u.id = broadcast_recipients.user_id AND u.withdrawn_at IS NULL))`,
       )
       .bind(now, tid, broadcastId, ownerId),
     d1
@@ -232,7 +233,9 @@ export async function decideBroadcast(
          SELECT ?1, owner_id FROM broadcasts WHERE id = ?2 AND EXISTS (SELECT 1 FROM meetups WHERE id = ?1)
          UNION ALL
          SELECT ?1, user_id FROM broadcast_recipients
-         WHERE broadcast_id = ?2 AND responded_at IS NOT NULL AND EXISTS (SELECT 1 FROM meetups WHERE id = ?1)`,
+         WHERE broadcast_id = ?2 AND responded_at IS NOT NULL AND EXISTS (SELECT 1 FROM meetups WHERE id = ?1)
+           -- 退会した人（T-16）は参加者にしない。決まる前の応じた人数は変えない（決めたこと6）
+           AND EXISTS (SELECT 1 FROM users u WHERE u.id = broadcast_recipients.user_id AND u.withdrawn_at IS NULL)`,
       )
       .bind(ids.meetupId, broadcastId),
     d1

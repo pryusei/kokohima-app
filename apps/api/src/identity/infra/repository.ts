@@ -1,6 +1,6 @@
 import { and, eq, exists, gt, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
-import { outbox, outboxRow } from "../../shared/outbox/schema";
+import { outboxRow } from "../../shared/outbox/schema";
 import type { Provider } from "../domain/idTokenClaims";
 import {
   loginCodes,
@@ -365,4 +365,88 @@ export async function activeSessionIds(db: Db, sessionIds: string[], now: number
     .where(and(inArray(sessions.id, sessionIds.slice(0, 50)), isNull(sessions.revokedAt), gt(sessions.expiresAt, now)))
     .all();
   return new Set(rows.map((r) => r.id));
+}
+
+/** 退会（T-16）：閲覧者のセッションのログインした時刻。有効なセッションでなければ null */
+export async function activeSessionCreatedAt(db: Db, viewer: { userId: string; sessionId: string }, now: number) {
+  const row = await db
+    .select({ createdAt: sessions.createdAt })
+    .from(sessions)
+    .innerJoin(users, and(eq(users.id, sessions.userId), isNull(users.withdrawnAt)))
+    .where(
+      and(
+        eq(sessions.id, viewer.sessionId),
+        eq(sessions.userId, viewer.userId),
+        isNull(sessions.revokedAt),
+        gt(sessions.expiresAt, now),
+      ),
+    )
+    .get();
+  return row?.createdAt ?? null;
+}
+
+/** 本人だけに関わる outbox の型（端末の情報やここ暇の時刻が入る。T-16） */
+export const PERSONAL_OUTBOX_TYPES = [
+  "SessionStarted",
+  "CalendarConnected",
+  "CalendarReauthRequired",
+  "AvailabilityCancelledByCalendar",
+] as const;
+
+/**
+ * 退会（T-16 入口を止める段）：利用者の行を抜け殻にし、identity の行を消し、`UserWithdrew` を書く文。
+ * 何度実行しても同じ結果になる（`withdrawn_at` は最初の時刻を残す。`UserWithdrew` は1つだけ）
+ */
+export function withdrawalStatements(d1: D1Database, userId: string, now: number): D1PreparedStatement[] {
+  const ev = outboxRow("UserWithdrew", { userId, occurredAt: new Date(now).toISOString() }, now);
+  return [
+    d1
+      .prepare(
+        `UPDATE users SET withdrawn_at = COALESCE(withdrawn_at, ?2), display_name = NULL, avatar_url = NULL,
+           email = NULL, timezone = 'Asia/Tokyo', updated_at = ?2 WHERE id = ?1`,
+      )
+      .bind(userId, now),
+    // 更新用トークン・セッションに結びついた購読は CASCADE で消える
+    d1.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId),
+    d1.prepare("DELETE FROM user_identities WHERE user_id = ?").bind(userId),
+    d1.prepare("DELETE FROM login_codes WHERE user_id = ?").bind(userId),
+    d1
+      .prepare(
+        `DELETE FROM outbox WHERE type IN (SELECT value FROM json_each(?2)) AND json_extract(payload, '$.userId') = ?1`,
+      )
+      .bind(userId, JSON.stringify(PERSONAL_OUTBOX_TYPES)),
+    d1
+      .prepare(
+        `INSERT INTO outbox (id, type, payload, created_at)
+         SELECT ?1, ?2, ?3, ?4 WHERE NOT EXISTS (
+           SELECT 1 FROM outbox WHERE type = ?2 AND json_extract(payload, '$.userId') = ?5)`,
+      )
+      .bind(ev.id, ev.type, ev.payload, ev.createdAt, userId),
+  ];
+}
+
+/** 後始末の段が終わった印（T-16） */
+export async function markWithdrawalCompleted(d1: D1Database, userId: string, now: number) {
+  await d1
+    .prepare("UPDATE users SET withdrawal_completed_at = ?2 WHERE id = ?1 AND withdrawn_at IS NOT NULL AND withdrawal_completed_at IS NULL")
+    .bind(userId, now)
+    .run();
+}
+
+/** 退会から olderThan より前で、後始末が終わっていない利用者（毎分の掃除で呼び直す。T-16） */
+export async function incompleteWithdrawals(d1: D1Database, olderThan: number, limit: number) {
+  const { results } = await d1
+    .prepare(
+      `SELECT id FROM users WHERE withdrawn_at IS NOT NULL AND withdrawn_at < ? AND withdrawal_completed_at IS NULL
+       ORDER BY withdrawn_at LIMIT ?`,
+    )
+    .bind(olderThan, limit)
+    .all<{ id: string }>();
+  return results.map((r) => r.id);
+}
+
+/** 退会した人か（後始末の段が、退会していない人に動かないように。T-16） */
+export async function isWithdrawn(d1: D1Database, userId: string) {
+  const row = await d1.prepare("SELECT 1 AS x FROM users WHERE id = ? AND withdrawn_at IS NOT NULL").bind(userId).first();
+  return row !== null;
 }

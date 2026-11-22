@@ -8,10 +8,15 @@ export const publicProfileSchema = z.object({
   id: z.uuid(),
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
-  /** 退会した人（docs/specs/T-16-withdrawal.md）。履歴の相手で「退会したユーザー」と出す。名前とアイコンは null */
-  withdrawn: z.boolean().default(false),
 });
 export type PublicProfile = z.infer<typeof publicProfileSchema>;
+
+/**
+ * 履歴の相手（誘い・募集・予定・お知らせ）の公開プロフィール。退会した人（docs/specs/T-16-withdrawal.md）は
+ * `withdrawn: true` で、名前とアイコンは null。友達に関わる応答（友達の一覧・ここ暇）では使わない
+ */
+export const historyProfileSchema = publicProfileSchema.extend({ withdrawn: z.boolean() });
+export type HistoryProfile = z.infer<typeof historyProfileSchema>;
 
 export const INVITE_EXPIRES_IN_DAYS = [1, 3, 7] as const;
 export const INVITE_DEFAULTS = { expiresInDays: 3, maxUses: 5 } as const;

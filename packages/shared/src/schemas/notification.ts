@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProfileSchema } from "./social";
+import { historyProfileSchema } from "./social";
 
 // 通知（docs/specs/T-07-notification.md「API」）
 
@@ -24,7 +24,7 @@ export type NotificationKind = z.infer<typeof notificationKindSchema>;
 export const notificationSchema = z.object({
   id: z.uuid(),
   kind: notificationKindSchema,
-  actor: publicProfileSchema.nullable(),
+  actor: historyProfileSchema.nullable(),
   subjectId: z.string().nullable(),
   count: z.number().int().nullable(),
   device: z.string().nullable(),

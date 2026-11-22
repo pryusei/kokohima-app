@@ -5,6 +5,7 @@ import { reconcileMeetup, reconcileUpcomingOf } from "../calendar/application/wr
 import { declineForCancelledAvailability } from "../invitation/application/calendarFacing";
 import { handleLinkAttached } from "../link-preview/application/fetchPreview";
 import { createFromEvent, deliver } from "../notification/application/delivery";
+import { completeWithdrawal } from "../identity/application/withdrawal";
 
 // Queue の consumer（docs/specs/T-06-calendar.md）。kind と type で振り分ける。どの処理も冪等にしてあるので、
 // 二重に届いても結果は同じ。ログには kind・type・id だけを出し、payload の中身は出さない
@@ -21,6 +22,7 @@ const cancelledPayload = z.object({
   ranges: z.array(z.object({ startsAt: z.iso.datetime(), endsAt: z.iso.datetime() })),
   occurredAt: z.iso.datetime(),
 });
+const withdrewPayload = z.object({ userId: z.string() });
 const linkAttachedPayload = z.object({ subjectType: z.enum(["direct_invite", "broadcast"]), subjectId: z.string() });
 
 /**
@@ -29,6 +31,9 @@ const linkAttachedPayload = z.object({ subjectType: z.enum(["direct_invite", "br
  */
 async function handleCalendarSide(ctx: Ctx, type: string, payload: unknown, attempts: number | undefined) {
   switch (type) {
+    case "UserWithdrew":
+      await completeWithdrawal(ctx, withdrewPayload.parse(payload).userId);
+      return;
     case "LinkAttached": {
       const p = linkAttachedPayload.parse(payload);
       await handleLinkAttached(ctx, { type: p.subjectType, id: p.subjectId }, attempts !== undefined && attempts > MAX_RETRIES);

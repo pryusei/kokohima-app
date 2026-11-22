@@ -33,3 +33,15 @@ export const requireSameOrigin = createMiddleware<AppEnv>(async (c, next) => {
   if (c.req.header("Origin") !== c.env.APP_ORIGIN) return unauthenticated(c.get("requestId"));
   await next();
 });
+
+/**
+ * 書き込みの経路用（T-16）：GET・HEAD 以外では requireActiveSession と同じ確認をする。
+ * 退会・ログアウトのあとに残ったアクセストークンでは書き込めない。冪等キーの処理より前に置く
+ */
+export const requireActiveSessionForWrites = createMiddleware<AppEnv>(async (c, next) => {
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+    const active = await isSessionActive({ env: c.env, deps: c.var.deps }, c.var.viewer);
+    if (!active) return unauthenticated(c.get("requestId"));
+  }
+  await next();
+});
