@@ -49,3 +49,7 @@ export const displayNameSchema = z
 
 export const updateMeRequestSchema = z.object({ displayName: displayNameSchema });
 export type UpdateMeRequest = z.infer<typeof updateMeRequestSchema>;
+
+/** 退会（docs/specs/T-16-withdrawal.md）。誤操作で退会しないための目印 */
+export const withdrawRequestSchema = z.object({ confirm: z.literal("withdraw") }).strict();
+export type WithdrawRequest = z.infer<typeof withdrawRequestSchema>;

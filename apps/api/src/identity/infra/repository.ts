@@ -13,7 +13,7 @@ import {
 
 // identity のD1アクセス。条件つきの消費は単独で実行し、結果を見てから残りをバッチで書く
 
-export type Db = DrizzleD1Database;
+export type Db = DrizzleD1Database & { $client: D1Database };
 
 export function db(d1: D1Database): Db {
   return drizzle(d1);
@@ -70,8 +70,16 @@ export async function takeOauthTransaction(db: Db, stateHash: string, now: numbe
   return rows[0] ?? null;
 }
 
+/** 完了コードを保存する。退会した人（T-16）には作らない。作れたら true */
 export async function saveLoginCode(db: Db, row: typeof loginCodes.$inferInsert) {
-  await db.insert(loginCodes).values(row);
+  const r = await db.$client
+    .prepare(
+      `INSERT INTO login_codes (code_hash, user_id, provider, binding_hash, return_to, expires_at)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)`,
+    )
+    .bind(row.codeHash, row.userId, row.provider, row.bindingHash, row.returnTo, row.expiresAt)
+    .run();
+  return r.meta.changes === 1;
 }
 
 export async function takeLoginCode(db: Db, codeHash: string, now: number) {
@@ -100,7 +108,10 @@ export async function findOrCreateUser(
       await db
         .update(users)
         .set({ email, updatedAt: now })
-        .where(and(eq(users.id, existing.userId), or(isNull(users.email), ne(users.email, email))));
+        // 退会した人（T-16）には書き戻さない
+        .where(
+          and(eq(users.id, existing.userId), isNull(users.withdrawnAt), or(isNull(users.email), ne(users.email, email))),
+        );
     }
     return existing.userId;
   }
@@ -130,6 +141,10 @@ export async function findOrCreateUser(
   }
 }
 
+/**
+ * セッション・更新用トークン・SessionStarted を書く。退会した人（T-16）には作らない（同時に進んでいたログインで、抜け殻に
+ * セッションを作り直さない）。後続の文はセッションの行があるときだけ書く。作れたら true
+ */
 export async function createSessionRows(
   db: Db,
   params: {
@@ -143,23 +158,29 @@ export async function createSessionRows(
   },
 ) {
   const { sessionId, userId, tokenHash, tokenExpiresAt, sessionExpiresAt, event, now } = params;
-  await db.batch([
-    db.insert(sessions).values({
-      id: sessionId,
-      userId,
-      createdAt: now,
-      lastUsedAt: now,
-      expiresAt: sessionExpiresAt,
-    }),
-    db.insert(refreshTokens).values({
-      id: crypto.randomUUID(),
-      sessionId,
-      tokenHash,
-      createdAt: now,
-      expiresAt: tokenExpiresAt,
-    }),
-    db.insert(outbox).values(outboxRow("SessionStarted", event, now)),
+  const d1 = db.$client;
+  const ev = outboxRow("SessionStarted", event, now);
+  const [inserted] = await d1.batch([
+    d1
+      .prepare(
+        `INSERT INTO sessions (id, user_id, created_at, last_used_at, expires_at)
+         SELECT ?1, ?2, ?3, ?3, ?4 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)`,
+      )
+      .bind(sessionId, userId, now, sessionExpiresAt),
+    d1
+      .prepare(
+        `INSERT INTO refresh_tokens (id, session_id, token_hash, created_at, expires_at)
+         SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM sessions WHERE id = ?2)`,
+      )
+      .bind(crypto.randomUUID(), sessionId, tokenHash, now, tokenExpiresAt),
+    d1
+      .prepare(
+        `INSERT INTO outbox (id, type, payload, created_at)
+         SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM sessions WHERE id = ?5)`,
+      )
+      .bind(ev.id, ev.type, ev.payload, ev.createdAt, sessionId),
   ]);
+  return inserted?.meta.changes === 1;
 }
 
 export async function findRefreshToken(db: Db, tokenHash: string) {
@@ -167,6 +188,8 @@ export async function findRefreshToken(db: Db, tokenHash: string) {
     .select({ token: refreshTokens, session: sessions })
     .from(refreshTokens)
     .innerJoin(sessions, eq(sessions.id, refreshTokens.sessionId))
+    // 退会した人（T-16）のセッションは使えない
+    .innerJoin(users, and(eq(users.id, sessions.userId), isNull(users.withdrawnAt)))
     .where(eq(refreshTokens.tokenHash, tokenHash))
     .get();
   return row ?? null;
@@ -245,6 +268,8 @@ export async function isSessionActive(db: Db, viewer: { userId: string; sessionI
   const row = await db
     .select({ id: sessions.id })
     .from(sessions)
+    // 退会した人（T-16）のセッションは有効でない
+    .innerJoin(users, and(eq(users.id, sessions.userId), isNull(users.withdrawnAt)))
     .where(
       and(
         eq(sessions.id, viewer.sessionId),
@@ -261,32 +286,45 @@ export async function findMe(db: Db, viewerId: string) {
   const row = await db
     .select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl })
     .from(users)
-    .where(eq(users.id, viewerId))
+    // 退会した人（T-16）は404
+    .where(and(eq(users.id, viewerId), isNull(users.withdrawnAt)))
     .get();
   return row ?? null;
 }
 
 
 /** 公開プロフィール（ID・表示名・アイコン）。他のコンテキストはこの関数を通してだけ users を読む */
+export type PublicProfileRow = { id: string; displayName: string | null; avatarUrl: string | null; withdrawn: boolean };
+
 export async function findPublicProfiles(db: Db, userIds: string[]) {
-  if (userIds.length === 0) return new Map<string, { id: string; displayName: string | null; avatarUrl: string | null }>();
+  if (userIds.length === 0) return new Map<string, PublicProfileRow>();
   // D1のパラメータ数の上限（100）に収まるよう分けて読む
   const chunks: string[][] = [];
   for (let i = 0; i < userIds.length; i += 90) chunks.push(userIds.slice(i, i + 90));
   const results = await Promise.all(
     chunks.map((ids) =>
       db
-        .select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl })
+        .select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl, withdrawnAt: users.withdrawnAt })
         .from(users)
         .where(inArray(users.id, ids)),
     ),
   );
-  return new Map(results.flat().map((r) => [r.id, r]));
+  // 退会した人（T-16）は、列の値によらず名前とアイコンを出さない
+  return new Map(
+    results.flat().map((r): [string, PublicProfileRow] => {
+      const withdrawn = r.withdrawnAt !== null;
+      return [r.id, { id: r.id, displayName: withdrawn ? null : r.displayName, avatarUrl: withdrawn ? null : r.avatarUrl, withdrawn }];
+    }),
+  );
 }
 
 /** 閲覧者自身の表示名だけを更新する */
 export async function updateDisplayName(db: Db, viewerId: string, displayName: string, now: number) {
-  await db.update(users).set({ displayName, updatedAt: now }).where(eq(users.id, viewerId));
+  // 退会した人（T-16）には書き戻さない
+  await db
+    .update(users)
+    .set({ displayName, updatedAt: now })
+    .where(and(eq(users.id, viewerId), isNull(users.withdrawnAt)));
 }
 
 export async function findTimezone(db: Db, userId: string) {

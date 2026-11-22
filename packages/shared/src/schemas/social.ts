@@ -8,6 +8,8 @@ export const publicProfileSchema = z.object({
   id: z.uuid(),
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
+  /** 退会した人（docs/specs/T-16-withdrawal.md）。履歴の相手で「退会したユーザー」と出す。名前とアイコンは null */
+  withdrawn: z.boolean().default(false),
 });
 export type PublicProfile = z.infer<typeof publicProfileSchema>;
 

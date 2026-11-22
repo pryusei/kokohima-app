@@ -35,7 +35,7 @@ type Ctx = { env: Bindings; deps: AppDeps };
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /** 退会などで公開プロフィールが読めない相手（今は利用者の削除で誘いも消えるので、通常は起きない） */
-const unknownProfile = (id: string): PublicProfile => ({ id, displayName: null, avatarUrl: null });
+const unknownProfile = (id: string): PublicProfile => ({ id, displayName: null, avatarUrl: null, withdrawn: false });
 
 /** outbox のイベント。payload は ID と occurredAt だけ（ひとこと・エリア・URL・時刻は入れない） */
 const event = (type: string, payload: Record<string, unknown>) => ({

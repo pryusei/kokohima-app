@@ -20,7 +20,7 @@ import { attemptSend } from "./directInvites";
 type Ctx = { env: Bindings; deps: AppDeps };
 
 const iso = (ms: number) => new Date(ms).toISOString();
-const unknownProfile = (id: string): PublicProfile => ({ id, displayName: null, avatarUrl: null });
+const unknownProfile = (id: string): PublicProfile => ({ id, displayName: null, avatarUrl: null, withdrawn: false });
 
 /**
  * 閲覧者から見た募集。募集者には人数と宛先を、宛先の人には自分の応答だけを返す。参加者でない宛先の人に返す値は、

@@ -14,7 +14,7 @@ export const UNREAD_CAP = 99;
 export async function listNotifications(ctx: Ctx, viewerId: string, limit: number, cursor: Cursor | null) {
   const rows = await repo.listNotifications(ctx.env.DB, viewerId, limit, cursor);
   const page = rows.slice(0, limit);
-  // 相手は、閲覧者あてのお知らせに記録された ID だけ。退会などで読めなければ null のまま返す
+  // 相手は、閲覧者あてのお知らせに記録された ID だけ。読めなければ null。退会した人は withdrawn: true のプロフィール（T-16）
   const actorIds = [...new Set(page.flatMap((r) => (r.actor_id ? [r.actor_id] : [])))];
   const profiles = await getPublicProfiles(ctx.env, actorIds);
   const items: NotificationDto[] = page.map((r) => ({
