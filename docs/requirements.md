@@ -167,7 +167,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | Webプッシュ | Workers（WebCrypto）で動く実装 | Node向けのライブラリはそのまま動かないことがある |
 | パッケージ管理 | pnpmのモノレポ（apps/web、apps/api、packages/shared） | 型とスキーマを1か所で管理する |
 | CI | GitHub Actions＋依存更新の自動プルリクエスト | 更新を日単位で回す運用に必要 |
-| 監視 | Workers Logs＋利用料アラート | 異常検知と、利用料の急増への備え |
+| 監視 | Workers Logs＋Monitors・Workers Issues（Slack に通知）＋外からの死活監視（Better Stack）。利用料アラートは #42 | 異常検知と、利用料の急増への備え（条件と通知先は docs/specs/T-13-monitoring.md、手順は docs/runbooks/monitoring.md） |
 | IaC | 暫定：Terraform（Cloudflareプロバイダv5）＋wrangler。Alchemyとの比較検証（T-00）で確定する。決定は `docs/decisions/0001-iac-tool.md` | 最初からコードで管理し、セキュリティ設定の再現性と変更履歴を確保する |
 
 ライブラリのバージョンや対応状況は変わりやすいため、採用時に公式ドキュメントで確認します。
@@ -324,7 +324,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 **一般公開までに必須**
 - [ ] Googleの審査要件とプライバシーポリシーへの反映
 - [ ] 招待リンク発行など、その他のレート制限の値（ログインの開始・招待リンクの確認・.ics・カレンダーの空き・.ics リンクの発行は T-10、リンクのプレビューの画像の配信（`link_image`）は T-08 で決めた。運用で見直す）
-- [ ] 異常検知のアラートの条件と通知先
+- [x] 異常検知のアラートの条件と通知先（T-13。docs/specs/T-13-monitoring.md、docs/runbooks/monitoring.md）
 - [ ] 暗号鍵とJWT署名鍵のローテーション手順
 
 **公開後でよい**

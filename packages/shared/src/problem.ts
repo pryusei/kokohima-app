@@ -12,6 +12,7 @@ export const errorCodeSchema = z.enum([
   "request_in_progress",
   "reauth_required",
   "internal_error",
+  "unavailable",
 ]);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
 

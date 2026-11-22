@@ -834,6 +834,7 @@ describe("ログ", () => {
   it("メールアドレス・endpoint・API キー・相手の名前が出ない", async () => {
     const log = vi.spyOn(console, "log");
     const err = vi.spyOn(console, "error");
+    const warn = vi.spyOn(console, "warn");
     const { a, b } = await pair();
     const endpoint = await subscribe(b);
     await flush(await invite(a, b));
@@ -849,11 +850,12 @@ describe("ログ", () => {
     await env.DB.prepare("UPDATE notifications SET delivered_at = NULL WHERE id = ?1").bind(message.body.notificationId).run();
     await handleBatch(h.ctx, { messages: [message] } as unknown as MessageBatch<never>);
     expect(message.retry).toHaveBeenCalled();
-    const logged = [...log.mock.calls, ...err.mock.calls].flat().join("\n");
+    const logged = [...log.mock.calls, ...err.mock.calls, ...warn.mock.calls].flat().join("\n");
     expect(logged).toContain("notification_delivered");
     expect(logged).not.toMatch(/mail\.test|fcm\.googleapis|re_test_key|あき|べに|ひみつ/);
     log.mockRestore();
     err.mockRestore();
+    warn.mockRestore();
   });
 });
 
@@ -934,6 +936,25 @@ describe("上限の組（決定事項8）", () => {
       count: number;
     }>();
     expect(total?.count).toBe(91);
+  });
+
+  it("全体のメール数の上限で送らなかったとき、notification_mail_global_limit を種類だけで出す。利用者ごとの上限では出さない（docs/specs/T-13-monitoring.md）", async () => {
+    const log = vi.spyOn(console, "log");
+    const { a, b } = await pair();
+    await setCount(b.id, "email", 10);
+    await flush(await invite(a, b));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ channel: "email", outcome: "limited" });
+    expect(log.mock.calls.flat().join("\n")).not.toContain("notification_mail_global_limit");
+
+    await setCount(b.id, "email", 0);
+    await setCount("", "email", 70);
+    log.mockClear();
+    await flush(await invite(a, b, T("04:00"), T("05:00")));
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ channel: "email", outcome: "limited" });
+    const lines = log.mock.calls.flat().map(String).filter((l) => l.includes("notification_mail_global_limit"));
+    expect(lines.map((l) => JSON.parse(l))).toEqual([{ event: "notification_mail_global_limit", kind: "invite_received" }]);
+    expect(lines.join("\n")).not.toContain(b.id);
+    log.mockRestore();
   });
 
   it("MAIL_DAILY_LIMIT が正の整数でなければ90として扱う（誘いは70通で止まる）", async () => {

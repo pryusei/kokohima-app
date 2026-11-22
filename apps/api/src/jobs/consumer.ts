@@ -111,7 +111,8 @@ export async function handleBatch(ctx: Ctx, batch: MessageBatch<JobMessage>) {
       message.ack();
     } catch (e) {
       const fields = { ...describe(message.body), attempts: message.attempts, error: e instanceof Error ? e.name : "unknown" };
-      console.error(JSON.stringify({ event: message.attempts > MAX_RETRIES ? "job_dead_lettered" : "job_failed", ...fields }));
+      // warn で出す：Monitors が event で数えて通知する。error にすると Workers Issues からも届き、二重になる（docs/specs/T-13-monitoring.md「3.」）
+      console.warn(JSON.stringify({ event: message.attempts > MAX_RETRIES ? "job_dead_lettered" : "job_failed", ...fields }));
       message.retry({ delaySeconds: Math.min(30 * 2 ** (message.attempts - 1), 3600) });
     }
   }

@@ -22,6 +22,7 @@ import {
 
 let h: Awaited<ReturnType<typeof createHarness>>;
 let logs: string[];
+let warns: string[];
 
 beforeEach(async () => {
   h = await createHarness();
@@ -32,8 +33,14 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM availabilities"),
   ]);
   logs = [];
+  warns = [];
   vi.spyOn(console, "log").mockImplementation((line: unknown) => {
     logs.push(String(line));
+  });
+  // cron_step_failed は warn で出す（docs/specs/T-13-monitoring.md「3.」）
+  vi.spyOn(console, "warn").mockImplementation((line: unknown) => {
+    logs.push(String(line));
+    warns.push(String(line));
   });
 });
 
@@ -316,6 +323,7 @@ describe("定期処理の独立とログ", () => {
     await seedOutbox(1);
     await expect(runScheduled("* * * * *", failing, h.deps)).resolves.toBeUndefined();
     expect(events("cron_step_failed")).toEqual([{ event: "cron_step_failed", step: "dispatch_outbox", name: "TypeError" }]);
+    expect(warns.some((l) => l.includes('"event":"cron_step_failed"'))).toBe(true);
     expect(logs.join("\n")).not.toContain("secret-token");
     // 掃除は走った（処理済みで7日を過ぎた行が消えた）
     const old = await env.DB.prepare("SELECT COUNT(*) AS n FROM outbox WHERE processed_at IS NOT NULL").first<{ n: number }>();
@@ -354,7 +362,11 @@ describe("定期処理の独立とログ", () => {
       } as unknown as D1Database,
     };
     await expect(runScheduled("*/15 * * * *", failing, h.deps)).resolves.toBeUndefined();
-    expect(events("cron_step_failed")).toEqual([{ event: "cron_step_failed", step: "assign_syncs", name: "Error" }]);
+    // 動いた記録（T-13）も同じ D1 に書くので、続けて失敗する
+    expect(events("cron_step_failed")).toEqual([
+      { event: "cron_step_failed", step: "assign_syncs", name: "Error" },
+      { event: "cron_step_failed", step: "heartbeat", name: "Error" },
+    ]);
   });
 });
 
