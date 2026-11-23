@@ -89,21 +89,36 @@ export function NotificationSettingsPage() {
   const preferences = useQuery(preferencesQuery());
   const [failed, setFailed] = useState(false);
 
+  const prefKey = keys.notifications.preferences();
   const update = useMutation({
+    mutationKey: prefKey,
+    // PATCH は押した順に1つずつ送る（#116）。楽観的な表示（onMutate）はすぐ行う
+    scope: { id: "notification-preferences" },
     mutationFn: (patch: Partial<NotificationPreferences>) =>
       apiSend("PATCH", "/api/v1/me/notification-preferences", patch, notificationPreferencesSchema),
     onMutate: async (patch) => {
       setFailed(false);
-      await queryClient.cancelQueries({ queryKey: keys.notifications.preferences() });
-      const previous = queryClient.getQueryData<NotificationPreferences>(keys.notifications.preferences());
-      queryClient.setQueryData<NotificationPreferences>(keys.notifications.preferences(), (p) => p && { ...p, ...patch });
+      await queryClient.cancelQueries({ queryKey: prefKey });
+      const previous = queryClient.getQueryData<NotificationPreferences>(prefKey);
+      queryClient.setQueryData<NotificationPreferences>(prefKey, (p) => p && { ...p, ...patch });
       return { previous };
     },
-    onError: (_err, _patch, context) => {
+    onError: (_err, patch, context) => {
       setFailed(true);
-      if (context?.previous) queryClient.setQueryData(keys.notifications.preferences(), context.previous);
+      const previous = context?.previous;
+      if (!previous) return;
+      // この PATCH の項目だけを戻す。ほかのスイッチの楽観的な変更は消さない
+      const revert = Object.fromEntries(
+        (Object.keys(patch) as (keyof NotificationPreferences)[]).map((k) => [k, previous[k]]),
+      );
+      queryClient.setQueryData<NotificationPreferences>(prefKey, (p) => p && { ...p, ...revert });
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: keys.notifications.preferences() }),
+    onSettled: () => {
+      // 後ろに送る PATCH が残っていれば、取り直しで楽観的な表示を古い値に戻さない。最後の1つで取り直す
+      if (queryClient.isMutating({ mutationKey: prefKey }) === 1) {
+        return queryClient.invalidateQueries({ queryKey: prefKey });
+      }
+    },
   });
 
   return (

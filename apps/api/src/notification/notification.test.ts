@@ -741,6 +741,49 @@ describe("API", () => {
     }
     expect((await u.call("GET", "/api/v1/me/notification-preferences")).status).toBe(401);
   });
+
+  it("設定：別の種別への部分更新が同時に来ても、どちらも反映される（#116）", async () => {
+    const a = await person("あき");
+    const patch = (body: Record<string, boolean>) =>
+      u.call("PATCH", "/api/v1/me/notification-preferences", { token: a.token, body });
+    const [r1, r2] = await Promise.all([patch({ invites: false }), patch({ friends: false })]);
+    expect([r1.status, r2.status]).toEqual([200, 200]);
+    const res = await u.call("GET", "/api/v1/me/notification-preferences", { token: a.token });
+    expect(notificationPreferencesSchema.parse(await res.json())).toEqual({
+      invites: false,
+      broadcasts: true,
+      meetups: true,
+      friends: false,
+      calendar: true,
+    });
+    // 続けて別の種別を変えても、前の変更は残る
+    expect(notificationPreferencesSchema.parse(await (await patch({ invites: true, calendar: false })).json())).toEqual({
+      invites: true,
+      broadcasts: true,
+      meetups: true,
+      friends: false,
+      calendar: false,
+    });
+  });
+
+  it("設定：行がないときの部分更新は、パッチにない種別をオンで作り、書いた後の値を返す", async () => {
+    const a = await person("あき");
+    const res = await u.call("PATCH", "/api/v1/me/notification-preferences", { token: a.token, body: { meetups: false } });
+    expect(res.status).toBe(200);
+    expect(notificationPreferencesSchema.parse(await res.json())).toEqual({
+      invites: true,
+      broadcasts: true,
+      meetups: false,
+      friends: true,
+      calendar: true,
+    });
+    const row = await env.DB.prepare(
+      "SELECT invites, broadcasts, meetups, friends, calendar FROM notification_preferences WHERE user_id = ?1",
+    )
+      .bind(a.id)
+      .first();
+    expect(row).toEqual({ invites: 1, broadcasts: 1, meetups: 0, friends: 1, calendar: 1 });
+  });
 });
 
 describe("プッシュの購読", () => {

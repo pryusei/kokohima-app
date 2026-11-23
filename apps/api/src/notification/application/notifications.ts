@@ -39,20 +39,22 @@ export const markRead = (ctx: Ctx, viewerId: string, upTo: string) =>
 
 const ALL_ON: NotificationPreferences = { invites: true, broadcasts: true, meetups: true, friends: true, calendar: true };
 
+const toPreferences = (row: repo.PreferenceRow): NotificationPreferences => ({
+  invites: row.invites === 1,
+  broadcasts: row.broadcasts === 1,
+  meetups: row.meetups === 1,
+  friends: row.friends === 1,
+  calendar: row.calendar === 1,
+});
+
 export async function getPreferences(ctx: Ctx, viewerId: string): Promise<NotificationPreferences> {
   const row = await repo.getPreferences(ctx.env.DB, viewerId);
-  if (!row) return ALL_ON;
-  return {
-    invites: row.invites === 1,
-    broadcasts: row.broadcasts === 1,
-    meetups: row.meetups === 1,
-    friends: row.friends === 1,
-    calendar: row.calendar === 1,
-  };
+  return row ? toPreferences(row) : ALL_ON;
 }
 
+/** パッチにある種別だけを1つの文で書き、書いた後の行を返す（読んでから全部を書き直さない。#116） */
 export async function patchPreferences(ctx: Ctx, viewerId: string, patch: Partial<NotificationPreferences>) {
-  const next = { ...(await getPreferences(ctx, viewerId)), ...patch };
-  await repo.putPreferences(ctx.env.DB, viewerId, next, ctx.deps.now());
-  return next;
+  const row = await repo.patchPreferences(ctx.env.DB, viewerId, patch, ctx.deps.now());
+  // 退会した人の行は書かない。従来どおり、今の設定にパッチを重ねた形を返す
+  return row ? toPreferences(row) : { ...(await getPreferences(ctx, viewerId)), ...patch };
 }

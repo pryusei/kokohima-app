@@ -209,6 +209,57 @@ describe("通知の設定", () => {
     expect(screen.getByRole("switch", { name: "募集" })).toBeChecked();
   });
 
+  it("続けて押すと、PATCH を1つずつ順に送る。前の PATCH が失敗しても、その種別だけを戻し、あとの変更は残す（#116）", async () => {
+    window.history.replaceState(null, "", "/settings/notifications");
+    let server = { ...prefs };
+    const pending: { body: Record<string, boolean>; resolve: (r: Response) => void }[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/me/notification-preferences": ({ init }) => {
+        if (init.method !== "PATCH") return json(server)();
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        return new Promise<Response>((resolve) => {
+          pending.push({
+            body: JSON.parse(String(init.body)) as Record<string, boolean>,
+            resolve: (r) => {
+              inFlight -= 1;
+              resolve(r);
+            },
+          });
+        });
+      },
+    });
+    renderApp();
+    const invites = await screen.findByRole("switch", { name: "誘い" });
+    const friends = screen.getByRole("switch", { name: "友達" });
+    await userEvent.click(invites);
+    await userEvent.click(friends);
+    // どちらもすぐ切り替わって見える。送るのは1つめだけ
+    expect(invites).not.toBeChecked();
+    expect(friends).not.toBeChecked();
+    await waitFor(() => expect(pending).toHaveLength(1));
+    expect(pending[0]?.body).toEqual({ invites: false });
+
+    // 1つめが失敗：誘いだけ戻り、友達のオフは残る。そのあと2つめを送る
+    pending[0]?.resolve(json({ code: "internal" }, 500)());
+    await waitFor(() => expect(invites).toBeChecked());
+    expect(friends).not.toBeChecked();
+    expect(await screen.findByText("変更できませんでした。もう一度お試しください")).toBeVisible();
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(pending[1]?.body).toEqual({ friends: false });
+
+    server = { ...prefs, friends: false };
+    pending[1]?.resolve(json(server)());
+    await waitFor(() => expect(inFlight).toBe(0));
+    await waitFor(() => expect(friends).not.toBeChecked());
+    expect(invites).toBeChecked();
+    expect(maxInFlight).toBe(1);
+  });
+
   it("プッシュが使えない端末では、ホーム画面への追加とメールの案内を出す", async () => {
     window.history.replaceState(null, "", "/settings/notifications");
     mockFetch({
