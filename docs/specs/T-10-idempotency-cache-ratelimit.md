@@ -68,6 +68,7 @@
 | `GET /api/v1/friend-wishes` | `friend_wishes` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited`（T-22） |
 | `GET /api/v1/link-previews/images/{imageId}` | `link_image` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429（本文なし。`<img>` が読む経路のため。T-08） |
 | `GET /api/v1/health/ready` | `health_ready` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429 `rate_limited`（T-13） |
+| `PUT /api/v1/me/avatar` | `avatar_upload` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited`（T-27。配信の `GET /api/v1/avatars/{avatarId}` には付けない。T-27 決めたこと6） |
 | `POST /api/v1/meetups/{id}/ics-links` | — | 利用者 ID | 直近5分で20本（厳密） | D1（`ics_tokens` の行の数） | 429 `rate_limited` |
 | `POST /api/v1/contact-messages` | `contact_messages`（ログの `group`） | 利用者 ID | 直近24時間で3件（厳密） | D1（outbox の `ContactMessageSubmitted` の行の数） | 429 `rate_limited`（T-24） |
 
@@ -263,3 +264,4 @@
 | 2026-11-22 | 回数の上限の表に `health_ready` を足した（実装は T-13 で済んでいる） | T-13 の実装のあとのレビュー（docs/specs/T-13-monitoring.md） |
 | 2026-11-23 | 冪等キーの表に `POST /wishes`、回数の上限の表に `friend_wishes` を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |
 | 2026-11-23 | 冪等キーの表と回数の上限の表に `POST /contact-messages` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |
+| 2026-11-23 | 回数の上限の表に `avatar_upload` を足した | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |

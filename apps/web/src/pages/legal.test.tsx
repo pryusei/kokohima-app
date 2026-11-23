@@ -72,8 +72,12 @@ const PRIVACY_CHANGES = [
   "「12.」：「7.」の情報の提供を求められることを書きました。",
   "「2.」「4.」「8.」と退会したとき：行きたい（ひとこと・エリア・リンク・見せない相手）を預かる情報に足し、見える相手と保存する期間を書きました。",
   "「2.」「3.」「5.」「7.」「8.」「12.」：アプリの中の問い合わせのフォームを足したことに合わせて、預かる情報（問い合わせの種類と内容）、使う目的、任せる事業者（Slack）、保存する期間、開示などの求め方を書きました。",
+  "「2.」「4.」「8.」と退会したとき：アイコンに画像を設定できるようにしたことに合わせて、預かる情報（アイコンの画像）、見える相手（友達と、招待リンクを開いた人）、保存する期間を書きました。",
 ];
-const TERMS_CHANGES = ["第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。"];
+const TERMS_CHANGES = [
+  "第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。",
+  "第5条4・第6条：アイコンの画像の削除を求めるときの連絡先と、ほかの人の写真などを同意なくアイコンにしないことを足しました。",
+];
 const pages = [
   { path: "/privacy", title: "プライバシー ポリシー", section: "1. 運営者と連絡先", sections: PRIVACY_SECTIONS, changes: PRIVACY_CHANGES },
   { path: "/terms", title: "利用規約", section: "第1条（同意）", sections: TERMS_SECTIONS, changes: TERMS_CHANGES },
@@ -455,18 +459,32 @@ describe("リンクの置き場所", () => {
     expect(within(article("第2条（使える人）")).getByText("18歳未満の人は、保護者の同意を得てから使ってください。")).toBeVisible();
   });
 
-  it("利用規約：第5条3に、リンクのプレビューの画像の削除の求めと連絡先", async () => {
+  it("利用規約：第5条3に、リンクのプレビューの画像の削除の求めと連絡先。第5条4に、アイコンの画像の削除の求め（T-27）", async () => {
     window.history.replaceState(null, "", "/terms");
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
     renderApp();
     await screen.findByRole("heading", { name: "利用規約", level: 1 });
     const items = within(clause("第5条（あなたが入力する内容）")).getAllByRole("listitem");
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(4);
     const third = items[2] as HTMLElement;
     expect(third.textContent).toBe(
       "誘い・募集に付けたリンクのプレビューの画像は、運営がリンク先のページから写して、相手に配ります。写した画像の権利を持つ人などが削除を求めるときは、ops@kokohima.app に知らせてください。内容を確かめ、必要と判断したときは、その画像を配るのをやめて消します。消したあとも、すでに表示した端末には、しばらく残ることがあります。",
     );
     expect(within(third).getByRole("link", { name: "ops@kokohima.app" })).toHaveAttribute("href", "mailto:ops@kokohima.app");
+    const fourth = items[3] as HTMLElement;
+    expect(fourth.textContent).toContain("アイコンの画像に写っている人や、画像の権利を持つ人などが削除を求めるときは、ops@kokohima.app に知らせてください。");
+    expect(within(fourth).getByRole("link", { name: "ops@kokohima.app" })).toHaveAttribute("href", "mailto:ops@kokohima.app");
+  });
+
+  it("プライバシー ポリシー：アイコンの画像を預かる情報・見える相手・保存する期間に書く（T-27）", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    expect(clause("2. 預かる情報").textContent).toContain("位置情報などの画像に付いた情報は保存しません");
+    expect(clause("2. 預かる情報").textContent).not.toContain("アイコンの画像は持ちません");
+    expect(clause("4. ほかの利用者に見えるもの").textContent).toContain("リンクを発行した人の表示名とアイコンの画像が見えます");
+    expect(clause("8. 保存する期間").textContent).toContain(`アイコンの画像：変えた・外した・退会したときから${RETENTION.avatarImageGraceHours}時間で消します`);
   });
 
   it("招待リンクの受け口：lookup が終わってからリンクを出し、開いて戻っても招待を続けられる", async () => {

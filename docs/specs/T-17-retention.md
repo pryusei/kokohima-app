@@ -75,6 +75,7 @@
 | 埋まりのキャッシュ（KV） | 5分 | T-10 |
 | リンクのプレビューの結果 | 参照がなく、取得から30日（取得中のまま1時間） | T-08 |
 | リンクのプレビューの画像（R2・台帳） | 参照する結果がなくなってから1時間 | T-08 |
+| アイコンの画像（R2・台帳） | 変えた・外した・退会して参照されなくなり、置いてから1時間（`avatarImageGraceHours`） | T-27 |
 | カレンダーの連携の state・.ics の鍵 | 期限切れ | T-06 |
 | カレンダーの連携の更新用トークン・埋まりの記録 | 解除のとき・Google 側で失効したとき（埋まりの記録は休眠になったときも。更新用トークンは休眠中も残す） | T-06、この仕様書 |
 | カレンダーの連携の行 | 退会のとき（解除しても `disconnected` の行が残る） | T-06、T-16 |
@@ -263,3 +264,4 @@
 | 2026-11-23 | 表を変えたら `retention.ts` と `/privacy` も直すことを足した。API の掃除の定数を `packages/shared` の `RETENTION` から作るようにした（値は変えない） | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
 | 2026-11-23 | 保持期間の表に行きたい（`wishes`・`wish_exclusions`・`wish_posts`）を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |
 | 2026-11-23 | 保持期間の一覧に問い合わせの outbox と Slack のメッセージを足した | T-24 実装PR（docs/specs/T-24-contact.md） |
+| 2026-11-23 | 表にアイコンの画像（`avatarImageGraceHours`）を足した | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |

@@ -130,7 +130,7 @@ function WithdrawSection({ reopen, name }: { reopen: boolean; name: string | nul
             {name !== null && <p className="font-bold">{name}さんのアカウントを退会します。</p>}
             <p>退会すると、次のものが消えます。</p>
             <ul className="list-disc pl-6">
-              <li>名前</li>
+              <li>名前とアイコン</li>
               <li>ここ暇（空いている時間）</li>
               <li>友達</li>
               <li>カレンダーの連携</li>
