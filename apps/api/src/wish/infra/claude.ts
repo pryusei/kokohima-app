@@ -21,7 +21,7 @@ export type ClaudeResult =
   | { kind: "failed"; reason: FailureReason; status: number | null; stopReason: string | null; usage: Usage | null };
 
 export type FailureReason = "api_error" | "timeout" | "aborted" | "refusal" | "bad_output" | "incomplete";
-export type Usage = { inputTokens: number; outputTokens: number; searches: number };
+export type Usage = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; searches: number };
 
 const MAX_TOKENS = 4000;
 const MAX_SEARCHES = 3;
@@ -38,7 +38,7 @@ export async function searchCandidates(call: ClaudeCall): Promise<ClaudeResult> 
     sent[stage] = true;
     call.onProgress(stage);
   };
-  const usage: Usage = { inputTokens: 0, outputTokens: 0, searches: 0 };
+  const usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, searches: 0 };
   const content: ContentBlock[] = [];
 
   for (let turn = 0; turn <= MAX_CONTINUATIONS; turn++) {
@@ -50,14 +50,7 @@ export async function searchCandidates(call: ClaudeCall): Promise<ClaudeResult> 
           max_tokens: MAX_TOKENS,
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           messages,
-          tools: [
-            {
-              type: "web_search_20250305",
-              name: "web_search",
-              max_uses: MAX_SEARCHES,
-              user_location: { type: "approximate", country: "JP" },
-            },
-          ],
+          tools: [webSearchTool(call.model)],
           output_config: { effort: "low", format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
         },
         { signal: call.signal },
@@ -74,6 +67,8 @@ export async function searchCandidates(call: ClaudeCall): Promise<ClaudeResult> 
     }
     usage.inputTokens += message.usage.input_tokens;
     usage.outputTokens += message.usage.output_tokens;
+    usage.cacheReadTokens += message.usage.cache_read_input_tokens ?? 0;
+    usage.cacheWriteTokens += message.usage.cache_creation_input_tokens ?? 0;
     usage.searches += message.usage.server_tool_use?.web_search_requests ?? 0;
     content.push(...message.content);
     if (message.stop_reason === "refusal") {
@@ -96,6 +91,17 @@ export async function searchCandidates(call: ClaudeCall): Promise<ClaudeResult> 
     return { kind: "ok", output, searchUrls: searchUrlsOf(content), usage };
   }
   return { kind: "failed", reason: "incomplete", status: null, stopReason: "pause_turn", usage };
+}
+
+/**
+ * Web検索のツール。Haiku は動的な絞り込みつきの版（web_search_20260209）を使えないので古い版、
+ * それ以外のモデル（Sonnet・Opus など）は新しい版にする（docs/specs/T-29-wish-suggestion.md「Claude の呼び方」）
+ */
+export function webSearchTool(model: string) {
+  const common = { name: "web_search" as const, max_uses: MAX_SEARCHES, user_location: { type: "approximate" as const, country: "JP" } };
+  return model.startsWith("claude-haiku-")
+    ? { type: "web_search_20250305" as const, ...common }
+    : { type: "web_search_20260209" as const, ...common };
 }
 
 /** 検索の結果に出てきた URL（エラーの結果は数えない） */

@@ -2,12 +2,12 @@ import { RETENTION, RETENTION_UNIT_MS, type CreateWishSuggestionRequest, type Wi
 import type { AppDeps, Bindings } from "../../env";
 import { getUserTimezone } from "../../identity/application/auth";
 import {
-  acceptCandidates,
   admission,
   localDayBounds,
   readSuggestConfig,
   remaining,
   retryAfterSeconds,
+  reviewCandidates,
   utcDayStart,
 } from "../domain/suggestion";
 import { searchCandidates } from "../infra/claude";
@@ -81,7 +81,8 @@ export async function startSuggestion(ctx: Ctx, viewerId: string, input: Input):
         query: input.query,
         onProgress: (stage) => void emit.progress(stage).catch(() => undefined),
       });
-      const candidates = result.kind === "ok" ? acceptCandidates(result.output, result.searchUrls) : [];
+      const review = result.kind === "ok" ? reviewCandidates(result.output, result.searchUrls) : null;
+      const candidates = review?.accepted ?? [];
       const outcome = result.kind === "failed" ? "failed" : candidates.length > 0 ? "found" : "empty";
       await repo.finishAttempt(d1, id, outcome, ctx.deps.now());
       // ログは結果の種類と数だけ。入力の言葉・候補・URL・応答の本文は出さない
@@ -92,10 +93,15 @@ export async function startSuggestion(ctx: Ctx, viewerId: string, input: Input):
           reason: result.kind === "failed" ? result.reason : null,
           status: result.kind === "failed" ? result.status : null,
           stopReason: result.kind === "failed" ? result.stopReason : null,
+          model: config.model,
           inputTokens: result.usage?.inputTokens ?? null,
           outputTokens: result.usage?.outputTokens ?? null,
+          cacheReadTokens: result.usage?.cacheReadTokens ?? null,
+          cacheWriteTokens: result.usage?.cacheWriteTokens ?? null,
           searches: result.usage?.searches ?? null,
           candidates: candidates.length,
+          // 捨てた候補の数（理由ごと。URL・文は出さない）
+          dropped: review?.dropped ?? null,
           ms: ctx.deps.now() - startedAt,
         }),
       );
