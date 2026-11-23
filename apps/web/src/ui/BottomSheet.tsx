@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { goBack } from "../router";
 import { OfflineBanner } from "./feedback";
@@ -24,8 +24,10 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   useEffect(() => {
     close.current = onClose;
   }, [onClose]);
+  // 開いたボタンは、最初の描画のときに覚える。effect の時点では、後ろのタブがもう inert になっていて
+  // ブラウザがフォーカスを外しているので（document.activeElement が body になる）、閉じたときに戻せない
+  const [opener] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const root = document.getElementById("root");
     const wasInert = root?.inert ?? false;
     if (root) root.inert = true;
@@ -40,7 +42,7 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
       if (root) root.inert = wasInert;
       if (opener?.isConnected) opener.focus();
     };
-  }, []);
+  }, [opener]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "Tab" || !dialog.current) return;

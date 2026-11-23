@@ -21,7 +21,7 @@ test("下のタブで みんな → ここ暇 → 誘い → 友達 と移れ、
   await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
 });
 
-test("スマホの幅で、みんなタブから開いた募集の作成のシートを「閉じる」のボタンで閉じると、みんなタブに戻る", async ({ loggedInPage: page }) => {
+test("スマホの幅で、みんなタブから開いた募集の作成のシートを「閉じる」のボタンで閉じると、みんなタブに戻り、開いたボタンにフォーカスが戻る", async ({ loggedInPage: page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("link", { name: "暇な人いる？と募る" }).click();
@@ -34,6 +34,7 @@ test("スマホの幅で、みんなタブから開いた募集の作成のシ�
   await expect(sheet(page)).toHaveCount(0);
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: "暇な人いる？と募る" })).toBeFocused();
 });
 
 test("誘いの一覧のカードから詳細がシートで開き、「行く」のあとシートを閉じると誘いタブに戻る", async ({ browser }) => {

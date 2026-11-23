@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
 import { goBack, navigate } from "../router";
@@ -135,6 +135,41 @@ describe("BottomSheet", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(opener).toHaveFocus();
     }
+  });
+
+  it("シートを描くときに後ろが inert になってフォーカスが外れても、閉じたら開いたボタンに戻す", async () => {
+    // ブラウザは、フォーカスのある要素が inert になるとフォーカスを外す（jsdom はしないので、同じことを layout effect で起こす）
+    function Blur() {
+      useLayoutEffect(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      }, []);
+      return null;
+    }
+    function BlurHost() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            開く
+          </button>
+          {open && (
+            <>
+              <Blur />
+              <BottomSheet title="試し" label="試し" onClose={() => setOpen(false)}>
+                <p>本文</p>
+              </BottomSheet>
+            </>
+          )}
+        </>
+      );
+    }
+    render(<BlurHost />);
+    const opener = screen.getByRole("button", { name: "開く" });
+    await userEvent.click(opener);
+    expect(screen.getByRole("dialog", { name: "試し" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(opener).toHaveFocus();
   });
 
   it("右上の「閉じる」のボタンは1つだけで、つまみは押しても下に引いても閉じるが Tab では止まらない", async () => {
