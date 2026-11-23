@@ -33,7 +33,7 @@ Playwright公式のベストプラクティス（playwright.dev/docs/best-practi
 - CIで本番のビルド成果物に `__e2e__` とテスト用ログインの関数名（`e2eLogin`）が含まれていないことを確認する。本番のコードに `__e2e__` という文字列を書かない
 
 ## 外部サービス
-- Google Calendar、iCloud CalDAV、メール配信、Webプッシュ、OGP取得先は、E2E環境では偽の実装に差し替える（calendarなどのinfra層のアダプターを入れ替える）
+- Google Calendar、iCloud CalDAV、メール配信、Webプッシュ、OGP取得先、Slack（問い合わせ。`slack.e2e.invalid`）は、E2E環境では偽の実装に差し替える（calendarなどのinfra層のアダプターを入れ替える）
 - 偽の実装は、テストから状態を設定・確認できるようにする（例：「この時間に予定を入れる」「送られたメールを取得する」）
 - 本物の外部サービスとの接続は、単体テスト（署名検証など）と手動確認で担保する
 

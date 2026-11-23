@@ -23,6 +23,8 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 | リンクのプレビュー | LinkPreview | 誘い・募集・行きたいに添えたリンクの OGP のカード（link-preview コンテキスト。docs/specs/T-08-link-preview.md）。取れるまでと取れなかったときはドメインだけ |
 | 見せる／見せない | SharingPolicy | 自分のここ暇を友達ごとに見せるか（初期値：見せる） |
 | 行きたい | Wish | 行きたい店やしたいことを、日時を決めずに置いておくもの（wish コンテキスト。docs/specs/T-22-wishlist.md）。状態の遷移はない |
+| 問い合わせ | ContactMessage | 設定から運営に送る問い合わせ（contact コンテキスト。docs/specs/T-24-contact.md）。Slack の非公開のチャンネルに届く |
+| 受付番号 | receiptId | 問い合わせの outbox の id。T-13 の問い合わせ番号（requestId）とは別 |
 | 見せない相手（行きたいの） | WishExclusion | その行きたいを見せない友達。行きたいごとに選ぶ。SharingPolicy とは別 |
 | 退会したユーザー | （プロフィールの withdrawn） | 履歴の相手が退会した人。「名前未設定の友達」と区別し、「さん」を付けない（docs/specs/T-16-withdrawal.md） |
 
@@ -75,3 +77,4 @@ open →（募集者が退会：退会による打ち切りで期限を今にす
 | MeetupLeft | 募集の予定から1人が抜けた。抜けた人のカレンダーから消し、残りの人のタイトルを直す（T-06）。残った参加者に通知（T-07） |
 | MeetupCancelled | カレンダーから削除（T-06）、押した人を除く参加者に定型文で通知（T-07） |
 | UserWithdrew | 退会の後始末（T-16）。これからの予定は本人の「やっぱり難しい」、受けた pending は「今回は難しい」、送った pending と open の募集は退会による打ち切り、送った counter_proposed は skipped、書いた内容を消す。相手への知らせは MeetupCancelled・MeetupLeft・DirectInviteDeclined で行う |
+| ContactMessageSubmitted | 問い合わせを受け付けた。Slack の問い合わせのチャンネルに届ける（T-24。Queue のメッセージは受付番号だけ） |
