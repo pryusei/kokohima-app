@@ -1,3 +1,4 @@
+import { contactStartAt } from "@kokohima/shared";
 import { Hono } from "hono";
 import { requestId } from "hono/request-id";
 import { createRemoteJWKSet } from "jose";
@@ -7,6 +8,8 @@ import { problem } from "./http/problem";
 import { rateLimit } from "./http/rateLimit";
 import { availabilityRoutes } from "./availability/routes";
 import { calendarRoutes } from "./calendar/routes";
+import { CONTACT_WEBHOOK_TARGET } from "./contact/domain/webhook";
+import { contactRoutes } from "./contact/routes";
 import { identityRoutes } from "./identity/routes";
 import { invitationRoutes } from "./invitation/routes";
 import { resolveDoh } from "./link-preview/infra/dns";
@@ -44,6 +47,9 @@ export function defaultDeps(): AppDeps {
     },
     cacheEnabled: true,
     linkPreview: { resolve: resolveDoh, extraHosts: [], timeouts: { fetchMs: 5000, totalMs: 10_000, dnsMs: 3000 } },
+    // 問い合わせ（docs/specs/T-24-contact.md）。差し替えるのは E2E のエントリだけ
+    contactWebhookTarget: CONTACT_WEBHOOK_TARGET,
+    contactStartAt: contactStartAt(),
   };
 }
 
@@ -69,6 +75,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
   app.route("/api/v1", calendarRoutes());
   app.route("/api/v1", notificationRoutes());
   app.route("/api/v1", linkPreviewRoutes());
+  app.route("/api/v1", contactRoutes());
 
   app.notFound((c) => problem(c.get("requestId"), 404, "not_found", "Not Found"));
 

@@ -6,6 +6,7 @@ import { declineForCancelledAvailability } from "../invitation/application/calen
 import { handleLinkAttached } from "../link-preview/application/fetchPreview";
 import { createFromEvent, deliver } from "../notification/application/delivery";
 import { completeWithdrawal } from "../identity/application/withdrawal";
+import { deliverContactMessage } from "../contact/application/deliver";
 
 // Queue の consumer（docs/specs/T-06-calendar.md）。kind と type で振り分ける。どの処理も冪等にしてあるので、
 // 二重に届いても結果は同じ。ログには kind・type・id だけを出し、payload の中身は出さない
@@ -26,11 +27,15 @@ const withdrewPayload = z.object({ userId: z.string() });
 const linkAttachedPayload = z.object({ subjectType: z.enum(["direct_invite", "broadcast", "wish"]), subjectId: z.string() });
 
 /**
- * 通知のほかの処理：カレンダーの処理や自動の「今回は難しい」（T-06）、リンクのプレビューの取得（T-08）。
+ * 通知のほかの処理：カレンダーの処理や自動の「今回は難しい」（T-06）、リンクのプレビューの取得（T-08）、問い合わせを Slack に届ける（T-24）。
  * 型ごとの処理がなければ何もしない。attempts はメッセージの試行の回数（1から。ない呼び出しは最後の試行として扱わない）
  */
-async function handleCalendarSide(ctx: Ctx, type: string, payload: unknown, attempts: number | undefined) {
+async function handleCalendarSide(ctx: Ctx, id: string, type: string, payload: unknown, attempts: number | undefined) {
   switch (type) {
+    // 問い合わせ（T-24）：Queue のメッセージの payload は使わず、受付番号で D1 の行を読む
+    case "ContactMessageSubmitted":
+      await deliverContactMessage(ctx, id);
+      return;
     case "UserWithdrew":
       await completeWithdrawal(ctx, withdrewPayload.parse(payload).userId);
       return;
@@ -89,7 +94,7 @@ export async function handleJob(ctx: Ctx, job: JobMessage, attempts?: number) {
     errors.push(e);
   }
   try {
-    await handleCalendarSide(ctx, job.type, payload, attempts);
+    await handleCalendarSide(ctx, job.id, job.type, payload, attempts);
   } catch (e) {
     errors.push(e);
   }

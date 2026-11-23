@@ -30,7 +30,7 @@
 
 ## デプロイ（prod。人が行う。docs/specs/T-12-release.md「人が行う作業」）
 - `pnpm --filter api db:migrate:prod`：D1 のマイグレーションを本番に適用する
-- `pnpm --filter api deploy:prod`：画面をビルドし、画面のビルドと wrangler の設定を検査してから `wrangler deploy --env prod`。プライバシー ポリシーと利用規約の制定日（`apps/web/src/pages/legal.ts` の `EFFECTIVE_DATE_LINE`）が仮の値のままなら止まる（docs/specs/T-19-privacy-terms.md「5.」）
+- `pnpm --filter api deploy:prod`：画面をビルドし、画面のビルドと wrangler の設定を検査してから `wrangler deploy --env prod`。プライバシー ポリシーと利用規約の制定日（`apps/web/src/pages/legal.ts` の `EFFECTIVE_DATE_LINE`）が仮の値のままなら止まる。改定日（効力が生じる日）・公表日の行（`REVISION_DATE_LINE`・`REVISION_NOTICE_LINE`）があれば、日本時間の今日と比べて、公表日が今日より後・予告が7日より短いか30日より長い・改定日を過ぎても公表日の行が残っている・公表日の行がないのに改定日が未来、初めて予告を出すデプロイなのに公表日が今日でない（本番の画面を読んで確かめ、読めなければ止まる）、のどれでも止まる（デプロイの日がずれたら、先に `legal.ts` の日付を直す。docs/specs/T-19-privacy-terms.md「5.」「8.」）
 - 問題があれば `wrangler rollback --env prod` で戻す
 
 ## DNS の例外
