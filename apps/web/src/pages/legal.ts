@@ -9,7 +9,8 @@ import { useEffect } from "react";
 export const EFFECTIVE_DATE_LINE = "制定日：2026年11月23日";
 
 // 改定の日付（docs/specs/T-19-privacy-terms.md「8.」）。公表日＝本番にデプロイする日、改定日（効力が生じる日）＝その7日後。
-// デプロイの日がずれたら、デプロイの前に、この2つの文字列の日付だけを同じだけずらす（ほかの場所に日付を書かない）。
+// デプロイの日がずれたら、デプロイの前に、この2つの文字列の日付を同じだけずらす。問い合わせを始める日（T-24）より前なら、
+// packages/shared/src/contactStart.json の startDate も改定日と同じ日にずらす（ほかの場所に日付を書かない）。
 // deploy:prod（check-web-dist.mjs --deploy）は、公表日が日本時間の今日より後、予告が7日より短いか30日より長い、
 // 改定日を過ぎても公表日の行が残っている、のどれでも止まる
 
