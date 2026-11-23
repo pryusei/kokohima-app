@@ -39,6 +39,7 @@ function CandidateCard({ candidate, onPlace }: { candidate: WishSuggestionCandid
     <li className="flex flex-col gap-2 rounded-l bg-surface p-4 shadow-card">
       <p className="font-bold">{candidate.message}</p>
       <p className="text-s text-ink-muted">{candidate.reason}</p>
+      {candidate.area && <p className="text-s text-ink-muted">エリア：{candidate.area}</p>}
       {/* 画像は出さない（外のサイトを取りに行かない）。ドメインは punycode で出す */}
       <a
         href={candidate.url}
@@ -161,7 +162,7 @@ export function SuggestSheet({ onClose, onPlace }: { onClose: () => void; onPlac
             <>
               <ul aria-label="候補" className="flex flex-col gap-3">
                 {candidates.map((c) => (
-                  <CandidateCard key={c.url} candidate={c} onPlace={() => onPlace({ message: c.message, url: c.url, area: searched.area })} />
+                  <CandidateCard key={c.url} candidate={c} onPlace={() => onPlace({ message: c.message, url: c.url, area: c.area ?? searched.area })} />
                 ))}
               </ul>
               <Note>AIがWebで探したお店です。営業時間や場所は、リンク先で確かめてください。</Note>

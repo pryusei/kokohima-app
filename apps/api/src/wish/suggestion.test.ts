@@ -9,6 +9,7 @@ import {
   acceptCandidates,
   admission,
   localDayBounds,
+  looseUrlKey,
   normalizeUrl,
   readSuggestConfig,
   remaining,
@@ -102,7 +103,7 @@ describe("domain", () => {
     expect(normalizeUrl("not a url")).toBeNull();
   });
 
-  it("候補の検査：検索の結果にない URL・形が違うもの・URL の重複を捨て、先頭3件まで", () => {
+  it("候補の検査：検索の結果にない URL・URL の重複を捨て、先頭3件まで", () => {
     const urls = ["https://a.example/1", "https://a.example/2/", "https://A.example/3", "https://a.example/4"];
     const out = acceptCandidates(
       {
@@ -118,10 +119,53 @@ describe("domain", () => {
       },
       urls,
     );
-    expect(out.map((c) => c.url)).toEqual(["https://a.example/1", "https://a.example/2", "https://a.example/3"]);
+    // 長い理由は切って残し、URL は検索の結果の方（末尾の /・大文字のホスト）に差し替える
+    expect(out.map((c) => c.url)).toEqual(["https://a.example/1", "https://a.example/2/", "https://A.example/3"]);
+    expect(out[1]?.reason.endsWith("…")).toBe(true);
     expect(acceptCandidates({ candidates: [] }, urls)).toEqual([]);
     expect(acceptCandidates("nope", urls)).toEqual([]);
     expect(acceptCandidates({ candidates: [candidate("https://a.example/1")] }, [])).toEqual([]);
+  });
+
+  it("ゆるい突き合わせ：www.・http/https・? 以降・末尾の / の違いは同じページとし、検索の結果の URL に差し替える", () => {
+    expect(looseUrlKey("http://www.Shop.example/a/?x=1#m")).toBe("shop.example/a");
+    expect(looseUrlKey("https://shop.example/a")).toBe("shop.example/a");
+    expect(looseUrlKey("ftp://shop.example/a")).toBeNull();
+    const urls = ["https://www.shop.example/a?ref=search", "https://shop.example/b"];
+    const r = reviewCandidates(
+      { candidates: [candidate("http://shop.example/a/"), candidate("https://www.shop.example/b?utm=1")] },
+      urls,
+    );
+    expect(r.accepted.map((c) => c.url)).toEqual(["https://www.shop.example/a?ref=search", "https://shop.example/b"]);
+    expect(r.dropped.notInResults).toBe(0);
+  });
+
+  it("ゆるいキーが検索の結果の2つ以上に当たるときは、どれか決められないので捨てる。ちょうど一致するならそのまま", () => {
+    const urls = ["https://shop.example/a?id=1", "https://shop.example/a?id=2"];
+    expect(reviewCandidates({ candidates: [candidate("https://shop.example/a")] }, urls).dropped.notInResults).toBe(1);
+    expect(reviewCandidates({ candidates: [candidate("https://shop.example/a?id=2")] }, urls).accepted[0]?.url).toBe(
+      "https://shop.example/a?id=2",
+    );
+  });
+
+  it("店の名前・理由・エリアが長ければ切って「…」を付ける（捨てない）。ひとことは切らない", () => {
+    const urls = ["https://shop.example/a"];
+    const long = reviewCandidates(
+      { candidates: [candidate(urls[0]!, { placeName: "名".repeat(50), reason: "理".repeat(60), area: "駅".repeat(40) })] },
+      urls,
+    );
+    expect(long.accepted).toHaveLength(1);
+    expect(Array.from(long.accepted[0]!.placeName)).toHaveLength(40);
+    expect(long.accepted[0]!.reason.endsWith("…")).toBe(true);
+    expect(Array.from(long.accepted[0]!.reason)).toHaveLength(40);
+    expect(Array.from(long.accepted[0]!.area ?? "")).toHaveLength(30);
+    expect(reviewCandidates({ candidates: [candidate(urls[0]!, { message: "あ".repeat(101) })] }, urls).dropped.invalid).toBe(1);
+  });
+
+  it("エリアは空なら null（置くシートには探したときのエリア）", () => {
+    const urls = ["https://shop.example/a"];
+    expect(reviewCandidates({ candidates: [candidate(urls[0]!, { area: "" })] }, urls).accepted[0]?.area).toBeNull();
+    expect(reviewCandidates({ candidates: [candidate(urls[0]!, { area: "代官山" })] }, urls).accepted[0]?.area).toBe("代官山");
   });
 
   it("捨てた候補を理由ごとに数える（検索の結果にない・形が違う・重複・4件め以降）", () => {
@@ -196,7 +240,7 @@ describe("探す（POST /wish-suggestions）", () => {
     expect(list.slice(0, 2).map((e) => e.data)).toEqual([{ stage: "searching" }, { stage: "choosing" }]);
     // 検索の結果にない URL（made-up）は捨て、正規化で一致したもの（末尾の /・大文字のホスト・#）は残す
     expect(result.candidates.map((c) => c.placeName)).toEqual(["麺処こもれび", "らーめん灯", "夜鳴きそば ほしの"]);
-    expect(result.candidates[0]).toEqual(candidate(SHOP_A.url));
+    expect(result.candidates[0]).toEqual({ ...candidate(SHOP_A.url), area: null });
     const rows = await attempts(a.id);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ outcome: "found" });

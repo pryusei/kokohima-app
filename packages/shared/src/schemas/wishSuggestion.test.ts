@@ -31,10 +31,13 @@ describe("createWishSuggestionRequestSchema", () => {
 });
 
 describe("wishSuggestionCandidateSchema", () => {
-  const ok = { message: "こもれびのつけ麺行きたい", placeName: "麺処こもれび", url: "https://example.test/a", reason: "夜2時まで" };
+  const ok = { message: "こもれびのつけ麺行きたい", placeName: "麺処こもれび", url: "https://example.test/a", reason: "夜2時まで", area: "代官山" };
 
-  it("形が合えば通る", () => {
+  it("形が合えば通る。エリアは省略・空なら null", () => {
     expect(wishSuggestionCandidateSchema.safeParse(ok).success).toBe(true);
+    expect(wishSuggestionCandidateSchema.parse({ ...ok, area: "" }).area).toBeNull();
+    expect(wishSuggestionCandidateSchema.parse({ ...ok, area: undefined }).area).toBeNull();
+    expect(wishSuggestionCandidateSchema.safeParse({ ...ok, area: "あ".repeat(31) }).success).toBe(false);
   });
 
   it.each([

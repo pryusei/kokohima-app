@@ -102,11 +102,11 @@ function e2eReply(query: string): FakeClaudeReply | "fail" | "slow" {
     results: SHOPS,
     output: {
       candidates: [
-        { message: "E2E のお店のつけ麺行きたい", placeName: "E2E のお店", url: SHOPS[0]!.url, reason: "駅から3分" },
+        { message: "E2E のお店のつけ麺行きたい", placeName: "E2E のお店", url: SHOPS[0]!.url, reason: "駅から3分", area: "渋谷駅" },
         // 検索の結果にない URL（API が捨てる）
-        { message: "幻の店行きたい", placeName: "幻の店", url: "https://ogp.e2e.invalid/made-up", reason: "作った URL" },
-        { message: "らーめん灯の塩らーめん行きたい", placeName: "らーめん灯", url: SHOPS[1]!.url, reason: "深夜も開いている" },
-        { message: "ほしののしょうゆそば行きたい", placeName: "夜鳴きそば ほしの", url: SHOPS[2]!.url, reason: "2軒めに寄りやすい" },
+        { message: "幻の店行きたい", placeName: "幻の店", url: "https://ogp.e2e.invalid/made-up", reason: "作った URL", area: "" },
+        { message: "らーめん灯の塩らーめん行きたい", placeName: "らーめん灯", url: SHOPS[1]!.url, reason: "深夜も開いている", area: "" },
+        { message: "ほしののしょうゆそば行きたい", placeName: "夜鳴きそば ほしの", url: SHOPS[2]!.url, reason: "2軒めに寄りやすい", area: "" },
       ],
     },
   };
