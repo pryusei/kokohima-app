@@ -7,7 +7,10 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
   forbidOnly: isCI,
-  retries: isCI ? 2 : 0,
+  // CI では flaky（1回落ちて、リトライで通った）も失敗にする。リトライは、壊れているか flaky かを分け、トレースを取るために1回だけ残す
+  // （docs/specs/T-30-ci-review.md「4. flaky の扱い」）
+  failOnFlakyTests: isCI,
+  retries: isCI ? 1 : 0,
   reporter: isCI ? [["html", { open: "never" }], ["github"]] : "list",
   use: {
     baseURL: "http://localhost:5173",

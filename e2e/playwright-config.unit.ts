@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import config from "../playwright.config";
 
 // iPhone の Safari（WebKit）で E2E を回す設定（docs/specs/T-21-webkit-e2e.md「テスト計画」）
@@ -62,5 +62,30 @@ describe("@iphone の印", () => {
     for (const name of names) {
       expect(source, name).toContain(`test("${name}", { tag: "@iphone" },`);
     }
+  });
+});
+
+// CI での flaky の扱い（docs/specs/T-30-ci-review.md「4. flaky の扱い」「テスト計画」）
+describe("flaky の扱い", () => {
+  /** CI の環境変数を変えて、設定を読み直す（設定は読み込んだときに process.env.CI を見る） */
+  const load = async (ci: string) => {
+    vi.stubEnv("CI", ci);
+    vi.resetModules();
+    return (await import("../playwright.config")).default;
+  };
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("CI では flaky も失敗にし、リトライは1回だけ（壊れているか flaky かを分け、トレースを取るため）", async () => {
+    const ci = await load("true");
+    expect(ci.failOnFlakyTests).toBe(true);
+    expect(ci.retries).toBe(1);
+  });
+
+  it("CI でないときは flaky で落とさず、リトライもしない", async () => {
+    const local = await load("");
+    expect(local.failOnFlakyTests).toBe(false);
+    expect(local.retries).toBe(0);
   });
 });

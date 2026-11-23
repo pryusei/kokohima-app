@@ -88,6 +88,9 @@ test("お知らせのリンクのように誘いの URL を直接開いて閉じ
 
   await b.page.goto(inviteUrl);
   await expect(sheet(b.page)).toBeVisible();
+  // 見えただけでは、まだ Esc を受けられないことがある（WebKit。シートにフォーカスを移すのと Esc を受ける処理を付けるのは、同じ effect の中）。
+  // フォーカスが入ったのを待ってから押す（docs/specs/T-30-ci-review.md「5. flaky の修正」）
+  await expect(sheet(b.page)).toBeFocused();
   await b.page.keyboard.press("Escape");
   await expect(b.page).toHaveURL(/\/invites$/);
   await expect(b.page.getByRole("heading", { name: "誘い", level: 1 })).toBeVisible();
