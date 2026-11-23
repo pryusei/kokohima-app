@@ -1,5 +1,5 @@
 // 本番の画面に、予告の行（REVISION_NOTICE_LINE）がもう出ているかを確かめる（docs/specs/T-19-privacy-terms.md「5.」）。
-// deploy:prod（check-web-dist.mjs --deploy）だけが使う。出ていなければ、このデプロイが初めて予告を出すので、公表日は今日でなければならない。
+// deploy:prod（check-web-dist.mjs --deploy）だけが使う。問い合わせ（T-24）の変更がもう本番に出ているかも、同じ読み方で確かめる。出ていなければ、このデプロイが初めて予告を出すので、公表日は今日でなければならない。
 // 読めない・形が違うときは例外を投げる（呼ぶ側で止める。通さない）。fetch はテストのために差し替えられる
 
 /** 本番の画面のオリジン（apps/api/wrangler.jsonc の prod の routes・APP_ORIGIN） */
@@ -41,8 +41,12 @@ async function get(f, url, type) {
   return res.text();
 }
 
-/** 本番の画面の JS に noticeLine（予告の行の全体）がそのまま入っているか */
-export async function isNoticePublished(noticeLine, { origin = PRODUCTION_ORIGIN, fetch: f = fetch } = {}) {
+/**
+ * 本番の画面の JS に、needles のそれぞれがそのまま入っているか（needle → 真偽）。すべて見つかったら読むのをやめる。
+ * 読めない・形が違うときは例外を投げる（呼ぶ側で止める）
+ */
+export async function findPublishedStrings(needles, { origin = PRODUCTION_ORIGIN, fetch: f = fetch } = {}) {
+  const found = new Map(needles.map((n) => [n, false]));
   const html = await get(f, `${origin}/`, /^text\/html\b/i);
   const queue = entryScripts(html, origin);
   if (queue.length === 0) throw new Error(`${origin}/ に同じオリジンの script がありません`);
@@ -51,7 +55,8 @@ export async function isNoticePublished(noticeLine, { origin = PRODUCTION_ORIGIN
     const url = queue.shift();
     // SPA の振り分けで、ない JS にも index.html が返るので、Content-Type で確かめる
     const js = await get(f, url, /^(text|application)\/javascript\b/i);
-    if (js.includes(noticeLine)) return true;
+    for (const n of needles) if (js.includes(n)) found.set(n, true);
+    if ([...found.values()].every(Boolean)) return found;
     for (const next of importedScripts(js, url, origin)) {
       if (seen.has(next)) continue;
       if (seen.size >= MAX_SCRIPT_FILES) throw new Error(`読む JS が ${MAX_SCRIPT_FILES} を超えました`);
@@ -59,5 +64,10 @@ export async function isNoticePublished(noticeLine, { origin = PRODUCTION_ORIGIN
       queue.push(next);
     }
   }
-  return false;
+  return found;
+}
+
+/** 本番の画面の JS に noticeLine（予告の行の全体）がそのまま入っているか */
+export async function isNoticePublished(noticeLine, options = {}) {
+  return (await findPublishedStrings([noticeLine], options)).get(noticeLine) === true;
 }

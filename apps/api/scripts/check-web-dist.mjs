@@ -3,8 +3,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { contactStartProblems, effectiveDateProblems, jstToday, revisionNoticeLine } from "./lib/effective-date.mjs";
-import { isNoticePublished, PRODUCTION_ORIGIN } from "./lib/published-notice.mjs";
+import {
+  CONTACT_NOTICE_MARKER,
+  CONTACT_POLICY_MARKER,
+  contactStartProblems,
+  effectiveDateProblems,
+  jstToday,
+  revisionNoticeLine,
+} from "./lib/effective-date.mjs";
+import { findPublishedStrings, PRODUCTION_ORIGIN } from "./lib/published-notice.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
 const errors = [];
@@ -59,18 +66,22 @@ const texts = scripts.map((f) => readFileSync(f, "utf8"));
 const today = deploy ? jstToday(Date.now()) : undefined;
 const notice = deploy ? revisionNoticeLine(texts) : null;
 let noticeAlreadyPublished;
+// 問い合わせ（T-24）の変更が本番に出ているか（予告の行と同じ1回の読み込みで確かめる）。読めなければ undefined（要るときに止める）
+let production;
 if (notice) {
   try {
-    noticeAlreadyPublished = await isNoticePublished(notice);
+    const found = await findPublishedStrings([notice, CONTACT_NOTICE_MARKER, CONTACT_POLICY_MARKER]);
+    noticeAlreadyPublished = found.get(notice) === true;
+    production = { notice: found.get(CONTACT_NOTICE_MARKER) === true, policy: found.get(CONTACT_POLICY_MARKER) === true };
   } catch (e) {
     errors.push(`本番（${PRODUCTION_ORIGIN}）の画面を読めなかったので、予告の行がもう出ているかを確かめられません（${e instanceof Error ? e.message : e}）`);
   }
 }
 errors.push(...effectiveDateProblems(texts, { deploy, today, noticeAlreadyPublished }));
-// 問い合わせの公開の日は、改定日（効力が生じる日）と同じ日（docs/specs/T-24-contact.md「振る舞い 11.」）
+// 問い合わせの公開の日は、改定日（効力が生じる日）と同じ日。予告の途中で問い合わせを足さない（docs/specs/T-24-contact.md「振る舞い 11.」）
 const contactStartPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "shared", "src", "contactStart.json");
 const { startDate } = JSON.parse(readFileSync(contactStartPath, "utf8"));
-errors.push(...contactStartProblems(texts, { startDate, deploy, today }));
+errors.push(...contactStartProblems(texts, { startDate, deploy, today, noticeAlreadyPublished, production }));
 
 if (errors.length > 0) {
   for (const e of errors) console.error(`::error::${e}`);

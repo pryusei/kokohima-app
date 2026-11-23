@@ -2,7 +2,7 @@ import { PLATFORM_RETENTION, RETENTION } from "@kokohima/shared";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import contactStart from "../../../../packages/shared/src/contactStart.json";
+import { CONTACT_NOTICE_MARKER, CONTACT_POLICY_MARKER } from "../../../api/scripts/lib/effective-date.mjs";
 import { tokenStore } from "../auth/tokenStore";
 import { json, mockFetch, renderApp, tokenBody, type Route } from "../test/helpers";
 import {
@@ -71,7 +71,7 @@ const PRIVACY_CHANGES = [
   "「5.」「6.」「7.」：外国の事業者に取り扱いを任せるときの書き方を直し、「7.」に、外国の名称、事業者がとる措置、その確かめ方などを書きました。",
   "「12.」：「7.」の情報の提供を求められることを書きました。",
   "「2.」「4.」「8.」と退会したとき：行きたい（ひとこと・エリア・リンク・見せない相手）を預かる情報に足し、見える相手と保存する期間を書きました。",
-  "「2.」「3.」「5.」「7.」「8.」「12.」：アプリの中の問い合わせのフォームを足したことに合わせて、預かる情報（問い合わせの種類と内容）、使う目的、任せる事業者（Slack）、保存する期間、開示などの求め方を書きました。",
+  "「2.」「3.」「5.」「7.」「8.」「12.」：アプリの中の問い合わせのフォームを足したことに合わせて、預かる情報（問い合わせの種類と内容）、使う目的、任せる事業者（Slack）、保存する期間、開示などの求め方を書きました。問い合わせのフォームについてのこれらの定めは、フォームを使い始める2026年11月23日から適用します。",
   "「2.」「4.」「8.」と退会したとき：アイコンに画像を設定できるようにしたことに合わせて、預かる情報（アイコンの画像）、見える相手（友達と、招待リンクを開いた人）、保存する期間を書きました。",
 ];
 const TERMS_CHANGES = [
@@ -382,10 +382,15 @@ describe("プライバシー ポリシーの本文", () => {
     );
   });
 
-  it("問い合わせの公開の日（contactStart.json）は、改定日（効力が生じる日）と同じ日（T-24「11.」）", () => {
-    const m = /改定日（効力が生じる日）：(\d{4})年(\d{1,2})月(\d{1,2})日/.exec(REVISION_DATE_LINE ?? "");
-    const revision = m ? `${m[1]}-${m[2]?.padStart(2, "0")}-${m[3]?.padStart(2, "0")}` : null;
-    expect(contactStart.startDate).toBe(revision);
+  // 公開の日と改定日が同じかは、デプロイの検査（apps/api/scripts/lib/effective-date.mjs の contactStartProblems）で確かめる。
+  // ここで常に同じことを求めると、次の改定で改定日を変えるたびに問い合わせを閉じることになるため
+  it("デプロイの検査が本番の JS で探す問い合わせの目印が、「この改定で変わるところ」の行と本文にある（T-24「11.」）", async () => {
+    expect(PRIVACY_REVISION_CHANGES?.some((line) => line.includes(CONTACT_NOTICE_MARKER))).toBe(true);
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    expect(screen.getByRole("heading", { name: CONTACT_POLICY_MARKER, level: 3 })).toBeVisible();
   });
 
   it("「12.」：「7.」の情報の提供を求められる", async () => {

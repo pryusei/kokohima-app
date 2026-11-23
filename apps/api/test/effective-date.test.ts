@@ -260,24 +260,43 @@ describe("日本時間の今日", () => {
 // 問い合わせの公開の日（docs/specs/T-24-contact.md「振る舞い 11.」「テスト計画」）
 describe("問い合わせの公開の日の検査", () => {
   const dated = withDate("2026年11月23日");
-  const announced = `${dated}${rev("2026年12月2日")}${notice("2026年11月25日")}`;
-  const BEFORE = day(2026, 11, 25);
+  const announced = `${dated}${rev("2026年11月30日")}${notice("2026年11月23日")}`;
+  const FIRST = day(2026, 11, 23);
+  const MID = day(2026, 11, 26);
+  const fresh = { noticeAlreadyPublished: false, production: { notice: false, policy: false } };
+  const published = { noticeAlreadyPublished: true, production: { notice: true, policy: true } };
+  const check = (texts: string[], startDate: unknown, today: CalendarDay, extra: object = fresh) =>
+    contactStartProblems(texts, { startDate, deploy: true, today, ...extra });
 
-  it("今日が公開の日より前：改定日の日付が公開の日と同じで、予告の行があれば通る", () => {
-    expect(contactStartProblems([announced], { startDate: "2026-12-02", deploy: true, today: BEFORE })).toEqual([]);
+  it("公表日のデプロイ（初めて予告を出す）：改定日が公開の日と同じで、予告の行があれば通る", () => {
+    expect(check([announced], "2026-11-30", FIRST)).toEqual([]);
   });
 
-  it("今日が公開の日より前：改定日が違う・改定日がない・予告の行がないと止まる", () => {
-    expect(contactStartProblems([announced], { startDate: "2026-12-03", deploy: true, today: BEFORE })).toHaveLength(1);
-    expect(contactStartProblems([dated], { startDate: "2026-12-02", deploy: true, today: BEFORE })).toHaveLength(2);
-    expect(contactStartProblems([`${dated}${rev("2026年12月2日")}`], { startDate: "2026-12-02", deploy: true, today: BEFORE })).toHaveLength(1);
+  it("公開の日より前：改定日が違う・改定日がない・予告の行がないと止まる", () => {
+    expect(check([announced], "2026-12-01", FIRST)).toHaveLength(1);
+    expect(check([dated], "2026-11-30", FIRST)).toHaveLength(2);
+    expect(check([`${dated}${rev("2026年11月30日")}`], "2026-11-30", FIRST)).toHaveLength(1);
   });
 
-  it("今日が公開の日以後・null なら条件を見ない。いつもの検査（deploy でない）も日付の大小を見ない", () => {
-    expect(contactStartProblems([dated], { startDate: "2026-12-02", deploy: true, today: day(2026, 12, 2) })).toEqual([]);
-    expect(contactStartProblems([dated], { startDate: "2026-12-02", deploy: true, today: LATE })).toEqual([]);
-    expect(contactStartProblems([dated], { startDate: null, deploy: true, today: BEFORE })).toEqual([]);
-    expect(contactStartProblems([dated], { startDate: "2026-12-02", deploy: false })).toEqual([]);
+  it("予告の途中のデプロイ：本番の予告に問い合わせの行がもう出ていれば通り、なければ止まる。本番を読めなければ止まる", () => {
+    expect(check([announced], "2026-11-30", MID, published)).toEqual([]);
+    expect(check([announced], "2026-11-30", MID, { noticeAlreadyPublished: true, production: { notice: false, policy: false } })).toHaveLength(1);
+    expect(check([announced], "2026-11-30", MID, {})).toHaveLength(1);
+  });
+
+  it("公開の日以後でも、予告の行があって改定日が公開の日と違えば止まる（問い合わせがまだ本番の本文にないとき）", () => {
+    const late = `${dated}${rev("2026年12月10日")}${notice("2026年12月3日")}`;
+    expect(check([late], "2026-12-02", day(2026, 12, 3))).toHaveLength(1);
+    expect(check([late], "2026-12-02", day(2026, 12, 3), {})).toHaveLength(1);
+    // 前の改定で問い合わせを知らせ済みなら、次の改定の予告で止めない（フォームを閉じなくてよい）
+    expect(check([late], "2026-11-30", day(2026, 12, 3), { noticeAlreadyPublished: false, production: { notice: false, policy: true } })).toEqual([]);
+  });
+
+  it("公開の日以後で予告の行がない・null・いつもの検査（deploy でない）は条件を見ない", () => {
+    expect(check([`${dated}${rev("2026年11月30日")}`], "2026-11-30", day(2026, 11, 30))).toEqual([]);
+    expect(check([dated], "2026-11-30", LATE)).toEqual([]);
+    expect(check([dated], null, FIRST)).toEqual([]);
+    expect(contactStartProblems([dated], { startDate: "2026-11-30", deploy: false })).toEqual([]);
   });
 
   it("暦にない日付・形の違う文字列は、いつもの検査でも止まる", () => {

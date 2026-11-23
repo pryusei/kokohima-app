@@ -26,8 +26,16 @@ export declare function effectiveDateProblems(
   options: { deploy: boolean; today?: CalendarDay; noticeAlreadyPublished?: boolean },
 ): string[];
 export declare function revisionNoticeLine(texts: string[]): string | null;
+export declare const CONTACT_NOTICE_MARKER: string;
+export declare const CONTACT_POLICY_MARKER: string;
 export declare function contactStartProblems(
   texts: string[],
-  options: { startDate: unknown; deploy: boolean; today?: CalendarDay },
+  options: {
+    startDate: unknown;
+    deploy: boolean;
+    today?: CalendarDay;
+    noticeAlreadyPublished?: boolean;
+    production?: { notice: boolean; policy: boolean };
+  },
 ): string[];
 export declare function jstToday(now: number): CalendarDay;
