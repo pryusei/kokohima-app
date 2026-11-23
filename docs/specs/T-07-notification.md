@@ -330,7 +330,7 @@
 
 ### メールの中身
 - 差出人は vars の `MAIL_FROM`（prod は `ここ暇 <notify@kokohima.app>`。T-12）。宛先は `getNotificationAddress`。
-- テキストだけで、HTML は送らない。
+- HTML とテキストの両方を送る（見た目・色・互換性・エスケープは docs/specs/T-23-rich-mail.md）。
 - 相手の名前・ひとこと・エリア・予定の時刻を入れない（決定事項6）。
 - ログイン用のリンク（トークンつきの URL）を入れない。アプリのトップ（`APP_ORIGIN`）の URL だけを書く。
 - お知らせのメール
@@ -576,4 +576,5 @@
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-21 | `notification_daily_counts` の掃除のためのインデックス `(day)` を書いた | T-12 の実装PR（docs/specs/T-12-data-growth.md） |
 | 2026-11-21 | 全体のメール数の上限で送らなかったときのログ `notification_mail_global_limit` を書いた | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
+| 2026-11-23 | メールを HTML とテキストの両方にした（「テキストだけ」をやめた）。送る内容・条件・上限は変えない | T-23 実装PR（docs/specs/T-23-rich-mail.md） |
 | 2026-11-23 | お知らせの保持を30日にし掃除に上限を付けた。`NOTIFICATION_START_AT` が未設定の間の通知だけの型の行の掃除と、使えないセッションの購読の15分ごとの掃除を足した | T-17 実装PR（docs/specs/T-17-retention.md） |
