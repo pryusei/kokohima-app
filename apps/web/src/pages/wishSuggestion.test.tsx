@@ -15,11 +15,12 @@ const presets = json({
   evening: { start: "16:00", end: "19:00" },
   night: { start: "19:00", end: "23:00" },
 });
-const candidate = (n: number) => ({
+const candidate = (n: number, area: string | null = n === 2 ? "代官山" : null) => ({
   message: `店${n}のつけ麺行きたい`,
   placeName: `店${n}`,
   url: `https://shop${n}.example/menu`,
   reason: `理由${n}`,
+  area,
 });
 
 beforeEach(() => {
@@ -154,6 +155,8 @@ describe("AIで探す", () => {
     const list = await within(dialog).findByRole("list", { name: "候補" });
     expect(within(list).getAllByRole("listitem")).toHaveLength(3);
     expect(within(list).getByText("理由2")).toBeVisible();
+    expect(within(list).getByText("エリア：代官山")).toBeVisible();
+    expect(within(list).getAllByText(/^エリア：/)).toHaveLength(1);
     expect(within(list).getByRole("link", { name: "店1（shop1.example）" })).toHaveAttribute("href", "https://shop1.example/menu");
     expect(within(dialog).getByText("AIがWebで探したお店です。営業時間や場所は、リンク先で確かめてください。")).toBeVisible();
     const post = calls.find((c) => c.url === "/api/v1/wish-suggestions");
@@ -164,8 +167,21 @@ describe("AIで探す", () => {
     expect(within(place).getByText("候補から入れました。直してから置けます。")).toBeVisible();
     expect(within(place).getByLabelText("ひとこと")).toHaveValue("店2のつけ麺行きたい");
     expect(within(place).getByLabelText("リンク（任意）")).toHaveValue("https://shop2.example/menu");
-    expect(within(place).getByLabelText("エリア（任意）")).toHaveValue("渋谷");
+    // エリアは候補の店の場所（代官山）。候補にエリアがなければ、探したときのエリア
+    expect(within(place).getByLabelText("エリア（任意）")).toHaveValue("代官山");
     expect(setItem).not.toHaveBeenCalled();
+  });
+
+  it("候補にエリアがなければ、置くシートには探したときのエリアを入れる", async () => {
+    availabilityTab({
+      "/api/v1/wish-suggestions": sseResponse([ev("result", { candidates: [candidate(1, null)] })]),
+    });
+    const dialog = await openSheet();
+    await fill(dialog);
+    await userEvent.click(within(dialog).getByRole("button", { name: "候補を探す" }));
+    await userEvent.click(await within(dialog).findByRole("button", { name: "行きたいに置く" }));
+    const place = await screen.findByRole("dialog", { name: "行きたいを置く" });
+    expect(within(place).getByLabelText("エリア（任意）")).toHaveValue("渋谷");
   });
 
   it.each([

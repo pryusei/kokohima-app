@@ -1,5 +1,8 @@
 import {
+  AREA_MAX,
   SUGGEST_MAX_CANDIDATES,
+  SUGGEST_PLACE_NAME_MAX,
+  SUGGEST_REASON_MAX,
   wishSuggestionCandidateSchema,
   type WishSuggestionCandidate,
 } from "@kokohima/shared";
@@ -138,31 +141,78 @@ export function normalizeUrl(raw: string): string | null {
 export type DroppedCounts = { notInResults: number; invalid: number; duplicate: number; overLimit: number };
 
 /**
+ * ゆるい突き合わせのキー：スキーム（http・https）、ホストの先頭の `www.`、`?` 以降、`#` 以降、末尾の `/` の違いを同じに扱う。
+ * 解釈できなければ null
+ */
+export function looseUrlKey(raw: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  const host = u.host.toLowerCase().replace(/^www\./, "");
+  const path = u.pathname.replace(/\/+$/, "");
+  return `${host}${path}`;
+}
+
+const truncate = (text: unknown, max: number) => {
+  if (typeof text !== "string") return text;
+  const chars = Array.from(text.replace(/\s+/g, " ").trim());
+  return chars.length <= max ? chars.join("") : `${chars.slice(0, max - 1).join("")}…`;
+};
+
+/**
  * Claude の出力の候補を検査する（決めたこと3）。
- * 検索の結果にあった URL だけ、形と文字数が合うものだけ、URL の重複なし、先頭3件まで。
- * 捨てた数を理由ごとに返す（ログに出す。URL や文は返さない）
+ * - URL は、検索の結果の URL と突き合わせる。正規化して一致すればそのまま、ゆるいキーで1つだけに一致すれば
+ *   検索の結果の方の URL に差し替える（AI が書き換えた URL を出さない）。どれにも一致しない・2つ以上に一致するものは捨てる
+ * - 店の名前・理由・エリアは、上限より長ければ切って「…」を付ける（捨てない）。ひとことは切らない（形が違えば捨てる）
+ * - URL の重複なし、先頭3件まで。捨てた数を理由ごとに返す（ログに出す。URL や文は返さない）
  */
 export function reviewCandidates(
   raw: unknown,
   searchResultUrls: readonly string[],
 ): { accepted: WishSuggestionCandidate[]; dropped: DroppedCounts } {
-  const allowed = new Set(searchResultUrls.map(normalizeUrl).filter((u): u is string => u !== null));
+  const exact = new Map<string, string>();
+  const loose = new Map<string, Set<string>>();
+  for (const url of searchResultUrls) {
+    const key = normalizeUrl(url);
+    const lkey = looseUrlKey(url);
+    if (key === null || lkey === null) continue;
+    if (!exact.has(key)) exact.set(key, url);
+    loose.set(lkey, (loose.get(lkey) ?? new Set()).add(key));
+  }
+  const resolve = (url: string): string | null => {
+    const key = normalizeUrl(url);
+    if (key !== null && exact.has(key)) return exact.get(key)!;
+    const lkey = looseUrlKey(url);
+    const matches = lkey === null ? undefined : loose.get(lkey);
+    return matches && matches.size === 1 ? exact.get([...matches][0]!)! : null;
+  };
+
   const dropped: DroppedCounts = { notInResults: 0, invalid: 0, duplicate: 0, overLimit: 0 };
   const list = (raw as { candidates?: unknown } | null)?.candidates;
   if (!Array.isArray(list)) return { accepted: [], dropped };
   const seen = new Set<string>();
   const accepted: WishSuggestionCandidate[] = [];
   for (const item of list) {
-    const parsed = wishSuggestionCandidateSchema.safeParse(item);
+    const o = (item ?? {}) as Record<string, unknown>;
+    const parsed = wishSuggestionCandidateSchema.safeParse({
+      ...o,
+      placeName: truncate(o.placeName, SUGGEST_PLACE_NAME_MAX),
+      reason: truncate(o.reason, SUGGEST_REASON_MAX),
+      area: truncate(o.area, AREA_MAX),
+    });
     const c = parsed.success ? (parsed.data as WishSuggestionCandidate) : null;
-    const key = c ? normalizeUrl(c.url) : null;
-    if (!c || key === null) dropped.invalid++;
-    else if (!allowed.has(key)) dropped.notInResults++;
-    else if (seen.has(key)) dropped.duplicate++;
+    const url = c ? resolve(c.url) : null;
+    if (!c || normalizeUrl(c.url) === null) dropped.invalid++;
+    else if (url === null) dropped.notInResults++;
+    else if (seen.has(normalizeUrl(url)!)) dropped.duplicate++;
     else if (accepted.length >= SUGGEST_MAX_CANDIDATES) dropped.overLimit++;
     else {
-      seen.add(key);
-      accepted.push(c);
+      seen.add(normalizeUrl(url)!);
+      accepted.push({ ...c, url });
     }
   }
   return { accepted, dropped };
@@ -185,6 +235,7 @@ export const SYSTEM_PROMPT = [
   "message は、友達に見せる短いひとことです。「〇〇の△△行きたい」の形で、20文字以内にしてください。理由や説明は入れず、絵文字を使わないでください。例：「代官山の鉄板焼き花行きたい」「下北沢のスパイスカレー行きたい」。",
   "reason は、message とは違う情報（席の様子、価格帯、駅からの近さ、名物など）を、40文字以内の1行で書いてください。検索の結果に書いてあることだけを書き、営業時間や値段を推測しないでください。",
   "placeName は店・場所の名前（40文字まで）です。",
+  "area は、その店のある地域名か最寄り駅（例：代官山、渋谷駅）を15文字以内で書いてください。わからなければ空の文字列にしてください。",
   "見つからなければ candidates を空の配列にしてください。",
 ].join("\n");
 
@@ -201,8 +252,9 @@ export const OUTPUT_SCHEMA = {
           placeName: { type: "string" },
           url: { type: "string" },
           reason: { type: "string" },
+          area: { type: "string" },
         },
-        required: ["message", "placeName", "url", "reason"],
+        required: ["message", "placeName", "url", "reason", "area"],
         additionalProperties: false,
       },
     },

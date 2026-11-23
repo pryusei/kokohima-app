@@ -73,7 +73,8 @@ test("「AIで探す」→ 候補が出る（検索の結果にない URL の候
   await expect(add.getByText("候補から入れました。直してから置けます。")).toBeVisible();
   await expect(add.getByLabel("ひとこと")).toHaveValue("E2E のお店のつけ麺行きたい");
   await expect(add.getByLabel("リンク（任意）")).toHaveValue("https://ogp.e2e.invalid/page");
-  await expect(add.getByLabel("エリア（任意）")).toHaveValue("渋谷");
+  // エリアは候補の店の場所（AI が出した最寄り駅）。探したときのエリア（渋谷）ではない
+  await expect(add.getByLabel("エリア（任意）")).toHaveValue("渋谷駅");
   await add.getByRole("button", { name: "置く", exact: true }).click();
   await expect(a.page.getByRole("list", { name: "自分の行きたい" }).getByText("E2E のお店のつけ麺行きたい")).toBeVisible();
 });

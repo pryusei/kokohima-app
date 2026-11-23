@@ -28,8 +28,10 @@ export const wishSuggestionCandidateSchema = z.object({
   placeName: required(freeText(SUGGEST_PLACE_NAME_MAX, 0)),
   url: linkUrlSchema.refine((v) => v !== null, { message: "required" }),
   reason: required(freeText(SUGGEST_REASON_MAX, 0)),
+  /** 店の地域名か最寄り駅（30文字まで）。なければ null（置くシートには探したときのエリアを入れる） */
+  area: areaSchema,
 });
-export type WishSuggestionCandidate = { message: string; placeName: string; url: string; reason: string };
+export type WishSuggestionCandidate = { message: string; placeName: string; url: string; reason: string; area: string | null };
 
 /** ストリームのイベント（`event:` の名前と `data:` の JSON） */
 export const wishSuggestionProgressSchema = z.object({ stage: z.enum(["searching", "choosing"]) });
