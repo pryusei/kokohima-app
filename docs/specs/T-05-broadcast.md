@@ -76,7 +76,7 @@
 
 | テーブル | 列 | 備考 |
 | --- | --- | --- |
-| `broadcasts` | `id`（UUID、PK）、`owner_id`（FK users、`ON DELETE CASCADE`）、`starts_at`、`ends_at`、`area`・`message`・`url`（null可）、`status`（`open`・`decided`）、`expires_at`、`decided_at`（null可）、`transition_id`（null可）、`created_at` | INDEX(`owner_id`, `created_at`, `id`)。`expired`・`closed` は保存せず、読むときに決める |
+| `broadcasts` | `id`（UUID、PK）、`owner_id`（FK users、`ON DELETE CASCADE`）、`starts_at`、`ends_at`、`area`・`message`・`url`（null可）、`status`（`open`・`decided`）、`expires_at`、`decided_at`（null可）、`transition_id`（null可）、`created_at` | INDEX(`owner_id`, `created_at`, `id`)、INDEX(`ends_at`)（掃除。T-17）。`expired`・`closed` は保存せず、読むときに決める |
 | `broadcast_recipients` | `broadcast_id`（FK、`ON DELETE CASCADE`）、`user_id`（FK users、`ON DELETE CASCADE`）、`responded_at`（null可。今応じていればその最初の時刻）、`created_at` | PK(`broadcast_id`, `user_id`)、INDEX(`user_id`, `created_at`, `broadcast_id`) |
 | `meetups` | `broadcast_id` 列を足す（FK broadcasts、`ON DELETE CASCADE`、null可） | SQLite の `ADD COLUMN` では UNIQUE を付けられないので、`CREATE UNIQUE INDEX meetups_broadcast ON meetups (broadcast_id)` を別に作る。`direct_invite_id` と `broadcast_id` のどちらか一方だけが入ることは、予定を作る文（誘いの決定・募集の決定）が片方しか書かないことで守る |
 | `meetup_participants` | `left_at`（null可。「やっぱり難しい」で抜けた時刻）、`left_transition_id`（null可。抜けた遷移の値）を足す | 決定事項3 |
@@ -211,7 +211,7 @@
 - カレンダーへの登録（T-06）、通知（T-07。名前の開示の通知を含む）、OGP（T-08）
 - 募集の取り下げ、決めた後の追加の参加、決めた後の時間の変更
 - 同じ内容の重複送信の判定（`Idempotency-Key` は T-10 で受け付けるが、別のキーで同じ内容を送ったときの判定はしない）
-- 期限切れの行の掃除（Cron）
+- 期限切れの行の掃除（Cron）。保持は T-17 で決めた：時間の終わりから30日を過ぎた募集は、状態によらず毎分の掃除で消し（1回に100行）、宛先・予定・参加者・.ics の鍵・リンクの参照も CASCADE で一緒に消える（docs/specs/T-17-retention.md「2.」）
 - 退会したときの予定の扱い（T-16 で対応）
 - 最終的な画面デザイン
 
@@ -234,3 +234,4 @@
 | 2026-10-25 | 予定から抜けた人には `participants` を空で返すことと、作成画面の文言（404・409・宛先1人以下）、宛先の人の「募集中」を明記した | 実装PRのレビュー（security-reviewer・spec-reviewer） |
 | 2026-11-17 | `Idempotency-Key` を T-10 で受け付けることにした | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
+| 2026-11-23 | 終わってから30日を過ぎた募集・予定の保持と掃除を T-17 で決めた | T-17 実装PR（docs/specs/T-17-retention.md） |

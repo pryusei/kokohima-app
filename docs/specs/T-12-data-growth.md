@@ -77,9 +77,9 @@
 ### 5. 定期処理の独立とログ（#86）
 - `runScheduled` の毎分の処理（outbox を流す、各掃除）と15分ごとの割り当てを、1つずつ独立させる。
   - 各処理を個別に `try` で囲み、1つが例外を投げても、後の処理は走る。
-  - `cleanupExpired` の中の掃除（連携の state、.ics のトークン、ログインの記録、セッションと更新用トークン、冪等キー、お知らせ、リンクのプレビュー、この仕様書で足す outbox とここ暇）も、1つずつ独立させる。
+  - `cleanupExpired` の中の掃除（連携の state、.ics のトークン、ログインの記録、セッションと更新用トークン、冪等キー、お知らせ、リンクのプレビュー、この仕様書で足す outbox とここ暇、T-17 で足す誘い・募集・招待リンク・くり返しの例外・流れないままの通知の記録）も、1つずつ独立させる。15分ごとの処理（T-17 で足す休眠にする・戻す・購読の掃除と、割り当て）も同じ。
 - 失敗したら、構造化したログを1行出す：`{ event: "cron_step_failed", step, name }`。warn で出す（Monitors で数えて通知する。T-13「3.」）。
-  - `step` は処理の名前。`dispatch_outbox`・`assign_syncs`・`cleanup_oauth_states`・`cleanup_ics_tokens`・`cleanup_login_records`・`cleanup_sessions`・`cleanup_idempotency_keys`・`cleanup_notifications`・`cleanup_link_previews`・`cleanup_outbox`・`cleanup_availabilities`・`heartbeat`（定期処理が動いた記録。docs/specs/T-13-monitoring.md「1.」）。
+  - `step` は処理の名前。`dispatch_outbox`・`assign_syncs`・`cleanup_oauth_states`・`cleanup_ics_tokens`・`cleanup_login_records`・`cleanup_sessions`・`cleanup_idempotency_keys`・`cleanup_notifications`・`cleanup_link_previews`・`cleanup_outbox`・`cleanup_availabilities`・`heartbeat`（定期処理が動いた記録。docs/specs/T-13-monitoring.md「1.」）。T-17 で `cleanup_invitations`・`cleanup_broadcasts`・`cleanup_invite_links`・`cleanup_recurrence_exceptions`・`cleanup_stale_notification_outbox`（毎分）と `mark_dormant_connections`・`wake_dormant_connections`・`cleanup_push_subscriptions`（15分ごと）を足した（docs/specs/T-17-retention.md「9.」）。
   - `name` は例外の名前（`Error.name`）だけ。`Error` でない値が投げられたときは `"unknown"`。メッセージ・スタック・SQL の値・payload は出さない（個人情報やトークンを含みうるため）。
 - 例外を握りつぶしたあとも、Cron の実行自体は成功として終える。失敗はログで気づく（ログのアラートは docs/specs/T-13-monitoring.md）。
 
@@ -89,6 +89,7 @@
 | `outbox_dispatch_capped` | outbox を10回か20秒で打ち切った | `reason`（`count`・`time`）、`sent` |
 | `calendar_sync_assign_full` | カレンダーの確認の割り当てが上限で埋まった | `assigned` |
 | `cron_step_failed` | 定期処理の1つが例外を投げた | `step`、`name` |
+| `cleanup_capped` | 保持期間の掃除・休眠の処理が上限いっぱいまで処理した（T-17「9.」） | `step`、`count` |
 
 ## 認可と秘匿
 - 閲覧者IDの使い方：変えない。友達の空き（`visibleManual`）は、いままでどおり `VISIBLE_OWNERS`（両方向の友達と「見せない」の設定）で絞る。足すのは時刻の条件だけ。
@@ -124,10 +125,10 @@
 - queue の consumer の並列化（いまは1件ずつ順に処理する）、お知らせの配信の D1 往復の削減。
 - フロントエンドのページの遅延読み込み（`React.lazy`）と TanStack Query の `staleTime`。
 - 回数の上限（Rate Limiting）を付ける経路の追加、リンクのプレビューの DNS の確認と接続先のずれ。
-- くり返しの例外（`recurrence_exceptions`）の過去の日付の掃除。表が小さく、ルールを消すと一緒に消えるため。
+- くり返しの例外（`recurrence_exceptions`）の過去の日付の掃除。表が小さく、ルールを消すと一緒に消えるため（T-17 で足した。docs/specs/T-17-retention.md「6.」）。
 - 流す型がまだない outbox の未処理の行の扱い。
 - `availabilities_starts` 以外の、使われていないインデックスの整理。
-- #38 のうち、この仕様書で扱わない掃除：終わった誘い・募集・予定、使い切った `invite_links`、くり返しの例外。保持期間を決めるのは #38 で続ける。
+- #38 のうち、この仕様書で扱わない掃除：終わった誘い・募集・予定、使い切った `invite_links`、くり返しの例外。保持期間は T-17（docs/specs/T-17-retention.md）で決め、保持期間の一覧もそこに置いた。
   - 期限切れの `oauth_transactions`・`login_codes`（`deleteExpiredLoginRecords`）と、失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens`（`deleteDeadSessions`。pryusei/kokohima-app#82）は、すでに掃除している。
 - ログを集める経路とアラートの設定、退避キューを読む手段（#85）。
 
@@ -153,3 +154,4 @@
 | 2026-11-21 | 実装済みにする。掃除の一覧にセッションを足し、`step` の名前を確定する。タスクIDが他のタスクと重なることを書く | 実装PR。セッションの掃除が #82 で入ったため |
 | 2026-11-21 | ちょうど1000件のときのログ、`Error` でない例外の `name`、掃除の期間の決め方を書き、T-07・T-08 のインデックスの記述も直す対象に足す | 実装PRの仕様レビュー |
 | 2026-11-21 | アラートと退避キューの調べ方の参照を T-13 に直し、`cron_step_failed` を warn で出すことを書いた | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
+| 2026-11-23 | 掃除の一覧と step の名前に T-17 の掃除を足し、スコープ外のくり返しの例外と #38 の残りを T-17 への参照に直した | T-17 実装PR（docs/specs/T-17-retention.md） |

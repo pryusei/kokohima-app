@@ -27,7 +27,7 @@
 | --- | --- | --- | --- | --- | --- |
 | POST | `/api/v1/invite-links` | Bearer | JSON：`createInviteLinkRequestSchema` `{ expiresInDays: 1 \| 3 \| 7, maxUses: 1〜10 }` | 201：`createdInviteLinkSchema` `{ id, url, expiresAt, maxUses, uses, createdAt }` | 400 `validation_failed`、409 `invalid_state`（表示名が未設定）、429 `rate_limited` |
 | GET | `/api/v1/invite-links` | Bearer | query：`limit`、`cursor` | 200：`{ items: inviteLinkSchema[], nextCursor }`（`url` は含まない） | 400 |
-| POST | `/api/v1/invite-links/{id}/revoke` | Bearer | なし | 204（自分のリンクなら、無効化済み・期限切れでも204） | 404 `not_found`（他人のリンク・存在しない） |
+| POST | `/api/v1/invite-links/{id}/revoke` | Bearer | なし | 204（自分のリンクなら、無効化済み・期限切れでも204。期限から30日を過ぎて掃除で消えたリンクは404。T-17） | 404 `not_found`（他人のリンク・存在しない・掃除で消えた） |
 | POST | `/api/v1/invite-links/lookup` | なし（Origin） | JSON：`inviteLookupRequestSchema` `{ token? }`（省略時は招待Cookieのトークン） | 200：`inviteLookupResponseSchema` `{ linkId, inviter: { displayName, avatarUrl } }`（招待Cookieを発行） | 404 `not_found`、401（Origin不一致） |
 | POST | `/api/v1/invite-links/accept` | Bearer＋Origin | JSON：`acceptInviteRequestSchema` `{ linkId }`（`lookup` で表示したリンク。トークンは招待Cookieのものを使う） | 201（友達になった）／200（すでに友達）：`acceptInviteResponseSchema` `{ friend: publicProfile, alreadyFriends }` | 404 `not_found`、409 `invalid_state`（自分のリンク） |
 | PATCH | `/api/v1/me` | Bearer | JSON：`updateMeRequestSchema` `{ displayName }`（1〜20文字） | 200：`meResponseSchema` | 400 |
@@ -56,9 +56,9 @@
 
 | テーブル | 列 | 備考 |
 | --- | --- | --- |
-| `invite_links` | `id`（UUID、PK）、`owner_id`（FK users）、`token_hash`（SHA-256、base64url、UNIQUE）、`max_uses`、`uses`（既定0）、`expires_at`、`revoked_at`（null可）、`created_at` | INDEX(`owner_id`, `created_at`, `id`) |
+| `invite_links` | `id`（UUID、PK）、`owner_id`（FK users）、`token_hash`（SHA-256、base64url、UNIQUE）、`max_uses`、`uses`（既定0）、`expires_at`、`revoked_at`（null可）、`created_at` | INDEX(`owner_id`, `created_at`, `id`)、INDEX(`expires_at`)（T-17）。期限から30日を過ぎた行は、使い切ったもの・無効化したものも、毎分の掃除で消す（1回に1000行。T-17「5.」） |
 | `friendships` | `user_id`（FK users）、`friend_id`（FK users）、`created_at` | PK(`user_id`, `friend_id`)。1組の友達を両方向の2行で持つ（どちらの側からも `WHERE user_id = :viewerId` で引ける）。INDEX(`user_id`, `created_at`, `friend_id`) |
-| `sharing_policies` | `owner_id`（FK users）、`target_id`（FK users）、`visible`（0／1）、`updated_at` | PK(`owner_id`, `target_id`)。行がなければ「見せる」（F-07の初期値）。友達を解除しても消さない（決定事項の候補：決定事項5） |
+| `sharing_policies` | `owner_id`（FK users）、`target_id`（FK users）、`visible`（0／1）、`updated_at` | PK(`owner_id`, `target_id`)。行がなければ「見せる」（F-07の初期値）。友達を解除したら両方向の「見せる」（`visible = 1`）の行だけを消し、「見せない」の行は退会まで残す（決定事項5、T-17「7.」） |
 
 - Drizzleのスキーマは `apps/api/src/social/infra/schema.ts` と `apps/api/src/availability/infra/schema.ts`
 - 招待リンクのトークンは32バイトのランダム値のbase64url（api-conventions）。D1にはハッシュだけを保存する（T-01の `apps/api/src/shared/crypto.ts` を使う）
@@ -104,7 +104,7 @@
 ### 友達の解除
 - `DELETE /friends/{friendId}`：両方向の `friendships` を1つのバッチで消す。相手には通知しない。outboxにも何も書かない
 - 友達でない（存在しないユーザーを含む）なら404
-- `sharing_policies` は消さない。友達に戻ったときも、以前の「見せない」が残る
+- 同じバッチで、両方向の `sharing_policies` のうち「見せる」（`visible = 1`）の行だけを消す（文は availability の `unfriendPurgeSharingStatements`。T-17「7.」）。「見せない」の行は消さない。友達に戻ったときも、以前の「見せない」が残る。「見せる」の行は初期値と同じなので、消しても見え方は変わらない
 
 ### 公開設定の切り替え
 - `PATCH /friends/{friendId}`：友達のときだけ `sharing_policies` を upsert する。友達でなければ404
@@ -147,7 +147,7 @@
 - [x] 発行：期限・人数の入力検証（範囲外は400）、既定値
 - [x] 発行：24時間に20本を超えると429と `Retry-After`。同時に送られても20本を超えない
 - [x] 一覧：有効なリンクだけを、作成日時の新しい順で返す。カーソルで続きを取れる
-- [x] 無効化（`POST /invite-links/{id}/revoke`）：自分のリンクは204（無効化済み・期限切れでも204）、他人のリンク・存在しないIDは同じ404
+- [x] 無効化（`POST /invite-links/{id}/revoke`）：自分のリンクは204（無効化済み・期限切れでも204。期限から30日を過ぎて消えたリンクは404。T-17）、他人のリンク・存在しないIDは同じ404
 - [x] 発行：表示名が未設定なら409
 - [x] 表示名の設定：コードポイントで1〜20文字（前後の空白を除き、NFCで正規化）。制御文字・書式文字（U+202E、U+2066、U+200B、U+FEFF など）・C1制御文字は400。他人の表示名は変えられない（閲覧者自身の行だけを更新する）
 - [x] lookup：有効なら発行者の表示名とアイコン（IDは含まない）。存在しない・期限切れ・上限・無効化は、すべて同じ404（本文も同じ）
@@ -217,3 +217,4 @@
 | 2026-11-17 | `Idempotency-Key` の先送りを、T-10 で対象外にしたことに直した | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |
 | 2026-11-21 | テスト計画のチェックを付けた（すべての項目に対応する単体テスト・E2Eがあることを確かめた） | 全体の点検（pryusei/kokohima-app#50） |
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
+| 2026-11-23 | 期限から30日を過ぎた招待リンクの掃除と、その無効化が404になること、友達の解除で両方向の「見せる」の公開設定を消すこと（「見せない」は残す）を足した | T-17 実装PR（docs/specs/T-17-retention.md） |

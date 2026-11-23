@@ -157,7 +157,9 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
   - `sync_id`：確認ごとのランダムな値。
   - `sync_lease_until`：同じ人の確認を同時に2つ走らせないための期限。
   - `large_change_held`：取り消しが20を超えて保留にしたら1（「定期の確認と自動取り消し」の手順6）。既定は0。
-- インデックス：`(status, last_synced_at)`。
+  - `dormant_since`：休眠にした時刻（NULL なら休眠でない）。T-17 で足した（「休眠中の連携」）。
+- インデックス：`(status, dormant_since, last_synced_at)`（T-17 で `(status, last_synced_at)` から作り直した。休眠中の行は割り当ての範囲の外）。
+- 行は解除しても `disconnected` で残り、退会のときに消す（T-16）。保持期間の一覧は docs/specs/T-17-retention.md「1.」。
 
 ### `calendar_oauth_states`
 - `state_hash`（主キー）、`binding_hash`、`user_id`（→ users、CASCADE）、`provider`、`code_verifier`。
@@ -166,7 +168,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 ### `ics_tokens`
 - `token_hash`（主キー）、`user_id`（→ users、CASCADE）、`meetup_id`（→ meetups、CASCADE）、`expires_at`（5分）、`created_at`。
-- インデックス：`(created_at)`、`(user_id, created_at)`（発行数の上限のため。T-10 で足す）、`(expires_at)`（期限切れの掃除のため。T-12 で足す）。
+- インデックス：`(created_at)`、`(user_id, created_at)`（発行数の上限のため。T-10 で足す）、`(expires_at)`（期限切れの掃除のため。T-12 で足す）、`(meetup_id)`（誘い・募集の掃除で予定を消すときの CASCADE の子の検索。T-17 で足す）。
 
 ### 既存の表とトークン
 - `outbox` は列を足さない。`processed_at` は「Queue に渡し終えた日時」として使う（「outbox を Queues に流す」）。型で絞って古い順に読むため、インデックス `(type, processed_at, created_at)` を足す。
@@ -217,6 +219,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 5. `calendar_connections` に書く。
    - 書き方：`INSERT ... ON CONFLICT DO UPDATE` で、更新用トークンを暗号化して書き、`status = 'active'` にする。
    - 埋まりの記録（`busy_snapshot`・`snapshot_from`・`snapshot_to`・`last_synced_at`）は NULL に戻す。
+   - 休眠の印（`dormant_since`）も NULL に戻す（解除・Google 側の失効のあとに、休眠の印が残らないように。T-17）。
    - `calendar_id` は残す。
    - 前の行の更新用トークンは失効させない（決定事項13）。同じクライアントの許可全体が失効し、新しいトークンまで使えなくなるおそれがあるため。前のトークンは上書きして捨てる。
    - 同じ batch で、outbox に `CalendarConnected`（`{ userId, provider, occurredAt }`）を書く。
@@ -259,7 +262,9 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 ### 定期の確認と自動取り消し（決定事項5・6）
 
 #### 確認の割り当て
-- Cron（15分ごと）で、`status = 'active'` で `last_synced_at` が10分以上前（または NULL）の連携を選ぶ。
+- Cron（15分ごと）で、`status = 'active'` で休眠でなく（`dormant_since IS NULL`。T-17）、`last_synced_at` が10分以上前（または NULL）の連携を選ぶ。
+  - インデックス `(status, dormant_since, last_synced_at)` の、`status = 'active'` と `dormant_since IS NULL` の範囲を `last_synced_at` の順に読み、`LIMIT` で止まる（退会した人の条件は、読んだ行ごとに `users` の主キーで確かめる。T-16）。
+  - 同じ Cron で、割り当ての前に、休眠にする・取りこぼしを戻す処理を走らせる（「休眠中の連携」）。
   - 古い順（確認したことがない連携が先）に最大1000件（docs/specs/T-12-data-growth.md）。1時間に確かめられるのは最大4000人分なので、連携している人が1000人を超えると、1人あたりの間隔が15分より延びる（例：2000人なら約30分ごと）。その分、自動取り消しが遅れる。人数が増えたら上限を見直す。
   - 上限で埋まったら、件数だけのログ `calendar_sync_assign_full` を出す（T-12）。
   - 1人ずつ Queue に `calendar_sync` のメッセージ（`{ userId, provider }`）を送る。`sendBatch` は100件ずつ。
@@ -268,8 +273,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 #### consumer の手順
 1. 確認の権利を取る。
-   - 書き方：`UPDATE calendar_connections SET sync_lease_until = now + 5分 WHERE user_id = ? AND provider = ? AND status = 'active' AND (sync_lease_until IS NULL OR sync_lease_until < now) RETURNING ...`。
-   - 0行なら何もしない。
+   - 書き方：`UPDATE calendar_connections SET sync_lease_until = now + 5分 WHERE user_id = ? AND provider = ? AND status = 'active' AND dormant_since IS NULL AND (sync_lease_until IS NULL OR sync_lease_until < now) RETURNING ...`。
+   - 0行なら何もしない（休眠中も取れない。T-17）。
 2. 範囲 `[now, now + 60日)` の埋まりを、freeBusy.query（`primary`）で取る。60日にするのは、ここ暇を作れるのが60日先までのため（T-03）。
    - 候補と同じ条件で失敗を判定する（HTTP の失敗、タイムアウト、`primary` がない、`errors` がある）。
    - 失敗したら記録を更新せず、何も取り消さず、権利を戻す（`sync_lease_until = NULL`）。再試行は Queue に任せる。
@@ -287,6 +292,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 6. 取り消す枠が20を超えたら、1回目は保留にする（決定事項6）。
    - Google側の一時的な不具合で、60日分のここ暇が一度に消えるのを防ぐため。
    - 保留：何も取り消さず、埋まりの記録（`busy_snapshot`・`snapshot_from`・`snapshot_to`）も `last_synced_at` も進めない。`large_change_held = 1` と `sync_id` を書き、権利を戻す。ログには数だけを出す。
+     - 書く条件は、手順1で取った権利（`sync_lease_until`）と `status = 'active' AND dormant_since IS NULL`（T-17）。
      - `last_synced_at` を進めないのは、「前回の確認より前に作った」の基準を保留した時刻にずらすと、予定を見たうえで作ったここ暇まで対象に入るため。進めないので、次の Cron でまたすぐ確かめる
    - 次の確認は、進めなかった前回の記録と比べ直す。
      - また20を超え、`large_change_held = 1` なら、正当な大きな変更（旅行や出張をまとめて入れたなど）として、すべて取り消す。
@@ -295,14 +301,23 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
    - 記録を進めずに保留するので、2回続けて同じ結果なら取り消しが必ず起きる（取り消しが二度と起きないことはない）。
 7. 1つの batch で書く。
    1. 記録を更新する。
-      - 書き方：`UPDATE calendar_connections SET busy_snapshot = ?, snapshot_from = ?, snapshot_to = ?, last_synced_at = ?, large_change_held = 0, sync_id = <新しいランダム値>, sync_lease_until = NULL WHERE user_id = ? AND provider = ? AND status = 'active' AND sync_lease_until = <1で書いた値>`。
-      - 確認の途中で解除・連携し直し・権利切れがあれば、0行になる。
+      - 書き方：`UPDATE calendar_connections SET busy_snapshot = ?, snapshot_from = ?, snapshot_to = ?, last_synced_at = ?, large_change_held = 0, sync_id = <新しいランダム値>, sync_lease_until = NULL WHERE user_id = ? AND provider = ? AND status = 'active' AND dormant_since IS NULL AND sync_lease_until = <1で書いた値>`。
+      - 確認の途中で解除・連携し直し・権利切れ・休眠（T-17）があれば、0行になる。
    2. 取り消しの文を書く。availability の infra の関数が作り、どの文にも `EXISTS (SELECT 1 FROM calendar_connections WHERE user_id = ? AND provider = ? AND sync_id = <新しい値>)` を付ける。1が0行なら、どの文も何もしない（T-04 の `transition_id` と同じ書き方）。
       - 手動の枠：行を削除する（T-03 の取り消しと同じ）。
       - くり返しの展開：その日を例外に足す（`recurrence_exceptions` に `INSERT OR IGNORE`。T-03 の「この日だけ外す」と同じ）。
    3. 取り消しがあれば、outbox に `AvailabilityCancelledByCalendar` を書く（同じ `EXISTS` 付き）。
 - ここ暇を作るときは、埋まりと重なっていても止めない。予定を知ったうえで作ることもあるため。ただし候補には出さない。
 - 一時的な失敗は Queue の再試行に任せる。権利の期限（5分）が切れれば、次の確認で取り直せる。
+
+#### 休眠中の連携（docs/specs/T-17-retention.md「8.」）
+- 30日アプリを開いていない人（使える更新用トークンがなく、その人のセッションの `last_used_at` の一番新しいものが30日より前）の連携は休眠にする。ログアウト・失効しただけでは、最後に使ってから30日たつまで休眠にならない。退会した人の連携は休眠にしない（T-16 の後始末で消える）。
+- 休眠にする（15分ごと、割り当ての前に1回に100行まで）：`dormant_since = now` にし、埋まりの記録（`busy_snapshot`・`snapshot_from`・`snapshot_to`・`last_synced_at`）を消し、`large_change_held = 0`、`sync_lease_until = NULL`、新しい `sync_id` を書く。更新用トークンと `calendar_id` は残す（Google の許可は revoke しない）。
+- 休眠中は、定期の確認に割り当てない。休眠にする前に割り当てた確認があとから届いても、手順1の権利が取れないか、手順6・7の文が0行になるので、記録を書かず、ここ暇を取り消さない（自動の「今回は難しい」も起きない）。
+- 休眠中も、成立した予定の書き込み（`activeConnectionsOf`）は止めない。
+- 戻す：ログインでセッションを作る batch（T-01）で、その人の休眠中の連携を戻す（文は calendar の application の `wakeConnectionsStatement`）。15分ごとの Cron でも、`dormant_since` があるのに使える更新用トークンがあり最後に使ってから30日以内の連携を戻す（1回に100行まで）。戻すときも埋まりの記録を NULL にするので、次の確認は手順3の「記録だけ」から始まり、休眠の間に入った予定でまとめて取り消すことはない。
+- 連携し直し（コールバックの手順5）でも休眠を外す。
+- 受け入れること：休眠中は、カレンダーで埋まった時間のここ暇が、友達に空いているように見えることがある。
 
 ### 未返答の誘いの自動の「今回は難しい」
 - `AvailabilityCancelledByCalendar` の payload は `{ userId, ranges: [{ startsAt, endsAt }], occurredAt }`。
@@ -433,7 +448,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | `CALENDAR_TOKEN_KEYS` | secret | トークンの暗号化の鍵（kid → 32バイトのbase64 の JSON） |
 | `CALENDAR_TOKEN_CURRENT_KID` | vars | 暗号化に使う鍵ID |
 | `JOBS` | Queue（producer・consumer） | outbox と確認のメッセージ。退避キュー付き |
-| Cron | triggers | `* * * * *`（outbox と掃除）、`*/15 * * * *`（確認の割り当て） |
+| Cron | triggers | `* * * * *`（outbox と掃除）、`*/15 * * * *`（休眠にする・戻す、使えないセッションの購読の掃除、確認の割り当て。T-17） |
 
 - `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET` は T-01 のものを使う。リダイレクト先 `/api/v1/calendar/google/callback` を Google Cloud のクライアントに登録する（人が行う）。
 - Queue の本体と退避キューは、`infra/terraform` にすでにある `cloudflare_queue.outbox`・`outbox_dlq`（`kokohima-<env>-outbox`・`kokohima-<env>-outbox-dlq`）を使う（Terraform の変更はない）。
@@ -677,3 +692,4 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-21 | 確認の割り当てを最大1000件に、outbox の送出を1回の実行で最大10回の繰り返しにし、処理済みの行の掃除と Cron の各処理の独立を足す | docs/specs/T-12-data-growth.md |
 | 2026-11-21 | Cron の動いた記録、`job_failed`・`job_dead_lettered` を warn で出すことを書いた | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
+| 2026-11-23 | 休眠中の連携（判定、割り当ての条件とインデックス、埋まりの記録を消す、確認の権利・記録・保留の文の条件、ログインと15分ごとに戻す、連携し直しで休眠を外す）と、`ics_tokens (meetup_id)` のインデックスを足した | T-17 実装PR（docs/specs/T-17-retention.md） |

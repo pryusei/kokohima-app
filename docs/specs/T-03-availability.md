@@ -83,7 +83,7 @@
 | `presets` | `user_id`（PK、FK users、`ON DELETE CASCADE`）、`day_start`、`day_end`、`evening_start`、`evening_end`、`night_start`、`night_end`、`updated_at` | 行がなければ初期値（昼11:00〜15:00、夕方16:00〜19:00、夜19:00〜23:00） |
 | `availabilities` | `id`（UUID、PK）、`user_id`（FK、`ON DELETE CASCADE`）、`starts_at`、`ends_at`、`label`（null可）、`created_at` | INDEX(`user_id`, `starts_at`, `id`)、INDEX(`starts_at`) |
 | `recurrence_rules` | `id`（UUID、PK）、`user_id`（FK、`ON DELETE CASCADE`）、`weekday`、`start_minute`、`end_minute`、`label`（null可）、`timezone`、`created_at` | INDEX(`user_id`)。`timezone` は作成時のユーザーのタイムゾーン（あとで変わっても、ルールの意味は変えない） |
-| `recurrence_exceptions` | `rule_id`（FK、削除時は一緒に消す）、`local_date`（`YYYY-MM-DD`）、`created_at` | PK(`rule_id`, `local_date`) |
+| `recurrence_exceptions` | `rule_id`（FK、削除時は一緒に消す）、`local_date`（`YYYY-MM-DD`）、`created_at` | PK(`rule_id`, `local_date`)、INDEX(`local_date`)（T-17）。`local_date` が UTC の今日の2日前の日付より前の行は、毎分の掃除で消す（1回に1000行。T-17「6.」） |
 
 - ここ暇の取り消しは行を消す（履歴は持たない。行動の情報を残さないため）
 - 過去の枠は表示しない（`ends_at <= now` は一覧に出さない）。過去の行は、始まりが2日より前になったら毎分の Cron で消す（1回に最大1000行。docs/specs/T-12-data-growth.md）
@@ -117,6 +117,7 @@
 - 過去になった枠（終了が現在時刻より前）は返さない（「今日」の判定に日付は使わず、現在時刻と比べる）
 - 例外：`POST .../exceptions` でその日だけ外す（すでに外していても204）。日付は、ルールの曜日に一致し、ルールのタイムゾーンで今日以降、60日以内でなければ400（行が際限なく増えないように）。`DELETE .../exceptions/{date}` で戻す（外していなくても204）。どちらもルールが閲覧者のものでなければ404
 - ルールを消すと例外も消える
+- 過去の日付の例外は、毎分の掃除で消す（日付が UTC の今日の2日前の日付より前。当日・翌日・翌々日は残る。表示は今日以降の例外しか使わないので変わらない。docs/specs/T-17-retention.md「6.」）
 
 ### 友達のここ暇（みんな）
 - 閲覧者に見せてよい相手（「前提」の3条件）の、範囲内の手動の枠とくり返しの展開を返す
@@ -228,3 +229,4 @@
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-21 | 過去の枠の掃除と、検索に開始日時の条件を足すことを T-12 で対応 | docs/specs/T-12-data-growth.md |
 | 2026-11-21 | `/friend-availabilities` の主なエラーに 429 を足した | T-14 の実装PR（docs/specs/T-14-friend-availabilities-ratelimit.md） |
+| 2026-11-23 | 過去の日付のくり返しの例外の掃除を足した | T-17 実装PR（docs/specs/T-17-retention.md） |

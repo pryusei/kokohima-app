@@ -49,6 +49,7 @@
 | `notification_mail_rejected` | `"event":"notification_mail_rejected"` | 1時間に10件以上 |
 | `notification_mail_global_limit` | `"event":"notification_mail_global_limit"` | 1時間に1件以上 |
 | `calendar_sync_held` | `"event":"calendar_sync_held"` | 1時間に5件以上 |
+| `cleanup_capped` | `"event":"cleanup_capped"` | 1時間に30件以上 |
 
 - 閾値は、友達だけ（100人まで）の運用を前提にした最初の値。変えたら、この表と仕様書の「アラートの一覧」を一緒に直す。
 - Monitors が数えるログは warn 以下で出している。error で出すと Workers Issues からも届き、二重になる（仕様書「3.」）。
@@ -99,6 +100,7 @@
 | `notification_push_rejected`・`notification_mail_rejected` | 送り先・配信サービスに拒否されている | `status` を見る。Resend の管理画面・プッシュの鍵（VAPID）を確かめる |
 | `notification_mail_global_limit` | サービス全体の1日のメール数の上限（`MAIL_DAILY_LIMIT`）に達した | 1日の量を見て、上限か Resend の枠の見直し |
 | `calendar_sync_held` | カレンダーの大きな変化での保留が多い（T-06） | 一時的なものか、同じ人で続いていないかを見る |
+| `cleanup_capped` | 保持期間の掃除・休眠の処理が、上限いっぱいまで処理する実行が続いている（T-17） | `step` と `count` を見る。お知らせの期間を変えた直後などの一時的なものか、続くなら上限の見直し（docs/specs/T-17-retention.md「9.」） |
 
 ## 3. 退避キューの調べ方とやり直し方
 

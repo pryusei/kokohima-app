@@ -75,18 +75,19 @@
 ### 例外
 - 送信上限は429 `rate_limited` と `Retry-After`（直近24時間のうち、いちばん古い送信が24時間を過ぎるまでの秒数）。時間がたてば解ける制限なので429にする（T-03 の件数の上限は時間で解けないので409にした）
 - 同じ相手・同じ開始〜終了の、まだ生きている返事待ちの誘い（`pending` で期限前、または `counter_proposed` で代わりの時間の開始前）がすでにある場合は409 `invalid_state`。期限切れになった同じ誘いがあっても送り直せる。`Idempotency-Key` も、この仕様書の作成と状態遷移の `POST`（誘いの作成・返答・決める・やっぱり難しい）で受け付ける（T-10）。キーなしの二重送信や、別のキーでの送り直しは、この判定で防ぐ
-- 成立した予定の一覧は、これからの予定（`ends_at > now`、`status = confirmed`）だけを返す。キャンセルした予定と終わった予定は、元の誘いの詳細から見る。並び順は開始日時の古い順、同じなら `id` の昇順で、カーソルにはこの2つを入れる
+- 成立した予定の一覧は、これからの予定（`ends_at > now`、`status = confirmed`）だけを返す。キャンセルした予定と終わった予定は、元の誘いの詳細から見る（見られるのは時間の終わりから30日まで。そのあとは誘い・予定ごと消え、ほかの見つからないものと同じ404。T-17「2.」）。並び順は開始日時の古い順、同じなら `id` の昇順で、カーソルにはこの2つを入れる
 
 ## データ
 マイグレーション `apps/api/migrations/0004_invitation.sql`。日時はUnixミリ秒。
 
 | テーブル | 列 | 備考 |
 | --- | --- | --- |
-| `direct_invites` | `id`（UUID、PK）、`sender_id`（FK users、`ON DELETE CASCADE`）、`recipient_id`（同）、`kind`、`starts_at`、`ends_at`、`area`、`message`、`url`（いずれも null可）、`status`、`expires_at`、`counter_starts_at`・`counter_ends_at`（null可）、`responded_at`・`decided_at`（null可）、`transition_id`（null可。直近の遷移の値）、`created_at` | INDEX(`sender_id`, `created_at`, `id`)、INDEX(`recipient_id`, `created_at`, `id`)、INDEX(`sender_id`, `recipient_id`, `starts_at`)（同じ誘いの判定）。`status` は `pending`・`counter_proposed`・`confirmed`・`declined`・`skipped`・`cancelled` |
+| `direct_invites` | `id`（UUID、PK）、`sender_id`（FK users、`ON DELETE CASCADE`）、`recipient_id`（同）、`kind`、`starts_at`、`ends_at`、`area`、`message`、`url`（いずれも null可）、`status`、`expires_at`、`counter_starts_at`・`counter_ends_at`（null可）、`responded_at`・`decided_at`（null可）、`transition_id`（null可。直近の遷移の値）、`created_at` | INDEX(`sender_id`, `created_at`, `id`)、INDEX(`recipient_id`, `created_at`, `id`)、INDEX(`sender_id`, `recipient_id`, `starts_at`)（同じ誘いの判定）、INDEX(`ends_at`)（掃除。T-17）。`status` は `pending`・`counter_proposed`・`confirmed`・`declined`・`skipped`・`cancelled` |
 | `meetups` | `id`（UUID、PK）、`direct_invite_id`（FK direct_invites、`ON DELETE CASCADE`、UNIQUE。募集の予定のため null可）、`starts_at`、`ends_at`、`status`（`confirmed`・`cancelled`）、`transition_id`（null可）、`created_at`、`cancelled_at`（null可） | INDEX(`starts_at`, `id`) |
 | `meetup_participants` | `meetup_id`（FK、`ON DELETE CASCADE`）、`user_id`（FK users、`ON DELETE CASCADE`） | PK(`meetup_id`, `user_id`)、INDEX(`user_id`, `meetup_id`) |
 
 - 断りの理由の列は作らない
+- 保持：時間の終わり（代わりの時間があれば遅い方）から30日を過ぎた誘いは、状態によらず毎分の掃除で消す（1回に1000行）。予定・参加者・.ics の鍵・リンクの参照は CASCADE で一緒に消え、両方の参加者の履歴から同時に消える（docs/specs/T-17-retention.md「2.」）
 - 退会（T-16）：利用者の行を消さずに ID だけ残すので、FK の CASCADE は変えない（`SET NULL` は採らなかった）。これからの予定は本人の「やっぱり難しい」と同じ、受けた `pending` は「今回は難しい」、送った `pending` は「退会による打ち切り」（期限を今にする。通知なし）、送信者が退会した `counter_proposed` は `skipped`（通知なし。受信者が退会したものは期限で `expired`）。退会した人を含む「行く」「この時間で決める」は409
 
 ## 振る舞い
@@ -213,7 +214,7 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
 - 通知（T-07。outbox のイベントを読む）
 - OGPの取得とカード表示（T-08）
 - 返事待ちの誘いの取り下げ（決定事項5）、成立後の時間の変更（再調整しない。F-14）
-- 期限切れの行の掃除（Cron）
+- 期限切れの行の掃除（Cron）。終わってから30日を過ぎた行の掃除は T-17 で足した
 - Idempotency-Key（T-10 で行う）
 - 退会したユーザーの表示（T-16 で対応）
 - ひとことの不適切利用への対策（要求定義書の未決事項）
@@ -242,3 +243,4 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
 | 2026-11-15 | スコープ外に「手でここ暇を取り消しても、返事待ちの誘いは変えない」を明記（実装はそのまま） | 全体の点検（pryusei/kokohima-app#50） |
 | 2026-11-17 | `Idempotency-Key` を T-10 で受け付けることにした | T-10 の仕様書PR（docs/specs/T-10-idempotency-cache-ratelimit.md） |
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
+| 2026-11-23 | 終わってから30日を過ぎた誘い・予定の掃除（終わった予定を誘いの詳細から見られるのは30日まで）を足した | T-17 実装PR（docs/specs/T-17-retention.md） |
