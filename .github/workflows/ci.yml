@@ -1,15 +1,42 @@
-# pushごと：型チェック・lint・単体テスト
+# PR と main への push：型チェック・lint・単体テスト・本番のビルド（docs/specs/T-30-ci-review.md「2. ci」）
+# main 以外のブランチへの push だけでは回さない（PR を作れば回る）
 name: ci
 on:
   push:
-  pull_request:
     branches: [main]
+  pull_request:
 
 permissions:
   contents: read
 
+# 同じ PR に新しい push が来たら、古い実行を取り消す。main への push はコミットごとに別のグループにし、取り消さない
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # PR の変更を分類する（scripts/ci/changes.mjs）。文書（docs/ と .md）だけなら unit を飛ばす
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: classify
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: node scripts/ci/changes.mjs "$BASE"
+
   unit:
+    needs: changes
+    # changes が成功して文書だけのときだけ飛ばす。changes が失敗したとき・main への push（changes がない）では回す。
+    # paths-ignore で飛ばすと、必須チェックが「待機中」のまま止まってマージできなくなるので、ジョブの if: で飛ばす
+    if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -29,18 +56,18 @@ jobs:
       # （apps/api/scripts/check-*.mjs。deploy:prod も同じ検査を通してからデプロイする。docs/specs/T-12-release.md）
       - run: pnpm --filter api build:prod
 
-  # 実装PR（feat/*）に単体テストの追加・変更が含まれているかを確認する
+  # 実装PRに単体テストの追加・変更が含まれているかを確認する。ブランチ名ではなく差分で判定する（scripts/ci/changes.mjs）。
+  # changes に頼らず自分で差分を取る（changes が失敗したときに、この検査が飛ばされないように）
   require-unit-tests:
-    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/')
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: 単体テストの追加を確認
-        run: |
-          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
-          if ! echo "$changed" | grep -Eq '^(apps|packages)/.+\.test\.tsx?$'; then
-            echo "::error::実装PRには単体テスト（*.test.ts）の追加・変更が必要です"
-            exit 1
-          fi
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: node scripts/ci/changes.mjs "$BASE" --require-unit-tests

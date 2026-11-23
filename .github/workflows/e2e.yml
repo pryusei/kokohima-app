@@ -1,27 +1,64 @@
-# mainへのマージ前：E2Eテスト（ブランチ保護で必須チェックに設定する）
+# main への PR・main への push・手動：E2E テスト（ブランチ保護で必須チェックに設定する。docs/specs/T-30-ci-review.md「3. E2E」）
 name: e2e
 on:
   pull_request:
     branches: [main]
+  # マージした後の main を確かめる
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# 同じ PR に新しい push が来たら、古い実行を取り消す。main への push はコミットごとに別のグループにし、取り消さない
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # PR の変更の分類（文書だけなら e2e を飛ばす）と、コンテナの版（pnpm-lock.yaml の @playwright/test）を出す
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      playwright: ${{ steps.playwright.outputs.playwright }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: classify
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: node scripts/ci/changes.mjs "$BASE"
+      - id: playwright
+        run: node scripts/ci/playwright-version.mjs
+
   e2e:
+    needs: prepare
+    # 飛ばす条件は ci の unit と同じ（prepare が成功して文書だけのときだけ）。prepare が失敗したときは、版が空でコンテナが起動せず落ちる
+    if: ${{ !cancelled() && !(needs.prepare.result == 'success' && needs.prepare.outputs.docs_only == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Playwright の公式のコンテナ。OS の依存とブラウザ（Chromium・WebKit）が入っているので、playwright install --with-deps をしない
+    # （ランナーで apt から 140 MB を取るのに 14分46秒かかったことがある）。Ubuntu は作業環境と同じ 24.04（noble）にし、
+    # 落ちたときに手元で同じ条件で再現できるようにする。--ipc=host は Chromium のため（Playwright の Docker の案内）
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.prepare.outputs.playwright }}-noble
+      options: --ipc=host
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
-          # ランナーに入っている古い 22.x を使わず、セキュリティ修正の入った最新の 22.x を取る
+          # コンテナに入っている Node ではなく、セキュリティ修正の入った最新の 22.x を取る
           check-latest: true
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
       # Playwrightの設定（webServer）でローカルのWorkersとPWAを起動してから実行する
       - run: pnpm e2e
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

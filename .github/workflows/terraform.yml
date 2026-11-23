@@ -1,4 +1,4 @@
-# infra/ を変更したPR：フォーマット・検証・plan（applyは人が手動で行う）
+# infra/ を変更したPR：フォーマット・検証・plan（applyは人が手動で行う。docs/specs/T-30-ci-review.md「6. terraform」）
 name: terraform
 on:
   pull_request:
@@ -9,7 +9,25 @@ permissions:
   contents: read
 
 jobs:
+  # 秘密を使わない検査。承認を待たずに回し、整形と検証の誤りをすぐ知らせる
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+      - run: terraform fmt -check -recursive infra/terraform
+      - name: terraform validate（staging・prod）
+        run: |
+          for env in staging prod; do
+            terraform -chdir="infra/terraform/envs/$env" init -backend=false -input=false
+            terraform -chdir="infra/terraform/envs/$env" validate
+          done
+
   plan:
+    needs: check
     runs-on: ubuntu-latest
     # 秘密を使う前に人の承認を挟む。承認者は GitHub の Settings → Environments → terraform-plan の Required reviewers で設定する（issue #59）
     environment: terraform-plan
@@ -28,7 +46,5 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
-      - run: terraform fmt -check -recursive ../../
       - run: terraform init -backend-config="endpoints={s3=\"https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com\"}"
-      - run: terraform validate
       - run: terraform plan -no-color -lock=false
