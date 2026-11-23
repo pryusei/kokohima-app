@@ -1,4 +1,4 @@
-import type { FreeSlots } from "@kokohima/shared";
+import { RETENTION, type FreeSlots } from "@kokohima/shared";
 import { presetWindows } from "../../availability/application/calendarFacing";
 import { overlapsAny } from "../domain/busy";
 import { ProviderUnavailable, ReauthRequired } from "../domain/provider";
@@ -11,7 +11,7 @@ import { accessTokenFor, providerFor, type Ctx } from "./connections";
 // 失敗しても 5xx にせず status: unavailable で返す
 
 /** キャッシュの秒数。Google に足した予定が最大この時間は候補に残る */
-export const FREE_BUSY_CACHE_SECONDS = 300;
+export const FREE_BUSY_CACHE_SECONDS = RETENTION.freeBusyCacheMinutes * 60;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const empty = (status: FreeSlots["status"]): FreeSlots => ({ status, items: [], nextCursor: null });

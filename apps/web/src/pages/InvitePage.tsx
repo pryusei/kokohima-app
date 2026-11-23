@@ -1,12 +1,15 @@
 import { acceptInviteResponseSchema, inviteLookupResponseSchema, type InviteLookupResponse } from "@kokohima/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch } from "../api/client";
+import { keys } from "../api/keys";
 import { useAuth } from "../auth/AuthProvider";
 import { navigate } from "../router";
 
 import { Avatar } from "../ui/Avatar";
 import { buttonClass, SendButton } from "../ui/Button";
 import { Loading } from "../ui/feedback";
+import { LegalLinks } from "./LegalDocument";
 
 // 招待リンクの受け口（docs/specs/T-02-friends.md「招待リンクの受け口」）
 // トークンはURLのフラグメントから読んだらすぐ消し、ブラウザのストレージには置かない（サーバーが招待Cookieで持ち越す）
@@ -61,11 +64,15 @@ export function InvitePage() {
     })();
   }, []);
 
+  const queryClient = useQueryClient();
   const accept = async (linkId: string) => {
     setSending(true);
     try {
       const res = await apiFetch("/api/v1/invite-links/accept", { method: "POST", body: JSON.stringify({ linkId }) });
       acceptInviteResponseSchema.parse(await res.json());
+      // 新しい友達の一覧・行きたいを読み直す（T-22）
+      void queryClient.invalidateQueries({ queryKey: keys.friends.all() });
+      void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
       navigate("/friends", { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setState({ kind: "own" });
@@ -77,6 +84,7 @@ export function InvitePage() {
     }
   };
 
+  const canLogIn = state.kind === "ready" && status !== "authenticated" && status !== "checking";
   const loginUrl = (provider: "google" | "apple") => `/api/v1/auth/${provider}/start?returnTo=${encodeURIComponent("/invite")}`;
 
   return (
@@ -148,6 +156,11 @@ export function InvitePage() {
           )}
         </>
       )}
+      {/*
+        lookup が終わってから出す（トークンは招待 Cookie に移ってから。docs/specs/T-19-privacy-terms.md「4.」）。
+        同意の1行は、ログインのボタンを出しているとき（使えるリンクで、未ログイン）だけ。ほかはリンクだけ
+      */}
+      {state.kind !== "loading" && <LegalLinks consent={canLogIn} />}
     </main>
   );
 }
