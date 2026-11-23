@@ -13,6 +13,7 @@
 - [ ] 仕様書でE2Eの対象にした流れのE2Eテストを追加・更新した
 - [ ] 仕様の変更がある場合、仕様書（必要なら requirements.md）を同じPRで修正した
 - [ ] 他人のIDでは取得・更新できないテストがある（APIを追加した場合）
+- [ ] 保存する情報・外に渡すもの・委託先・Cookie・保存期間を変えた場合、プライバシー ポリシー（`/privacy`）と `packages/shared/src/retention.ts` を同じPRで直した（docs/specs/T-19-privacy-terms.md「9.」）
 - [ ] 実行したコマンドと結果：
 
 ## 人のレビューが必須の変更

@@ -14,7 +14,14 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: /release\.spec\.ts/ },
+    // 画面の大きさを2つに分ける（docs/specs/T-20-desktop-layout.md「E2Eテスト」）。今の流れはスマホの幅（iPhone 13 の大きさ、ブラウザは Chromium）で回す
+    {
+      name: "mobile",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } },
+      testIgnore: [/release\.spec\.ts/, /desktop\.spec\.ts/],
+    },
+    // PC の配置（幅1024px以上）の流れだけを、PC の幅で回す
+    { name: "desktop", use: { ...devices["Desktop Chrome"] }, testMatch: /desktop\.spec\.ts/ },
     // 本番と同じ形（ビルドした画面を同じ Worker の静的アセットとして出す）で、CSP の違反がないかを確かめる（docs/specs/T-12-release.md）
     {
       name: "release",

@@ -30,7 +30,7 @@
 
 ## デプロイ（prod。人が行う。docs/specs/T-12-release.md「人が行う作業」）
 - `pnpm --filter api db:migrate:prod`：D1 のマイグレーションを本番に適用する
-- `pnpm --filter api deploy:prod`：画面をビルドし、画面のビルドと wrangler の設定を検査してから `wrangler deploy --env prod`
+- `pnpm --filter api deploy:prod`：画面をビルドし、画面のビルドと wrangler の設定を検査してから `wrangler deploy --env prod`。プライバシー ポリシーと利用規約の制定日（`apps/web/src/pages/legal.ts` の `EFFECTIVE_DATE_LINE`）が仮の値のままなら止まる（docs/specs/T-19-privacy-terms.md「5.」）
 - 問題があれば `wrangler rollback --env prod` で戻す
 
 ## DNS の例外
