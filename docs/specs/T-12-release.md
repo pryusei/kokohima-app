@@ -129,6 +129,7 @@
   - wrangler の設定：prod の `assets.run_worker_first` が `true`・`not_found_handling` が `single-page-application`・`binding` が `ASSETS`、トップレベルと prod の `workers_dev`・`preview_urls` が `false`、prod の `routes` が `kokohima.app`（`custom_domain`）だけ、prod の `APPLE_LOGIN_ENABLED` が `"0"` で `E2E_MODE` がない、トップレベルと prod の `main` が `src/index.ts`、どの環境も `workers_dev`・`preview_urls` を `true` にしない、prod 以外の環境とトップレベルに `routes` がない（設定が変わってヘッダーが付かなくなるのを CI で気づくため）。
 - `pnpm --filter api deploy:prod`（新しく足す）：`apps/web` をビルドし、CI と同じ検査（画面のビルド・wrangler の設定・`--dry-run` で作った API のビルドに E2E 用の経路がないこと。`apps/api/scripts/check-*.mjs`）を通してから `wrangler deploy --env prod`。手元の `.env.local` などが本番のビルドに入り込んでも、ここで止まる。人だけが実行する（Claude は実行しない）。
   - `deploy:prod` だけ、転記を忘れた値も検査する（`check-wrangler-config.mjs --deploy`）：prod の `vars.GOOGLE_CLIENT_ID`・`vars.VAPID_PUBLIC_KEY` が空、または prod の D1 の `database_id`・KV の `id` がすべて0の仮の値なら止まる。CI の `build:prod` は TODO のままの設定でビルドするので、この検査を付けない。
+  - `deploy:prod` だけ、プライバシー ポリシーと利用規約の制定日が決まっているかも検査する（`check-web-dist.mjs --deploy`。「制定日：YYYY年M月D日」でなければ止まる。T-19「5.」）。「制定日：」が `dist` にちょうど1回あることは、CI の `build:prod` でも毎回確かめる。
 - `pnpm --filter api db:migrate:prod`（新しく足す）：`wrangler d1 migrations apply DB --remote --env prod`（prod の `DB` のバインディング＝`kokohima-prod`）。人だけが実行する。
 
 ### 人が行う作業（デプロイの前。#52 に載せる）
@@ -144,11 +145,12 @@
 2. Terraform（infra/README.md の初回の手順を prod で）：状態ファイル用の R2 バケット `kokohima-tfstate` を作る → `infra/terraform/envs/prod` で `terraform init -backend-config=...` → `plan -var account_id=...` → `apply`（D1・KV・R2・Queues）。出力の D1・KV の ID を wrangler の prod に転記する PR を出す（Claude に頼んでよい）。
 3. Google Cloud：プロジェクトで Google Calendar API を有効にする。同意画面（ユーザーの種類は「外部」、公開ステータスは「本番」。審査は受けない。決定事項7）と、本番の OAuth クライアント（ウェブ アプリケーション）。
    - 承認済みのリダイレクト URI：`https://kokohima.app/api/v1/auth/google/callback` と `https://kokohima.app/api/v1/calendar/google/callback`
-   - 同意画面のスコープ：`openid`・`email`・`profile` と、カレンダーの `calendar.freebusy`・`calendar.app.created`（T-06 決定事項1）
+   - 同意画面のスコープ：`openid`・`email` と、カレンダーの `calendar.freebusy`・`calendar.app.created`（T-06 決定事項1）。`profile` は入れない（ログインの要求は `openid email` だけ。T-01。docs/specs/T-19-privacy-terms.md 決めたこと8）。すでに入れていれば、同意画面の「データアクセス」で `profile` を消す。
+   - 同意画面の「ブランディング」：アプリのホームページ `https://kokohima.app`、プライバシー ポリシー `https://kokohima.app/privacy`、利用規約 `https://kokohima.app/terms`、承認済みのドメイン `kokohima.app`、サポートのメール `ops@kokohima.app`。ロゴは入れない（決定事項7）。
    - クライアント ID を wrangler に転記。
-   - 同意画面の「対象」で「アプリを公開」を押し、公開ステータスを「本番」にする（テストユーザーの登録は要らない）。押したときの画面の説明（審査の要否・人数の上限）を確かめ、下の「本番にしたときの扱い」と違えば、この仕様書を直す。
+   - プライバシー ポリシーと利用規約（T-19）をデプロイしてから（制定日を決めないと `deploy:prod` が止まる）、同意画面の「対象」で「アプリを公開」を押し、公開ステータスを「本番」にする（テストユーザーの登録は要らない）。押したときの画面の説明（審査の要否・人数の上限）を確かめ、下の「本番にしたときの扱い」と違えば、この仕様書を直す。
    - 本番にしたときの扱い（決定事項7。公式の資料はこの作業環境から読めなかったため、公開の画面の説明で確かめる）：
-     - ログイン（`openid`・`email`・`profile`。審査の要らないスコープ）は、Google アカウントがあれば誰でもでき、確認されていないアプリの警告は出ない。
+     - ログイン（`openid`・`email`。審査の要らないスコープ）は、Google アカウントがあれば誰でもでき、確認されていないアプリの警告は出ない。
      - カレンダーの連携（`calendar.freebusy`・`calendar.app.created`。審査の対象のスコープ）では、「Google はこのアプリを確認していません」の画面が出る。利用者は「詳細」から進む。審査を受けるまで、連携できる人数に上限（許可した人の累計で100人）がある。
      - ログインできる人数には上限がない。
      - 「テスト」のときの、更新用トークンが7日で失効する制約はなくなる（毎週の `needs_reauth` と「つなぎ直し」のお知らせは起きない）。
@@ -239,3 +241,4 @@
 | 2026-11-21 | 実装PRのセキュリティのレビューを反映：deploy:prod でも API のビルドの E2E の名前と `main` を検査、どの環境も workers.dev を開けない検査、Apple のボタンは目印 `data-provider="apple-login"` で検査 | 実装PRのレビュー（セキュリティ） |
 | 2026-11-22 | 実装PRのレビューを反映：deploy:prod だけで転記を忘れた値を検査（`--deploy`）、`ASSETS` がないときの API のヘッダーの扱い、デプロイのあとの `//` のパスの確認、本番と同じ形の E2E に `/invite`、assets の環境のローカルの D1 を e2e と分ける | 実装PRのレビュー |
 | 2026-11-23 | 決定事項7を変えた：Google の OAuth を審査なしで「本番」の公開ステータスにする（テストユーザーの登録と7日の失効をなくす）。人が行う作業3と概要を合わせた。受け入れるリスク（招待リンクが唯一の門・連携の枠を知らない人も使う）と、プライバシー ポリシー・利用規約（T-19）を先にデプロイすること、未確認の事項を足した | 利用者の回答（最初のリリースのあと）、仕様書PRの前のレビュー |
+| 2026-11-23 | 人が行う作業3から `profile` のスコープを外し、同意画面のブランディング（ホームページ・プライバシー ポリシー・利用規約・承認済みのドメイン・サポートのメール）と、T-19 をデプロイしてから本番にすることを足した。`deploy:prod` の制定日の検査を足した | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
