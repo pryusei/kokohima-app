@@ -29,7 +29,7 @@
 | GET | `/api/v1/invite-links` | Bearer | query：`limit`、`cursor` | 200：`{ items: inviteLinkSchema[], nextCursor }`（`url` は含まない） | 400 |
 | POST | `/api/v1/invite-links/{id}/revoke` | Bearer | なし | 204（自分のリンクなら、無効化済み・期限切れでも204。期限から30日を過ぎて掃除で消えたリンクは404。T-17） | 404 `not_found`（他人のリンク・存在しない・掃除で消えた） |
 | POST | `/api/v1/invite-links/lookup` | なし（Origin） | JSON：`inviteLookupRequestSchema` `{ token? }`（省略時は招待Cookieのトークン） | 200：`inviteLookupResponseSchema` `{ linkId, inviter: { displayName, avatarUrl } }`（招待Cookieを発行） | 404 `not_found`、401（Origin不一致） |
-| POST | `/api/v1/invite-links/accept` | Bearer＋Origin | JSON：`acceptInviteRequestSchema` `{ linkId }`（`lookup` で表示したリンク。トークンは招待Cookieのものを使う） | 201（友達になった）／200（すでに友達）：`acceptInviteResponseSchema` `{ friend: publicProfile, alreadyFriends }` | 404 `not_found`、409 `invalid_state`（自分のリンク） |
+| POST | `/api/v1/invite-links/accept` | Bearer＋Origin | JSON：`acceptInviteRequestSchema` `{ linkId }`（`lookup` で表示したリンク。トークンは招待Cookieのものを使う） | 201（友達になった）／200（すでに友達）：`acceptInviteResponseSchema` `{ friend: publicProfile, alreadyFriends }` | 404 `not_found`、409 `invalid_state`（自分のリンク、閲覧者の表示名が未設定。T-31） |
 | PATCH | `/api/v1/me` | Bearer | JSON：`updateMeRequestSchema` `{ displayName }`（1〜20文字） | 200：`meResponseSchema` | 400 |
 | GET | `/api/v1/friends` | Bearer | query：`limit`、`cursor` | 200：`{ items: friendSchema[], nextCursor }` | 400 |
 | PATCH | `/api/v1/friends/{friendId}` | Bearer | JSON：`updateFriendRequestSchema` `{ sharesMyAvailability: boolean }` | 200：`friendSchema` | 400、404 `not_found` |
@@ -85,6 +85,7 @@
 - ログイン済みでも、友達になるのは「友達になる」を1回押したとき（決定事項8）
 - 招待Cookieがない（1時間たった、別のブラウザ）ときは、`accept` が404になり「このリンクは使えません」と同じ表示になる
 - ログイン済みなら「友達になる」ボタンで `accept` を呼ぶ。友達になったら友達タブへ移る
+- ログイン済みで閲覧者の表示名が未設定なら、「友達になる」の代わりに、表示名の欄と「これで友達になる」を出す（名前の保存 → `accept` を1回押すだけで行い、友達になったら直後の1画面 `/welcome` へ移る）。詳しくは docs/specs/T-31-display-name-first-step.md
 - 使えないリンク（404）は、静かな文言1種類で表示する（赤を使わない）
 - `lookup` が終わったら（読み込み中は出さない）、画面の下に利用規約とプライバシー ポリシーへのリンクを出す。未ログインなら同意の1行（ログイン画面と同じ）、ログイン済みならリンクだけ。開いて「戻る」で `/invite` に戻ると、招待Cookieで `lookup` し直して続けられる（T-19「4.」）
 - 自分のリンク（`accept` が409）は「これはあなたが作ったリンクです。友達に送ってください」と静かに表示する
@@ -94,6 +95,7 @@
 1. 招待Cookieのトークンのハッシュでリンクを取得する。Cookieがない・リンクがない・期限切れ・無効化・上限に達している、のどれでも404
 2. 取得したリンクの `id` が本文の `linkId` と一致しなければ404。別のタブで別のリンクを開いて招待Cookieが上書きされたときに、画面に出ていない相手と友達になるのを防ぐ（Cookieは消さない。正しいタブから開き直せば続けられる）
 3. 発行者が閲覧者自身なら409 `invalid_state`
+   - 続けて、閲覧者の表示名が未設定（`null`）なら409 `invalid_state`。招待Cookieは消さない（名前を決めてからやり直すため。docs/specs/T-31-display-name-first-step.md）
 4. 次の5つの文を1つのバッチ（トランザクション）で実行する。途中で落ちれば全部戻るので、片方向の関係や「人数だけ消費」は残らない。D1は書き込みを直列に処理するので、同じ人の同時の `accept` もバッチの途中に割り込まない
    1. `UPDATE invite_links SET uses = uses + 1 WHERE id = ? AND uses < max_uses AND revoked_at IS NULL AND expires_at > ? AND NOT EXISTS (閲覧者→発行者の行)`
    2. 閲覧者→発行者の行を書く（直前の文が1行を書いたとき＝`changes() = 1` のときだけ）
@@ -114,10 +116,10 @@
 - 友達一覧の `sharesMyAvailability` は `sharing_policies.visible`（行がなければ `true`）
 
 ### 表示名
-- T-01では、表示名は初回設定（別のタスク）まで全員 `null`。このままでは、受け口で「誰と友達になるのか」を確かめられない（決定事項8）
+- T-01では、表示名は初回設定（T-31 で、最初のログインで必須にした）まで全員 `null`。このままでは、受け口で「誰と友達になるのか」を確かめられない（決定事項8）
 - そのため、このタスクで表示名の設定だけを先に作る：`PATCH /api/v1/me` `{ displayName }`。NFCで正規化して前後の空白を除き、コードポイントで1〜20文字。制御文字（C0・C1）、書式文字（書字方向の上書き、幅のない文字など）、私用領域、孤立サロゲート、行・段落の区切りは不可（見た目を偽装した名前を作らせないため）。identity コンテキストに置く。アイコンや初回設定の流れは別タスク
-- 招待リンクは、表示名を設定した人だけが発行できる（未設定なら409）。友達タブの招待リンクの節は、表示名が未設定のあいだは表示名の入力に置き換える（保存すると「招待リンクを作る」が出る）
-- それでも友達一覧には、表示名が未設定の相手（リンクを受けただけの人）が出うる。APIは `null` のまま返し、画面では「名前未設定の友達」と表示する
+- 招待リンクは、表示名を設定した人だけが発行できる（未設定なら409）。表示名が未設定の人は名前の画面（T-31）から先に進めないので、友達タブの招待リンクの節を表示名の入力に置き換える処理は T-31 でなくした
+- T-31 より前に、表示名が未設定のまま友達になった相手は、友達一覧に出うる。APIは `null` のまま返し、画面では「名前未設定の友達」と表示する（T-31 からは、表示名が未設定なら `accept` が409になり、新しくは生まれない）
 - 表示名は本人が自由に決められる値なので、「偽の招待ページ」（なりすまし）への対策としては弱い。受け口の表示は「この名前の人のリンク」以上を保証しないことを受け入れる（決定事項9）。取り違えたときは、友達追加の通知から公開をオフにでき、静かに解除もできる（要求定義書の受容したリスク）
 - E2Eで相手を見分けるため、`/__e2e__/login` に任意の `displayName`（`PATCH /me` と同じ1〜20文字）を受け付けさせ、テスト用ユーザーに表示名を入れる（E2E用のエントリだけの変更）
 
@@ -223,3 +225,4 @@
 | 2026-11-23 | 招待リンクの受け口に、利用規約とプライバシー ポリシーへのリンクを足した | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
 | 2026-11-23 | 公開プロフィールの `avatarUrl` を T-27 の署名つき URL にし、入る相手を書いた | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |
 | 2026-11-23 | 招待リンクの発行に「LINEで送る」、受け口にLINEのアプリ内ブラウザ向けの案内の帯を足した | T-28 実装PR（docs/specs/T-28-line-share.md） |
+| 2026-11-23 | 表示名が未設定の閲覧者の `accept` を409にし、受け口で表示名の入力と「これで友達になる」を1つにした。友達タブの表示名の入力をなくした | T-31（docs/specs/T-31-display-name-first-step.md） |
