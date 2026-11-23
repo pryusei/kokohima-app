@@ -56,3 +56,18 @@ export async function viewersWhoCanSee(d1: D1Database, ownerId: string, viewerId
 export function withdrawalPurgeSharingStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
   return [d1.prepare("DELETE FROM sharing_policies WHERE owner_id = ?1 OR target_id = ?1").bind(userId)];
 }
+
+/**
+ * 友達の解除（T-02・T-17「7.」）：両方向の公開設定のうち「見せる」（visible = 1）の行だけを消す文。social の解除の batch に入れる。
+ * 「見せない」の行は退会まで残す（友達に戻っても見せないまま。T-02 決定事項5）。「見せる」は初期値と同じなので、見え方は変わらない
+ */
+export function unfriendPurgeSharingStatements(d1: D1Database, userId: string, friendId: string): D1PreparedStatement[] {
+  return [
+    d1
+      .prepare(
+        `DELETE FROM sharing_policies
+         WHERE visible = 1 AND ((owner_id = ?1 AND target_id = ?2) OR (owner_id = ?2 AND target_id = ?1))`,
+      )
+      .bind(userId, friendId),
+  ];
+}

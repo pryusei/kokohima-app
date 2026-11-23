@@ -66,6 +66,7 @@
   - consumer も同じ線で判定する。dispatch は Queue のメッセージに outbox の行の `created_at` を載せる（載っていないメッセージでは payload の `occurredAt` で判定する）。
   - `NOTIFICATION_START_AT` が未設定・正の整数でないときは、「まだ有効にしていない」として扱う（安全な側に倒す）。
     - お知らせを作らない。dispatch は通知だけの型を流さず、処理済みにもしない（有効にしたあと、その時刻より後の行から流れる）。
+    - 未設定の間は、毎分の掃除で、通知だけの型で未処理の、作ってから30日を過ぎた行を消す（ちょうど30日の行は残る。1回に1000行。インデックス `outbox_unprocessed`。処理済みの行の掃除（T-12）では消えず、誰が誰の誘いを断ったかなどが残り続けるため。docs/specs/T-17-retention.md「4.」）。
     - T-06 の型は今までどおり流す（カレンダーの処理と自動の断りは行い、お知らせだけ作らない）。
     - staging・prod は空にしておき、T-07 を有効にするときにその時刻を入れる（人が行う）。
   - 経過日数（例：作成から7日）で決めると、デプロイ直前の行（この1週間の `SessionStarted` による「新しい端末でのログイン」のメールなど）がまとめて届き、逆にデプロイ後に処理が止まったときは正当なお知らせを捨ててしまうため。
@@ -214,7 +215,7 @@
   - `outcome`（`sent`・`muted`・`limited`・`no_address`・`failed`）
 - 一意：`(event_id, user_id)`。同じイベントが2回届いても1件。
 - インデックス：`(user_id, inserted_at, id)`（一覧）、`(user_id, read_at)`（未読数）、`(inserted_at)`（掃除）。
-- 保持：作成から90日。掃除は T-06 の Cron に足す。
+- 保持：作成（`inserted_at`）から30日（ちょうど30日の行は残る。T-17 で90日から変えた）。掃除は T-06 の Cron に足す。1回に消すのは1000行まで（`DELETE FROM notifications WHERE id IN (SELECT id FROM notifications WHERE inserted_at < ? LIMIT 1000)`）。上限いっぱいまで消したら `cleanup_capped`（docs/specs/T-17-retention.md「3.」「9.」）。
 
 ### `push_subscriptions`
 - 列
@@ -230,6 +231,7 @@
 - ログアウトでは、そのセッションの購読を消す。全端末ログアウトでは、その人の購読をすべて消す。
 - 更新用トークンの再利用の検知でセッションの系列を失効させるときも、そのセッションの購読を消す（T-01 の更新の処理に足す。identity から notification の `deleteSubscriptionsOfSession` を呼ぶ）。
 - 届けるときは、購読の `session_id` のセッションが失効しておらず期限内のもの（`requireActiveSession` と同じ条件）だけを使う。使えない購読は、そのとき消す。盗まれて失効させたセッションや、90日で切れたセッションの端末に、合図を送り続けないため。
+- 失効か期限切れのセッションの購読は、15分ごとの Cron でも消す（1回に1000行。T-01 のセッションの掃除は利用者ごとに最初のセッションの行を残すので、その行の購読は CASCADE では消えない。docs/specs/T-17-retention.md「9.」）。
 
 ### `notification_preferences`
 - 列：`user_id`（PK、→ users、CASCADE）、`invites`、`broadcasts`、`meetups`、`friends`、`calendar`（0／1）、`updated_at`。
@@ -483,7 +485,7 @@
 - [ ] T-06 の型は常に流す。`NOTIFICATION_START_AT` より前の `AvailabilityCancelledByCalendar` でも自動の断りは行い、お知らせだけ作らない。
 - [ ] `AvailabilityCancelledByCalendar` で、自動の断りが失敗しても通知は届けたうえで投げる。
 - [ ] カレンダーの処理が失敗しても、通知は届けたうえで投げる。
-- [ ] 90日を過ぎたお知らせと、UTC で3日前の日付より前の日ごとの数を Cron で掃除する。
+- [ ] 30日を過ぎたお知らせ（T-17 で90日から変えた。上限1000行）と、UTC で3日前の日付より前の日ごとの数を Cron で掃除する。
 
 #### API
 - [ ] 一覧の並び（`inserted_at` の新しい順）・カーソル・未読数。
@@ -574,3 +576,4 @@
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-21 | `notification_daily_counts` の掃除のためのインデックス `(day)` を書いた | T-12 の実装PR（docs/specs/T-12-data-growth.md） |
 | 2026-11-21 | 全体のメール数の上限で送らなかったときのログ `notification_mail_global_limit` を書いた | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
+| 2026-11-23 | お知らせの保持を30日にし掃除に上限を付けた。`NOTIFICATION_START_AT` が未設定の間の通知だけの型の行の掃除と、使えないセッションの購読の15分ごとの掃除を足した | T-17 実装PR（docs/specs/T-17-retention.md） |

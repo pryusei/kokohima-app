@@ -260,3 +260,17 @@ export async function decideBroadcast(
   ]);
   return updated?.meta.changes === 1;
 }
+
+// ---- 終わった募集の掃除（docs/specs/T-17-retention.md「2.」） ----
+
+/**
+ * 時間の終わりが cutoff より前の募集を消す（上限つき）。状態では絞らない。
+ * 宛先・予定・参加者・.ics の鍵・リンクの参照は外部キーの CASCADE で一緒に消える。消した数
+ */
+export async function deleteBroadcastsEndedBefore(d1: D1Database, cutoff: number, limit: number) {
+  const r = await d1
+    .prepare("DELETE FROM broadcasts WHERE id IN (SELECT id FROM broadcasts WHERE ends_at < ?1 ORDER BY ends_at LIMIT ?2)")
+    .bind(cutoff, limit)
+    .run();
+  return r.meta.changes;
+}

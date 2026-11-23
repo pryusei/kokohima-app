@@ -143,7 +143,9 @@ export async function findOrCreateUser(
 
 /**
  * セッション・更新用トークン・SessionStarted を書く。退会した人（T-16）には作らない（同時に進んでいたログインで、抜け殻に
- * セッションを作り直さない）。後続の文はセッションの行があるときだけ書く。作れたら true
+ * セッションを作り直さない）。後続の文はセッションの行があるときだけ書く。作れたら true。
+ * afterSession は、セッションの INSERT の直後に同じ batch で走らせる、ほかのコンテキストの文（セッションの行があるときだけ
+ * 書く条件を、文の側に持つ。休眠中の連携を戻す文。docs/specs/T-17-retention.md「8.」）
  */
 export async function createSessionRows(
   db: Db,
@@ -155,9 +157,10 @@ export async function createSessionRows(
     sessionExpiresAt: number;
     event: Record<string, unknown>;
     now: number;
+    afterSession?: D1PreparedStatement[];
   },
 ) {
-  const { sessionId, userId, tokenHash, tokenExpiresAt, sessionExpiresAt, event, now } = params;
+  const { sessionId, userId, tokenHash, tokenExpiresAt, sessionExpiresAt, event, now, afterSession = [] } = params;
   const d1 = db.$client;
   const ev = outboxRow("SessionStarted", event, now);
   const [inserted] = await d1.batch([
@@ -167,6 +170,7 @@ export async function createSessionRows(
          SELECT ?1, ?2, ?3, ?3, ?4 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)`,
       )
       .bind(sessionId, userId, now, sessionExpiresAt),
+    ...afterSession,
     d1
       .prepare(
         `INSERT INTO refresh_tokens (id, session_id, token_hash, created_at, expires_at)

@@ -1,8 +1,13 @@
 import { createApp, defaultDeps } from "./app";
+import { DORMANCY_BATCH, markDormantConnections, wakeDormantConnections } from "./calendar/application/dormancy";
 import { assignSyncs } from "./calendar/application/sync";
 import type { AppDeps, Bindings, JobMessage } from "./env";
 import { handleBatch } from "./jobs/consumer";
-import { cleanupExpired, dispatchOutbox, recordCronRun, runStep } from "./jobs/dispatch";
+import { cleanupExpired, dispatchOutbox, recordCronRun, runCappedStep, runStep } from "./jobs/dispatch";
+import {
+  cleanupDeadSessionSubscriptions,
+  PUSH_SUBSCRIPTION_CLEANUP_BATCH,
+} from "./notification/application/subscriptions";
 
 // Worker の入口（fetch・scheduled・queue）。本番とE2Eで共有する。E2E用の経路はここに足さない
 
@@ -13,6 +18,12 @@ export const CRON_CALENDAR_SYNC = "*/15 * * * *";
 export async function runScheduled(cron: string, env: Bindings, deps: AppDeps) {
   const ctx = { env, deps };
   if (cron === CRON_CALENDAR_SYNC) {
+    // 休眠にした行を同じ実行で割り当てないよう、割り当ての前に（docs/specs/T-17-retention.md「8.」「9.」）
+    await runCappedStep("mark_dormant_connections", DORMANCY_BATCH, () => markDormantConnections(ctx));
+    await runCappedStep("wake_dormant_connections", DORMANCY_BATCH, () => wakeDormantConnections(ctx));
+    await runCappedStep("cleanup_push_subscriptions", PUSH_SUBSCRIPTION_CLEANUP_BATCH, () =>
+      cleanupDeadSessionSubscriptions(ctx),
+    );
     await runStep("assign_syncs", () => assignSyncs(ctx));
     // 途中の処理が失敗していても、定期処理が動いたことは記録する（停止は /api/v1/health/ready で外から見る。T-13）
     await runStep("heartbeat", () => recordCronRun(env.DB, "calendar_sync", deps.now()));

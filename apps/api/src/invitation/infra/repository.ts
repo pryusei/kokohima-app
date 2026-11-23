@@ -652,3 +652,23 @@ export function withdrawalEraseContentStatements(d1: D1Database, userId: string)
     d1.prepare("UPDATE broadcasts SET area = NULL, message = NULL, url = NULL WHERE owner_id = ?").bind(userId),
   ];
 }
+
+// ---- 終わった誘いの掃除（docs/specs/T-17-retention.md「2.」） ----
+
+/**
+ * 時間の終わり（代わりの時間があれば、その終わりも）が cutoff より前の誘いを消す（上限つき）。状態では絞らない。
+ * 予定・参加者・.ics の鍵・リンクの参照は外部キーの CASCADE で一緒に消える。消した数
+ */
+export async function deleteInvitesEndedBefore(d1: D1Database, cutoff: number, limit: number) {
+  const r = await d1
+    .prepare(
+      `DELETE FROM direct_invites WHERE id IN (
+         SELECT id FROM direct_invites
+         WHERE ends_at < ?1 AND (counter_ends_at IS NULL OR counter_ends_at < ?1)
+         ORDER BY ends_at LIMIT ?2
+       )`,
+    )
+    .bind(cutoff, limit)
+    .run();
+  return r.meta.changes;
+}

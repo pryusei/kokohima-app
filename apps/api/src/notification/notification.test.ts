@@ -631,11 +631,11 @@ describe("outbox と掃除", () => {
     h.jobs.length = 0;
   });
 
-  it("90日を過ぎたお知らせと、古い日ごとの数を Cron で掃除する", async () => {
+  it("30日を過ぎたお知らせと、古い日ごとの数を Cron で掃除する（T-17）", async () => {
     const { a, b } = await pair();
     await flush(await invite(a, b));
     expect((await rowsOf(b)).length).toBeGreaterThan(0);
-    h.clock.now += 91 * DAY;
+    h.clock.now += 31 * DAY;
     await runScheduled("* * * * *", h.bindings, h.deps);
     expect(await rowsOf(b)).toHaveLength(0);
     const counts = await env.DB.prepare("SELECT COUNT(*) AS n FROM notification_daily_counts WHERE user_id = ?1").bind(b.id).first<{ n: number }>();

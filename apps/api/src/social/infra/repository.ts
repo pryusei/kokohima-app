@@ -169,13 +169,17 @@ export async function findFriendship(db: Db, userId: string, friendId: string) {
   );
 }
 
-/** 両方向の行を消す。閲覧者側の行がなければ false（友達でない） */
-export async function deleteFriendship(db: Db, userId: string, friendId: string) {
-  const results = await db.batch([
-    db.delete(friendships).where(and(eq(friendships.userId, userId), eq(friendships.friendId, friendId))),
-    db.delete(friendships).where(and(eq(friendships.userId, friendId), eq(friendships.friendId, userId))),
+/**
+ * 両方向の行を消す。閲覧者側の行がなければ false（友達でない）。
+ * also は同じ batch（トランザクション）で走らせる、ほかのコンテキストの文（公開設定の「見せる」の行を消す文。T-17「7.」）
+ */
+export async function deleteFriendship(d1: D1Database, userId: string, friendId: string, also: D1PreparedStatement[] = []) {
+  const [mine] = await d1.batch([
+    d1.prepare("DELETE FROM friendships WHERE user_id = ?1 AND friend_id = ?2").bind(userId, friendId),
+    d1.prepare("DELETE FROM friendships WHERE user_id = ?1 AND friend_id = ?2").bind(friendId, userId),
+    ...also,
   ]);
-  return results[0].meta.changes === 1;
+  return mine?.meta.changes === 1;
 }
 
 /** 退会（T-16 入口を止める段）：本人の招待リンクと、両方向の友達の行を消す文 */
@@ -184,4 +188,13 @@ export function withdrawalPurgeStatements(d1: D1Database, userId: string): D1Pre
     d1.prepare("DELETE FROM invite_links WHERE owner_id = ?").bind(userId),
     d1.prepare("DELETE FROM friendships WHERE user_id = ?1 OR friend_id = ?1").bind(userId),
   ];
+}
+
+/** 掃除（docs/specs/T-17-retention.md「5.」）：期限が expiredBefore より前の招待リンクを消す（上限つき。使い切ったもの・無効化したものも）。消した数 */
+export async function deleteInviteLinksExpiredBefore(d1: D1Database, expiredBefore: number, limit: number) {
+  const r = await d1
+    .prepare("DELETE FROM invite_links WHERE id IN (SELECT id FROM invite_links WHERE expires_at < ?1 LIMIT ?2)")
+    .bind(expiredBefore, limit)
+    .run();
+  return r.meta.changes;
 }

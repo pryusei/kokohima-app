@@ -19,6 +19,8 @@ export type ConnectionRow = {
   sync_id: string | null;
   sync_lease_until: number | null;
   large_change_held: number;
+  /** 休眠にした時刻（NULL なら休眠でない。docs/specs/T-17-retention.md「8.」） */
+  dormant_since: number | null;
 };
 
 export async function findConnection(d1: D1Database, userId: string, provider: Provider) {
@@ -83,7 +85,7 @@ export async function saveConnection(
          SELECT ?1, ?2, 'active', ?3, ?4, ?4 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
          ON CONFLICT (user_id, provider) DO UPDATE SET status = 'active', refresh_token_enc = ?3, connected_at = ?4,
            updated_at = ?4, busy_snapshot = NULL, snapshot_from = NULL, snapshot_to = NULL, last_synced_at = NULL,
-           sync_id = NULL, sync_lease_until = NULL, large_change_held = 0`,
+           sync_id = NULL, sync_lease_until = NULL, large_change_held = 0, dormant_since = NULL`,
       )
       .bind(row.userId, row.provider, row.refreshTokenEnc, row.now),
     d1
@@ -191,13 +193,16 @@ export async function activeConnectionsOf(d1: D1Database, userIds: string[], pro
 
 // ---- 定期の確認 ----
 
-/** 確認する連携。active で、前回の確認から minAge 以上たったものを古い順に */
-/** 確認する連携。SQLite は昇順で NULL を先に並べるので、確認したことがない連携が先。インデックス (status, last_synced_at) の順に読む */
+/**
+ * 確認する連携。active で休眠でなく、前回の確認から minAge 以上たったものを古い順に。SQLite は昇順で NULL を先に並べるので、
+ * 確認したことがない連携が先。インデックス (status, dormant_since, last_synced_at) の範囲を順に読む（T-17「データ」）
+ */
 export async function connectionsDueForSync(d1: D1Database, now: number, minAge: number, limit: number) {
   const { results } = await d1
     .prepare(
       `SELECT user_id, provider FROM calendar_connections
-       WHERE status = 'active' AND (last_synced_at IS NULL OR last_synced_at <= ?1)
+       WHERE status = 'active' AND dormant_since IS NULL
+         AND (last_synced_at IS NULL OR last_synced_at <= ?1)
          AND EXISTS (SELECT 1 FROM users u WHERE u.id = calendar_connections.user_id AND u.withdrawn_at IS NULL)
        ORDER BY last_synced_at LIMIT ?2`,
     )
@@ -206,12 +211,13 @@ export async function connectionsDueForSync(d1: D1Database, now: number, minAge:
   return results;
 }
 
-/** 確認の権利を取る。取れたら、その時点の行（lease の値を含む） */
+/** 確認の権利を取る。取れたら、その時点の行（lease の値を含む）。休眠中は取れない（T-17「8.」） */
 export async function takeSyncLease(d1: D1Database, userId: string, provider: Provider, now: number, leaseMs: number) {
   return d1
     .prepare(
       `UPDATE calendar_connections SET sync_lease_until = ?3
-       WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND (sync_lease_until IS NULL OR sync_lease_until < ?4)
+       WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND dormant_since IS NULL
+         AND (sync_lease_until IS NULL OR sync_lease_until < ?4)
        RETURNING *`,
     )
     .bind(userId, provider, now + leaseMs, now)
@@ -238,14 +244,14 @@ export async function holdLargeChange(d1: D1Database, userId: string, provider: 
     .prepare(
       `UPDATE calendar_connections
        SET large_change_held = 1, sync_id = ?4, sync_lease_until = NULL
-       WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND sync_lease_until = ?3`,
+       WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND dormant_since IS NULL AND sync_lease_until = ?3`,
     )
     .bind(userId, provider, lease, crypto.randomUUID())
     .run();
 }
 
 /**
- * 記録を進める文。権利を持っているときだけ書き、sync_id に新しい値を入れる。同じ batch の後続の文は
+ * 記録を進める文。権利を持っていて休眠でないときだけ書き、sync_id に新しい値を入れる。同じ batch の後続の文は
  * syncGuard の条件（この sync_id の行がある）で書く
  */
 export function advanceSnapshotStatement(
@@ -259,7 +265,7 @@ export function advanceSnapshotStatement(
       `UPDATE calendar_connections
        SET busy_snapshot = ?4, snapshot_from = ?5, snapshot_to = ?6, last_synced_at = ?7, large_change_held = 0,
          sync_id = ?8, sync_lease_until = NULL
-       WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND sync_lease_until = ?3`,
+       WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND dormant_since IS NULL AND sync_lease_until = ?3`,
     )
     .bind(row.userId, row.provider, row.lease, snapshot.busy, snapshot.from, snapshot.to, now, row.syncId);
 }
@@ -271,6 +277,81 @@ export function syncGuard(userId: string, provider: Provider, syncId: string) {
       `EXISTS (SELECT 1 FROM calendar_connections WHERE user_id = ?${n} AND provider = ?${n + 1} AND sync_id = ?${n + 2})`,
     binds: [userId, provider, syncId] as const,
   };
+}
+
+// ---- 休眠（docs/specs/T-17-retention.md「8.」） ----
+
+/** 休眠にする・戻すとき、ログインで戻すときに書く値（埋まりの記録を消し、進行中の確認の権利と sync_id を変える） */
+const DORMANCY_RESET =
+  "busy_snapshot = NULL, snapshot_from = NULL, snapshot_to = NULL, last_synced_at = NULL, large_change_held = 0, sync_lease_until = NULL";
+
+/** 使える更新用トークンがある（c は calendar_connections、?1 は今） */
+const USABLE_REFRESH_TOKEN = `EXISTS (
+  SELECT 1 FROM sessions s JOIN refresh_tokens rt ON rt.session_id = s.id
+  WHERE s.user_id = c.user_id AND s.revoked_at IS NULL AND s.expires_at > ?1 AND rt.used_at IS NULL AND rt.expires_at > ?1
+)`;
+/** 最後に使ってから30日以内（c は calendar_connections、?2 は今から30日前） */
+const RECENTLY_USED = "EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = c.user_id AND s.last_used_at >= ?2)";
+
+/**
+ * 使える更新用トークンがなく、最後に使ってから30日を過ぎた人の active な連携を休眠にする（上限つき）。
+ * 退会した人の連携は休眠にしない（T-16 の後始末で消える）。更新用トークンと calendar_id は残す。休眠にした数
+ */
+export async function markDormantConnections(d1: D1Database, now: number, cutoff: number, limit: number) {
+  const r = await d1
+    .prepare(
+      `UPDATE calendar_connections
+       SET dormant_since = ?1, ${DORMANCY_RESET}, sync_id = ?3, updated_at = ?1
+       WHERE rowid IN (
+         SELECT c.rowid FROM calendar_connections c
+         WHERE c.status = 'active' AND c.dormant_since IS NULL
+           AND EXISTS (SELECT 1 FROM users u WHERE u.id = c.user_id AND u.withdrawn_at IS NULL)
+           AND NOT ${USABLE_REFRESH_TOKEN}
+           AND NOT ${RECENTLY_USED}
+         LIMIT ?4
+       )`,
+    )
+    .bind(now, cutoff, crypto.randomUUID(), limit)
+    .run();
+  return r.meta.changes;
+}
+
+/**
+ * 休眠中なのに、使える更新用トークンがあり、最後に使ってから30日以内の連携を戻す（定期の確認の取りこぼし。上限つき）。
+ * 片方だけ当てはまる連携は変えない。戻した数
+ */
+export async function wakeDormantConnections(d1: D1Database, now: number, cutoff: number, limit: number) {
+  const r = await d1
+    .prepare(
+      `UPDATE calendar_connections
+       SET dormant_since = NULL, ${DORMANCY_RESET}, sync_id = ?3, updated_at = ?1
+       WHERE rowid IN (
+         SELECT c.rowid FROM calendar_connections c
+         WHERE c.status = 'active' AND c.dormant_since IS NOT NULL
+           AND EXISTS (SELECT 1 FROM users u WHERE u.id = c.user_id AND u.withdrawn_at IS NULL)
+           AND ${USABLE_REFRESH_TOKEN}
+           AND ${RECENTLY_USED}
+         LIMIT ?4
+       )`,
+    )
+    .bind(now, cutoff, crypto.randomUUID(), limit)
+    .run();
+  return r.meta.changes;
+}
+
+/**
+ * ログインでセッションを作る batch に入れる文：その利用者の休眠中の連携を戻す。セッションの行ができたときだけ書く
+ * （退会した人にはセッションを作らないので、戻さない）。次の確認は「記録だけ」から始まる
+ */
+export function wakeConnectionsStatement(d1: D1Database, userId: string, sessionId: string, now: number) {
+  return d1
+    .prepare(
+      `UPDATE calendar_connections
+       SET dormant_since = NULL, ${DORMANCY_RESET}, sync_id = ?4, updated_at = ?3
+       WHERE user_id = ?1 AND dormant_since IS NOT NULL
+         AND EXISTS (SELECT 1 FROM sessions WHERE id = ?2)`,
+    )
+    .bind(userId, sessionId, now, crypto.randomUUID());
 }
 
 // ---- 掃除 ----

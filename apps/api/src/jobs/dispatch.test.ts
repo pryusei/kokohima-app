@@ -8,14 +8,22 @@ import { assignSyncs, SYNC_BATCH } from "../calendar/application/sync";
 import * as calendarRepo from "../calendar/infra/repository";
 import * as linkPreviewRepo from "../link-preview/infra/repository";
 import * as notificationRepo from "../notification/infra/repository";
+import * as invitationRepo from "../invitation/infra/repository";
+import * as broadcastRepo from "../invitation/infra/broadcastRepository";
+import * as socialRepo from "../social/infra/repository";
+import { DORMANCY_BATCH, DORMANT_AFTER_MS } from "../calendar/application/dormancy";
 import { runScheduled } from "../worker";
 import {
   AVAILABILITY_RETENTION_MS,
+  BROADCAST_CLEANUP_BATCH,
   cleanupExpired,
   CLEANUP_BATCH,
   deleteProcessedOutbox,
+  deleteStaleNotificationOutbox,
   dispatchOutbox,
+  exceptionCutoffDate,
   OUTBOX_RETENTION_MS,
+  RETENTION_MS,
 } from "./dispatch";
 
 // データの増加への備え（docs/specs/T-12-data-growth.md）。時計は 2026-10-10T00:00:00Z
@@ -352,6 +360,64 @@ describe("定期処理の独立とログ", () => {
     expect(old?.n).toBe(0);
   });
 
+  /** needle を含む SQL の prepare だけを失敗させる D1 */
+  const failingOn = (needle: string) =>
+    new Proxy(env.DB, {
+      get(target, prop, receiver) {
+        if (prop === "prepare") {
+          return (sql: string) => {
+            if (sql.includes(needle)) throw new RangeError("boom");
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+  it("保持期間の掃除（T-17）の1つが失敗しても、残りの掃除は走る", async () => {
+    const [owner] = await seedUsers(1);
+    const linkId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO invite_links (id, owner_id, token_hash, max_uses, uses, expires_at, created_at) VALUES (?1, ?2, ?1, 1, 0, ?3, ?3)",
+    )
+      .bind(linkId, owner, h.clock.now - RETENTION_MS - 1)
+      .run();
+    await seedOutbox(1, h.clock.now - OUTBOX_RETENTION_MS - 1);
+    await cleanupExpired({ env: { ...h.bindings, DB: failingOn("DELETE FROM direct_invites") }, deps: h.deps });
+    expect(events("cron_step_failed")).toEqual([{ event: "cron_step_failed", step: "cleanup_invitations", name: "RangeError" }]);
+    // 前の掃除も後の掃除も走った
+    const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM invite_links WHERE id = ?1").bind(linkId).first<{ n: number }>();
+    expect(left?.n).toBe(0);
+    const old = await env.DB.prepare("SELECT COUNT(*) AS n FROM outbox WHERE processed_at IS NOT NULL").first<{ n: number }>();
+    expect(old?.n).toBe(0);
+  });
+
+  it("15分ごと：休眠にする処理が失敗しても、戻す・購読の掃除・割り当てが走る（T-17）", async () => {
+    const [due] = await seedUsers(1);
+    await env.DB.prepare(
+      "INSERT INTO calendar_connections (user_id, provider, status, connected_at, updated_at) VALUES (?1, 'google', 'active', 0, 0)",
+    )
+      .bind(due)
+      .run();
+    const sessionId = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO sessions (id, user_id, created_at, last_used_at, expires_at, revoked_at) VALUES (?1, ?2, 0, 0, 0, 0)").bind(
+        sessionId,
+        due,
+      ),
+      env.DB.prepare(
+        "INSERT INTO push_subscriptions (id, user_id, session_id, endpoint_hash, endpoint_enc, created_at) VALUES (?1, ?2, ?3, ?1, 'enc', 0)",
+      ).bind(crypto.randomUUID(), due, sessionId),
+    ]);
+    h.jobs.length = 0;
+    await runScheduled("*/15 * * * *", { ...h.bindings, DB: failingOn("SET dormant_since = ?1") }, h.deps);
+    expect(events("cron_step_failed")).toEqual([{ event: "cron_step_failed", step: "mark_dormant_connections", name: "RangeError" }]);
+    expect(h.jobs).toContainEqual({ kind: "calendar_sync", userId: due, provider: "google" });
+    const subs = await env.DB.prepare("SELECT COUNT(*) AS n FROM push_subscriptions WHERE session_id = ?1").bind(sessionId).first<{ n: number }>();
+    expect(subs?.n).toBe(0);
+  });
+
   it("割り当てが失敗しても runScheduled は投げず、ログが出る", async () => {
     const failing = {
       ...h.bindings,
@@ -362,8 +428,11 @@ describe("定期処理の独立とログ", () => {
       } as unknown as D1Database,
     };
     await expect(runScheduled("*/15 * * * *", failing, h.deps)).resolves.toBeUndefined();
-    // 動いた記録（T-13）も同じ D1 に書くので、続けて失敗する
+    // 休眠・購読の掃除（T-17）と動いた記録（T-13）も同じ D1 に書くので、それぞれ独立に失敗する
     expect(events("cron_step_failed")).toEqual([
+      { event: "cron_step_failed", step: "mark_dormant_connections", name: "Error" },
+      { event: "cron_step_failed", step: "wake_dormant_connections", name: "Error" },
+      { event: "cron_step_failed", step: "cleanup_push_subscriptions", name: "Error" },
       { event: "cron_step_failed", step: "assign_syncs", name: "Error" },
       { event: "cron_step_failed", step: "heartbeat", name: "Error" },
     ]);
@@ -408,8 +477,53 @@ describe("インデックスを使う（EXPLAIN QUERY PLAN）", () => {
     );
   });
 
-  it("カレンダーの確認の割り当て", async () => {
+  it("カレンダーの確認の割り当て（休眠中の行は、インデックスの範囲の外）", async () => {
     expect(await scansOf((d1) => calendarRepo.connectionsDueForSync(d1, now, 10 * MIN, SYNC_BATCH))).toEqual([]);
+    const { db, recorded } = recordingD1(env.DB);
+    await calendarRepo.connectionsDueForSync(db, now, 10 * MIN, SYNC_BATCH);
+    expect((await queryPlan(env.DB, recorded[0]!)).join("\n")).toMatch(
+      /USING INDEX calendar_connections_sync \(status=\? AND dormant_since=\?/,
+    );
+  });
+
+  it("保持期間の掃除の SQL（T-17）", async () => {
+    const cutoff = now - RETENTION_MS;
+    expect(await scansOf((d1) => invitationRepo.deleteInvitesEndedBefore(d1, cutoff, CLEANUP_BATCH))).toEqual([]);
+    expect(await scansOf((d1) => broadcastRepo.deleteBroadcastsEndedBefore(d1, cutoff, BROADCAST_CLEANUP_BATCH))).toEqual([]);
+    expect(await scansOf((d1) => notificationRepo.deleteOldNotifications(d1, cutoff, CLEANUP_BATCH))).toEqual([]);
+    expect(await scansOf((d1) => socialRepo.deleteInviteLinksExpiredBefore(d1, cutoff, CLEANUP_BATCH))).toEqual([]);
+    expect(await scansOf((d1) => availabilityRepo.deleteExceptionsBefore(d1, exceptionCutoffDate(now), CLEANUP_BATCH))).toEqual([]);
+    expect(await scansOf((d1) => deleteStaleNotificationOutbox(d1, cutoff, CLEANUP_BATCH))).toEqual([]);
+    expect(await scansOf((d1) => notificationRepo.deleteSubscriptionsOfDeadSessions(d1, now, CLEANUP_BATCH))).toEqual([]);
+  });
+
+  it("誘い・募集を消すときの CASCADE の子の検索（T-17）", async () => {
+    for (const [table, column] of [
+      ["meetups", "direct_invite_id"],
+      ["meetups", "broadcast_id"],
+      ["meetup_participants", "meetup_id"],
+      ["broadcast_recipients", "broadcast_id"],
+      ["ics_tokens", "meetup_id"],
+      ["link_preview_refs", "direct_invite_id"],
+      ["link_preview_refs", "broadcast_id"],
+    ] as const) {
+      const plan = await queryPlan(env.DB, { sql: `SELECT 1 FROM ${table} WHERE ${column} = ?1`, binds: ["x"] });
+      expect(fullScans(plan), `${table}.${column}`).toEqual([]);
+    }
+  });
+
+  it("休眠にする・戻す（T-17。インデックスの範囲で読む）", async () => {
+    const cutoff = now - DORMANT_AFTER_MS;
+    expect(await scansOf((d1) => calendarRepo.markDormantConnections(d1, now, cutoff, DORMANCY_BATCH))).toEqual([]);
+    expect(await scansOf((d1) => calendarRepo.wakeDormantConnections(d1, now, cutoff, DORMANCY_BATCH))).toEqual([]);
+    // 休眠にする文：status = 'active' と dormant_since IS NULL の範囲を読む（範囲の中は全部読む。読む量は T-17「8.」で受け入れた）
+    const mark = recordingD1(env.DB);
+    await calendarRepo.markDormantConnections(mark.db, now, cutoff, DORMANCY_BATCH);
+    expect((await queryPlan(env.DB, mark.recorded[0]!)).join("\n")).toMatch(/calendar_connections_sync \(status=\? AND dormant_since=\?\)/);
+    // 戻す文：休眠中の行（dormant_since IS NOT NULL）の範囲だけを読む
+    const wake = recordingD1(env.DB);
+    await calendarRepo.wakeDormantConnections(wake.db, now, cutoff, DORMANCY_BATCH);
+    expect((await queryPlan(env.DB, wake.recorded[0]!)).join("\n")).toMatch(/calendar_connections_sync \(status=\? AND dormant_since>\?\)/);
   });
 
   it("ここ暇の4つの検索", async () => {

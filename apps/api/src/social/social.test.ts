@@ -594,6 +594,66 @@ describe("友達一覧・解除・公開設定", () => {
     expect((await dbAll("SELECT * FROM sharing_policies WHERE target_id = ?", stranger.id))).toHaveLength(0);
   });
 
+  it("解除：両方向の「見せる」の行が消え、「見せない」の行は残る。「見せる」だった相手は、友達に戻ると「見せる」（T-17）", async () => {
+    const a = await user();
+    const b = await user();
+    const link = await befriend(a, b);
+    await call("PATCH", `/api/v1/friends/${b.id}`, { token: a.token, body: { sharesMyAvailability: false } });
+    await call("PATCH", `/api/v1/friends/${b.id}`, { token: a.token, body: { sharesMyAvailability: true } });
+    await call("PATCH", `/api/v1/friends/${a.id}`, { token: b.token, body: { sharesMyAvailability: false } });
+    const policies = () =>
+      dbAll<{ owner_id: string; visible: number }>(
+        "SELECT owner_id, visible FROM sharing_policies WHERE (owner_id = ?1 AND target_id = ?2) OR (owner_id = ?2 AND target_id = ?1)",
+        a.id,
+        b.id,
+      );
+    expect((await policies()).length).toBe(2);
+    expect((await call("DELETE", `/api/v1/friends/${b.id}`, { token: a.token })).status).toBe(204);
+    expect(await policies()).toEqual([{ owner_id: b.id, visible: 0 }]);
+    expect((await accept(b, link.token, link.id)).status).toBe(201);
+    expect((await friendsOf(a)).items[0]?.sharesMyAvailability).toBe(true);
+    expect((await friendsOf(b)).items[0]?.sharesMyAvailability).toBe(false);
+  });
+
+  it("解除：見せないにされた側が解除して、同じ招待リンクで戻っても見えないまま（T-17）", async () => {
+    const a = await user();
+    const b = await user();
+    const link = await befriend(a, b);
+    expect(
+      (await call("POST", "/api/v1/availabilities", { token: a.token, body: { date: "2026-10-11", preset: "night" } })).status,
+    ).toBe(201);
+    const seen = async () => {
+      const res = await call("GET", `/api/v1/friends/${a.id}/availabilities?from=2026-10-10T00:00:00.000Z&to=2026-10-20T00:00:00.000Z`, {
+        token: b.token,
+      });
+      expect(res.status).toBe(200);
+      return ((await res.json()) as { items: unknown[] }).items;
+    };
+    expect(await seen()).toHaveLength(1);
+    await call("PATCH", `/api/v1/friends/${b.id}`, { token: a.token, body: { sharesMyAvailability: false } });
+    expect((await call("DELETE", `/api/v1/friends/${a.id}`, { token: b.token })).status).toBe(204);
+    expect((await accept(b, link.token, link.id)).status).toBe(201);
+    expect((await friendsOf(a)).items[0]?.sharesMyAvailability).toBe(false);
+    expect(await seen()).toEqual([]);
+  });
+
+  it("解除：友達の行と公開設定は同じ batch で消え、途中で失敗すればどちらも残る（T-17）", async () => {
+    const a = await user();
+    const b = await user();
+    await befriend(a, b);
+    await call("PATCH", `/api/v1/friends/${b.id}`, { token: a.token, body: { sharesMyAvailability: true } });
+    await env.DB.prepare(
+      "CREATE TRIGGER fail_sharing BEFORE DELETE ON sharing_policies BEGIN SELECT RAISE(ABORT, 'boom'); END",
+    ).run();
+    try {
+      expect((await call("DELETE", `/api/v1/friends/${b.id}`, { token: a.token })).status).toBe(500);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_sharing").run();
+    }
+    expect(await dbAll("SELECT * FROM friendships WHERE user_id IN (?1, ?2) AND friend_id IN (?1, ?2)", a.id, b.id)).toHaveLength(2);
+    expect(await dbAll("SELECT * FROM sharing_policies WHERE owner_id = ?1 AND target_id = ?2", a.id, b.id)).toHaveLength(1);
+  });
+
   it("他人のIDでは取得・更新できない：A は B–C 間の解除や公開設定を変えられない", async () => {
     const a = await user();
     const b = await user();

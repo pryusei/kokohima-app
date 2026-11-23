@@ -1,3 +1,4 @@
+import { wakeConnectionsStatement } from "../../calendar/application/dormancy";
 import type { AppDeps, Bindings, Viewer } from "../../env";
 import { randomToken, sha256, timingSafeEqual } from "../../shared/crypto";
 import { deviceSummary } from "../domain/deviceSummary";
@@ -137,6 +138,8 @@ export async function createSession(
       occurredAt: new Date(now).toISOString(),
     },
     now,
+    // 休眠中の連携を戻す（docs/specs/T-17-retention.md「8.」）
+    afterSession: [wakeConnectionsStatement(ctx.env.DB, userId, sessionId, now)],
   });
   if (!created) return null;
   const access = await issueAccessToken(ctx.env, { userId, sessionId }, now);

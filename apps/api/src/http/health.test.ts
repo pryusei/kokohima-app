@@ -73,7 +73,8 @@ describe("定期処理が動いた記録", () => {
       get(target, prop, receiver) {
         if (prop === "prepare") {
           return (sql: string) => {
-            if (sql.includes("FROM calendar_connections")) throw new TypeError("boom");
+            // 割り当ての SQL だけ（休眠にする・戻す文も calendar_connections を読む。T-17）
+            if (sql.includes("SELECT user_id, provider FROM calendar_connections")) throw new TypeError("boom");
             return target.prepare(sql);
           };
         }

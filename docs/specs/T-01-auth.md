@@ -101,6 +101,8 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - セッションを作るとき、`outbox` に `SessionStarted`（`userId`、`sessionId`、`provider`、`deviceSummary`、`occurredAt`）を書く。新端末ログインのメール通知は通知タスクでこれを使う
   - `deviceSummary`：User-Agentから作る「ブラウザ名 / OS名」の要約（例：`Safari / iOS`、64字以内、判別できなければ `unknown`）。User-Agentの全文とIPアドレスは保存しない
   - `outbox` のDrizzleスキーマは、全コンテキストで共有するため `apps/api/src/shared/outbox/schema.ts` に置く
+  - 同じ batch で、セッションの INSERT の直後に、その利用者の休眠中のカレンダーの連携を戻す文（calendar の `wakeConnectionsStatement`）を入れる。セッションの行ができたときだけ書く（退会した人には作らないので戻さない）。docs/specs/T-17-retention.md「8.」
+- `sessions.last_used_at`（ログインでセッションを作ったときと、更新用トークンで更新したときに書く）は、使える更新用トークンがないこととあわせて、カレンダーの連携の休眠の判定（最後に使ってから30日を過ぎた）に使う（T-17「8.」）
 - D1のバッチは文の結果で後続を止められない。そのため、条件つきの消費（`login_codes` の `DELETE ... RETURNING`、`refresh_tokens` の条件付きUPDATE）は単独で実行し、返った行や `meta.changes` を確かめてから残りを書く。完了コードの消費の後のセッション・更新用トークン・`outbox` の作成はバッチで行う。更新用トークンの交換の順序は「更新」の手順6
 
 ### 更新（`POST /api/v1/auth/refresh`）
@@ -271,3 +273,4 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | 2026-11-21 | テスト計画のチェックを付けた（すべての項目に対応する単体テスト・E2Eがあることを確かめた）。E2E の1つめの流れの表示を、今のホーム（みんな）に合わせた | 全体の点検（pryusei/kokohima-app#50） |
 | 2026-11-21 | 失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens` の掃除を実装した（利用者ごとに最初のセッションを残す） | セキュリティの点検（pryusei/kokohima-app#54） |
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
+| 2026-11-23 | ログインでセッションを作る batch で休眠中のカレンダーの連携を戻すこと、休眠の判定に `last_used_at` を使うことを足した | T-17 実装PR（docs/specs/T-17-retention.md） |
