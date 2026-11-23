@@ -47,7 +47,6 @@ export function LoginPage({ search }: { search: string }) {
           </a>
         )}
       </div>
-      <p className="text-s text-ink-muted">カレンダーは、連携するまで読みません。</p>
     </main>
   );
 }
