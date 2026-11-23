@@ -69,7 +69,7 @@ const LEGAL_TS = "apps/web/src/pages/legal.ts";
  * いつも：「制定日：」がちょうど1回、「改定日（効力が生じる日）：」と「公表日：」は0回か1回、改定日の行がないのに「公表日：」があれば止める、
  * 前の形の「改定日：」があれば止める。日付の大小は見ない（CI の結果が走らせた日で変わらないように）。
  * deploy が真なら、どれも本物の日付であることを求め、today（日本時間の今日。{ year, month, day }。ないと止める）と日付の大小を比べる：
- * 制定日 ≦ 今日。公表日の行があれば 制定日 ＜ 公表日、今日 ≦ 改定日、改定日 − 公表日 が7日以上30日以下で、
+ * 制定日 ≦ 今日。公表日の行があれば 制定日 ≦ 公表日（制定した日に最初の改定を予告できる。T-19 決めたこと16）、今日 ≦ 改定日、改定日 − 公表日 が7日以上30日以下で、
  * noticeAlreadyPublished（本番にこの予告の行がもう出ているか。check-web-dist.mjs が本番を読んで決める）が偽なら 公表日 ＝ 今日、
  * 真なら 公表日 ≦ 今日、分からなければ（undefined）止める。公表日の行がなければ 制定日 ＜ 改定日 ≦ 今日
  */
@@ -125,8 +125,8 @@ export function effectiveDateProblems(texts, { deploy, today, noticeAlreadyPubli
   const [R] = texts.flatMap((t) => realDates(t, REVISION_DATE_LABEL));
   const [P] = texts.flatMap((t) => realDates(t, REVISION_NOTICE_LABEL));
   if (P) {
-    if (E && daysBetween(E, P) <= 0) {
-      problems.push(`公表日（${format(P)}）が制定日（${format(E)}）より後になっていません`);
+    if (E && daysBetween(E, P) < 0) {
+      problems.push(`公表日（${format(P)}）が制定日（${format(E)}）より前です`);
     }
     const notice = daysBetween(P, R);
     if (notice < MIN_NOTICE_DAYS || notice > MAX_NOTICE_DAYS) {

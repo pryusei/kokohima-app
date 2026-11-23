@@ -202,7 +202,7 @@ describe("--deploy の日付の大小（予告の間：P ≦ 今日 ≦ R、R �
   });
 });
 
-describe("--deploy の制定日の大小（制定日 ≦ 今日、制定日 ＜ 公表日 ≦ 改定日、予告がなければ 制定日 ＜ 改定日）", () => {
+describe("--deploy の制定日の大小（制定日 ≦ 今日、制定日 ≦ 公表日 ≦ 改定日、予告がなければ 制定日 ＜ 改定日）", () => {
   const effective = (e: string, r: string | null, p: string | null) =>
     `${withDate(e)}${r === null ? "" : rev(r)}${p === null ? "" : notice(p)}`;
   const problems = (text: string, today: CalendarDay) =>
@@ -213,9 +213,10 @@ describe("--deploy の制定日の大小（制定日 ≦ 今日、制定日 ＜ 
     expect(problems(effective("2026年11月24日", null, null), day(2026, 11, 23))).toHaveLength(1);
   });
 
-  it("公表日は制定日より後", () => {
+  it("公表日は制定日と同じ日か、より後（制定した日に予告できる。T-19 決めたこと16）", () => {
     expect(problems(effective("2026年11月24日", "2026年12月2日", "2026年11月25日"), TODAY)).toEqual([]);
-    expect(problems(effective("2026年11月25日", "2026年12月2日", "2026年11月25日"), TODAY)).toHaveLength(1);
+    expect(problems(effective("2026年11月25日", "2026年12月2日", "2026年11月25日"), TODAY)).toEqual([]);
+    expect(problems(effective("2026年11月26日", "2026年12月2日", "2026年11月25日"), TODAY)).toHaveLength(2);
   });
 
   it("予告がなければ、改定日は制定日より後", () => {
