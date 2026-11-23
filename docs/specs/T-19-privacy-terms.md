@@ -1,6 +1,6 @@
 # T-19 仕様書：プライバシー ポリシーと利用規約のページ
 
-- 状態：下書き
+- 状態：実装済み
 - タスク票：docs/tasks/T-19-privacy-terms.md
 - 関係する要件：要求定義書「残りの論点」（Googleの審査要件とプライバシーポリシーへの反映）、「AI時代の攻撃を前提にした運用」（保存するデータを減らす）、「受容したリスク」（Google の OAuth を本番にしたこと）、F-01・F-02・F-15・F-16・F-17、T-12 決定事項7。issue pryusei/kokohima-app#89・#90・#91 の一部
 
@@ -76,7 +76,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - 経路は `/privacy`（プライバシー ポリシー）と `/terms`（利用規約）。
 - 本番では、`not_found_handling: single-page-application`（T-12）で `index.html` が返るので、直接開いても、再読み込みしても画面が出る。wrangler の設定は変えない。
 - `apps/web/src/App.tsx` で、ログインの状態を見る前に描画する（今の `/invite` と同じ位置）。ログインの確認中（`checking`）、API に届かない（`error`）、ログインしていない（`anonymous`）、ログインしている（`authenticated`）のどれでも、別の画面に移さず本文を出す。
-- 画面は `apps/web/src/pages/PrivacyPage.tsx` と `TermsPage.tsx`。本文は JSX のテキストで書く（`dangerouslySetInnerHTML` や Markdown の変換は使わない。CSP と XSS の対策のまま）。
+- 画面は `apps/web/src/pages/PrivacyPage.tsx` と `TermsPage.tsx`（共通の形・見出し・リンクの部品とログイン画面などの1行は `apps/web/src/pages/LegalDocument.tsx`）。本文は JSX のテキストで書く（`dangerouslySetInnerHTML` や Markdown の変換は使わない。CSP と XSS の対策のまま）。
 - 遅延読み込み（`React.lazy`）にはしない。本文は短い文字列で、初回の読み込みへの影響が小さいため（必要なら実装PRでビルドの大きさを見て決め、仕様書を直す）。
 - ページ自身は API を呼ばない（アプリの起動のときの `AuthProvider` の `/api/v1/auth/refresh` は今のまま）。外のオリジンのものを読まない（画像・フォント・埋め込みなし）。
 - オフラインの帯（`OfflineBanner`）が出ているときも、本文は出す。
@@ -396,25 +396,25 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 正常系：ログインの確認中（`checking`）、API に届かない（`error`）、ログインしていない（`anonymous`）、ログインしている（`authenticated`）のどれでも、`/privacy` と `/terms` が本文を描画し、別の画面に移らない（`apps/web/src/pages/legal.test.tsx`。今の `login.test.tsx` の書き方）
-- [ ] 本文：見出し（`h1` は1つ、各節の `h2`）、連絡先 `ops@kokohima.app` の `mailto:` リンク、制定日、13歳以上・保護者の同意の文が出る。ページを開いても、`AuthProvider` の `/api/v1/auth/refresh` のほかに API の呼び出し（`fetch`）が起きない
-- [ ] オフライン：オフラインの帯が出ていても、本文が出る
-- [ ] 保存期間（画面。`apps/web/src/pages/legal.test.tsx`）：`/privacy` の「8.」に、`RETENTION` の数がそのまま出る（テストは `RETENTION` を読み、期待する文を数から作る。ここ暇の枠は「終わってから1日（始まってから最長2日）」の2つの数とも）
-- [ ] 保存期間（値。`packages/shared/src/retention.test.ts`）：`RETENTION` の値が T-17 の表と同じ（誘い・募集・予定・お知らせ・招待リンク・ログインの記録・休眠30日、処理の記録7日、ここ暇の枠は終わってから1日と長さの上限1日、冪等キー24時間、埋まりのキャッシュ5分など）。値を変えたら、このテストと T-17 の表を同じPRで直す
-- [ ] 保存期間（API。`apps/api/src/jobs/retention-constants.test.ts`）：API の掃除の定数（`RETENTION_MS`・`NOTIFICATION_RETENTION_MS`・`DEAD_SESSION_RETENTION_MS`・`OUTBOX_RETENTION_MS`・`AVAILABILITY_RETENTION_MS`・`IDEMPOTENCY_TTL_MS` など）が `RETENTION` から作った値と等しい。`MAX_LENGTH_MS` が `RETENTION` の枠の長さの上限と等しく、`AVAILABILITY_RETENTION_MS` が「終わってから」＋「長さの上限」と等しい。既存の掃除のテストも通る
-- [ ] タブの題：開くと「プライバシー ポリシー｜ここ暇」「利用規約｜ここ暇」、ページを離れると「ここ暇」
-- [ ] リンク：ログインの画面に、2つのページへのリンクと同意の1行「続けると利用規約とプライバシー ポリシーに同意したことになります」がある（チェックボックスはなく、同意の API も呼ばない）。招待リンクの受け口は、`lookup` が終わったあとにリンクが出て、読み込み中は出ない。設定に「このアプリについて」の節と2つの行がある
-- [ ] 移動：リンクを押すとアプリの中で移り（`navigate`）、「戻る」で前の画面に戻る。外から直接開いた「戻る」は `/` に移る。招待リンクの受け口から開いて戻ると、招待 Cookie で `lookup` し直して続けられる
-- [ ] 外へのリンクに `target="_blank"` と `rel="noopener noreferrer"` が付く
-- [ ] 制定日の検査（`apps/api/test/effective-date.test.ts`。今の Workers の project。fixture `apps/api/test/fixtures/web-dist-legal.js`）：仮の値の fixture は「制定日：」が1回・本物の日付が0回、`制定日：2026年12月1日` に置き換えたものは両方1回、2回入れたもの・「制定日：」を消したものは数がずれる。形の違う日付（`2026年12月`・`2026/12/1`）は本物に数えない
-- [ ] 本物のビルドの出力：CI の `build:prod`（`check:release`）で `check-web-dist.mjs` が、「制定日：」がちょうど1回であることを確かめて通る（仮の値のまま）。`--deploy` は人が `deploy:prod` で走らせる
+- [x] 正常系：ログインの確認中（`checking`）、API に届かない（`error`）、ログインしていない（`anonymous`）、ログインしている（`authenticated`）のどれでも、`/privacy` と `/terms` が本文を描画し、別の画面に移らない（`apps/web/src/pages/legal.test.tsx`。今の `login.test.tsx` の書き方）
+- [x] 本文：見出し（`h1` は1つ、各節の `h2`）、連絡先 `ops@kokohima.app` の `mailto:` リンク、制定日、13歳以上・保護者の同意の文が出る。ページを開いても、`AuthProvider` の `/api/v1/auth/refresh` のほかに API の呼び出し（`fetch`）が起きない
+- [x] オフライン：オフラインの帯が出ていても、本文が出る
+- [x] 保存期間（画面。`apps/web/src/pages/legal.test.tsx`）：`/privacy` の「8.」に、`RETENTION` の数がそのまま出る（テストは `RETENTION` を読み、期待する文を数から作る。ここ暇の枠は「終わってから1日（始まってから最長2日）」の2つの数とも）
+- [x] 保存期間（値。`packages/shared/src/retention.test.ts`）：`RETENTION` の値が T-17 の表と同じ（誘い・募集・予定・お知らせ・招待リンク・ログインの記録・休眠30日、処理の記録7日、ここ暇の枠は終わってから1日と長さの上限1日、冪等キー24時間、埋まりのキャッシュ5分など）。値を変えたら、このテストと T-17 の表を同じPRで直す
+- [x] 保存期間（API。`apps/api/src/jobs/retention-constants.test.ts`）：API の掃除の定数（`RETENTION_MS`・`NOTIFICATION_RETENTION_MS`・`DEAD_SESSION_RETENTION_MS`・`OUTBOX_RETENTION_MS`・`AVAILABILITY_RETENTION_MS`・`IDEMPOTENCY_TTL_MS` など）が `RETENTION` から作った値と等しい。`MAX_LENGTH_MS` が `RETENTION` の枠の長さの上限と等しく、`AVAILABILITY_RETENTION_MS` が「終わってから」＋「長さの上限」と等しい。既存の掃除のテストも通る
+- [x] タブの題：開くと「プライバシー ポリシー｜ここ暇」「利用規約｜ここ暇」、ページを離れると「ここ暇」
+- [x] リンク：ログインの画面に、2つのページへのリンクと同意の1行「続けると利用規約とプライバシー ポリシーに同意したことになります」がある（チェックボックスはなく、同意の API も呼ばない）。招待リンクの受け口は、`lookup` が終わったあとにリンクが出て、読み込み中は出ない。設定に「このアプリについて」の節と2つの行がある
+- [x] 移動：リンクを押すとアプリの中で移り（`navigate`）、「戻る」で前の画面に戻る。外から直接開いた「戻る」は `/` に移る。招待リンクの受け口から開いて戻ると、招待 Cookie で `lookup` し直して続けられる
+- [x] 外へのリンクに `target="_blank"` と `rel="noopener noreferrer"` が付く
+- [x] 制定日の検査（`apps/api/test/effective-date.test.ts`。今の Workers の project。fixture `apps/api/test/fixtures/web-dist-legal.js`）：仮の値の fixture は「制定日：」が1回・本物の日付が0回、`制定日：2026年12月1日` に置き換えたものは両方1回、2回入れたもの・「制定日：」を消したものは数がずれる。形の違う日付（`2026年12月`・`2026/12/1`）は本物に数えない
+- [x] 本物のビルドの出力：CI の `build:prod`（`check:release`）で `check-web-dist.mjs` が、「制定日：」がちょうど1回であることを確かめて通る（仮の値のまま）。`--deploy` は人が `deploy:prod` で走らせる
 - 入力検証：対象なし（入力を受け取る画面・API がない）
 - 境界値・期限：対象なし（期限のある状態を持たない。保存期間の値の一致は上の「保存期間」で確かめる）
 - 他人のIDでは取得・更新できない：対象なし（API の追加がない。既存のテストが通る）
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] `release`（本番と同じ形。`e2e/release.spec.ts` の `pages` の一覧に足す）：`/privacy` と `/terms` を直接開くと、200 で、画面用の CSP と共通のヘッダーが付き、見出しが出て、CSP の違反が0件
-- [ ] `chromium`（`e2e/auth.spec.ts`）：ログインしていない人が、ログインの画面から「プライバシー ポリシー」を開き、「戻る」でログインの画面に戻る。「利用規約」も同じ
+- [x] `release`（本番と同じ形。`e2e/release.spec.ts` の `pages` の一覧に足す）：`/privacy` と `/terms` を直接開くと、200 で、画面用の CSP と共通のヘッダーが付き、見出しが出て、CSP の違反が0件
+- [x] `chromium`（`e2e/auth.spec.ts`）：ログインしていない人が、ログインの画面から「プライバシー ポリシー」を開き、「戻る」でログインの画面に戻る。「利用規約」も同じ
 - 招待リンクの受け口から開いて戻る流れは、単体テストで確かめる（E2E の招待の流れは今のまま）。
 
 ## 実装PRで直すもの
@@ -466,3 +466,4 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 | 2026-11-23 | 下書き | Google の OAuth を本番にする前に、同意画面に入れるプライバシー ポリシーと利用規約が要る（T-12 決定事項7）。#89・#90・#91 の一部 |
 | 2026-11-23 | T-12 決定事項7 をマージ済み（#128）として参照。退会で残るもの（相手の履歴・相手あてのお知らせ・処理の記録・キャッシュ）と、後始末の段で消えるものを分けた。端末の要約の置き場（お知らせ・処理の記録）を直した。保存期間に処理の記録・退避キュー・冪等キー・埋まりのキャッシュ・くり返しの例外・タイムゾーン・カレンダーの許可を足し、誘いの数え方を代わりの時間の遅い方に。メールアドレスの使い道をそろえた。募集の見え方（決めるまで人数だけ、決めたら参加者どうしは友達でなくても見える）。多要素認証の記述を外し確認事項に。`__Host-kh_cal` を足した。限定使用の文を「3.」の3と4に。規約の第4条2を「今回は難しい」は伝わる形に。監視のサービス。文案を囲みの中に移した。テスト：ログインしている状態・オフライン・refresh のほかに API を呼ばない・保存期間の数を `packages/shared` に集める・制定日の検査を node の環境で・入力検証と境界値は対象なし。確認事項に28条・ホームページ・Cloudflare のセキュリティの記録・監視の通知を足した。実装PRで直すものに #52・infra/README.md・`profile` を足した | 仕様書PRの前のレビュー（2件） |
 | 2026-11-23 | 制定日の検査を、「制定日：」が1回・本物の日付の形が1回で確かめる形に（「◯」を探さない。`EFFECTIVE_DATE_LINE` を1つの文字列に）、テストを今の Workers の project（`apps/api/test/`）と fixture に、CI の `build:prod` で本物の出力の形を確かめる。保存期間に、連携の記録と「ここ暇」カレンダーの識別子（解除しても残り、退会で消える）。端末に置くものに Service Worker とプッシュの購読。ここ暇の枠を「終わってから1日（始まってから最長2日）」にし、`RETENTION` と `MAX_LENGTH_MS` の関係を決めた。保存期間のテストを画面・shared・API の3つに分けた。確認事項をマージの前に決めること（a）と、デプロイの前に人が確かめること（b）に分けた。利用者の回答（同意は1行で記録しない、`profile` を外す、アイコンは表示名の1文字め、ホームページは今は変えない）を決めたこと7〜10に移し、本文・テスト・実装PRで直すものを合わせた | 仕様書PRのレビュー（pryusei/kokohima-app#129） |
+| 2026-11-23 | 実装済みに。共通の部品を `LegalDocument.tsx` に置いた。テスト計画のチェックを付けた（単体：`legal.test.tsx`・`retention.test.ts`・`retention-constants.test.ts`・`effective-date.test.ts`、E2E：`release.spec.ts`・`auth.spec.ts`）。issue #52・#89・#90・#91 の本文とコメントは、PR を開くときに人（コーディネーター）が直す | T-19 実装PR |
