@@ -454,7 +454,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 - `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET` は T-01 のものを使う。リダイレクト先 `/api/v1/calendar/google/callback` を Google Cloud のクライアントに登録する（人が行う）。
 - Queue の本体と退避キューは、`infra/terraform` にすでにある `cloudflare_queue.outbox`・`outbox_dlq`（`kokohima-<env>-outbox`・`kokohima-<env>-outbox-dlq`）を使う（Terraform の変更はない）。
-  - wrangler の各環境（ローカル・e2e・staging・prod）に、バインディング（`JOBS`）と Cron を書く。`max_retries` は5、`dead_letter_queue` は退避キュー。
+  - wrangler の各環境（ローカル・e2e・assets（T-12）・staging・prod）に、バインディング（`JOBS`）と Cron を書く。`max_retries` は5、`dead_letter_queue` は退避キュー。
   - `infra-change` スキルに従い、apply・deploy はしない。
 - 本番のエントリ（`src/index.ts`）と E2E のエントリは、どちらも `fetch`・`scheduled`・`queue` を export する。
 - E2E とローカルの `CALENDAR_TOKEN_KEYS` は、`scripts/write-e2e-dev-vars.mjs` で作る。`CALENDAR_TOKEN_CURRENT_KID` は `env.e2e` の vars に置く。
@@ -649,7 +649,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - 誘い・募集を作る画面での空きの表示。
 - 処理済みの outbox の行の掃除（別タスクの Cron の掃除）。
 - 監査ログ（カレンダー連携の記録。別タスク）。
-- Googleの審査（一般公開まで）。テスト中の公開状態では、更新用トークンが7日で失効することがある。その場合は `needs_reauth` になる。
+- Googleの審査（一般公開まで）。審査を受けるまでは、連携のときに確認されていないアプリの警告が出て、連携できる人数に上限（100人）がある（T-12 決定事項7。公開ステータスは本番なので、更新用トークンの7日の失効は起きない）。
 - 最終的な画面デザイン。
 
 ## 決定事項（仕様書PRのレビューで合意）
@@ -695,4 +695,5 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | 2026-11-21 | 確認の割り当てを最大1000件に、outbox の送出を1回の実行で最大10回の繰り返しにし、処理済みの行の掃除と Cron の各処理の独立を足す | docs/specs/T-12-data-growth.md |
 | 2026-11-21 | Cron の動いた記録、`job_failed`・`job_dead_lettered` を warn で出すことを書いた | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
 | 2026-11-23 | 休眠中の連携（判定、割り当ての条件とインデックス、埋まりの記録を消す、確認の権利・記録・保留の文の条件、ログインと15分ごとに戻す、連携し直しで休眠を外す）と、`ics_tokens (meetup_id)` のインデックスを足した | T-17 実装PR（docs/specs/T-17-retention.md） |
+| 2026-11-23 | T-12 決定事項7の変更（Google の OAuth を審査なしで本番に）に合わせ、スコープ外の「Googleの審査」の記述を直した | T-12 の仕様書の変更 |
 | 2026-11-23 | 退会した人の連携は、確認の権利・記録を進める文・失効の検知（`needs_reauth` と `CalendarReauthRequired`）・候補で扱わない（候補は `none`）と書いた | pryusei/kokohima-app#114 |

@@ -40,6 +40,8 @@ export default defineProject({
           MAIL_DAILY_LIMIT: "90",
           // リンクのプレビュー（T-08）
           LINK_PREVIEW_OWN_DOMAINS: "app.test",
+          // Sign in with Apple（T-12）。単体テストでは動かす（止めたときは各テストで差し替える）
+          APPLE_LOGIN_ENABLED: "1",
         },
       },
     })),

@@ -17,6 +17,10 @@ export const LOGIN_CODE_TTL_MS = 60 * 1000;
 
 type Ctx = { env: Bindings; deps: AppDeps };
 
+/** その方法のログインを使えるか。Apple は APPLE_LOGIN_ENABLED が "1" のときだけ（それ以外は止める。T-12） */
+export const providerEnabled = (env: Bindings, provider: OidcProviderName) =>
+  provider !== "apple" || env.APPLE_LOGIN_ENABLED === "1";
+
 export type IssuedSession = {
   refreshToken: string;
   refreshExpiresAt: number;
@@ -24,7 +28,9 @@ export type IssuedSession = {
   expiresAt: string;
 };
 
+/** 止めたログインの方法なら null（何も書かない） */
 export async function startLogin(ctx: Ctx, provider: OidcProviderName, returnTo: string | undefined) {
+  if (!providerEnabled(ctx.env, provider)) return null;
   const now = ctx.deps.now();
   const state = randomToken();
   const nonce = randomToken();
@@ -50,6 +56,7 @@ export async function handleCallback(
   params: { code?: string; state?: string; error?: string },
   bindingCookie: string | undefined,
 ): Promise<string | null> {
+  if (!providerEnabled(ctx.env, provider)) return null;
   try {
     const now = ctx.deps.now();
     const db = repo.db(ctx.env.DB);

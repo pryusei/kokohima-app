@@ -1,3 +1,5 @@
+// CSP のために、ほかのモジュールより先に Zod の設定を読む
+import "./zodConfig";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

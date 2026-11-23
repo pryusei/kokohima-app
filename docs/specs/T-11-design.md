@@ -106,7 +106,7 @@
   | キャンバス | 今のページ |
   | --- | --- |
   | 1 招待リンクの受け口 | `InvitePage` |
-  | 2 ログイン | `LoginPage` |
+  | 2 ログイン | `LoginPage`（「Appleでログイン」は `VITE_APPLE_LOGIN_ENABLED` が `"1"` のときだけ出す。T-12。招待の受け口も同じ） |
   | 4 みんな | `EveryonePage` |
   | 5 ここ暇 | `AvailabilityPage` |
   | 6 誘い | `InvitesPage` |
