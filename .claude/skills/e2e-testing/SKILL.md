@@ -45,12 +45,12 @@ Playwright公式のベストプラクティス（playwright.dev/docs/best-practi
 ## 書き方
 - ロケーターは `getByRole`・`getByLabel`・`getByText` を優先する。足りないときだけ `data-testid`。CSSクラスやXPathは使わない
 - アサーションは自動で待つもの（`toBeVisible`、`toHaveText` など）を使う。固定のwaitは使わない
-- 「見えた」と「操作を受けられる」は違う。シートなどを開いた直後にキーを押すときは、見えたことだけでなく、操作を受けられる状態（例：シートにフォーカスが入った `toBeFocused()`）を待つ。WebKit では、見えてから Esc を受ける処理が付くまでの間が長いことがある（docs/specs/T-30-ci-review.md「5.」）
+- 「見えた」と「操作を受けられる」は違う。シートなどを開いた直後にキーを押すときは、見えたことだけでなく、操作を受けられる状態（例：シートにフォーカスが入った `toBeFocused()`）を待つ。URL を直接開いたときのように、シートが通信のあとに描かれると、見えてから Esc を受ける処理が付くまでに間があり、WebKit ではその間が長いことがある（docs/specs/T-30-ci-review.md「5.」）
 - CIではリトライ時だけトレースを取る（`trace: 'on-first-retry'`）
 - 失敗の調査は `pnpm exec playwright test --debug` とトレースビューアーで行う
 
 ## CI（docs/specs/T-30-ci-review.md）
-- main への PR、main への push、手動（`workflow_dispatch`）で回る。文書（`docs/` と `.md`）だけの変更では飛ぶ
+- main への PR、main への push、手動（`workflow_dispatch`）で回る。PR が文書（`docs/` と、`apps/`・`packages/`・`e2e/`・`scripts/` の外の `.md`）だけを変えるときは飛ぶ（main への push と手動では常に回る）
 - Playwright の公式のコンテナ（`mcr.microsoft.com/playwright:v<版>-noble`）で回す。版は `pnpm-lock.yaml` の `@playwright/test` から取る（`scripts/ci/playwright-version.mjs`）ので、Playwright を上げてもワークフローは直さない
 - CI では flaky（1回落ちて、リトライで通った）も失敗になる（`failOnFlakyTests`）。リトライは1回。flaky が出たら、リトライに頼らずに原因を直す
 - flaky を直したら、そのテストを `--repeat-each 20` で回して確かめる。WebKit は `pnpm exec playwright test <ファイル> --project=iphone -g "<テスト名>" --repeat-each 20 --retries 0`（`--project` は `=` でつなぐ。空白で区切ると、後ろのファイル名もプロジェクト名として読まれる）

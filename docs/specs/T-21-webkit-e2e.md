@@ -52,8 +52,7 @@
 - `navigation.spec.ts` のこのテストの `page.setViewportSize({ width: 390, height: 844 })` は、`mobile` で回すときのために残す。
 
 ### CI（決定事項3）
-- `.github/workflows/e2e.yml` の `playwright install --with-deps chromium` を `chromium webkit` にする。`pnpm e2e` は今のまま（全プロジェクトが回る）。
-  - T-30 で、`playwright install --with-deps` をやめ、Chromium と WebKit の入った Playwright の公式のコンテナで回すようにした（docs/specs/T-30-ci-review.md「3. E2E」）。
+- CI の E2E（`.github/workflows/e2e.yml`）で WebKit も回す。T-21 では `playwright install --with-deps chromium` を `chromium webkit` にした。T-30 で `playwright install --with-deps` をやめ、Chromium と WebKit の入った Playwright の公式のコンテナで回すようにした（docs/specs/T-30-ci-review.md「3. E2E」）。`pnpm e2e` は今のまま（全プロジェクトが回る）。
 - ジョブは1つのまま分けない。`timeout-minutes` は今の30分のまま。実装PRで CI の時間を測り、PR の説明に書く。
 - 落ちたときのレポートの保存（`playwright-report`）は今のまま。
 
