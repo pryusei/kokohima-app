@@ -21,7 +21,12 @@ test("下のタブで みんな → ここ暇 → 誘い → 友達 と移れ、
   await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
 });
 
-test("スマホの幅で、みんなタブから開いた募集の作成のシートを「閉じる」のボタンで閉じると、みんなタブに戻り、開いたボタンにフォーカスが戻る", { tag: "@iphone" }, async ({ loggedInPage: page }) => {
+test("スマホの幅で、みんなタブから開いた募集の作成のシートを「閉じる」のボタンで閉じると、みんなタブに戻り、開いたボタンにフォーカスが戻る", { tag: "@iphone" }, async ({ browser }) => {
+  // 募るボタンは友達がいるときだけ出る（友達0人は招待のボタンだけ。docs/specs/T-34-kokodou-entry.md）
+  const a = await newUser(browser, "A");
+  const b = await newUser(browser, "B");
+  await befriend(b, a);
+  const page = a.page;
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("link", { name: "暇な人いる？と募る" }).click();
@@ -51,7 +56,7 @@ test("誘いの一覧のカードから詳細がシートで開き、「行く�
 
   await a.page.goto("/friends");
   await friendList(a.page).getByRole("link", { name: b.displayName }).click();
-  await sheet(a.page).getByRole("link", { name: "ここどう？と誘う" }).click();
+  await sheet(a.page).getByRole("link", { name: "誘う", exact: true }).click();
   const create = sheet(a.page, "誘う");
   await create.getByLabel("日付").fill(tomorrow());
   await create.getByLabel("開始", { exact: true }).fill("10:00");
@@ -77,7 +82,7 @@ test("お知らせのリンクのように誘いの URL を直接開いて閉じ
   await befriend(a, b);
   await a.page.goto("/friends");
   await friendList(a.page).getByRole("link", { name: b.displayName }).click();
-  await sheet(a.page).getByRole("link", { name: "ここどう？と誘う" }).click();
+  await sheet(a.page).getByRole("link", { name: "誘う", exact: true }).click();
   const create = sheet(a.page, "誘う");
   await create.getByLabel("日付").fill(tomorrow());
   await create.getByLabel("開始", { exact: true }).fill("10:00");

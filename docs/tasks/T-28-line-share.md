@@ -39,6 +39,6 @@ LINEの公式アカウントからお知らせを受け取る機能（T-28b）�
 - docs/specs/T-28-line-share.md（仕様書PRとして先に追加し、マージ後に実装PRを作る）
 
 ## 参考
-- 画面：招待リンクの発行のシート（`apps/web/src/pages/FriendsPage.tsx` の `InviteLinkSheet`）、招待の受け口（`apps/web/src/pages/InvitePage.tsx`）、ログイン（`apps/web/src/pages/LoginPage.tsx`）
+- 画面：招待リンクの発行のシート（`apps/web/src/account/InviteLinkSheet.tsx` の `InviteLinkSheet`。T-34 で `FriendsPage.tsx` から移した）、招待の受け口（`apps/web/src/pages/InvitePage.tsx`）、ログイン（`apps/web/src/pages/LoginPage.tsx`）
 - 関係するスキル：e2e-testing、vercel-react-best-practices
 - 似た仕組み：docs/specs/T-02-friends.md（招待リンクのURL・受け口）、docs/specs/T-25-installable-pwa.md（アプリ内ブラウザ向けの一文）
