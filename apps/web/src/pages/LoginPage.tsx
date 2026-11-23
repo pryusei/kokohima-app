@@ -36,9 +36,16 @@ export function LoginPage({ search }: { search: string }) {
         <a className={buttonClass("secondary", { block: true })} href={startUrl("google")}>
           Googleでログイン
         </a>
-        <a className={`${buttonClass("secondary", { block: true })} border-transparent bg-ink text-surface`} href={startUrl("apple")}>
-          Appleでログイン
-        </a>
+        {/* Sign in with Apple は VITE_APPLE_LOGIN_ENABLED が "1" のときだけ（T-12）。本番のビルドでは文字列ごと落ちる */}
+        {import.meta.env.VITE_APPLE_LOGIN_ENABLED === "1" && (
+          <a
+            data-provider="apple-login"
+            className={`${buttonClass("secondary", { block: true })} border-transparent bg-ink text-surface`}
+            href={startUrl("apple")}
+          >
+            Appleでログイン
+          </a>
+        )}
       </div>
       <p className="text-s text-ink-muted">カレンダーは、連携するまで読みません。</p>
     </main>

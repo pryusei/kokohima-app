@@ -4,6 +4,8 @@ dist/
 .dev.vars*
 .env
 .env.*
+# 秘密を書かない開発用の設定（Sign in with Apple のボタンなど。T-12）だけはコミットする
+!apps/web/.env.development
 .claude/settings.local.json
 .claude/claude-security-guidance.local.md
 playwright/.auth/

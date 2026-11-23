@@ -452,7 +452,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 - `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET` は T-01 のものを使う。リダイレクト先 `/api/v1/calendar/google/callback` を Google Cloud のクライアントに登録する（人が行う）。
 - Queue の本体と退避キューは、`infra/terraform` にすでにある `cloudflare_queue.outbox`・`outbox_dlq`（`kokohima-<env>-outbox`・`kokohima-<env>-outbox-dlq`）を使う（Terraform の変更はない）。
-  - wrangler の各環境（ローカル・e2e・staging・prod）に、バインディング（`JOBS`）と Cron を書く。`max_retries` は5、`dead_letter_queue` は退避キュー。
+  - wrangler の各環境（ローカル・e2e・assets（T-12）・staging・prod）に、バインディング（`JOBS`）と Cron を書く。`max_retries` は5、`dead_letter_queue` は退避キュー。
   - `infra-change` スキルに従い、apply・deploy はしない。
 - 本番のエントリ（`src/index.ts`）と E2E のエントリは、どちらも `fetch`・`scheduled`・`queue` を export する。
 - E2E とローカルの `CALENDAR_TOKEN_KEYS` は、`scripts/write-e2e-dev-vars.mjs` で作る。`CALENDAR_TOKEN_CURRENT_KID` は `env.e2e` の vars に置く。
