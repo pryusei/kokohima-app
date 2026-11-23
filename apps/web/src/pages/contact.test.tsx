@@ -255,6 +255,22 @@ describe("送る", () => {
     expect(keyOf(sent[1])).toBe(keyOf(sent[0]));
   });
 
+  it("401 の取り直しにも失敗したら、送り直さずにログアウトの状態になり、文言は足さない", async () => {
+    window.history.replaceState(null, "", "/settings/contact");
+    const { calls } = mockFetch({
+      "/api/v1/auth/refresh": [json(tokenBody()), problem(401, "unauthenticated")],
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      [PATH]: problem(401, "unauthenticated"),
+    });
+    renderApp();
+    await fill("その他", "内容");
+    await userEvent.click(sendButton());
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(posts(calls)).toHaveLength(1);
+    expect(calls.filter((c) => c.url === "/api/v1/auth/refresh")).toHaveLength(2);
+    expect(screen.queryByText(/送れませんでした|今日はこれ以上送れません/)).toBeNull();
+  });
+
   it("書きかけの内容を localStorage・sessionStorage に書かない", async () => {
     const local = vi.spyOn(Storage.prototype, "setItem");
     open();
