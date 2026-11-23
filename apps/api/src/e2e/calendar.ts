@@ -9,6 +9,7 @@ import { dispatchedTypes, toJobMessage } from "../jobs/dispatch";
 import { sha256 } from "../shared/crypto";
 import { TransientError } from "../link-preview/domain/url";
 import { e2eOgpFetch } from "./linkPreview";
+import { e2eClaudeFetch } from "./claude";
 import { e2eContactFetch } from "./contact";
 import { e2eDeliverPending, e2eNotificationFetch } from "./notifications";
 
@@ -77,6 +78,9 @@ export const e2eFetch: typeof fetch = async (input, init) => {
   if (ogp) return ogp;
   const contact = await e2eContactFetch(url, init);
   if (contact) return contact;
+  // 偽の Claude API（T-29）
+  const claude = await e2eClaudeFetch(url, init);
+  if (claude) return claude;
   return fetch(input, init);
 };
 

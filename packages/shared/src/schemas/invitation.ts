@@ -18,8 +18,8 @@ export const URL_MAX = 2048;
 const INVISIBLE_OR_CONTROL = /[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Zl}\p{Zp}]/u;
 const codePoints = (v: string) => Array.from(v).length;
 
-/** 空なら null。前後の空白を除き、NFC にそろえる */
-function freeText(max: number, newlines: number) {
+/** 空なら null。前後の空白を除き、NFC にそろえる（行きたいのAI提案の入力でも使う。T-29） */
+export function freeText(max: number, newlines: number) {
   return z
     .string()
     .max(max * 8)

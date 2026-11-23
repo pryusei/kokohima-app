@@ -11,7 +11,7 @@ if (!existsSync(dist)) {
 }
 // 経路の文字列だけでなく、テスト用ログインの関数名・偽の宛先も確かめる
 const forbidden =
-  /__e2e__|e2eLogin|e2eExpireBroadcast|e2eCalendar|e2eOutbox|e2eFetch|e2eNotification|e2eDeliverPending|google\.e2e\.invalid|resend\.e2e\.invalid|push\.e2e\.invalid|ogp\.e2e\.invalid|e2eOgpFetch|E2E_LINK_PREVIEW|e2eContact|E2E_CONTACT|slack\.e2e\.invalid/;
+  /__e2e__|e2eLogin|e2eExpireBroadcast|e2eCalendar|e2eOutbox|e2eFetch|e2eNotification|e2eDeliverPending|google\.e2e\.invalid|resend\.e2e\.invalid|push\.e2e\.invalid|ogp\.e2e\.invalid|e2eOgpFetch|E2E_LINK_PREVIEW|e2eContact|E2E_CONTACT|slack\.e2e\.invalid|e2eClaude|claudeStreamBody/;
 const walk = (dir) =>
   readdirSync(dir).flatMap((f) => {
     const p = join(dir, f);

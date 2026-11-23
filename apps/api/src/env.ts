@@ -50,6 +50,13 @@ export type Bindings = {
   ASSETS?: Fetcher;
   /** 問い合わせを届ける Slack の Incoming Webhook の URL（secret。docs/specs/T-24-contact.md「8.」）。ないと consumer は送らずに失敗する */
   CONTACT_SLACK_WEBHOOK_URL?: string;
+  /** 行きたいのAI提案の Claude API のキー（secret。docs/specs/T-29-wish-suggestion.md「設定値」）。ないと機能を止める */
+  ANTHROPIC_API_KEY?: string;
+  /** モデルの ID（既定 claude-haiku-5-5）と回数の上限（既定 5・10・100）。省略できる */
+  WISH_SUGGEST_MODEL?: string;
+  WISH_SUGGEST_USER_DAILY_LIMIT?: string;
+  WISH_SUGGEST_USER_DAILY_ATTEMPTS?: string;
+  WISH_SUGGEST_GLOBAL_DAILY_LIMIT?: string;
   E2E_MODE?: string;
 };
 
@@ -99,6 +106,8 @@ export type AppDeps = {
   contactWebhookTarget: ContactWebhookTarget;
   /** 問い合わせの公開の日（Unix ミリ秒。null は未定）。既定は packages/shared の contactStartAt()。E2E のエントリだけが 0 にする */
   contactStartAt: number | null;
+  /** 行きたいのAI提案（T-29）。全体の時間の上限（ミリ秒）。テストでだけ短くする */
+  wishSuggest: { timeoutMs: number };
 };
 
 export type ContactWebhookTarget = { hostname: string; pathPrefix: string };

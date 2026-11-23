@@ -18,6 +18,7 @@ import { deleteBroadcastsEndedBefore } from "../invitation/infra/broadcastReposi
 import { deleteInviteLinksExpiredBefore } from "../social/infra/repository";
 import { MAX_LENGTH_MS } from "../availability/domain/validation";
 import { retryIncompleteWithdrawals } from "../identity/application/withdrawal";
+import { deleteOldAttempts as deleteOldWishSuggestionAttempts } from "../wish/application/suggestions";
 import { deleteOldPosts as deleteOldWishPosts } from "../wish/application/wishes";
 
 // outbox を Queues に流す（docs/specs/T-06-calendar.md「outbox を Queues に流す」）
@@ -169,6 +170,10 @@ export async function cleanupExpired(ctx: Ctx) {
   }
   // 行きたいを置いた記録（2日。docs/specs/T-22-wishlist.md「期限と保存期間」）
   await runCappedStep("cleanup_wish_posts", CLEANUP_BATCH, () => deleteOldWishPosts(d1, now, CLEANUP_BATCH));
+  // 行きたいのAI提案の回数の記録（UTC で3日前の日付より前。docs/specs/T-29-wish-suggestion.md「データ」）
+  await runCappedStep("cleanup_wish_suggestion_attempts", CLEANUP_BATCH, () =>
+    deleteOldWishSuggestionAttempts(d1, now, CLEANUP_BATCH),
+  );
   // 退会の後始末の取りこぼし（docs/specs/T-16-withdrawal.md）
   await runStep("retry_withdrawals", () => retryIncompleteWithdrawals(ctx));
 }

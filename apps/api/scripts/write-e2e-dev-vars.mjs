@@ -58,3 +58,7 @@ if (!readFileSync(path, "utf8").includes("AVATAR_URL_KEY=")) {
   const avatarKey = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString("base64url");
   appendFileSync(path, `AVATAR_URL_KEY=${avatarKey}\n`);
 }
+// T-29 より前に作ったファイルには、偽の Claude API のキーを足す（E2E のエントリが api.anthropic.com を偽物に向ける）
+if (!readFileSync(path, "utf8").includes("ANTHROPIC_API_KEY=")) {
+  appendFileSync(path, "ANTHROPIC_API_KEY=e2e-unused\n");
+}

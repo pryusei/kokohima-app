@@ -36,6 +36,8 @@ export const RETENTION = {
   avatarImageGraceHours: 1,
   /** 行きたいを置いた回数の記録（置く回数の上限を数える。中身は持たない）：作ってから。行きたい自体は本人が消すまで・退会まで（T-22） */
   wishPostsDays: 2,
+  /** 行きたいのAI提案の回数の記録（いつ・結果の種類だけ。入力の言葉と候補は持たない）：日付が UTC の今日のこの日数前より前なら消す（T-29） */
+  wishSuggestionAttemptsDaysBefore: 3,
   /** 冪等キー */
   idempotencyKeysHours: 24,
   /** カレンダーの埋まりのキャッシュ（KV） */

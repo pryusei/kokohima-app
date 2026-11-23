@@ -17,6 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
     "@kokohima/shared": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",

@@ -9,6 +9,7 @@ import { cleanupInvitationsForWithdrawal } from "../../invitation/application/wi
 import { withdrawalPurgeStatements as notificationPurge } from "../../notification/application/subscriptions";
 import { withdrawalPurgeIdempotencyStatements } from "../../shared/idempotency";
 import { withdrawalPurgeStatements as socialPurge } from "../../social/application/social";
+import { withdrawalPurgeStatements as wishSuggestionPurge } from "../../wish/application/suggestions";
 import { withdrawalPurgeStatements as wishPurge } from "../../wish/application/wishes";
 import * as repo from "../infra/repository";
 
@@ -52,6 +53,8 @@ export async function withdraw(ctx: Ctx, viewer: Viewer): Promise<WithdrawResult
     ...withdrawalPurgeSharingStatements(d1, userId),
     // 行きたい（T-22）：友達の行と同じ batch で消し、後始末を待たずに見えなくする
     ...wishPurge(d1, userId),
+    // 行きたいのAI提案の回数の記録（T-29）
+    ...wishSuggestionPurge(d1, userId),
     ...availabilityPurge(d1, userId),
     ...notificationPurge(d1, userId),
     ...withdrawalPurgeIdempotencyStatements(d1, userId),

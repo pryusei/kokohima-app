@@ -15,3 +15,6 @@ NOTIFICATION_KEYS='{"local-1":"<base64urlの32バイト>"}'
 CONTACT_SLACK_WEBHOOK_URL=
 # アイコンの画像の URL の署名の鍵（T-27。作り方は JWT の鍵と同じ。鍵だけを書き、JSON にしない）
 AVATAR_URL_KEY=<base64urlの32バイト>
+# 行きたいのAI提案（T-29）の Claude API のキー。ローカルでは入れなくてよい（入れなければ「AIで探す」が出ない）。
+# 入れるときは、開発用に作った別のキーにする（本番のキーを使わない）
+ANTHROPIC_API_KEY=

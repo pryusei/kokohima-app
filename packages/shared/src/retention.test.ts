@@ -20,6 +20,7 @@ describe("保存期間の数（T-19「9.」）", () => {
       linkPreviewImageGraceHours: 1,
       avatarImageGraceHours: 1,
       wishPostsDays: 2,
+      wishSuggestionAttemptsDaysBefore: 3,
       idempotencyKeysHours: 24,
       freeBusyCacheMinutes: 5,
     });
