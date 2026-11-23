@@ -1,3 +1,4 @@
+import { RETENTION, RETENTION_UNIT_MS } from "@kokohima/shared";
 import type { AppDeps, Bindings } from "../env";
 import { deleteExpiredIcsTokens, deleteExpiredOauthStates } from "../calendar/infra/repository";
 import { db as identityDb, deleteDeadSessions, deleteExpiredLoginRecords } from "../identity/infra/repository";
@@ -16,6 +17,7 @@ import { deleteBroadcastsEndedBefore } from "../invitation/infra/broadcastReposi
 import { deleteInviteLinksExpiredBefore } from "../social/infra/repository";
 import { MAX_LENGTH_MS } from "../availability/domain/validation";
 import { retryIncompleteWithdrawals } from "../identity/application/withdrawal";
+import { deleteOldPosts as deleteOldWishPosts } from "../wish/application/wishes";
 
 // outbox を Queues に流す（docs/specs/T-06-calendar.md「outbox を Queues に流す」）
 // 送ってから処理済みにする。途中で止まっても行は未処理のまま残り、次の実行で送り直す（少なくとも1回は届く）
@@ -146,21 +148,23 @@ export async function cleanupExpired(ctx: Ctx) {
       deleteStaleNotificationOutbox(d1, cutoff, CLEANUP_BATCH),
     );
   }
+  // 行きたいを置いた記録（2日。docs/specs/T-22-wishlist.md「期限と保存期間」）
+  await runCappedStep("cleanup_wish_posts", CLEANUP_BATCH, () => deleteOldWishPosts(d1, now, CLEANUP_BATCH));
   // 退会の後始末の取りこぼし（docs/specs/T-16-withdrawal.md）
   await runStep("retry_withdrawals", () => retryIncompleteWithdrawals(ctx));
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_MS = RETENTION_UNIT_MS.day;
 /**
  * 誘い・募集（時間の終わりから）、招待リンク（期限から）、流れないままの通知の記録（作ってから）を残す期間。
  * ちょうど30日の行は残す（docs/specs/T-17-retention.md「1.」）
  */
-export const RETENTION_MS = 30 * DAY_MS;
+export const RETENTION_MS = RETENTION.invitationsDays * DAY_MS;
 /** 1回に消す募集の数の上限（宛先が最大100人いて、CASCADE で消える行が多いため） */
 export const BROADCAST_CLEANUP_BATCH = 100;
 
 /** くり返しの例外は、日付が UTC の今日の2日前の日付より前なら消す（タイムゾーンの差は最大1日なので、どこでも過去の日付） */
-export const exceptionCutoffDate = (now: number) => new Date(now - 2 * DAY_MS).toISOString().slice(0, 10);
+export const exceptionCutoffDate = (now: number) => new Date(now - RETENTION.recurrenceExceptionDaysBefore * DAY_MS).toISOString().slice(0, 10);
 
 /**
  * NOTIFICATION_START_AT が未設定の間だけ呼ぶ：通知だけの型で、未処理で、作ったのが createdBefore より前の outbox の行を消す
@@ -180,9 +184,9 @@ export async function deleteStaleNotificationOutbox(d1: D1Database, createdBefor
   return r.meta.changes;
 }
 /** 処理済みの outbox の行を残す期間（退避キューの既定の保持期間4日より長く） */
-export const OUTBOX_RETENTION_MS = 7 * DAY_MS;
+export const OUTBOX_RETENTION_MS = RETENTION.processedOutboxDays * DAY_MS;
 /** 始まりがこれより前の手動の枠を消す。長さは最大24時間なので、どれも終わってから1日以上たっている */
-export const AVAILABILITY_RETENTION_MS = DAY_MS + MAX_LENGTH_MS;
+export const AVAILABILITY_RETENTION_MS = RETENTION.availabilityGraceDays * DAY_MS + MAX_LENGTH_MS;
 /** 1回の実行で消す行の数の上限（outbox・ここ暇） */
 export const CLEANUP_BATCH = 1000;
 

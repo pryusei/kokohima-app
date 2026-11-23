@@ -1,4 +1,13 @@
 terraform {
+  required_version = ">= 1.6"
+  # ルートでも provider の出どころを書く（書かないと hashicorp/cloudflare を探して init が失敗する）
+  required_providers {
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
+  }
+
   # 状態ファイルはR2（S3互換）に保存する。バケットは最初に手動で1つだけ作る
   backend "s3" {
     bucket                      = "kokohima-tfstate"

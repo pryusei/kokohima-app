@@ -10,6 +10,7 @@ import { EmptyState, LoadError, Loading } from "../ui/feedback";
 import { Link } from "../ui/Link";
 import { TabScreen } from "../ui/Navigation";
 import { displayNameOf } from "../account/me";
+import { FriendWishes } from "../wish/FriendWishes";
 
 // ホーム＝「みんな」（docs/specs/T-03-availability.md「画面」、キャンバス「4 みんな」）
 
@@ -88,6 +89,7 @@ export function EveryonePage() {
             </ul>
           </section>
         ))}
+      <FriendWishes />
     </TabScreen>
   );
 }

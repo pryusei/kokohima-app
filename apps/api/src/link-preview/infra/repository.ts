@@ -1,6 +1,6 @@
 // link-preview の表（docs/specs/T-08-link-preview.md「データ」）。状態の遷移はどれも WHERE status = ? の条件付き
 
-export type Subject = { type: "direct_invite" | "broadcast"; id: string };
+export type Subject = { type: "direct_invite" | "broadcast" | "wish"; id: string };
 
 export type PreviewRow = {
   id: string;
@@ -14,8 +14,10 @@ export type PreviewRow = {
   fetched_at: number | null;
 };
 
-const refColumn = (s: Subject) => (s.type === "direct_invite" ? "direct_invite_id" : "broadcast_id");
-const subjectTable = (s: Subject) => (s.type === "direct_invite" ? "direct_invites" : "broadcasts");
+const REF_COLUMN = { direct_invite: "direct_invite_id", broadcast: "broadcast_id", wish: "wish_id" } as const;
+const SUBJECT_TABLE = { direct_invite: "direct_invites", broadcast: "broadcasts", wish: "wishes" } as const;
+const refColumn = (s: Subject) => REF_COLUMN[s.type];
+const subjectTable = (s: Subject) => SUBJECT_TABLE[s.type];
 
 export async function hasRef(d1: D1Database, subject: Subject) {
   const row = await d1.prepare(`SELECT 1 AS x FROM link_preview_refs WHERE ${refColumn(subject)} = ?1`).bind(subject.id).first();
@@ -96,7 +98,7 @@ export async function findPreview(d1: D1Database, id: string) {
 }
 
 /** 参照の行を書く。誘い・募集がない（処理の間に消えた）・すでにあるなら書かない。書けたら true */
-/** 誘い・募集にリンクが残っているときだけ（退会で書いた内容を消したあとに作り直さない。T-16） */
+/** 誘い・募集・行きたいにリンクが残っているときだけ（退会で書いた内容を消したあとに作り直さない。T-16） */
 export async function insertRef(d1: D1Database, subject: Subject, previewId: string, now: number) {
   const r = await d1
     .prepare(
@@ -116,7 +118,7 @@ export async function insertImageLedger(d1: D1Database, imageId: string, now: nu
 export type RefPreview = { subject_id: string } & Pick<PreviewRow, "status" | "title" | "description" | "site_name" | "image_id">;
 
 /** 誘い・募集の ID ごとに、参照している結果 */
-export async function previewsOf(d1: D1Database, column: "direct_invite_id" | "broadcast_id", ids: string[]) {
+export async function previewsOf(d1: D1Database, column: "direct_invite_id" | "broadcast_id" | "wish_id", ids: string[]) {
   if (ids.length === 0) return [];
   const { results } = await d1
     .prepare(

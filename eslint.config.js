@@ -13,6 +13,8 @@ export default tseslint.config(
       "playwright-report/**",
       "test-results/**",
       "infra/**",
+      // ビルドの出力をまねた fixture（docs/specs/T-19-privacy-terms.md「5.」）
+      "apps/api/test/fixtures/**",
       // 外部から取り込んだスキル（.claude/skills/THIRD_PARTY.md）。取り込んだファイルは編集しないので lint しない
       ".claude/skills/security-audit/**",
     ],

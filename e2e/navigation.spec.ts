@@ -6,7 +6,7 @@ function tomorrow() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(Date.now() + 24 * 60 * 60 * 1000));
 }
 
-test("下のタブで みんな → ここ暇 → 誘い → 友達 と移れ、ヘッダーの鐘からお知らせが開ける", async ({ loggedInPage: page }) => {
+test("下のタブで みんな → ここ暇 → 誘い → 友達 と移れ、ヘッダーの鐘からお知らせが開ける", { tag: "@iphone" }, async ({ loggedInPage: page }) => {
   await page.goto("/");
   const tabs = page.getByRole("navigation", { name: "タブ" });
   await expect(tabs.getByRole("link")).toHaveText(["みんな", "ここ暇", "誘い", "友達"]);
@@ -21,7 +21,30 @@ test("下のタブで みんな → ここ暇 → 誘い → 友達 と移れ、
   await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
 });
 
-test("誘いの一覧のカードから詳細がシートで開き、「行く」のあとシートを閉じると誘いタブに戻る", async ({ browser }) => {
+test("スマホの幅で、みんなタブから開いた募集の作成のシートを「閉じる」のボタンで閉じると、みんなタブに戻り、開いたボタンにフォーカスが戻る", { tag: "@iphone" }, async ({ loggedInPage: page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("link", { name: "暇な人いる？と募る" }).click();
+  const create = sheet(page, "暇な人いる？と募る");
+  await expect(create).toBeVisible();
+  // 入力欄がシートの幅をはみ出さない（横にスクロールせず、日付・開始・終了の右端がシートの右端を越えない）。
+  // iPhone の Safari の日付の入力欄で起きるはみ出しは、Chromium でも Linux の WebKit（iphone のプロジェクト）でも再現しないので、
+  // その後戻りは単体テスト（apps/web/src/ui/form.test.ts）で守る（docs/specs/T-21-webkit-e2e.md）
+  const dialog = await create.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(dialog.scroll).toBeLessThanOrEqual(dialog.client);
+  const sheetBox = await create.boundingBox();
+  for (const label of ["日付", "開始", "終了"]) {
+    const box = await create.getByLabel(label, { exact: true }).boundingBox();
+    expect(box && sheetBox && box.x + box.width, `${label}の入力欄の右端`).toBeLessThanOrEqual((sheetBox?.x ?? 0) + (sheetBox?.width ?? 0));
+  }
+  await create.getByRole("button", { name: "閉じる" }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: "暇な人いる？と募る" })).toBeFocused();
+});
+
+test("誘いの一覧のカードから詳細がシートで開き、「行く」のあとシートを閉じると誘いタブに戻る", { tag: "@iphone" }, async ({ browser }) => {
   const a = await newUser(browser, "A");
   const b = await newUser(browser, "B");
   await befriend(a, b);
@@ -48,7 +71,7 @@ test("誘いの一覧のカードから詳細がシートで開き、「行く�
   await expect(b.page.getByRole("heading", { name: "誘い", level: 1 })).toBeVisible();
 });
 
-test("お知らせのリンクのように誘いの URL を直接開いて閉じると、アプリの外に出ず誘いタブへ移る", async ({ browser }) => {
+test("お知らせのリンクのように誘いの URL を直接開いて閉じると、アプリの外に出ず誘いタブへ移る", { tag: "@iphone" }, async ({ browser }) => {
   const a = await newUser(browser, "A");
   const b = await newUser(browser, "B");
   await befriend(a, b);

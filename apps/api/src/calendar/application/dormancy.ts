@@ -1,12 +1,13 @@
+import { RETENTION, RETENTION_UNIT_MS } from "@kokohima/shared";
 import * as repo from "../infra/repository";
 import type { Ctx } from "./connections";
 
 // 休眠中の連携（docs/specs/T-17-retention.md「8.」）。30日アプリを開いていない人の連携は、定期の確認を止め、埋まりの記録を消す。
 // Google の許可（更新用トークン）は残す。ログインし直したら、新しく連携したときと同じく「記録だけ」から始める
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_MS = RETENTION_UNIT_MS.day;
 /** 最後に使ってからこれを過ぎ、使える更新用トークンがなければ休眠にする */
-export const DORMANT_AFTER_MS = 30 * DAY_MS;
+export const DORMANT_AFTER_MS = RETENTION.dormantAfterDays * DAY_MS;
 /** 15分ごとの Cron で、1回に休眠にする・戻す行の数の上限 */
 export const DORMANCY_BATCH = 100;
 

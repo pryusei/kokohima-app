@@ -37,7 +37,7 @@ async function meetupsOf(page: Page) {
   return page.getByRole("list", { name: "成立した予定" });
 }
 
-test("AがBの見えている枠から誘う（あそぼ）→ Bが「行く」→ 双方の「成立」に予定が出る", async ({ browser }) => {
+test("AがBの見えている枠から誘う（あそぼ）→ Bが「行く」→ 双方の「成立」に予定が出る", { tag: "@iphone" }, async ({ browser }) => {
   const a = await newUser(browser, "A");
   const b = await newUser(browser, "B");
   await befriend(a, b);
