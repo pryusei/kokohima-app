@@ -23,7 +23,7 @@ async function drain(user: E2EUser) {
 async function inviteWithLink(page: Page, to: E2EUser, url: string) {
   await page.goto("/friends");
   await friendList(page).getByRole("link", { name: to.displayName }).click();
-  await page.getByRole("link", { name: "ここどう？と誘う" }).click();
+  await sheet(page).getByRole("link", { name: "誘う", exact: true }).click();
   await expect(page.getByLabel("相手")).toHaveValue(/.+/);
   await page.getByLabel("日付").fill(tomorrow());
   await page.getByLabel("開始", { exact: true }).fill("10:00");

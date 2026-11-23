@@ -11,7 +11,7 @@ function tomorrow() {
 async function sendInvite(a: E2EUser, b: E2EUser) {
   await a.page.goto("/friends");
   await friendList(a.page).getByRole("link", { name: b.displayName }).click();
-  await sheet(a.page).getByRole("link", { name: "ここどう？と誘う" }).click();
+  await sheet(a.page).getByRole("link", { name: "誘う", exact: true }).click();
   const create = sheet(a.page, "誘う");
   await create.getByLabel("日付").fill(tomorrow());
   await create.getByLabel("開始", { exact: true }).fill("10:00");
@@ -112,7 +112,7 @@ test("誘いの作成のシートに入力したまま幅を390pxと1280pxの間
   await befriend(a, b);
   await a.page.goto("/friends");
   await friendList(a.page).getByRole("link", { name: b.displayName }).click();
-  await sheet(a.page).getByRole("link", { name: "ここどう？と誘う" }).click();
+  await sheet(a.page).getByRole("link", { name: "誘う", exact: true }).click();
   const create = sheet(a.page, "誘う");
   await create.getByLabel("日付").fill(tomorrow());
   await create.getByLabel("開始", { exact: true }).fill("10:00");

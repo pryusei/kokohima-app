@@ -1,7 +1,20 @@
-import { createInviteUrl, expect, friendList, loginAs, newUser, test, uniqueName } from "./fixtures";
+import { createInviteUrl, expect, friendList, loginAs, newUser, sheet, test, uniqueName } from "./fixtures";
 
 // T-02 友達と招待リンク（docs/specs/T-02-friends.md「E2Eテスト」）
 // 相手を見分けるため、テスト用ユーザーに一意な表示名を付ける
+
+test("友達が0人なら「みんな」は「友達を招待する」の1つのボタンだけで、押すと招待リンクの発行のシートが開く", async ({ browser }) => {
+  // docs/specs/T-34-kokodou-entry.md「E2Eテスト」。招待リンクを作れるよう、表示名つきのユーザーにする
+  const { page } = await newUser(browser, "A");
+  await page.goto("/");
+  await expect(page.getByText("まだ友達はいません")).toBeVisible();
+  await expect(page.getByRole("link", { name: "暇な人いる？と募る" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "誰を誘う？" })).toHaveCount(0);
+  await page.getByRole("button", { name: "友達を招待する" }).click();
+  const dialog = sheet(page, "招待リンクを作る");
+  await dialog.getByRole("button", { name: "招待リンクを作る" }).click();
+  await expect(dialog.getByLabel("招待リンクのURL")).toHaveValue(/\/invite#t=/);
+});
 
 test("リンクを開いて「友達になる」と、双方の友達一覧に相手が出る", async ({ browser }) => {
   const a = await newUser(browser, "A");

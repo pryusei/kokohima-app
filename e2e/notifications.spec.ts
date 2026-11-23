@@ -81,7 +81,7 @@ test("友達追加と「見せない」：お知らせ一覧の「この人に�
   await addAvailability(a.page, tomorrow, "夜");
   await expect(a.page.getByRole("list", { name: "自分のここ暇" }).getByText(/夜 19:00〜23:00/)).toBeVisible();
   await b.page.goto("/");
-  await expect(b.page.getByRole("listitem").filter({ hasText: a.displayName }).first()).toBeVisible();
+  await expect(b.page.getByRole("region", { name: "みんなのここ暇" }).getByRole("listitem").filter({ hasText: a.displayName })).toBeVisible();
 
   await deliverTo(a);
   await a.page.goto("/notifications");
@@ -91,7 +91,7 @@ test("友達追加と「見せない」：お知らせ一覧の「この人に�
 
   await b.page.goto("/");
   await expect(b.page.getByRole("heading", { name: "みんな" })).toBeVisible();
-  await expect(b.page.getByRole("listitem").filter({ hasText: a.displayName })).toHaveCount(0);
+  await expect(b.page.getByRole("region", { name: "みんなのここ暇" }).getByRole("listitem").filter({ hasText: a.displayName })).toHaveCount(0);
 });
 
 test("種別を止める：「誘い」を止めると、お知らせ一覧には出るがメールは届かない", async ({ browser }) => {
