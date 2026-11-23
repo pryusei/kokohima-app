@@ -474,6 +474,16 @@ describe("友達になる（accept）", () => {
     expect((await accept(b, undefined, link.id)).status).toBe(404);
   });
 
+  it("表示名が未設定でも、発行者がいなくなったリンクは404で、名前を求めない（T-31）", async () => {
+    const a = await user();
+    const b = await user(null);
+    const link = await createLink(a);
+    await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(a.id).run();
+    const res = await accept(b, link.token, link.id);
+    expect(res.status).toBe(404);
+    expect(problemSchema.parse(await res.json()).code).toBe("not_found");
+  });
+
   it("Origin がない・別のOriginなら401", async () => {
     const link = await createLink(await user());
     const b = await user();

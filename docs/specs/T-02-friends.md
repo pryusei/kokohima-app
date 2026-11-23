@@ -77,7 +77,7 @@
 - `POST /invite-links/lookup` で発行者の表示名とアイコンを表示する。表示名が未設定なら「友達」と表示する
 - トークンはブラウザのストレージ（localStorage・sessionStorage）に置かない。ログインをはさんでも失わないよう、`lookup` が有効なリンクのときに、サーバーが招待Cookieを発行する（決定事項2）
   - `__Host-kh_invite=<トークン>`、HttpOnly、Secure、`SameSite=Lax`、Path=/、Max-Age=3600
-  - `accept` はこのCookieのトークンを使い、201・200・404・409 のときにCookieを消す。ただし、本文の `linkId` が招待Cookieのリンクと違う404（手順2）では消さない。401（アクセストークンの失効・Originの不一致）では消さない（APIクライアントが更新して再送するため）。`lookup` が404のときも消す
+  - `accept` はこのCookieのトークンを使い、201・200・404・409（自分のリンク）のときにCookieを消す。ただし、本文の `linkId` が招待Cookieのリンクと違う404（手順2）と、閲覧者の表示名が未設定の409（手順3。T-31）では消さない。401（アクセストークンの失効・Originの不一致）では消さない（APIクライアントが更新して再送するため）。`lookup` が404のときも消す
   - T-01の `logout`・`logout-all` も招待Cookieを消す（共有の端末で、次の人に前の人の招待を引き継がないため）
   - `lookup`・`accept` はCookieを扱うので、T-01と同じく `Origin` が `APP_ORIGIN` と一致しなければ401
 - 未ログインなら「Googleでログイン」「Appleでログイン」を出す（`returnTo=/invite`）。ログイン後に `/invite` に戻ったら（フラグメントはない）、本文なしの `lookup` で招待Cookieから発行者を引き、表示名とアイコンを表示してから「友達になる」を出す。誰と友達になるのかを見せずに確定させない
@@ -95,7 +95,7 @@
 1. 招待Cookieのトークンのハッシュでリンクを取得する。Cookieがない・リンクがない・期限切れ・無効化・上限に達している、のどれでも404
 2. 取得したリンクの `id` が本文の `linkId` と一致しなければ404。別のタブで別のリンクを開いて招待Cookieが上書きされたときに、画面に出ていない相手と友達になるのを防ぐ（Cookieは消さない。正しいタブから開き直せば続けられる）
 3. 発行者が閲覧者自身なら409 `invalid_state`
-   - 続けて、閲覧者の表示名が未設定（`null`）なら409 `invalid_state`。招待Cookieは消さない（名前を決めてからやり直すため。docs/specs/T-31-display-name-first-step.md）
+   - 続けて、発行者の確認（発行者がいなければ404）のあとで、閲覧者の表示名が未設定（`null`）なら409 `invalid_state`。招待Cookieは消さない（名前を決めてからやり直すため。docs/specs/T-31-display-name-first-step.md）
 4. 次の5つの文を1つのバッチ（トランザクション）で実行する。途中で落ちれば全部戻るので、片方向の関係や「人数だけ消費」は残らない。D1は書き込みを直列に処理するので、同じ人の同時の `accept` もバッチの途中に割り込まない
    1. `UPDATE invite_links SET uses = uses + 1 WHERE id = ? AND uses < max_uses AND revoked_at IS NULL AND expires_at > ? AND NOT EXISTS (閲覧者→発行者の行)`
    2. 閲覧者→発行者の行を書く（直前の文が1行を書いたとき＝`changes() = 1` のときだけ）
@@ -171,7 +171,7 @@
 - [x] 解除：両方向が消え、outboxに何も書かれない。友達でない・存在しないユーザーは同じ404
 - [x] 公開設定：切り替えが保存され、一覧に反映される。解除して友達に戻っても残る。友達でない人には404
 - [x] 他人のIDでは取得・更新できない：AのトークンでBのリンクを無効化できない。Aの一覧にBの友達が出ない。AがB–C間の解除・公開設定を変えられない
-- [x] 招待Cookie：`lookup` が有効なら発行し（HttpOnly、Secure、SameSite=Lax、`__Host-`、1時間）、404なら消す。`accept` は201・200・404・409で消す（`linkId` が違う404と401では消さない）。Cookieがなければ `accept` は404
+- [x] 招待Cookie：`lookup` が有効なら発行し（HttpOnly、Secure、SameSite=Lax、`__Host-`、1時間）、404なら消す。`accept` は201・200・404・409（自分のリンク）で消す（`linkId` が違う404、表示名が未設定の409（T-31）、401では消さない）。Cookieがなければ `accept` は404
 - [x] `lookup`・`accept` は Origin がない・別のOriginなら401
 - [x] フロント：受け口でトークンをURLから消し、localStorage・sessionStorage に置かない
 - [x] フロント：未ログインで `/invite#t=...` を開いても `/login` へ移さずに受け口を描画する。ログインのボタンは `returnTo=/invite` でログインを始める
