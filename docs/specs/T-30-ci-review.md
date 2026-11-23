@@ -1,6 +1,6 @@
 # T-30 仕様書：CI の見直し（テストを回すタイミングと中身）
 
-- 状態：下書き
+- 状態：実装済み
 - タスク票：docs/tasks/T-30-ci-review.md
 - 関係する要件：要求定義書「技術」の CI。CLAUDE.md「テスト」「仕様書とPRの流れ」。T-21（docs/specs/T-21-webkit-e2e.md）
 
@@ -24,7 +24,7 @@
 
 ### 1. 変更の分類（`scripts/ci/changes.mjs`）
 - PR の差分（`git diff --name-status -M origin/<宛先>...HEAD` の行）を受け取り、次の3つを返す Node のスクリプトを足す。判定の関数を export し、単体テストで確かめる。
-  - `docsOnly`：変更がすべて文書のとき true。文書とは、`docs/` の下のファイルと、`apps/`・`packages/`・`e2e/`・`scripts/` の外にある `.md`（`CLAUDE.md`、`.claude/skills/**/*.md`、`.github/pull_request_template.md` など）。差分が空のときは false にする（念のため回す）。
+  - `docsOnly`：変更がすべて文書のとき true。文書とは、`docs/` の下のファイルと、`apps/`・`packages/`・`e2e/`・`scripts/` の外にある `.md`（`CLAUDE.md`、`.claude/skills/**/*.md`、`.github/pull_request_template.md` など）。差分が空のときは false にする（念のため回す）。名前の変更は、移動元と移動先の両方が文書のときだけ文書に数える。
   - `needsUnitTest`：追加・変更・名前の変更（A・M・R）のファイルのうち、`apps/`・`packages/`・`scripts/` の下にあり、`.md` でも `package.json` でもないものが1つでもあれば true。消しただけ（D）は数えない。名前の変更は移動先のパスで判定する。
   - `hasUnitTest`：追加・変更・名前の変更のファイルに単体テストが1つでもあれば true。単体テストとは、`apps/`・`packages/`・`scripts/` の下の `*.test.ts`・`*.test.tsx` と、`e2e/` の下の `*.unit.ts`。消したテストは数えない。
 - 文書を飛ばしてよい根拠：単体テスト・E2E・本番のビルドは、`docs/` と `.md` を読まない。2026-11-23 に、テストと設定が `readFileSync`・`?raw`・`import.meta.glob`・`define` で読むファイルと、本番のビルドの検査（`apps/api/scripts/`）を確かめた。パッケージの外で読んでいるのは `infra/terraform/envs/prod/waf.tf`（WAF のテスト）だけで、これは文書に入らないので回る。テストやビルドで `docs/` や `.md` を読むようにするときは、この分類も直す。
@@ -55,7 +55,7 @@
   - 版は `prepare` が出した版を使い、`pnpm-lock.yaml` と常に一致させる。Dependabot が Playwright を上げても、ワークフローを直さずに済む。
   - `playwright install --with-deps` はやめる。OS の依存とブラウザ（Chromium・WebKit）はコンテナに入っている。
   - Chromium のために、コンテナに `--ipc=host` を付ける（Playwright の Docker の案内のとおり）。
-  - Ubuntu の名前（`noble` など）は、実装PRで、その版に出ているタグを確かめて決める。
+  - Ubuntu は 24.04（`noble`）にする。1.65.0 には `noble`（24.04）と `resolute`（26.04）のタグがある（実装PRで確かめた）。作業環境と同じ 24.04 にして、CI で落ちたときに手元で同じ条件で再現できるようにする。
   - ブラウザのキャッシュは使わない。遅かったのは OS の依存の取得で、ブラウザの取得は速かったため（概要の4.）。
 - main への push の E2E が落ちたら、GitHub の通知（そのコミットをした人）で気づく。直す PR をほかの PR より先に出す。
 - 落ちたときのレポートの保存（`playwright-report`、7日）は今のまま。`timeout-minutes` は30分のまま。
@@ -73,6 +73,10 @@
   - 原因が上のとおりなら、テストを直す。Esc を押す前に、シートにフォーカスが入ったこと（`toBeFocused()`）を待つ。フォーカスを移すのは Esc を受ける処理を付けるのと同じ effect の中なので、これを待てば Esc が効く。利用者にも見える状態（キーボードの利用者はシートの中から操作を始める）を待つので、固定の wait にはしない。
   - 原因がアプリにあり、利用者の操作でも起きるとき（シートが付け直されて、Esc が効かない時間がある、など）は、アプリを直し、T-11 の仕様書（docs/specs/T-11-design.md）も同じ PR で直す。
 - 直したあと、`navigation.spec.ts` を WebKit で `--repeat-each 20` で回し、落ちないことを確かめる。結果は PR に書く。
+- 実装PRで確かめた結果（WebKit、作業環境の Ubuntu 24.04）：
+  - 直す前は、20回のうち1回落ちた（CI と同じ落ち方）。
+  - Esc を押した瞬間のフォーカスの場所を記録して40回回すと、落ちた1回だけフォーカスが `body` にあり、通った39回はシート（`dialog`）にあった。文書に付ける Esc の処理が付いていれば `body` で押しても閉じるので、Esc を受ける処理を付ける effect がまだ動いていなかった。上の「考えられる原因」のとおり。
+  - 利用者の操作では起きない（シートが出てから数ミリ秒のうちに Esc を押すことになる。iPhone には Esc がない）ので、アプリは変えず、テストでフォーカスを待つようにした。
 - ほかの Esc でシートを閉じるテスト（`e2e/fixtures.ts` の `addAvailability`、`availability.spec.ts`、`friends.spec.ts`、`desktop.spec.ts`）は、シートの中の操作の結果を待ってから Esc を押しているので変えない。flaky が出たら、同じ方法で直す。
 
 ### 6. terraform（`.github/workflows/terraform.yml`）
@@ -98,27 +102,27 @@
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 変更の分類（`scripts/ci/changes.test.ts`。ルートの `vitest.config.ts` に `ci` のプロジェクトを足す）：
-  - [ ] `docs/` だけ、または `.md` だけ（`CLAUDE.md`、`.claude/skills/x/SKILL.md`）→ `docsOnly`
-  - [ ] `apps/` の下の `.md`、`infra/terraform/envs/prod/waf.tf`、`.github/workflows/ci.yml`、`pnpm-lock.yaml` のどれかが混じる → `docsOnly` でない
-  - [ ] 差分が空 → `docsOnly` でない
-  - [ ] `apps/api/src/x.ts` を変えて、テストがない → `needsUnitTest` が true で `hasUnitTest` が false
-  - [ ] `apps/api/src/x.test.ts`、`apps/api/test/y.test.ts`、`apps/web/src/z.test.tsx`、`e2e/w.unit.ts`、`scripts/ci/v.test.ts` のどれかを足す・変える → `hasUnitTest`
-  - [ ] テストを消しただけ（D）→ `hasUnitTest` でない
-  - [ ] コードを消しただけ（D）→ `needsUnitTest` でない
-  - [ ] 名前の変更（`R100` の行。移動元と移動先の2つのパス）→ 移動先のパスで判定する
-  - [ ] `apps/web/package.json` と `pnpm-lock.yaml` だけ（Dependabot）→ `needsUnitTest` も `docsOnly` も false
-  - [ ] `e2e/x.spec.ts` だけ → `needsUnitTest` でない（E2E だけの変更）
-- [ ] Playwright の版（`scripts/ci/playwright-version.test.ts`）：`pnpm-lock.yaml` のルートの `@playwright/test` の版を返す。見つからないときはエラーで止める（違う版のコンテナで回さない）。
-- [ ] ワークフローの設定（`scripts/ci/workflows.test.ts`。YAML を読んで確かめる。読むために `yaml` を開発用の依存に足す）：
-  - [ ] ci：`push` は `main` だけ、`pull_request` は宛先を絞らない。`concurrency` は PR だけ取り消す。`unit` は `changes` が成功して `docsOnly` のときだけ飛ぶ。`require-unit-tests` にブランチ名の条件がない。`unit` が `build:prod` を回す。
-  - [ ] e2e：`pull_request`（main）・`push`（main）・`workflow_dispatch` で回る。`e2e` はコンテナで、イメージの版は `prepare` の出力を使い、`--ipc=host` を付ける。`playwright install` を実行しない。飛ぶ条件が ci の `unit` と同じ。
-  - [ ] terraform：`check` は `environment` を持たず、秘密（`secrets.`）を参照しない。`plan` は `needs: check` と `environment: terraform-plan` を持つ。
-  - [ ] すべてのワークフロー：`uses:` が40桁の SHA で固定されている。`permissions` が `contents: read` だけ。
-- [ ] Playwright の設定（`e2e/playwright-config.unit.ts` に足す）：CI のとき `failOnFlakyTests` が true で `retries` が1。CI でないときは `failOnFlakyTests` が false で `retries` が0。
+- [x] 変更の分類（`scripts/ci/changes.test.ts`。ルートの `vitest.config.ts` に `ci` のプロジェクトを足す）：
+  - [x] `docs/` だけ、または `.md` だけ（`CLAUDE.md`、`.claude/skills/x/SKILL.md`）→ `docsOnly`
+  - [x] `apps/` の下の `.md`、`infra/terraform/envs/prod/waf.tf`、`.github/workflows/ci.yml`、`pnpm-lock.yaml` のどれかが混じる → `docsOnly` でない
+  - [x] 差分が空 → `docsOnly` でない
+  - [x] `apps/api/src/x.ts` を変えて、テストがない → `needsUnitTest` が true で `hasUnitTest` が false
+  - [x] `apps/api/src/x.test.ts`、`apps/api/test/y.test.ts`、`apps/web/src/z.test.tsx`、`e2e/w.unit.ts`、`scripts/ci/v.test.ts` のどれかを足す・変える → `hasUnitTest`
+  - [x] テストを消しただけ（D）→ `hasUnitTest` でない
+  - [x] コードを消しただけ（D）→ `needsUnitTest` でない
+  - [x] 名前の変更（`R100` の行。移動元と移動先の2つのパス）→ 移動先のパスで判定する
+  - [x] `apps/web/package.json` と `pnpm-lock.yaml` だけ（Dependabot）→ `needsUnitTest` も `docsOnly` も false
+  - [x] `e2e/x.spec.ts` だけ → `needsUnitTest` でない（E2E だけの変更）
+- [x] Playwright の版（`scripts/ci/playwright-version.test.ts`）：`pnpm-lock.yaml` のルートの `@playwright/test` の版を返す。見つからないときはエラーで止める（違う版のコンテナで回さない）。
+- [x] ワークフローの設定（`scripts/ci/workflows.test.ts`。YAML を読んで確かめる。読むために `yaml` を開発用の依存に足す）：
+  - [x] ci：`push` は `main` だけ、`pull_request` は宛先を絞らない。`concurrency` は PR だけ取り消す。`unit` は `changes` が成功して `docsOnly` のときだけ飛ぶ。`require-unit-tests` にブランチ名の条件がない。`unit` が `build:prod` を回す。
+  - [x] e2e：`pull_request`（main）・`push`（main）・`workflow_dispatch` で回る。`e2e` はコンテナで、イメージの版は `prepare` の出力を使い、`--ipc=host` を付ける。`playwright install` を実行しない。飛ぶ条件が ci の `unit` と同じ。
+  - [x] terraform：`check` は `environment` を持たず、秘密（`secrets.`）を参照しない。`plan` は `needs: check` と `environment: terraform-plan` を持つ。
+  - [x] すべてのワークフロー：`uses:` が40桁の SHA で固定されている。`permissions` が `contents: read` だけ。
+- [x] Playwright の設定（`e2e/playwright-config.unit.ts` に足す）：CI のとき `failOnFlakyTests` が true で `retries` が1。CI でないときは `failOnFlakyTests` が false で `retries` が0。
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 「お知らせのリンクのように誘いの URL を直接開いて閉じると…」が、`iphone`（WebKit）で `--repeat-each 20` で回しても落ちない。`mobile` でも通る。
+- [x] 「お知らせのリンクのように誘いの URL を直接開いて閉じると…」が、`iphone`（WebKit）で `--repeat-each 20` で回しても落ちない。`mobile` でも通る（実装PRで、WebKit で40回続けて通り、`mobile` でも通った）。
 - 新しい利用者の流れは足さない。変えるのは CI と、テストの待ち方だけ。
 
 ### CI での確かめ（実装PRで行い、PR の説明に書く）
@@ -151,3 +155,4 @@
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-23 | 初版 | 利用者の依頼（GitHub Actions の見直し：テストを回すタイミングと中身） |
+| 2026-11-23 | 実装した。コンテナの Ubuntu を 24.04（`noble`）に決めた。flaky の原因を WebKit で確かめ（Esc を押したときにまだフォーカスが body にあり、Esc を受ける処理が付いていなかった）、テストでフォーカスを待つようにした。名前の変更を文書に数える条件を書いた | T-30 実装PR |

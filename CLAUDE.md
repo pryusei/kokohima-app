@@ -46,9 +46,9 @@
 ## テスト
 - IMPORTANT: 実装PRには単体テストの追加が必須。テストを追加しないPRは出さない
 - E2Eテストは、仕様書で対象にした利用者の流れ（ログイン、誘い〜成立など）について追加・更新する。書く前に `e2e-testing` スキルを読む
-- CIはpushごとに型チェック・lint・単体テスト、mainへのPRでE2Eを実行する。PRの説明は `.github/pull_request_template.md` に沿って書く
+- CIは、PRごとと main への push で型チェック・lint・単体テスト・本番のビルド、main への PR と main への push で E2E を実行する。文書（`docs/` と `.md`）だけの変更では飛ばす。E2E は CI では flaky も失敗にする（docs/specs/T-30-ci-review.md）。PRの説明は `.github/pull_request_template.md` に沿って書く
 
 ## 進め方
-- ブランチは仕様書PRが `spec/T-01-auth`、実装PRが `feat/T-01-auth` のようにタスクIDを含める。コミットは小さく
+- ブランチは仕様書PRが `spec/T-01-auth`、実装PRが `feat/T-01-auth` のようにタスクIDを含める。コミットは小さく。単体テストの検査（CI の `require-unit-tests`）はブランチ名ではなく差分で判定する（`scripts/ci/changes.mjs`）
 - 完了と言う前に typecheck・lint・関連テストを実行し、コマンドと結果を示す
 - コンパクション時は、変更したファイルの一覧・実行中のタスクID・仕様書のパス・テストコマンドを必ず残す
