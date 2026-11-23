@@ -118,7 +118,7 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
       parent="/invites"
       title={
         <div className="flex items-center gap-3">
-          {b?.direction === "received" && <Avatar name={b.owner.displayName} />}
+          {b?.direction === "received" && <Avatar name={b.owner.displayName} src={b.owner.avatarUrl} />}
           <div className="flex min-w-0 flex-1 flex-col">
             <h2 className="truncate text-l font-bold">{ownerNamed ? `${ownerNamed}の募集` : "暇な人いる？"}</h2>
             {owner && <span className="text-s text-ink-muted">暇な人いる？</span>}

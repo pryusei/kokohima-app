@@ -101,7 +101,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
             <ul className="flex flex-wrap gap-4">
               {m.participants.map((p) => (
                 <li key={p.id} className="flex items-center gap-2">
-                  <Avatar name={p.displayName} size="s" />
+                  <Avatar name={p.displayName} src={p.avatarUrl} size="s" />
                   {nameOfProfile(p)}
                 </li>
               ))}

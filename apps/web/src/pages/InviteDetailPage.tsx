@@ -127,7 +127,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
       title={
         d ? (
           <div className="flex items-center gap-3">
-            <Avatar name={d.counterpart.displayName} />
+            <Avatar name={d.counterpart.displayName} src={d.counterpart.avatarUrl} />
             <div className="flex min-w-0 flex-1 flex-col">
               <h2 className="truncate text-l font-bold">{d.direction === "received" ? name : `${named}へ`}</h2>
               <span className="text-s text-ink-muted">{KIND_LABELS[d.kind]}</span>

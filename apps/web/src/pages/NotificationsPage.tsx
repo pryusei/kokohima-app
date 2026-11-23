@@ -44,7 +44,7 @@ function HideFromFriend({ friendId }: { friendId: string }) {
 
 function Item({ n }: { n: NotificationDto }) {
   return (
-    <NotificationRow to={linkOf(n)} text={textOf(n)} unread={n.readAt === null} avatarName={n.actor?.displayName ?? null}>
+    <NotificationRow to={linkOf(n)} text={textOf(n)} unread={n.readAt === null} avatarName={n.actor?.displayName ?? null} avatarUrl={n.actor?.avatarUrl ?? null}>
       {n.kind === "friend_added" && n.subjectId && <HideFromFriend friendId={n.subjectId} />}
     </NotificationRow>
   );

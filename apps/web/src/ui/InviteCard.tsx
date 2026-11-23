@@ -9,6 +9,7 @@ import { Link } from "./Link";
 type CardProps = {
   to: string;
   avatarName: string | null;
+  avatarUrl?: string | null;
   title: string;
   subtitle: string;
   when: string;
@@ -18,7 +19,7 @@ type CardProps = {
   children?: ReactNode;
 };
 
-function Card({ to, avatarName, title, subtitle, when, note, status, tone, children }: CardProps) {
+function Card({ to, avatarName, avatarUrl = null, title, subtitle, when, note, status, tone, children }: CardProps) {
   const look =
     tone === "quiet"
       ? "border border-line bg-surface"
@@ -29,7 +30,7 @@ function Card({ to, avatarName, title, subtitle, when, note, status, tone, child
   return (
     <Link to={to} className={`flex flex-col gap-2 rounded-l p-4 no-underline ${look}`}>
       <span className="flex items-center gap-3">
-        <Avatar name={avatarName} />
+        <Avatar name={avatarName} src={avatarUrl} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className={`truncate font-bold ${ink}`}>{title}</span>
           <span className="text-s text-ink-muted">{subtitle}</span>

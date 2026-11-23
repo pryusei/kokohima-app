@@ -124,7 +124,7 @@ export function InvitePage() {
       {state.kind === "ready" && (
         <>
           <div className="flex flex-col items-center gap-4 text-center">
-            <Avatar name={state.invite.inviter.displayName} size="l" />
+            <Avatar name={state.invite.inviter.displayName} src={state.invite.inviter.avatarUrl} size="l" />
             <p className="text-xl font-bold">
               {state.invite.inviter.displayName ?? "友達"}さんから、ここ暇の友達の招待が届いています。
             </p>
