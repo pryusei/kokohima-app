@@ -21,6 +21,21 @@ test("下のタブで みんな → ここ暇 → 誘い → 友達 と移れ、
   await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
 });
 
+test("スマホの幅で、みんなタブから開いた募集の作成のシートを「閉じる」のボタンで閉じると、みんなタブに戻る", async ({ loggedInPage: page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("link", { name: "暇な人いる？と募る" }).click();
+  const create = sheet(page, "暇な人いる？と募る");
+  await expect(create).toBeVisible();
+  // 入力欄がシートの幅をはみ出さない（横にスクロールしない）
+  const dialog = await create.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(dialog.scroll).toBeLessThanOrEqual(dialog.client);
+  await create.getByRole("button", { name: "閉じる" }).click();
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
+});
+
 test("誘いの一覧のカードから詳細がシートで開き、「行く」のあとシートを閉じると誘いタブに戻る", async ({ browser }) => {
   const a = await newUser(browser, "A");
   const b = await newUser(browser, "B");

@@ -121,7 +121,7 @@ describe("BottomSheet", () => {
     );
   }
 
-  it("Esc・後ろの暗い部分・つまみで閉じ、閉じたら開いたボタンにフォーカスを戻す", async () => {
+  it("Esc・後ろの暗い部分・「閉じる」のボタンで閉じ、閉じたら開いたボタンにフォーカスを戻す", async () => {
     render(<Host />);
     const opener = screen.getByRole("button", { name: "開く" });
     for (const close of [
@@ -135,6 +135,34 @@ describe("BottomSheet", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(opener).toHaveFocus();
     }
+  });
+
+  it("右上の「閉じる」のボタンは1つだけで、つまみは押しても下に引いても閉じるが Tab では止まらない", async () => {
+    render(<Host />);
+    const opener = screen.getByRole("button", { name: "開く" });
+    await userEvent.click(opener);
+    const dialog = screen.getByRole("dialog", { name: "試し" });
+    expect(within(dialog).getAllByRole("button", { name: "閉じる" })).toHaveLength(1);
+    const grip = screen.getByTestId("sheet-grip");
+    expect(grip).toHaveAttribute("aria-hidden", "true");
+    expect(grip).not.toHaveAttribute("tabindex");
+
+    // Tab は「閉じる」→ 一つめ → 二つめ と回り、つまみには止まらない
+    await userEvent.tab();
+    expect(within(dialog).getByRole("button", { name: "閉じる" })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "一つめ" })).toHaveFocus();
+
+    await userEvent.click(grip);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await userEvent.click(opener);
+    const grip2 = screen.getByTestId("sheet-grip");
+    act(() => {
+      grip2.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientY: 100 }));
+      grip2.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientY: 200 }));
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("開いている間、Tab のフォーカスはシートの外に出ない", async () => {

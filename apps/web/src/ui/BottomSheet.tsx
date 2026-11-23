@@ -4,7 +4,8 @@ import { goBack } from "../router";
 import { OfflineBanner } from "./feedback";
 
 // 下から出るシート（docs/specs/T-11-design.md「画面のつながり」、デザインシステム「BottomSheet」）
-// つまみを押す・下に引く、後ろの暗い部分を押す、Esc で閉じる。確認のダイアログは出さない。
+// 右上の「閉じる」のボタン、つまみを押す・下に引く、後ろの暗い部分を押す、Esc で閉じる。確認のダイアログは出さない。
+// つまみとタイトルの行は、中をスクロールしても上に残す。つまみは見た目の手がかりなので、読み上げと Tab からは外す（「閉じる」は1つだけ）
 // 開いている間はフォーカスをシートの中に閉じ込め、閉じたら開いたボタンに戻す。
 // シートは body の直下に描き、開いている間はアプリの本体（#root）を inert にする（URL を持たないシートでも、後ろに Tab で入れないように）
 
@@ -61,11 +62,11 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   };
 
   // つまみを下に引いて閉じる。マウスでもつまみの外で離したときに pointerup が届くように、pointer を捕まえる
-  const onGripDown = (e: PointerEvent<HTMLButtonElement>) => {
+  const onGripDown = (e: PointerEvent<HTMLDivElement>) => {
     dragFrom.current = e.clientY;
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
-  const onGripUp = (e: PointerEvent<HTMLButtonElement>) => {
+  const onGripUp = (e: PointerEvent<HTMLDivElement>) => {
     const from = dragFrom.current;
     dragFrom.current = null;
     if (from !== null && e.clientY - from >= DRAG_CLOSE_PX) onClose();
@@ -93,18 +94,35 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
         onKeyDown={onKeyDown}
         className="mx-auto flex max-h-[92dvh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-t-sheet bg-surface px-6 pt-2 pb-[max(24px,env(safe-area-inset-bottom))] shadow-sheet"
       >
-        <button
-          type="button"
-          aria-label="閉じる"
-          className="mx-auto grid h-6 w-16 shrink-0 touch-none place-items-center rounded-full"
-          onClick={onClose}
-          onPointerDown={onGripDown}
-          onPointerUp={onGripUp}
-        >
-          <span aria-hidden="true" className="h-1 w-9 rounded-full bg-line-strong" />
-        </button>
+        <div className="sticky top-0 z-10 -mx-6 -mt-2 flex flex-col bg-surface px-6 pt-2 pb-1">
+          {/* つまみ（押す・下に引くと閉じる）。読み上げと Tab では右上の「閉じる」を使う */}
+          <div
+            aria-hidden="true"
+            data-testid="sheet-grip"
+            className="mx-auto grid h-6 w-16 shrink-0 cursor-pointer touch-none place-items-center rounded-full"
+            onClick={onClose}
+            onPointerDown={onGripDown}
+            onPointerUp={onGripUp}
+          >
+            <span className="h-1 w-9 rounded-full bg-line-strong" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              {typeof title === "string" ? <h2 className="text-xl font-bold">{title}</h2> : title}
+            </div>
+            <button
+              type="button"
+              aria-label="閉じる"
+              className="-mr-2.5 grid size-11 shrink-0 place-items-center rounded-full text-ink-muted"
+              onClick={onClose}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+        </div>
         <OfflineBanner />
-        {typeof title === "string" ? <h2 className="text-xl font-bold">{title}</h2> : title}
         {children}
       </div>
     </div>,
