@@ -58,10 +58,18 @@ test("左のナビで みんな → ここ暇 → 誘い → 友達 → お知�
   await expectNoHorizontalScroll(page);
 });
 
-test("ログインの画面は、ナビを出さず横にスクロールしない", async ({ page }) => {
-  await page.goto("/login");
-  await expect(page.getByRole("navigation", { name: "タブ" })).toHaveCount(0);
-  await expectNoHorizontalScroll(page);
+test("ログイン・プライバシー ポリシー・利用規約の画面は、ナビを出さず横にスクロールしない", async ({ page }) => {
+  for (const [path, title] of [
+    ["/login", null],
+    ["/privacy", "プライバシー ポリシー"],
+    ["/terms", "利用規約"],
+  ] as const) {
+    await page.goto(path);
+    if (title) await expect(page.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+    else await expect(page.getByRole("link", { name: "Googleでログイン" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "タブ" })).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
+  }
 });
 
 test("誘いのカードから詳細が中央のダイアログで開き、Esc で閉じるとカードにフォーカスが戻る。「閉じる」でも閉じる", async ({ browser }) => {

@@ -202,12 +202,11 @@ export function TabScreen({ title, children }: { title: string; children: ReactN
 }
 
 /** 設定・お知らせの画面：左上の「戻る」と名前。下のタブは出さない（PC では左のナビを出す） */
-export function SubScreen({ title, back, children }: { title: string; back: string; children: ReactNode }) {
-  const desktop = useDesktop();
+function SubFrame({ title, back, nav, children }: { title: string; back: string; nav: ReactNode; children: ReactNode }) {
   return (
-    <div className="lg:pl-60">
+    <div className={nav ? "lg:pl-60" : undefined}>
       {/* PC では左のナビを中身の前に置く（TabScreen と同じ） */}
-      {desktop && <TabBar />}
+      {nav}
       <div className={FRAME}>
         <header className="flex items-center gap-1 px-2 py-3 lg:px-4">
           <button type="button" aria-label="戻る" className="grid size-11 place-items-center rounded-full text-ink" onClick={() => goBack(back)}>
@@ -223,6 +222,27 @@ export function SubScreen({ title, back, children }: { title: string; back: stri
         </main>
       </div>
     </div>
+  );
+}
+
+export function SubScreen({ title, back, children }: { title: string; back: string; children: ReactNode }) {
+  const desktop = useDesktop();
+  return (
+    <SubFrame title={title} back={back} nav={desktop && <TabBar />}>
+      {children}
+    </SubFrame>
+  );
+}
+
+/**
+ * ログインしなくても開く画面（プライバシー ポリシー・利用規約）：戻るつきで、PC でも左のナビを出さない
+ * （docs/specs/T-20-desktop-layout.md「画面の枠」。ナビの未読の数を、ログインしていない人のために読みに行かない）
+ */
+export function PublicSubScreen({ title, back, children }: { title: string; back: string; children: ReactNode }) {
+  return (
+    <SubFrame title={title} back={back} nav={null}>
+      {children}
+    </SubFrame>
   );
 }
 

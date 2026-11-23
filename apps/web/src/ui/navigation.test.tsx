@@ -483,6 +483,16 @@ describe("PC の配置（docs/specs/T-20-desktop-layout.md）", () => {
     else expect(link.textContent).toBe("お知らせ");
   });
 
+  it.each(["/privacy", "/terms"])("%s は、PC でも左のナビを出さず、未読の数を読みに行かない（ログインしていなくても開く）", async (path) => {
+    stubMatchMedia(true);
+    window.history.replaceState(null, "", path);
+    const { calls } = mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByRole("navigation", { name: "タブ" })).toBeNull();
+    expect(calls.some((c) => c.url.startsWith("/api/v1/notifications"))).toBe(false);
+  });
+
   it("スマホの配置では、ナビにお知らせ・設定を出さず、ヘッダーに鐘を出す。設定の画面ではナビを出さない", async () => {
     stubMatchMedia(false);
     mockFetch(tabs);
