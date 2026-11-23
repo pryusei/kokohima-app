@@ -31,8 +31,9 @@ export function LegalDocument({
         {REVISION_NOTICE_LINE && changes && changes.length > 0 && (
           <Clause title="この改定で変わるところ">
             <Bullets>
-              {changes.map((change) => (
-                <li key={change}>{change}</li>
+              {changes.map((change, i) => (
+                // 固定の箇条書きで並びが変わらないので、順番を key にする
+                <li key={i}>{change}</li>
               ))}
             </Bullets>
           </Clause>

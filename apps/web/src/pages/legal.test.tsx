@@ -274,7 +274,10 @@ describe("プライバシー ポリシーの本文", () => {
     ]);
     const names = within(sub("外国の名称")).getAllByRole("listitem").map((li) => li.textContent);
     expect(names[0]).toBe("米国：Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者");
-    expect(names.slice(1).map((t) => t?.split("：")[0])).toEqual(["Cloudflare での通信の処理", "Cloudflare での保管（データベース・ファイル・一時的な記録）"]);
+    expect(names.slice(1).map((t) => t?.split("：")[0])).toEqual([
+      "Cloudflare での通信の処理",
+      "Cloudflare での保管（データベース・ファイル・処理の待ち行列・一時的な記録・ログ）",
+    ]);
     const providers = within(sub("体制を整えていることの確かめ方"))
       .getAllByRole("listitem")
       .map((li) => li.textContent?.split("：")[0]);
@@ -286,6 +289,48 @@ describe("プライバシー ポリシーの本文", () => {
     expect(sub("外国の個人情報の保護の制度").textContent).toContain("個人情報保護委員会の「外国における個人情報の保護に関する制度等の調査」");
     expect(within(sub("もっと詳しく知りたいとき")).getByRole("link", { name: "ops@kokohima.app" })).toHaveAttribute("href", "mailto:ops@kokohima.app");
     expect(seven.textContent).not.toMatch(/確かめています|支障は見つかっていません/);
+    // 仕様書の6節の文案と全文で同じ（箇条書きは、入れ子を除いたその項目の文）
+    const own = (li: HTMLElement) => {
+      const c = li.cloneNode(true) as HTMLElement;
+      c.querySelectorAll("ul,ol").forEach((n) => n.remove());
+      return c.textContent?.trim();
+    };
+    const items = (name: string) => Array.from(sub(name).querySelectorAll("li")).map(own);
+    expect(Array.from(seven.querySelectorAll(":scope > p")).map((p) => p.textContent)).toEqual([
+      "「5.」の事業者のうち、Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者は、外国の事業者です。運営は、個人情報保護法の基準に適合する体制（日本の法律の定めに沿った措置を続けてとるための体制）を整えている事業者にだけ、個人データの取り扱いを任せます。本人の同意によらずに任せるため、外国にある第三者に個人データを渡すときに本人の求めに応じて知らせることになっている事項を、求めを待たずにここに書きます。",
+      "障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません。",
+    ]);
+    expect(items("外国の名称")).toEqual([
+      "米国：Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者",
+      "Cloudflare での通信の処理：世界各地の拠点（データセンター）で処理します。どの国の拠点で処理されるかは、アクセスする場所などによって変わるため、前もって特定できません。",
+      "Cloudflare での保管（データベース・ファイル・処理の待ち行列・一時的な記録・ログ）：保管する場所の国を指定していないため、Cloudflare が選びます。前もって特定できません。",
+    ]);
+    expect(sub("体制を整えていることの確かめ方").querySelector("p")?.textContent).toBe(
+      "運営は、次の契約・条件に、下の「事業者がとる措置」が定められていることを確かめます。",
+    );
+    expect(items("体制を整えていることの確かめ方")).toEqual([
+      "Cloudflare：Cloudflare のデータ処理に関する契約（DPA）",
+      "Google：Google が、ログインとカレンダーの連携で預かるデータの処理について定める条件",
+      "Resend：Resend のデータ処理に関する契約（DPA）",
+      "ブラウザのプッシュ通知の事業者：それぞれの事業者が、プッシュ通知の配信について定める条件。渡すのは、その事業者が発行した宛先と、中身のない合図だけです。",
+    ]);
+    expect(items("事業者がとる措置")).toEqual([
+      "確かめるのは、事業者が、任された目的の範囲でだけ情報を扱うこと、安全管理の措置をとること、従業者とほかの委託先を監督すること、漏えいなどがあれば運営に知らせること、ほかの人に渡さないこと、契約が終わったときに情報を消すか返すこと、などです。",
+    ]);
+    expect(items("確かめ続けること")).toEqual([
+      "運営は、年に1回と、事業者が契約・条件を変えたと知ったときに、事業者の措置と、それに影響するおそれのある外国の制度を確かめます。",
+      "措置に支障が出たときは、必要な対応をとり、続けるのが難しいときは、その事業者に任せるのをやめます。",
+      "措置の実施に支障が見つかったときは、そのことと、とった対応を、ここに書きます。",
+    ]);
+    expect(items("外国の個人情報の保護の制度")).toEqual([
+      "個人情報保護委員会の「外国における個人情報の保護に関する制度等の調査」によると、米国の概要は次のとおりです。",
+      "国全体の、個人情報の保護についての包括的な法律はありません。連邦取引委員会（FTC）が、不公正・欺瞞的な行為を禁じる法律（連邦取引委員会法第5条）にもとづいて取り締まるほか、分野ごとの法律（医療・金融・子どもの情報など）と、州の法律があります。",
+      "安全保障などのために、政府が事業者に情報の提供を求めることができる制度があります。",
+      "詳しくは、個人情報保護委員会の調査をご覧ください。",
+    ]);
+    expect(items("もっと詳しく知りたいとき")).toEqual([
+      "体制の整え方、事業者がとる措置、確かめる頻度と方法、外国の制度、支障の有無とその対応について、もっと詳しく知りたいときは、ops@kokohima.app に求めてください（「12.」）。遅滞なくお知らせします。",
+    ]);
   });
 
   it("「12.」：「7.」の情報の提供を求められる", async () => {
