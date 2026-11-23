@@ -190,14 +190,45 @@ describe("BottomSheet", () => {
 
     await userEvent.click(grip);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
 
-    await userEvent.click(opener);
-    const grip2 = screen.getByTestId("sheet-grip");
-    act(() => {
-      grip2.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientY: 100 }));
-      grip2.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientY: 200 }));
-    });
-    expect(screen.queryByRole("dialog")).toBeNull();
+  it("つまみを押しても下に引いても、onClose は1回だけ呼ぶ（引いたあとに届く click で2回にならない）", () => {
+    const onClose = vi.fn();
+    const { unmount } = render(
+      <BottomSheet title="試し" label="試し" onClose={onClose}>
+        <p>本文</p>
+      </BottomSheet>,
+    );
+    const grip = screen.getByTestId("sheet-grip");
+    const release = (fromY: number, toY: number) =>
+      act(() => {
+        grip.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientY: fromY }));
+        grip.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientY: toY }));
+        grip.dispatchEvent(new MouseEvent("click", { bubbles: true, clientY: toY }));
+      });
+
+    release(100, 200); // 下に引く
+    expect(onClose).toHaveBeenCalledTimes(1);
+    release(100, 102); // 押す
+    expect(onClose).toHaveBeenCalledTimes(2);
+    release(100, 130); // 少しだけ引いて戻す・上に引く：閉じない
+    release(200, 100);
+    expect(onClose).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it("オフラインの帯は、スクロールしても上に残る行（つまみとタイトルの行）の中に出す", () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    render(
+      <BottomSheet title="試し" label="試し" onClose={() => {}}>
+        <p>本文</p>
+      </BottomSheet>,
+    );
+    const header = screen.getByTestId("sheet-grip").parentElement;
+    expect(header?.className).toContain("sticky");
+    expect(header).toContainElement(screen.getByText(/オフライン/));
+    expect(header).toContainElement(screen.getByRole("heading", { name: "試し" }));
+    onLine.mockRestore();
   });
 
   it("開いている間、Tab のフォーカスはシートの外に出ない", async () => {

@@ -27,7 +27,8 @@ test("スマホの幅で、みんなタブから開いた募集の作成のシ�
   await page.getByRole("link", { name: "暇な人いる？と募る" }).click();
   const create = sheet(page, "暇な人いる？と募る");
   await expect(create).toBeVisible();
-  // 入力欄がシートの幅をはみ出さない（横にスクロールしない）
+  // 入力欄がシートの幅をはみ出さない（横にスクロールしない）。iPhone の Safari の日付の入力欄で起きるはみ出しは Chromium では再現しないので、
+  // その後戻りは単体テスト（apps/web/src/ui/form.test.ts）で守る。ここではシートの中のほかの要素がはみ出さないことだけを見る
   const dialog = await create.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
   expect(dialog.scroll).toBeLessThanOrEqual(dialog.client);
   await create.getByRole("button", { name: "閉じる" }).click();
