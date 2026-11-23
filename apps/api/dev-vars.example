@@ -10,3 +10,6 @@ RESEND_API_KEY=
 VAPID_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 # プッシュの購読の endpoint の暗号化の鍵（作り方は JWT の鍵と同じ。別の値にする）
 NOTIFICATION_KEYS='{"local-1":"<base64urlの32バイト>"}'
+# 問い合わせ（T-24）を届ける Slack の Incoming Webhook の URL。ローカルでは入れない（consumer は送らずに失敗し、ローカルのキューの中で退避するだけ）。
+# 届くことを確かめるときは E2E の偽の Slack を使う
+CONTACT_SLACK_WEBHOOK_URL=

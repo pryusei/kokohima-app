@@ -13,6 +13,7 @@ import { useOnline } from "../ui/online";
 import { PresetForm } from "../availability/PresetForm";
 import { DisplayNameForm } from "../account/DisplayNameForm";
 import { displayNameOf, meQuery } from "../account/me";
+import { isContactOpenNow } from "../contact/open";
 
 // 設定（docs/specs/T-11-design.md「画面のつながり」、キャンバス「19 設定」「21 時間帯プリセット」「23 アカウント」）
 // 友達タブの「アカウント」の節から開く。初回設定・ログインの方法の連携は、それぞれのタスクで作る（#43・#45）。退会は T-16
@@ -56,6 +57,8 @@ export function SettingsPage() {
       </ul>
       <Section title="このアプリについて">
         <ul className="rounded-l bg-surface px-4 shadow-card">
+          {/* 問い合わせ（T-24）は公開の日から出す */}
+          {isContactOpenNow() && <Row to="/settings/contact" label="問い合わせ" />}
           <Row to="/settings/install" label="アプリとして使う" />
           <Row to="/privacy" label="プライバシー ポリシー" />
           <Row to="/terms" label="利用規約" />

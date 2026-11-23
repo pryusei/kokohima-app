@@ -44,7 +44,7 @@
 D1 の batch は前の文の結果で後続を止められない（T-01）。どの文も何度実行しても同じ結果になる。`withdrawn_at` は最初の時刻を残す。
 - `users`：`withdrawn_at` を今に（`COALESCE(withdrawn_at, ?)`）、`display_name`・`avatar_url`（T-15 なら `avatar_id`）・`email` を NULL、`timezone` を初期値に。
 - 行を消す：`sessions`（更新用トークンも CASCADE で消える）、`user_identities`、`login_codes`、`invite_links`、`friendships`（両方向）、`sharing_policies`（両方向）、`presets`、`availabilities`、`recurrence_rules`（例外も）、`push_subscriptions`、`notification_preferences`、`notification_daily_counts`（本人の行）、`notifications`（本人あて）、`idempotency_keys`、`ics_tokens`、`calendar_oauth_states`、行きたい（本人の `wishes`。`wish_exclusions` と `link_preview_refs` の参照は CASCADE で消える。本人が見せない相手になっている `wish_exclusions`、本人の `wish_posts`。T-22。友達関係と同じ batch で消すので、相手からはすぐに見えなくなる）。
-- outbox の本人だけに関わる行を消す：`type IN ('SessionStarted','CalendarConnected','CalendarReauthRequired','AvailabilityCancelledByCalendar') AND json_extract(payload, '$.userId') = ?`（処理済み・未処理とも。端末の情報やここ暇の時刻が入るため）。
+- outbox の本人だけに関わる行を消す：`type IN ('SessionStarted','CalendarConnected','CalendarReauthRequired','AvailabilityCancelledByCalendar','ContactMessageSubmitted') AND json_extract(payload, '$.userId') = ?`（処理済み・未処理とも。端末の情報やここ暇の時刻、問い合わせの内容が入るため。`ContactMessageSubmitted` は T-24。まだ届けていない問い合わせも届かなくなる）。
 - outbox に `UserWithdrew` `{ userId, occurredAt }` を書く（後始末の段のきっかけ。dispatch の「常に流す型」に足す）。
 - `calendar_connections` は、この段では消さない（後始末でカレンダーを消して revoke するのに、トークンが要る）。定期の確認と書き込みは、退会した人の連携を扱わない（下の「退会した人を扱わない処理」）。
 - 応答で Cookie を消す。ログを `user_withdrew`（warn 未満の情報のログ。利用者の ID・メール・名前は出さない）で出す。
@@ -178,4 +178,5 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 | 2026-11-22 | 受信者が退会した `counter_proposed` は `skipped` にしない。退会と同時に進んだカレンダーの連携の callback は、保存できなければ受け取った許可を revoke して失敗にする。受け入れるリスクに参加者の数のずれを足す | 実装PRのレビュー（pryusei/kokohima-app#107） |
 | 2026-11-23 | 「残すもの」の誘い・募集・予定とお知らせも、終わってから・作ってから30日で消えることを書いた | T-17 実装PR（docs/specs/T-17-retention.md） |
 | 2026-11-23 | 入口を止める段で行きたい（`wishes`・`wish_exclusions`・`wish_posts`）を消す、wish の書き込みの経路を `requireActiveSession` の表に足す、確認画面の「消えるもの」に行きたい | T-22 実装PR（docs/specs/T-22-wishlist.md） |
+| 2026-11-23 | 入口を止める段で消す outbox の型に `ContactMessageSubmitted` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |
 | 2026-11-23 | 退会した人を扱わない処理のカレンダーに、確認の権利・記録を進める文・失効の検知・「ここ暇」カレンダーの ID の保存・カレンダーの空きを足した | pryusei/kokohima-app#114 |

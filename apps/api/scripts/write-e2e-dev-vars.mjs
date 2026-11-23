@@ -49,3 +49,7 @@ if (!readFileSync(path, "utf8").includes("VAPID_PRIVATE_KEY=")) {
     ].join("\n"),
   );
 }
+// T-24 より前に作ったファイルには、偽の Slack の webhook を足す（E2E のエントリが slack.e2e.invalid だけを許す）
+if (!readFileSync(path, "utf8").includes("CONTACT_SLACK_WEBHOOK_URL=")) {
+  appendFileSync(path, "CONTACT_SLACK_WEBHOOK_URL=https://slack.e2e.invalid/services/e2e\n");
+}
