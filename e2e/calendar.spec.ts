@@ -52,7 +52,7 @@ test("候補：連携した人のここ暇タブに候補が出て、押すと�
   await setBusy(a, [{ startsAt: at(date, "17:00"), endsAt: at(date, "18:00") }]);
   await connect(a.page);
   await a.page.goto("/availability");
-  // 候補の行ごとに「ここ暇にする」を置く。読み上げの名前に日付と時間帯が入る
+  // 候補は日ごとに1行で、時間帯ごとのボタンを置く。読み上げの名前に日付と時間帯が入る
   const day = `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}（.）`;
   const candidate = (slot: string) => a.page.getByRole("button", { name: new RegExp(`^${day} ${slot}をここ暇にする$`) });
   await expect(candidate("夜 19:00〜23:00")).toBeVisible();
