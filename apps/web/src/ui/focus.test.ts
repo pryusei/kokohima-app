@@ -13,8 +13,12 @@ const sources = import.meta.glob<string>(["../**/*.{ts,tsx}", "!../**/*.test.{ts
   eager: true,
 });
 
-/** 輪を消す指定：outline-none・outline-hidden・outline-0、フォーカスの影（影のクラスと取り合うので使わない） */
-const HIDES_RING = /(?:^|[\s"'`])(?:[\w-]+:)*outline-(?:none|hidden|0)\b|focus(?:-visible)?:shadow-/g;
+/**
+ * 輪を消す指定：outline-none・outline-hidden・outline-0・outline-transparent（任意の変種 `[&:focus]:` も含む）、
+ * フォーカスの影（影のクラスと取り合うので使わない）、インラインの style の outline: none / 0
+ */
+const HIDES_RING =
+  /(?:^|[\s"'`])(?:(?:[\w-]+|\[[^\]\s]+\]):)*outline-(?:none|hidden|0|transparent)\b|focus(?:-visible)?:shadow-|\boutline:\s*["'`]?(?:none|0)\b/g;
 
 describe("フォーカスの輪", () => {
   const rule = /:focus-visible\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
@@ -36,6 +40,8 @@ describe("フォーカスの輪", () => {
 
   it("検査が輪を消す指定を見つけられる", () => {
     expect(' className="focus:outline-none outline-hidden peer-focus-visible:shadow-card"'.match(HIDES_RING)).toHaveLength(3);
+    expect(' className="[&:focus]:outline-none focus-visible:outline-transparent"'.match(HIDES_RING)).toHaveLength(2);
+    expect('<div style={{ outline: "none" }} />'.match(HIDES_RING)).toHaveLength(1);
     expect(' className="peer-focus-visible:outline-2 peer-focus-visible:outline-focus shadow-card"'.match(HIDES_RING)).toBeNull();
   });
 });
