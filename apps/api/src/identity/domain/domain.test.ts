@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { deviceSummary } from "./deviceSummary";
 import { verifiedEmail } from "./idTokenClaims";
-import { decideRefresh, nextTokenExpiry, REFRESH_TOKEN_TTL_MS, RESCUE_WINDOW_MS } from "./refresh";
+import {
+  decideRacedRefresh,
+  decideRefresh,
+  nextTokenExpiry,
+  RACED_CHAIN_LIMIT,
+  REFRESH_TOKEN_TTL_MS,
+  RESCUE_WINDOW_MS,
+} from "./refresh";
 import { sanitizeReturnTo } from "./returnTo";
 
 const ORIGIN = "http://localhost:5173";
@@ -106,5 +113,36 @@ describe("decideRefresh", () => {
   it("新しいトークンの期限はセッションの絶対期限を超えない", () => {
     expect(nextTokenExpiry(now, now + 5)).toBe(now + 5);
     expect(nextTokenExpiry(now, now + REFRESH_TOKEN_TTL_MS * 10)).toBe(now + REFRESH_TOKEN_TTL_MS);
+  });
+});
+
+describe("decideRacedRefresh（交換に負けたやり直し。issue #115）", () => {
+  const now = 1_000_000;
+  const live = { expiresAt: now + 1000, revokedAt: null };
+  const unused = { expiresAt: now + 1000, usedAt: null };
+  const used = { expiresAt: now + 1000, usedAt: now - 1 };
+
+  it("3つ同時：提示されたトークンもその次も使用済みなら、たどった先の未使用のトークンを救済する（失効させない）", () => {
+    expect(decideRacedRefresh([used, unused], live, now)).toEqual({ kind: "rescue", index: 1 });
+    expect(decideRacedRefresh([unused], live, now)).toEqual({ kind: "rescue", index: 0 });
+  });
+
+  it("救済の印が付いたトークンを途中に含んでも、提示されたのではないので先へたどる", () => {
+    const rescued = { ...used, rescuedAt: now - 1 };
+    expect(decideRacedRefresh([rescued, unused], live, now)).toEqual({ kind: "rescue", index: 1 });
+  });
+
+  it("未使用のトークンが見つからない・上限を超える・期限切れ・セッションの失効は拒否（再利用にはしない）", () => {
+    expect(decideRacedRefresh([], live, now).kind).toBe("reject");
+    expect(decideRacedRefresh([used, used], live, now).kind).toBe("reject");
+    const long = [...Array.from({ length: RACED_CHAIN_LIMIT }, () => used), unused];
+    expect(decideRacedRefresh(long, live, now).kind).toBe("reject");
+    expect(decideRacedRefresh([used, { expiresAt: now, usedAt: null }], live, now).kind).toBe("reject");
+    expect(decideRacedRefresh([unused], { expiresAt: now + 1, revokedAt: now - 1 }, now).kind).toBe("reject");
+    expect(decideRacedRefresh([unused], { expiresAt: now, revokedAt: null }, now).kind).toBe("reject");
+  });
+
+  it("最初の判定（decideRefresh）は変えない：使用済みで次も使用済みなら再利用", () => {
+    expect(decideRefresh(used, live, used, now).kind).toBe("reuse");
   });
 });

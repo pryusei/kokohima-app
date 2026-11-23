@@ -3,7 +3,13 @@ import type { AppDeps, Bindings, Viewer } from "../../env";
 import { randomToken, sha256, timingSafeEqual } from "../../shared/crypto";
 import { deviceSummary } from "../domain/deviceSummary";
 import { type Provider, verifiedEmail } from "../domain/idTokenClaims";
-import { decideRefresh, nextTokenExpiry, SESSION_TTL_MS } from "../domain/refresh";
+import {
+  decideRacedRefresh,
+  decideRefresh,
+  nextTokenExpiry,
+  RACED_CHAIN_LIMIT,
+  SESSION_TTL_MS,
+} from "../domain/refresh";
 import { sanitizeReturnTo } from "../domain/returnTo";
 import { issueAccessToken } from "../infra/accessToken";
 import { authorizeUrl, exchangeCode, LoginFailed, type OidcProviderName } from "../infra/oidc";
@@ -164,16 +170,28 @@ export async function refresh(ctx: Ctx, cookieToken: string | undefined): Promis
 
     const decision = decideRefresh(token, session, successor, now);
     if (decision.kind === "reject") return { kind: "unauthenticated" };
+
+    let usedTokenId: string;
     if (decision.kind === "reuse") {
-      await repo.revokeSession(db, session.id, now);
-      // 盗んだ側のブラウザに、お知らせの合図を届け続けない（docs/specs/T-07-notification.md）
-      await deleteSubscriptionsOfSession(ctx, session.id);
-      console.warn(JSON.stringify({ event: "refresh_token_reuse", sessionId: session.id }));
-      return { kind: "unauthenticated" };
+      if (attempt === 0) {
+        await repo.revokeSession(db, session.id, now);
+        // 盗んだ側のブラウザに、お知らせの合図を届け続けない（docs/specs/T-07-notification.md）
+        await deleteSubscriptionsOfSession(ctx, session.id);
+        console.warn(JSON.stringify({ event: "refresh_token_reuse", sessionId: session.id }));
+        return { kind: "unauthenticated" };
+      }
+      // 交換に負けたやり直し：3つ以上が同時に来て、提示されたトークンもその次も使用済みになった。
+      // 同時に使われたことを確認済みなので失効させず、系列の先の未使用のトークンを救済する（issue #115）
+      const chain = await loadChain(db, session.id, successor);
+      const raced = decideRacedRefresh(chain, session, now);
+      const target = raced.kind === "rescue" ? chain[raced.index] : undefined;
+      if (!target) return { kind: "unauthenticated" };
+      usedTokenId = target.id;
+    } else {
+      // rotate：このトークンを交換する。rescue：前回の応答が届かなかったとみなし、次のトークンを交換する
+      usedTokenId = decision.kind === "rescue" && successor ? successor.id : token.id;
     }
 
-    // rotate：このトークンを交換する。rescue：前回の応答が届かなかったとみなし、次のトークンを交換する
-    const usedTokenId = decision.kind === "rescue" && successor ? successor.id : token.id;
     const refreshToken = randomToken();
     const refreshExpiresAt = nextTokenExpiry(now, session.expiresAt);
     const rotated = await repo.tryRotate(db, {
@@ -192,6 +210,22 @@ export async function refresh(ctx: Ctx, cookieToken: string | undefined): Promis
     }
   }
   return { kind: "unauthenticated" };
+}
+
+/** 交換に負けたやり直し用：次のトークンから replaced_by を、使用済みの間だけ同じセッションの中でたどる（最大 RACED_CHAIN_LIMIT 本） */
+async function loadChain(
+  db: repo.Db,
+  sessionId: string,
+  successor: Awaited<ReturnType<typeof repo.findRefreshTokenById>>,
+) {
+  const chain: NonNullable<typeof successor>[] = [];
+  let cur = successor;
+  while (cur && cur.sessionId === sessionId && chain.length < RACED_CHAIN_LIMIT) {
+    chain.push(cur);
+    if (cur.usedAt === null || !cur.replacedBy) break;
+    cur = await repo.findRefreshTokenById(db, cur.replacedBy);
+  }
+  return chain;
 }
 
 /** Cookieのトークンが属するセッションを失効させる。トークンがない・無効でも何もしない */

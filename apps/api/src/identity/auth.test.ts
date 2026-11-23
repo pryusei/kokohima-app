@@ -3,6 +3,7 @@ import { meResponseSchema, problemSchema } from "@kokohima/shared";
 import { exportSPKI, generateKeyPair, importSPKI, jwtVerify, SignJWT } from "jose";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cleanupExpired } from "../jobs/dispatch";
+import { sha256 } from "../shared/crypto";
 import { hasEarlierSession } from "./application/auth";
 import {
   completeCodeFrom,
@@ -385,6 +386,66 @@ describe("更新", () => {
       expect((await h.refresh(cookieValue(next, "__Host-kh_rt"))).status).toBe(200);
     },
   );
+
+  /** 最初のトークンから replaced_by をたどった順に、発行されたトークン（生の値）を並べる */
+  async function inChainOrder(first: string, issued: string[]) {
+    const rawByHash = new Map<string, string>();
+    for (const t of issued) rawByHash.set(await sha256(t), t);
+    const firstHash = await sha256(first);
+    const rows = await dbAll<{ id: string; token_hash: string; replaced_by: string | null }>(
+      "SELECT id, token_hash, replaced_by FROM refresh_tokens WHERE session_id = (SELECT session_id FROM refresh_tokens WHERE token_hash = ?)",
+      firstHash,
+    );
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const ordered: string[] = [];
+    let cur = rows.find((row) => row.token_hash === firstHash);
+    while (cur?.replaced_by) {
+      cur = byId.get(cur.replaced_by);
+      const raw = cur && rawByHash.get(cur.token_hash);
+      if (raw) ordered.push(raw);
+    }
+    return ordered;
+  }
+
+  async function sessionRevokedAt(token: string) {
+    const rows = await dbAll<{ revoked_at: number | null }>(
+      "SELECT s.revoked_at FROM sessions s JOIN refresh_tokens t ON t.session_id = s.id WHERE t.token_hash = ?",
+      await sha256(token),
+    );
+    return rows[0]?.revoked_at;
+  }
+
+  it.each([2, 3])(
+    "同時に3回使われても、セッションを失効させない。%i 番目に交換で作られたトークンのCookieが残れば続けられる（issue #115）",
+    async (keep) => {
+      const r = await h.login("google", uniq());
+      const responses = await Promise.all([
+        h.refresh(r.refreshToken),
+        h.refresh(r.refreshToken),
+        h.refresh(r.refreshToken),
+      ]);
+      expect(responses.map((res) => res.status)).toEqual([200, 200, 200]);
+      expect(await sessionRevokedAt(r.refreshToken)).toBeNull();
+      const issued = responses.map((res) => cookieValue(res, "__Host-kh_rt") ?? "");
+      // 交換に負けたやり直しは系列をたどって救済するので、3つとも別のトークンで、1本の鎖につながる
+      const ordered = await inChainOrder(r.refreshToken, issued);
+      expect(ordered).toHaveLength(3);
+      const next = await h.refresh(ordered[keep - 1]);
+      expect(next.status).toBe(200);
+      expect((await h.refresh(cookieValue(next, "__Host-kh_rt"))).status).toBe(200);
+    },
+  );
+
+  it("交換に負けていない再利用は、従来どおり系列ごと失効する（同時の更新の後に古いトークンが来た）", async () => {
+    const r = await h.login("google", uniq());
+    const responses = await Promise.all([h.refresh(r.refreshToken), h.refresh(r.refreshToken)]);
+    expect(responses.map((res) => res.status)).toEqual([200, 200]);
+    const latest = cookieValue(responses[1] as Response, "__Host-kh_rt");
+    // 同時の更新が終わった後に、もう一度最初のトークンが来た：次のトークンも使用済みなので再利用
+    const late = await h.refresh(r.refreshToken);
+    expect(late.status).toBe(401);
+    expect((await h.refresh(latest)).status).toBe(401);
+  });
 
   it("全端末ログアウトの後は、失効前に読んだトークンでも交換しない", async () => {
     const r = await h.login("google", uniq());
