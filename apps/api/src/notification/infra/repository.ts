@@ -246,16 +246,30 @@ export async function getPreferences(d1: D1Database, userId: string) {
     .first<PreferenceRow>();
 }
 
-export async function putPreferences(d1: D1Database, userId: string, p: Record<Category, boolean>, now: number) {
-  await d1
+/**
+ * パッチにある種別だけを1つの文で書く（pryusei/kokohima-app#116）。パッチにない種別は NULL を渡し、
+ * 行があれば今の値のまま、なければ 1（オン）にする。同時に来た部分更新が、互いの変更を上書きしない。
+ * 退会した人には書かず null を返す
+ */
+export async function patchPreferences(
+  d1: D1Database,
+  userId: string,
+  p: Partial<Record<Category, boolean>>,
+  now: number,
+) {
+  const v = (b: boolean | undefined) => (b === undefined ? null : +b);
+  return d1
     .prepare(
       `INSERT INTO notification_preferences (user_id, invites, broadcasts, meetups, friends, calendar, updated_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
-       ON CONFLICT (user_id) DO UPDATE SET invites = ?2, broadcasts = ?3, meetups = ?4, friends = ?5, calendar = ?6,
-         updated_at = ?7`,
+       SELECT ?1, COALESCE(?2, 1), COALESCE(?3, 1), COALESCE(?4, 1), COALESCE(?5, 1), COALESCE(?6, 1), ?7
+       WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
+       ON CONFLICT (user_id) DO UPDATE SET invites = COALESCE(?2, invites), broadcasts = COALESCE(?3, broadcasts),
+         meetups = COALESCE(?4, meetups), friends = COALESCE(?5, friends), calendar = COALESCE(?6, calendar),
+         updated_at = ?7
+       RETURNING invites, broadcasts, meetups, friends, calendar`,
     )
-    .bind(userId, +p.invites, +p.broadcasts, +p.meetups, +p.friends, +p.calendar, now)
-    .run();
+    .bind(userId, v(p.invites), v(p.broadcasts), v(p.meetups), v(p.friends), v(p.calendar), now)
+    .first<PreferenceRow>();
 }
 
 // ---- プッシュの購読 ----

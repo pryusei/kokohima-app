@@ -168,6 +168,7 @@
 ### 入力
 - `notificationPreferencesSchema`：`{ invites, broadcasts, meetups, friends, calendar }`（すべて boolean、strict）。行がなければすべて `true`。
 - `notificationPreferencesPatchSchema`：同じ項目のうち、1つ以上（strict）。
+  - パッチにある項目だけを1つの文で書く（`INSERT … ON CONFLICT DO UPDATE`）。行がなければ、パッチにない項目は `true` で作る。今の設定を読んでから全部を書き直さない（同時に来た別の項目の部分更新を上書きしないため）。応答は書いた後の設定。
 - `upTo`：閲覧者のお知らせの `id`。閲覧者のものでなければ400。`(inserted_at, id)` がその行以下のお知らせを既読にする。
 - `endpoint`
   - 2048字まで。URL として解析してから、次をすべて満たすときだけ受け付ける（SSRF 対策。サーバーがこの URL に POST するため）。
@@ -371,6 +372,7 @@
 - 設定（`/settings/notifications`）
   - 友達タブの「アカウント」節からリンクする（T-11：設定のトップ `/settings` からリンクする）。
   - 種別ごとのスイッチを5つ置く。
+    - 押したらすぐ切り替えて見せ（楽観的更新）、PATCH は押した順に1つずつ送る。失敗したら、その PATCH の項目だけを元に戻す（ほかのスイッチの変更は消さない）。
   - この端末でプッシュ通知を受け取る・やめる。
   - 「新しい端末でのログインのお知らせは止められません」と書く。
 - 初回設定の「通知の許可」の案内（docs/design/README.md の「入口・初回」）は、初回設定のタスクで作る。このタスクでは設定画面だけ。
@@ -577,3 +579,4 @@
 | 2026-11-21 | `notification_daily_counts` の掃除のためのインデックス `(day)` を書いた | T-12 の実装PR（docs/specs/T-12-data-growth.md） |
 | 2026-11-21 | 全体のメール数の上限で送らなかったときのログ `notification_mail_global_limit` を書いた | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
 | 2026-11-23 | お知らせの保持を30日にし掃除に上限を付けた。`NOTIFICATION_START_AT` が未設定の間の通知だけの型の行の掃除と、使えないセッションの購読の15分ごとの掃除を足した | T-17 実装PR（docs/specs/T-17-retention.md） |
+| 2026-11-23 | 設定の部分更新を、パッチにある項目だけを1つの文で書くと明記した。設定画面の PATCH を順に送り、失敗時はその項目だけを戻すと書いた | pryusei/kokohima-app#116（同時の部分更新で変更が失われる） |
