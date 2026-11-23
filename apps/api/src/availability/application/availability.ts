@@ -287,8 +287,7 @@ export async function setException(
   const today = localDateOf(now, rule.timezone);
   const last = addDays(today, HORIZON_MS / DAY_MS);
   if (weekdayOf(date) !== rule.weekday || date < today || date > last) return "invalid";
-  await repo.addException(ctx.env.DB, ruleId, date, now);
-  return "ok";
+  return (await repo.addException(ctx.env.DB, viewerId, ruleId, date, now)) ? "ok" : "not_found";
 }
 
 // ---- 友達のここ暇 ----

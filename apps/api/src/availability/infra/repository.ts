@@ -140,11 +140,21 @@ export async function deleteMyRule(d1: D1Database, userId: string, id: string) {
   return result.meta.changes === 1;
 }
 
-export async function addException(d1: D1Database, ruleId: string, date: string, now: number) {
-  await d1
-    .prepare("INSERT OR IGNORE INTO recurrence_exceptions (rule_id, local_date, created_at) VALUES (?1, ?2, ?3)")
-    .bind(ruleId, date, now)
+/**
+ * 例外を足す。ルールが閲覧者のものであることの確認を同じ文に入れ、確認と追加の間にルールが消えても外部キー違反にしない。
+ * 足した・すでにあった（ルールがある）なら true、ルールがない（消えた・他人のもの）なら false
+ */
+export async function addException(d1: D1Database, userId: string, ruleId: string, date: string, now: number) {
+  const inserted = await d1
+    .prepare(
+      `INSERT OR IGNORE INTO recurrence_exceptions (rule_id, local_date, created_at)
+       SELECT ?1, ?2, ?3 WHERE EXISTS (SELECT 1 FROM recurrence_rules WHERE id = ?1 AND user_id = ?4)`,
+    )
+    .bind(ruleId, date, now, userId)
     .run();
+  if (inserted.meta.changes === 1) return true;
+  // 足していない：すでにあったか、ルールがないか
+  return (await findMyRule(d1, userId, ruleId)) !== null;
 }
 
 export async function removeException(d1: D1Database, ruleId: string, date: string) {

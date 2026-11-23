@@ -320,6 +320,45 @@ describe("くり返し", () => {
     });
     expect(ok.status).toBe(200);
   });
+
+  it("例外の追加と同時にルールが消えても、外部キー違反の500にせず404", async () => {
+    const a = await u.user();
+    const rule = (await (
+      await u.call("POST", "/api/v1/recurrence-rules", { token: a.token, body: { weekday: 6, preset: "night" } })
+    ).json()) as { id: string };
+    // ルールの確認のあと、INSERT の直前に削除が確定した状態を再現する
+    const db = h.bindings.DB;
+    const racing = new Proxy(db, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target) as unknown;
+        if (prop !== "prepare") return typeof value === "function" ? value.bind(target) : value;
+        return (sql: string) => {
+          const stmt = target.prepare(sql);
+          if (!sql.includes("INTO recurrence_exceptions")) return stmt;
+          return {
+            bind: (...args: unknown[]) => ({
+              run: async () => {
+                await target.prepare("DELETE FROM recurrence_rules WHERE id = ?1").bind(rule.id).run();
+                return stmt.bind(...args).run();
+              },
+            }),
+          };
+        };
+      },
+    });
+    h.bindings.DB = racing;
+    try {
+      const res = await u.call("POST", `/api/v1/recurrence-rules/${rule.id}/exceptions`, {
+        token: a.token,
+        body: { date: "2026-10-17" },
+      });
+      expect(res.status).toBe(404);
+    } finally {
+      h.bindings.DB = db;
+    }
+    const left = await env.DB.prepare("SELECT * FROM recurrence_exceptions WHERE rule_id = ?").bind(rule.id).all();
+    expect(left.results).toHaveLength(0);
+  });
 });
 
 describe("みんな", () => {
