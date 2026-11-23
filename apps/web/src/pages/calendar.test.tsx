@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -104,6 +104,38 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/calendar/connections")).toBe(true));
     expect(screen.queryByRole("heading", { name: "カレンダーの空き" })).toBeNull();
     expect(calls.some((c) => c.url.startsWith("/api/v1/calendar/free-slots"))).toBe(false);
+  });
+
+  it("候補は日ごとに1行にまとめ、空いている時間帯だけをボタンで並べる。空きのない日の行は出さない", async () => {
+    const slot = (date: string, preset: "day" | "evening" | "night", start: string, end: string) => ({
+      date,
+      preset,
+      startsAt: `${date}T${start}:00:00.000Z`,
+      endsAt: `${date}T${end}:00:00.000Z`,
+    });
+    tab({
+      "/api/v1/calendar/connections": connected,
+      "/api/v1/calendar/free-slots": json({
+        status: "ok",
+        items: [
+          slot("2026-10-10", "day", "02", "06"),
+          slot("2026-10-10", "evening", "07", "10"),
+          slot("2026-10-10", "night", "10", "14"),
+          slot("2026-10-12", "night", "10", "14"),
+        ],
+        nextCursor: null,
+      }),
+    });
+    renderApp();
+    const list = await screen.findByRole("list", { name: "カレンダーの空き" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]!).getByText("10/10（土）")).toBeVisible();
+    expect(within(rows[0]!).getAllByRole("button").map((b) => b.textContent)).toEqual(["昼", "夕方", "夜"]);
+    expect(within(rows[0]!).getByRole("button", { name: "10/10（土） 昼 11:00〜15:00をここ暇にする" })).toBeVisible();
+    expect(within(rows[1]!).getByText("10/12（月）")).toBeVisible();
+    expect(within(rows[1]!).getAllByRole("button").map((b) => b.textContent)).toEqual(["夜"]);
+    expect(screen.queryByText("10/11（日）")).toBeNull();
   });
 
   it("候補を「10/10（土） 夜 19:00〜23:00」の形で並べ、押すとその日付とプリセットでここ暇を作る", async () => {

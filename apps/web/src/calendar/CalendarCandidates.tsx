@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ApiError, apiSend } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
-import { formatDate, formatSlot } from "../availability/format";
+import { formatDate, formatSlot, PRESET_LABELS } from "../availability/format";
 import { today } from "../availability/queries";
 import { SendButton } from "../ui/Button";
 import { Link } from "../ui/Link";
@@ -13,6 +13,14 @@ import { connectionsQuery, freeSlotsQuery } from "./queries";
 
 // ここ暇タブの「カレンダーの空き」（docs/specs/T-06-calendar.md「画面」）。連携している人だけに出す
 // 押すと T-03 のここ暇を作る。楽観的更新はせず、成功したら自分の一覧と候補を読み直す
+// 日ごとに1行にまとめ、空いている時間帯をボタンで並べる（最大7行。時刻は読み上げの名前と title に入れる）
+
+/** 候補を日付ごとにまとめる（API の並び順のまま。日付の古い順、同じ日は昼→夕方→夜） */
+function byDate(items: FreeSlot[]): [string, FreeSlot[]][] {
+  const groups = new Map<string, FreeSlot[]>();
+  for (const slot of items) groups.set(slot.date, [...(groups.get(slot.date) ?? []), slot]);
+  return [...groups];
+}
 
 export function CalendarCandidates() {
   const connections = useQuery(connectionsQuery());
@@ -59,18 +67,28 @@ function Candidates() {
   if (data.items.length === 0) return <p className="text-ink-muted">この先7日間に空いている時間帯はありません</p>;
   return (
     <>
-      <ul className="rounded-l bg-surface px-4 shadow-card">
-        {data.items.map((slot) => {
-          const text = `${formatDate(slot.date)} ${formatSlot({ startsAt: slot.startsAt, endsAt: slot.endsAt, label: slot.preset })}`;
-          return (
-            <li key={`${slot.date}-${slot.preset}`} className="flex items-center gap-2 border-b border-line py-3 last:border-b-0">
-              <span className="min-w-0 flex-1 tabular-nums">{text}</span>
-              <SendButton size="s" aria-label={`${text}をここ暇にする`} disabled={create.isPending} onClick={() => create.mutate(slot)}>
-                ここ暇にする
-              </SendButton>
-            </li>
-          );
-        })}
+      <ul aria-label="カレンダーの空き" className="rounded-l bg-surface px-4 shadow-card">
+        {byDate(data.items).map(([date, slots]) => (
+          <li key={date} className="flex flex-wrap items-center gap-2 border-b border-line py-3 last:border-b-0">
+            <span className="min-w-0 flex-1 tabular-nums">{formatDate(date)}</span>
+            <span className="flex gap-2">
+              {slots.map((slot) => {
+                const text = `${formatDate(slot.date)} ${formatSlot({ startsAt: slot.startsAt, endsAt: slot.endsAt, label: slot.preset })}`;
+                return (
+                  <SendButton
+                    key={slot.preset}
+                    aria-label={`${text}をここ暇にする`}
+                    title={text}
+                    disabled={create.isPending}
+                    onClick={() => create.mutate(slot)}
+                  >
+                    {PRESET_LABELS[slot.preset]}
+                  </SendButton>
+                );
+              })}
+            </span>
+          </li>
+        ))}
       </ul>
       {failed && (
         <p role="status" className="text-s text-ink-muted">
