@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "../ui/Link";
-import { SubScreen } from "../ui/Navigation";
+import { PublicSubScreen } from "../ui/Navigation";
 import { CONTACT_EMAIL, EFFECTIVE_DATE_LINE, REVISION_DATE_LINE, useDocumentTitle } from "./legal";
 
 // プライバシー ポリシーと利用規約の画面の形（docs/specs/T-19-privacy-terms.md「2.」「3.」）。
@@ -9,7 +9,7 @@ import { CONTACT_EMAIL, EFFECTIVE_DATE_LINE, REVISION_DATE_LINE, useDocumentTitl
 export function LegalDocument({ title, children }: { title: string; children: ReactNode }) {
   useDocumentTitle(title);
   return (
-    <SubScreen title={title} back="/">
+    <PublicSubScreen title={title} back="/">
       <article className="flex flex-col gap-6 text-ink">
         <div className="flex flex-col text-s text-ink-muted">
           <p>{EFFECTIVE_DATE_LINE}</p>
@@ -17,7 +17,7 @@ export function LegalDocument({ title, children }: { title: string; children: Re
         </div>
         {children}
       </article>
-    </SubScreen>
+    </PublicSubScreen>
   );
 }
 

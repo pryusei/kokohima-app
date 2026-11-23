@@ -7,6 +7,7 @@ import { OfflineBanner } from "./feedback";
 // 右上の「閉じる」のボタン、つまみを押す・下に引く、後ろの暗い部分を押す、Esc で閉じる。確認のダイアログは出さない。
 // つまみとタイトルの行は、中をスクロールしても上に残す。つまみは見た目の手がかりなので、読み上げと Tab からは外す（「閉じる」は1つだけ）
 // 開いている間はフォーカスをシートの中に閉じ込め、閉じたら開いたボタンに戻す。
+// PC（幅1024px以上）では画面の中央のダイアログにし、つまみを隠す（docs/specs/T-20-desktop-layout.md「シート」）。
 // シートは body の直下に描き、開いている間はアプリの本体（#root）を inert にする（URL を持たないシートでも、後ろに Tab で入れないように）
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -81,7 +82,7 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   return createPortal(
     <div
       data-testid="sheet-scrim"
-      className="fixed inset-0 z-30 flex flex-col justify-end bg-scrim"
+      className="fixed inset-0 z-30 flex flex-col justify-end bg-scrim lg:items-center lg:justify-center lg:p-6"
       // 押し始めも離したのも暗い部分のときだけ閉じる（シートの中で文字を選んで外で離したときに閉じない）
       onPointerDown={(e) => {
         pressedOnScrim.current = e.target === e.currentTarget;
@@ -98,14 +99,14 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
         aria-label={label}
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className="mx-auto flex max-h-[92dvh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-t-sheet bg-surface px-6 pt-2 pb-[max(24px,env(safe-area-inset-bottom))] shadow-sheet"
+        className="mx-auto flex max-h-[92dvh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-t-sheet bg-surface px-6 pt-2 pb-[max(24px,env(safe-area-inset-bottom))] shadow-sheet lg:max-h-[88dvh] lg:max-w-lg lg:rounded-sheet lg:pb-6 lg:shadow-float"
       >
         <div className="sticky top-0 z-10 -mx-6 -mt-2 flex flex-col gap-2 bg-surface px-6 pt-2 pb-1">
           {/* つまみ（押す・下に引くと閉じる）。読み上げと Tab では右上の「閉じる」を使う */}
           <div
             aria-hidden="true"
             data-testid="sheet-grip"
-            className="mx-auto grid h-6 w-16 shrink-0 cursor-pointer touch-none place-items-center rounded-full"
+            className="mx-auto grid h-6 w-16 shrink-0 cursor-pointer touch-none place-items-center rounded-full lg:hidden"
             onPointerDown={onGripDown}
             onPointerUp={onGripUp}
             onPointerCancel={() => {
