@@ -3,6 +3,8 @@
 //
 //   node scripts/ci/changes.mjs <比べる先>                       分類を出す（GITHUB_OUTPUT があれば docs_only を書く）
 //   node scripts/ci/changes.mjs <比べる先> --require-unit-tests  実装PRに単体テストがなければ落とす
+// 比べる先は PR の宛先ではなく既定のブランチ（origin/main）。チェックの結果は PR ではなくコミットに付くので、宛先で結果が変わると、
+// 同じコミットで宛先を main 以外にした PR を作るだけで、必須チェックを飛ばせてしまうため
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -10,17 +12,26 @@ import { pathToFileURL } from "node:url";
 /** 文書だけを入れるところの外にあるコード・テストの置き場所。ここの下の .md は文書に数えない（テストやビルドで読むかもしれないため） */
 const CODE_ROOT = /^(apps|packages|e2e|scripts)\//;
 
-/** `git diff --name-status -M` の出力を読む。名前の変更（R）と複写（C）は、移動元と移動先の両方を持つ */
+/**
+ * `git diff --name-status -z -M` の出力を読む。NUL で区切った「状態、パス」の並びで、名前の変更（R）と複写（C）はパスが2つ（移動元と移動先）続く。
+ * -z で読むのは、日本語や `"` を含むパスを git が引用符で囲んでエスケープし、置き場所の判定に合わなくなるのを防ぐため
+ */
 export function parseNameStatus(text) {
-  return text
-    .split("\n")
-    .filter((line) => line.trim() !== "")
-    .map((line) => {
-      const [code = "", ...paths] = line.split("\t");
-      const status = code.charAt(0);
-      if (!status || paths.length === 0) throw new Error(`git diff の行を読めません：${line}`);
-      return { status, path: paths[paths.length - 1], paths };
-    });
+  const fields = text.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  const changes = [];
+  for (let i = 0; i < fields.length; ) {
+    const code = fields[i++] ?? "";
+    const status = code.charAt(0);
+    const count = status === "R" || status === "C" ? 2 : 1;
+    const paths = fields.slice(i, i + count);
+    i += count;
+    if (!/^[A-Z]\d*$/.test(code) || paths.length !== count || paths.some((p) => p === "")) {
+      throw new Error(`git diff の出力を読めません：${JSON.stringify(code)}`);
+    }
+    changes.push({ status, path: paths[paths.length - 1], paths });
+  }
+  return changes;
 }
 
 /** 文書：docs/ の下か、コードの置き場所の外にある .md */
@@ -54,7 +65,7 @@ function main(argv) {
     console.error("::error::比べる先（例：origin/main）を渡してください");
     return 2;
   }
-  const diff = execFileSync("git", ["diff", "--name-status", "-M", `${base}...HEAD`], { encoding: "utf8" });
+  const diff = execFileSync("git", ["diff", "--name-status", "-z", "-M", `${base}...HEAD`], { encoding: "utf8" });
   const changes = parseNameStatus(diff);
   const result = classify(changes);
   console.log(`変更：${changes.length} 件 / 文書だけ：${result.docsOnly} / コード：${result.needsUnitTest} / 単体テスト：${result.hasUnitTest}`);

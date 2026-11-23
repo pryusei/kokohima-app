@@ -7,18 +7,28 @@ import { classify, parseNameStatus } from "./changes.mjs";
 
 // PR の変更の分類（docs/specs/T-30-ci-review.md「1. 変更の分類」「テスト計画」）
 
-const of = (...lines: string[]) => classify(parseNameStatus(lines.join("\n")));
+/** 読みやすさのため「状態\tパス」の行で書き、git diff --name-status -z の形（NUL 区切り）にして渡す */
+const z = (...lines: string[]) => lines.map((line) => `${line.split("\t").join("\0")}\0`).join("");
+const of = (...lines: string[]) => classify(parseNameStatus(z(...lines)));
 
-describe("git diff --name-status の読み取り", () => {
+describe("git diff --name-status -z の読み取り", () => {
   it("状態の1文字とパスを読み、名前の変更は移動元と移動先を持つ", () => {
-    expect(parseNameStatus("M\tapps/api/src/a.ts\nR100\tdocs/old.md\tdocs/new.md\n\n")).toEqual([
+    expect(parseNameStatus("M\0apps/api/src/a.ts\0R100\0docs/old.md\0docs/new.md\0A\0apps/api/src/招待.ts\0")).toEqual([
       { status: "M", path: "apps/api/src/a.ts", paths: ["apps/api/src/a.ts"] },
       { status: "R", path: "docs/new.md", paths: ["docs/old.md", "docs/new.md"] },
+      { status: "A", path: "apps/api/src/招待.ts", paths: ["apps/api/src/招待.ts"] },
     ]);
   });
 
-  it("読めない行は止める（分類を間違えたまま進めない）", () => {
-    expect(() => parseNameStatus("apps/api/src/a.ts")).toThrow();
+  it("変更がなければ空", () => {
+    expect(parseNameStatus("")).toEqual([]);
+  });
+
+  it("読めない出力は止める（分類を間違えたまま進めない）", () => {
+    // -z でない形（タブと改行）
+    expect(() => parseNameStatus("M\tapps/api/src/a.ts\n")).toThrow();
+    // 名前の変更なのにパスが1つしかない
+    expect(() => parseNameStatus("R100\0docs/old.md\0")).toThrow();
   });
 });
 
@@ -29,6 +39,8 @@ describe("文書だけの変更（docsOnly）", () => {
     [["M\t.claude/skills/x/SKILL.md"]],
     [["M\t.github/pull_request_template.md"]],
     [["A\tdocs/app-guide.pdf"]],
+    // 名前の変更は、移動元と移動先の両方が文書なら文書だけ
+    [["R100\tdocs/specs/a.md\tdocs/specs/b.md"]],
   ])("%j は文書だけ", (lines) => {
     expect(of(...lines).docsOnly).toBe(true);
   });
@@ -149,6 +161,17 @@ describe("コマンド（CI から呼ぶ形）", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("::error::実装PRには単体テスト");
     expect(r.output).toBe("docs_only=false\n");
+  });
+
+  it.each([["apps/api/src/invitation/招待.ts"], ['apps/api/src/invitation/a"b.ts']])(
+    "日本語や引用符を含むパスのコード（%s）も、テストがなければ検査で落ちる（git が引用符で囲んでも数える）",
+    (path) => {
+      expect(run([path], "--require-unit-tests").status).toBe(1);
+    },
+  );
+
+  it("日本語のファイル名の文書だけの PR は、文書だけになる", () => {
+    expect(run(["docs/設計メモ.md"]).output).toBe("docs_only=true\n");
   });
 
   it("単体テストを足した PR は、検査を通る", () => {
