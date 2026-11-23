@@ -1,7 +1,14 @@
-import { acceptInviteResponseSchema, inviteLookupResponseSchema, type InviteLookupResponse } from "@kokohima/shared";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  acceptInviteResponseSchema,
+  inviteLookupResponseSchema,
+  meResponseSchema,
+  type InviteLookupResponse,
+  type MeResponse,
+} from "@kokohima/shared";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ApiError, apiFetch } from "../api/client";
+import { meQuery } from "../account/me";
+import { ApiError, apiFetch, apiSend } from "../api/client";
 import { keys } from "../api/keys";
 import { useAuth } from "../auth/AuthProvider";
 import { isLineInAppBrowser, withOpenExternalBrowser } from "../line/line";
@@ -11,6 +18,7 @@ import { navigate } from "../router";
 import { Avatar } from "../ui/Avatar";
 import { buttonClass, SendButton } from "../ui/Button";
 import { Loading } from "../ui/feedback";
+import { Field, inputClass } from "../ui/form";
 import { LegalLinks } from "./LegalDocument";
 
 // 招待リンクの受け口（docs/specs/T-02-friends.md「招待リンクの受け口」）
@@ -70,16 +78,39 @@ export function InvitePage() {
   }, []);
 
   const queryClient = useQueryClient();
-  const accept = async (linkId: string) => {
+  // 名前があるか（docs/specs/T-31-display-name-first-step.md「名前の画面（招待リンクの受け口）」）
+  const me = useQuery({ ...meQuery(), enabled: status === "authenticated" && state.kind === "ready" });
+  const [name, setName] = useState("");
+  const [nameFailed, setNameFailed] = useState(false);
+
+  /** 名前の保存（あれば）→ accept を、1回押すだけで続けて行う */
+  const accept = async (linkId: string, displayName?: string) => {
     setSending(true);
+    setNameFailed(false);
+    let saved: MeResponse | undefined;
+    if (displayName !== undefined) {
+      try {
+        saved = await apiSend("PATCH", "/api/v1/me", { displayName }, meResponseSchema);
+      } catch {
+        // 名前を保存できなければ accept を呼ばない
+        setNameFailed(true);
+        setSending(false);
+        return;
+      }
+    }
     try {
       const res = await apiFetch("/api/v1/invite-links/accept", { method: "POST", body: JSON.stringify({ linkId }) });
       acceptInviteResponseSchema.parse(await res.json());
       // 新しい友達の一覧・行きたいを読み直す（T-22）
       void queryClient.invalidateQueries({ queryKey: keys.friends.all() });
       void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
-      navigate("/friends", { replace: true });
+      // 保存した名前は、移る前にキャッシュに入れる（移った先で名前の画面を出さない）
+      if (saved) queryClient.setQueryData(keys.me(), saved);
+      // 名前を決めて友達になった人には、直後の1画面を出す（T-31）
+      navigate(saved ? "/welcome" : "/friends", { replace: true });
     } catch (err) {
+      // 名前は保存されたまま（accept の結果によらない）
+      if (saved) queryClient.setQueryData(keys.me(), saved);
       if (err instanceof ApiError && err.status === 409) setState({ kind: "own" });
       else if (err instanceof ApiError && err.status === 404) setState({ kind: "acceptFailed" });
       // 通信エラー：成功していることもあるので再送せず、友達一覧で確かめてもらう
@@ -136,9 +167,38 @@ export function InvitePage() {
             <p className="text-s text-ink-muted">友達になると、おたがいの「ここ暇」が見えて、気軽に誘えるようになります。</p>
           </div>
           {status === "authenticated" ? (
-            <SendButton variant="primary" block disabled={sending} onClick={() => void accept(state.invite.linkId)}>
-              友達になる
-            </SendButton>
+            me.isPending ? (
+              <Loading />
+            ) : me.isError ? (
+              <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
+                通信できませんでした。通信状態を確認して、リンクをもう一度開いてください。
+              </p>
+            ) : me.data.displayName === null ? (
+              // 名前の入力を「友達になる」の確かめと兼ねる（T-31。T-02 決定事項8）。説明の文は足さない
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void accept(state.invite.linkId, name);
+                }}
+              >
+                <Field label="あなたの表示名">
+                  <input className={inputClass} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} />
+                </Field>
+                <SendButton type="submit" variant="primary" block disabled={sending || name.trim() === ""}>
+                  これで友達になる
+                </SendButton>
+                {nameFailed && (
+                  <p role="status" className="text-s text-ink-muted">
+                    保存できませんでした。1〜20文字で入力してください。
+                  </p>
+                )}
+              </form>
+            ) : (
+              <SendButton variant="primary" block disabled={sending} onClick={() => void accept(state.invite.linkId)}>
+                友達になる
+              </SendButton>
+            )
           ) : status === "checking" ? (
             <Loading />
           ) : (
