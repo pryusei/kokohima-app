@@ -46,6 +46,7 @@
 
 ### 1. 保持期間の一覧
 この表を、保持期間の正とする。期間を変えるときは、この表と、該当の仕様書を同じPRで直す。
+この表を変えたら、`packages/shared/src/retention.ts`（API の掃除とプライバシー ポリシーが読む数）と、`/privacy` の「8.」も同じPRで直す（docs/specs/T-19-privacy-terms.md「9.」）。
 
 | データ | 消す時点 | 決めた仕様書 |
 | --- | --- | --- |
@@ -253,3 +254,4 @@
 | 2026-11-22 | 公開設定は解除で「見せる」の行だけを消し「見せない」は退会まで残す（マイグレーションも。文は availability が持ち social の batch に入れる）、休眠の判定に最後に使った時刻（30日）を足す、休眠にするときに確認の権利と `sync_id` を変え、確認の文に `dormant_since IS NULL` を足す、ログインの batch で戻す・15分ごとに取りこぼしを戻す・退会した人を外す、休眠の処理を15分ごとの Cron に移して100行に、お知らせの掃除に上限、`cleanup_capped` を `count` にそろえる、使えないセッションの購読の掃除、保持期間の表（購読・連携の行）を直す、割り当てのインデックスを T-16 の条件に合わせて書き直す、境界のテストに「ちょうど30日は残る」、確認事項を決めたこと1に入れる | 仕様書PRのレビュー（pryusei/kokohima-app#108） |
 | 2026-11-23 | 実装済みに。マイグレーションの番号（0014）、`wakeConnectionsStatement` に `now` を足す、購読の掃除の SQL を `CROSS JOIN` と `revoked_at <= ?now` に（インデックスを使う計画にするため）、`cleanup_capped` を出す step と T-13 の閾値を書いた | 実装PR |
 | 2026-11-23 | `cleanup_capped` のモニターを毎分の step（1時間に30件以上）と15分ごとの step（1時間に3件以上）の2つに分けた | 実装PRのレビュー |
+| 2026-11-23 | 表を変えたら `retention.ts` と `/privacy` も直すことを足した。API の掃除の定数を `packages/shared` の `RETENTION` から作るようにした（値は変えない） | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |

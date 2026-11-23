@@ -1,4 +1,5 @@
 import { buttonClass } from "../ui/Button";
+import { LegalLinks } from "./LegalDocument";
 // ログイン画面（docs/specs/T-01-auth.md、キャンバス「2 ログイン」）
 
 export function LoginPage({ search }: { search: string }) {
@@ -47,6 +48,8 @@ export function LoginPage({ search }: { search: string }) {
           </a>
         )}
       </div>
+      {/* 同意はこの1行で取る。チェックボックスも同意の記録もない（docs/specs/T-19-privacy-terms.md 決めたこと7） */}
+      <LegalLinks consent />
     </main>
   );
 }
