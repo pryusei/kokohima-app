@@ -19,3 +19,6 @@ test-results/
 
 # security-audit スキルの出力（脆弱性の詳細を含むのでコミットしない）
 .security-audit/
+
+# 長い報告のHTML（CLAUDE.md「報告の書き方」。作業ごとの使い捨てなのでコミットしない）
+.reports/
