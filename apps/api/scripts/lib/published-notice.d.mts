@@ -6,3 +6,7 @@ export declare function isNoticePublished(
   noticeLine: string,
   options?: { origin?: string; fetch?: (url: string, init?: RequestInit) => Promise<Response> },
 ): Promise<boolean>;
+export declare function findPublishedStrings(
+  needles: string[],
+  options?: { origin?: string; fetch?: (url: string, init?: RequestInit) => Promise<Response> },
+): Promise<Map<string, boolean>>;
