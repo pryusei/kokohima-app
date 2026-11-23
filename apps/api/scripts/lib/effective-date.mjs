@@ -165,12 +165,24 @@ export function revisionNoticeLine(texts) {
 const CONTACT_START_JSON = "packages/shared/src/contactStart.json";
 
 /**
- * 問い合わせの公開の日（docs/specs/T-24-contact.md「振る舞い 11.」）の検査。startDate は contactStart.json の値（"YYYY-MM-DD" か null）。
- * いつも：null か暦にある日付でなければ止める。
- * deploy が真で、今日（日本時間）が startDate より前なら：ビルドの出力の改定日（効力が生じる日）が startDate と同じで、予告の行（「公表日：」）が1つあること。
- * startDate が今日以前・null なら条件を足さない
+ * 問い合わせ（T-24）の変更が本番に出ているかの目印。
+ * CONTACT_NOTICE_MARKER は「この改定で変わるところ」の問い合わせの行（legal.ts の PRIVACY_REVISION_CHANGES）の一部、
+ * CONTACT_POLICY_MARKER はプライバシー ポリシーの本文（「5.」の Slack の見出し）の一部。文言を変えるときは、ここも直す（legal.test.tsx で確かめる）
  */
-export function contactStartProblems(texts, { startDate, deploy, today }) {
+export const CONTACT_NOTICE_MARKER = "アプリの中の問い合わせのフォームを足したことに合わせて";
+export const CONTACT_POLICY_MARKER = "Slack Technologies, LLC（米国）";
+
+/**
+ * 問い合わせの公開の日（docs/specs/T-24-contact.md「振る舞い 11.」）の検査。startDate は contactStart.json の値（"YYYY-MM-DD" か null）。
+ * いつも：null か暦にある日付でなければ止める。deploy が真のとき（today は日本時間の今日）：
+ * - 今日が startDate より前：予告の行（「公表日：」）がちょうど1つあり、改定日（効力が生じる日）が startDate と同じこと。
+ *   予告がもう本番に出ている（noticeAlreadyPublished）なら、本番の JS に問い合わせの行（CONTACT_NOTICE_MARKER）も出ていること
+ *   （予告の途中で問い合わせを足すと、その分の予告が短くなるため）。
+ * - 今日が startDate 以後で、予告の行がある：改定日が startDate と同じこと。違うなら、問い合わせがもう本番の本文に出ている
+ *   （CONTACT_POLICY_MARKER。前の改定で知らせ済み）ときだけ通す。
+ * 本番を読めなかった（production が undefined）ときは、それが要る場合に止める
+ */
+export function contactStartProblems(texts, { startDate, deploy, today, noticeAlreadyPublished, production }) {
   if (startDate === null) return [];
   const m = typeof startDate === "string" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate) : null;
   const start = m ? { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) } : null;
@@ -179,16 +191,28 @@ export function contactStartProblems(texts, { startDate, deploy, today }) {
   }
   if (!deploy) return [];
   if (!today) return ["今日の日付がないので、問い合わせの公開の日を確かめられません"];
-  if (daysBetween(today, start) <= 0) return [];
-  const problems = [];
+  const notices = sum(texts, countRevisionNoticeLines);
   const revisions = texts.flatMap((t) => realDates(t, REVISION_DATE_LABEL));
-  if (revisions.length !== 1 || daysBetween(revisions[0], start) !== 0) {
-    problems.push(
-      `問い合わせの公開の日（${format(start)}）が、プライバシー ポリシーの改定日（効力が生じる日）と違います（${CONTACT_START_JSON} の startDate と ${LEGAL_TS} の REVISION_DATE_LINE を同じ日にする）`,
-    );
+  const sameDay = revisions.length === 1 && daysBetween(revisions[0], start) === 0;
+  const mismatch = `問い合わせの公開の日（${format(start)}）が、プライバシー ポリシーの改定日（効力が生じる日）と違います（${CONTACT_START_JSON} の startDate と ${LEGAL_TS} の REVISION_DATE_LINE を同じ日にする）`;
+  const problems = [];
+  if (daysBetween(today, start) > 0) {
+    if (!sameDay) problems.push(mismatch);
+    if (notices !== 1) {
+      problems.push(`問い合わせの公開の日（${format(start)}）より前なのに、予告の行（「公表日：」）がありません（${LEGAL_TS} の REVISION_NOTICE_LINE で前もって知らせる）`);
+    } else if (noticeAlreadyPublished === undefined || production === undefined) {
+      problems.push("本番の画面を読めなかったので、予告の途中で問い合わせを足していないかを確かめられません");
+    } else if (noticeAlreadyPublished && !production.notice) {
+      // 予告がもう出ているのに、本番の予告に問い合わせの行がない
+      problems.push(
+        `予告がもう本番に出ているのに、本番の「この改定で変わるところ」に問い合わせの行がありません（予告の途中で問い合わせを足すと予告が短くなる。公表日のデプロイで一緒に出すか、今の予告が終わってから次の改定にする。docs/specs/T-24-contact.md「10.」）`,
+      );
+    }
+    return problems;
   }
-  if (sum(texts, countRevisionNoticeLines) !== 1) {
-    problems.push(`問い合わせの公開の日（${format(start)}）より前なのに、予告の行（「公表日：」）がありません（${LEGAL_TS} の REVISION_NOTICE_LINE で前もって知らせる）`);
+  if (notices > 0 && !sameDay) {
+    if (production === undefined) problems.push(`${mismatch}。本番の画面を読めなかったので、問い合わせがもう本番のプライバシー ポリシーにあるかを確かめられません`);
+    else if (!production.policy) problems.push(`${mismatch}。問い合わせがまだ本番のプライバシー ポリシーにないまま、問い合わせを始める日を過ぎています`);
   }
   return problems;
 }

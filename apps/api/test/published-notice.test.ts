@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entryScripts, importedScripts, isNoticePublished } from "../scripts/lib/published-notice.mjs";
+import { entryScripts, findPublishedStrings, importedScripts, isNoticePublished } from "../scripts/lib/published-notice.mjs";
 
 // 本番に予告の行がもう出ているかの確かめ（docs/specs/T-19-privacy-terms.md「5.」）。fetch は差し替える
 const ORIGIN = "https://kokohima.app";
@@ -64,5 +64,39 @@ describe("本番の画面の JS を読む", () => {
       site({ "/": () => { throw new TypeError("fetch failed"); } }),
     ];
     for (const s of cases) await expect(isNoticePublished(NOTICE, { origin: ORIGIN, fetch: s.fetch })).rejects.toThrow();
+  });
+});
+
+// 問い合わせ（T-24）の目印も同じ読み方で探す
+describe("いくつかの文字列を探す", () => {
+  const A = "アプリの中の問い合わせのフォームを足したことに合わせて";
+  const B = "Slack Technologies, LLC（米国）";
+
+  it("文字列ごとに、どこかの chunk に入っているかを返す", async () => {
+    const s = site({
+      "/": res(html("/assets/index.js"), "text/html"),
+      "/assets/index.js": res(`const N="${NOTICE}";import("./legal.js")`, "text/javascript"),
+      "/assets/legal.js": res(`const C="${A}";`, "text/javascript"),
+    });
+    const found = await findPublishedStrings([NOTICE, A, B], { origin: ORIGIN, fetch: s.fetch });
+    expect([...found.entries()]).toEqual([
+      [NOTICE, true],
+      [A, true],
+      [B, false],
+    ]);
+  });
+
+  it("すべて見つかったら、残りの chunk を読まない", async () => {
+    const s = site({
+      "/": res(html("/assets/index.js"), "text/html"),
+      "/assets/index.js": res(`const N="${NOTICE}${A}";import("./legal.js")`, "text/javascript"),
+    });
+    await findPublishedStrings([NOTICE, A], { origin: ORIGIN, fetch: s.fetch });
+    expect(s.calls).toEqual([`${ORIGIN}/`, `${ORIGIN}/assets/index.js`]);
+  });
+
+  it("読めないときは例外（呼ぶ側で止める）", async () => {
+    const s = site({ "/": res("x", "text/html", 503) });
+    await expect(findPublishedStrings([A], { origin: ORIGIN, fetch: s.fetch })).rejects.toThrow();
   });
 });
