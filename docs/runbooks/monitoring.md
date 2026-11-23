@@ -3,15 +3,17 @@
 仕様の正は docs/specs/T-13-monitoring.md。この手順書は、その仕様を運用するための手順をまとめたもの。設定の内容（モニターの名前・条件・閾値・通知先）はこの手順書を正とし、変えるときは先にこの手順書を直す PR を出してから、管理画面を変える（`infra/README.md` の「管理画面で手動変更しない」の例外）。
 
 - 秘密情報（Slack の webhook の URL、API トークン）は、この手順書・リポジトリ・issue・PR・Slack の本文に書かない。
-- ログの本文（`sessionId`・`id` など）は Slack に流さない。Cloudflare の管理画面で見る。
+- ログの本文（`sessionId`・`id` など）は Slack に流さない。Cloudflare の管理画面で見る。例外は問い合わせの `#kokohima-contact` だけ（問い合わせの内容とメールアドレスが入る。docs/specs/T-24-contact.md。「7. 問い合わせの受け方」）。
 
 ## 1. 設定
 
 ### 1-1. Slack
-1. 非公開のチャンネルを2つ作る。メンバーは運営者だけにする。
+1. 非公開のチャンネルを3つ作る。メンバーは運営者だけにする。ワークスペースは2段階認証を必須にする。
    - `#kokohima-alerts`（すぐ見る）：スマホの通知をオンにする。
    - `#kokohima-notices`（気づけばよい）：通知はオフでよい。1日1回見る。
-2. それぞれに Incoming Webhook を作る（Slack のアプリの設定 → Incoming Webhooks）。URL はパスワードと同じに扱い、次の2か所にだけ登録する。
+   - `#kokohima-contact`（問い合わせ。T-24）：通知はオン。メンバーは、アプリ（Incoming Webhook）の投稿を消せる役割（ワークスペースのオーナーか管理者）の運営者だけ。ゲスト・Slack コネクト（外のワークスペースとの共有）・ほかのアプリの連携を入れない。保持の設定を「90日を過ぎたら消す」にする（チャンネルの単位でできなければワークスペース。ワークスペースにすると、監視の2つのチャンネルも90日で消えるが、受け入れる）。
+2. 監視の2つのチャンネル（`#kokohima-alerts`・`#kokohima-notices`）に Incoming Webhook を作る（Slack のアプリの設定 → Incoming Webhooks）。URL はパスワードと同じに扱い、次の2か所にだけ登録する。
+   - `#kokohima-contact` の webhook は別に作り、`wrangler secret put CONTACT_SLACK_WEBHOOK_URL --env prod` にだけ登録する。Cloudflare の通知先・Better Stack には登録しない（staging に入れるかは T-24 の確認事項。入れないと、staging の問い合わせは退避キューに入るだけ）。漏れたら Slack 側で作り直し、`wrangler secret put` し直す。
 3. URL が漏れたら、Slack 側で webhook を作り直し、登録し直す。
 
 ### 1-2. Cloudflare の通知先（webhook）
@@ -50,6 +52,7 @@
 | `notification_mail_rejected` | `"event":"notification_mail_rejected"` | 1時間に10件以上 |
 | `notification_mail_global_limit` | `"event":"notification_mail_global_limit"` | 1時間に1件以上 |
 | `calendar_sync_held` | `"event":"calendar_sync_held"` | 1時間に5件以上 |
+| `contact_delivered_after_withdrawal` | `"event":"contact_delivered_after_withdrawal"` | 1時間に1件以上 |
 | `cleanup_capped_minutely` | `"event":"cleanup_capped"` かつ `"step":"cleanup_notifications"`／`"step":"cleanup_invitations"`／`"step":"cleanup_broadcasts"`／`"step":"cleanup_invite_links"`／`"step":"cleanup_recurrence_exceptions"`／`"step":"cleanup_stale_notification_outbox"` | 1時間に30件以上 |
 | `cleanup_capped_15min` | `"event":"cleanup_capped"` かつ `"step":"mark_dormant_connections"`／`"step":"wake_dormant_connections"`／`"step":"cleanup_push_subscriptions"` | 1時間に3件以上 |
 
@@ -102,6 +105,8 @@
 | `notification_push_rejected`・`notification_mail_rejected` | 送り先・配信サービスに拒否されている | `status` を見る。Resend の管理画面・プッシュの鍵（VAPID）を確かめる |
 | `notification_mail_global_limit` | サービス全体の1日のメール数の上限（`MAIL_DAILY_LIMIT`）に達した | 1日の量を見て、上限か Resend の枠の見直し |
 | `calendar_sync_held` | カレンダーの大きな変化での保留が多い（T-06） | 一時的なものか、同じ人で続いていないかを見る |
+| `job_dead_lettered`（`type` が `ContactMessageSubmitted`） | 問い合わせを Slack に届けられなかった（T-24） | webhook の作り直し・チャンネルの削除・`CONTACT_SLACK_WEBHOOK_URL` の設定を疑う（`error` が `ContactWebhookNotConfigured` なら URL の形、`ContactWebhookRejected` なら Slack の応答）。直したら、その `id` の outbox の行の `processed_at` を NULL に戻す（「3.」）。退避キューのメッセージには受付番号しかないので、本文を見る必要はない |
+| `contact_delivered_after_withdrawal` | 問い合わせを届けている間に、送り主が退会した（T-24） | ログの `id`（受付番号）のメッセージを `#kokohima-contact` で探して消す。返事はしない |
 | `cleanup_capped_minutely`・`cleanup_capped_15min` | 保持期間の掃除（毎分）・休眠の処理と購読の掃除（15分ごと）が、上限いっぱいまで処理する実行が続いている（T-17） | `step` と `count` を見る。お知らせの期間を変えた直後などの一時的なものか、続くなら上限の見直し（docs/specs/T-17-retention.md「9.」） |
 
 ## 3. 退避キューの調べ方とやり直し方
@@ -136,12 +141,13 @@ pnpm --filter api exec wrangler d1 execute kokohima-prod --remote --env prod --c
 - 本文には outbox の payload（時刻などの行動の情報）や、利用者ID（`calendar_sync`）が入る。Slack・issue・PR に貼らない。
 - 退避キューのメッセージは4日で消える。消える前に調べられなくても、outbox の行（7日）からやり直せる。
 
-## 4. 問い合わせの調べ方
+## 4. 不具合の知らせの調べ方
 
 1. 友達から「うまく動かなかった」と聞いたら、起きた時刻（おおよそ）と、何をしていたかを聞く。
 2. その時間帯の `unhandled_error`・`job_dead_lettered`・`health_degraded` を Workers Logs で引く。
 3. `unhandled_error` のログには `requestId` がある。ブラウザの開発者ツールで応答が見られる場合は、応答の `requestId` と突き合わせる。
 4. ログには利用者IDを出していないので、「誰の操作か」はログからは引かない。必要なら時刻から D1 の行を見る。
+5. フォーム（設定 → 問い合わせ。T-24）で届いた不具合も、Slack の「受付」の時刻から、その時間帯のログを引く。API の要求のログには受付番号も利用者 ID も出ないので、受付番号では引けない（届けるのに失敗したときの `job_failed` には、受付番号が `id` として出る）。
 
 - 最初のリリース（友達だけ）では、画面に問い合わせ番号を出さない。一般公開の前に決め直す。
 
@@ -151,6 +157,7 @@ pnpm --filter api exec wrangler d1 execute kokohima-prod --remote --env prod --c
 | --- | --- | --- |
 | Cloudflare のアカウント（Workers Logs・Issues・Monitors・D1） | 開発者本人 | 2段階認証を必ず有効にする |
 | Slack の `#kokohima-alerts`・`#kokohima-notices` | 開発者本人 | 非公開のチャンネル |
+| Slack の `#kokohima-contact`（問い合わせ。内容とメールアドレスが入る） | 開発者本人 | 非公開のチャンネル。アプリの投稿を消せる役割 |
 | Better Stack | 開発者本人 | 2段階認証を必ず有効にする |
 
 - 人を足すときは、Cloudflare では読み取りだけの役割にし、この表に足す。
@@ -160,3 +167,23 @@ pnpm --filter api exec wrangler d1 execute kokohima-prod --remote --env prod --c
 
 - 2026-12-01 から、Workers Logs は Cloudflare Observability の料金になる（有料プランは請求期間ごとに取り込み50GB・保存10GB-month まで込み、超えた分は従量。https://developers.cloudflare.com/observability/pricing/ ）。いまのログの量（1行の短い JSON）では込みの範囲に収まる見込み。月に1回、管理画面で量を見る。
 - Workers Issues はオープンベータの間は無料。
+
+## 7. 問い合わせの受け方（docs/specs/T-24-contact.md「振る舞い 7.」）
+
+- 届くのは `#kokohima-contact` だけ。内容を、監視のチャンネル・issue・PR・ほかのチャンネルに貼らない。
+- 返信は `ops@kokohima.app` から、Slack に出た「返信先」に送る。「返信先：登録なし」なら返事はできない。
+- 「個人情報の開示・削除の請求」は、ログインして送ったこと（利用者 ID）で本人と確かめ、登録のメールアドレスにだけ答える（T-19「12.」）。
+- 届いた文には受付番号が入る。同じ受付番号が2通届いたら（Slack が受け取ったあと、書き換えの前に止まった）、1通として扱う。
+- 対応を終えたら、Slack のメッセージを消す。
+- 月に1回、`#kokohima-contact` に90日より古いメッセージが残っていないかを見て、保持の設定（「1-1.」）が効いているかを確かめる。
+
+### 7-1. 人が確かめること（本番で設定するとき）
+- 保持の設定：無料のプランで「90日を過ぎたら消す」にできること・設定したこと。できなければ、有料のプランにするか、仕様書とポリシーの日数を直す。
+- 誰がアプリ（Incoming Webhook）の投稿を消せるか。運営者がその役割にあること。
+- staging か本番で自分のアカウントから1通送り、届いた文を見る：
+  - `&`・`<`・`>` が文字どおりに出る（`&amp;` などのまま出たら、T-24「4.」のとおり仕様を直す）。
+  - `<!channel>`・`@channel`・`@here`・`<@自分のID>`・`<https://example.com|押して>`・`*太字*`・`:smile:` が、メンション・リンク・書式・絵文字にならない。
+  - URL を書いても、リンクの展開（プレビュー）が出ない。
+  - Slack のスマホの通知に、内容とメールアドレスが出ない。
+  - 運営者の役割で、そのメッセージを消せる。
+- チャンネルが非公開で、メンバーが運営者だけであること。

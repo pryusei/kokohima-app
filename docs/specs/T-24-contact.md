@@ -1,6 +1,6 @@
 # T-24 仕様書：問い合わせのフォーム
 
-- 状態：下書き
+- 状態：実装済み
 - タスク票：docs/tasks/T-24-contact.md
 - 関係する要件：要求定義書「機能要件」（新しい行 F-22 問い合わせを実装PRで足す）、「AI時代の攻撃を前提にした運用」（保存するデータを減らす）、「悪用対策と運用」。T-01（認証・メールアドレス）、T-10（冪等キー・回数の上限）、T-11・T-20（画面）、T-12（リリースの秘密情報）、T-13（監視・退避キュー）、T-16（退会）、T-17（保持期間）、T-18（画面のエラーの経路の一覧）、T-19（プライバシー ポリシー「3.」8・「8.」・「9.」・「12.」）、T-21（WebKit の E2E）
 
@@ -54,7 +54,7 @@
   1. `requireAuth`
   2. `requireActiveSession`
   3. `requireSameOrigin`：アクセストークンはメモリにあるので CSRF は起きないが、退会（`POST /me/withdrawal`）と同じく、外の事業者に個人情報を送る操作なので重ねて付ける。
-  4. 本文の上限：8KiB（8192バイト。UTF-8 のバイト数）。`Content-Length` と読み込んだ長さの両方で確かめ、超えたら最後まで読まずに400 `validation_failed`（新しい code は足さない。T-18 と同じ）。**`idempotent` より前に置く**（`apps/api/src/http/idempotency.ts` の `idempotent` は本文を `c.req.text()` で最後まで読むため、後ろに置くと大きな本文を読んでハッシュを作り、`idempotency_keys` に行を作ってしまう）。内容の上限（1000文字）をすべて4バイトの文字で書いても4000バイトで、JSON のエスケープ（改行の `\n` など）と項目の名前を足しても収まる値（16KiB から、内容の上限に合わせて半分にした）。
+  4. 本文の上限：8KiB（8192バイト。UTF-8 のバイト数。`apps/api/src/http/bodyLimit.ts`）。`Content-Length` と読み込んだ長さの両方で確かめ（`Content-Length` が数でなければ400）、超えたら最後まで読まずに400 `validation_failed`（新しい code は足さない。T-18 と同じ）。**`idempotent` より前に置く**（`apps/api/src/http/idempotency.ts` の `idempotent` は本文を `c.req.text()` で最後まで読むため、後ろに置くと大きな本文を読んでハッシュを作り、`idempotency_keys` に行を作ってしまう）。内容の上限（1000文字）をすべて4バイトの文字で書いても4000バイトで、JSON のエスケープ（改行の `\n` など）と項目の名前を足しても収まる値（16KiB から、内容の上限に合わせて半分にした）。
   5. `idempotent`（T-10）：二重に実行すると Slack に2通届く（結果が変わる）ので受け付ける。T-10 の「`Idempotency-Key` を受け付ける経路」の表に足す。`idempotency_keys` に残るのは本文のハッシュと204（本文なし）だけで、内容は残らない。
   6. `contactMessageRequestSchema` で検証。
   7. 受け付け（「振る舞い 1.」）。
@@ -131,7 +131,7 @@
 2. `getContactSender(env, payload.userId)` で、退会していないかと返信先を読む。退会していたら、送らずに payload を「届けた」と同じ形に消して終える（退会した人の内容とアドレスを外に出さない。決定事項5）。
 3. Slack に送る文を、domain の関数で組み立てる（「4.」）。
 4. webhook の URL を確かめる（`CONTACT_SLACK_WEBHOOK_URL`）：
-   - `new URL()` で読めて、`protocol` が `https:`、`hostname` が許す宛先（既定 `hooks.slack.com`）と同じで、`port` が空、`pathname` が許す接頭辞（既定 `/services/`）で始まること。どれかが違う、値がない、`new URL()` が例外になるときは、送らずに `ContactWebhookNotConfigured` を投げる（設定の誤りで別の宛先に個人情報を送らないため）。
+   - `new URL()` で読めて、`protocol` が `https:`、`hostname` が許す宛先（既定 `hooks.slack.com`）と同じで、`port` が空、`username`・`password` が空、`pathname` が許す接頭辞（既定 `/services/`）で始まること。どれかが違う、値がない、`new URL()` が例外になるときは、送らずに `ContactWebhookNotConfigured` を投げる（設定の誤りで別の宛先に個人情報を送らないため）。
    - 許す宛先と接頭辞は contact の定数（`CONTACT_WEBHOOK_TARGET = { hostname: "hooks.slack.com", pathPrefix: "/services/" }`）。`AppDeps` の `contactWebhookTarget` で差し替えられるが、差し替えるのは `apps/api/src/e2e/entry.ts` の `createWorker(overrides)` だけ（環境変数では切り替えない。T-10 の差し替えと同じ）。
 5. `POST` する（`deps.fetch`、`Content-Type: application/json`、`redirect: "manual"`、5秒で打ち切る。T-10 の外部の呼び出しと同じ）。
    - 200 以外は `ContactWebhookRejected` を投げる。3xx（転送）も、転送先へは行かずに失敗にする。Slack の 429 も同じ（Queue の再試行の間隔は30秒から倍々。T-06）。
@@ -217,14 +217,14 @@ Incoming Webhook の JSON：
   - `apps/api/scripts/write-e2e-dev-vars.mjs` が `CONTACT_SLACK_WEBHOOK_URL=https://slack.e2e.invalid/services/e2e` を書く。
   - `apps/api/src/e2e/entry.ts` の `createWorker` に `contactWebhookTarget: { hostname: "slack.e2e.invalid", pathPrefix: "/services/" }` を渡す。
   - `e2eFetch` が `slack.e2e.invalid` への送信を受け、E2E だけの表 `e2e_contact_posts (user_id TEXT NOT NULL, body TEXT NOT NULL)`（本番のマイグレーションに入れない。T-07 の偽のメールと同じ作り）に残す。`user_id` は、送られた JSON の「利用者ID：」の欄から取り出した UUID。
-  - 確かめる経路：`GET /__e2e__/contact/posts`（`requireAuth`）。`WHERE user_id = ?閲覧者` の一致で、閲覧者の送信だけを返す（並んで走るテストの送信は返さない）。
+  - 確かめる経路：`GET /__e2e__/contact/posts`（`requireAuth`）。`WHERE user_id = ?閲覧者` の一致で、閲覧者の送信だけを返す（並んで走るテストの送信は返さない）。応答は `{ "posts": [<送られた JSON>, ...] }`。
 - 単体テスト：`AppDeps` の `fetch` を差し替え、送った JSON を確かめる。`apps/api/vitest.config.ts` の `miniflare.bindings` に `CONTACT_SLACK_WEBHOOK_URL`（`https://hooks.slack.com/services/TEST/TEST/test` の形の偽の値）を足す。
 
 ### 9. 画面（決定事項8）
 キャンバスに問い合わせの画面はない。デザインシステムのトークン（`apps/web/src/index.css`）と `apps/web/src/ui/` の部品だけで作る。
 
 #### 入口
-- 設定のトップ（`SettingsPage`）の節「このアプリについて」の最初の行に「問い合わせ」（`/settings/contact`）を足す（公開の日から。「11.」）。並びは「問い合わせ」「プライバシー ポリシー」「利用規約」。今の `Row` を使う。
+- 設定のトップ（`SettingsPage`）の節「このアプリについて」の最初の行に「問い合わせ」（`/settings/contact`）を足す（公開の日から。「11.」）。並びは「問い合わせ」「アプリとして使う」（T-25）「プライバシー ポリシー」「利用規約」。今の `Row` を使う。
 
 #### 画面の枠
 - `/settings/contact` は、ほかの設定の画面と同じ `SubScreen`（題「問い合わせ」、`back="/settings"`）。シートにしない：設定の下の画面はどれも `SubScreen` で、シートは誘い・募集などタブの上に重ねる詳細と作成だけ（T-11「画面のつながり」）。
@@ -237,7 +237,7 @@ Incoming Webhook の JSON：
    - 種類：`ChipRow`（ラベル「種類」）に4つの `Chip`（「不具合」「ご意見」「個人情報の開示・削除の請求」「その他」）。初めはどれも選ばない。1つだけ選べる（選んだものは `aria-pressed="true"`）。
    - 「個人情報の開示・削除の請求」を選んだときだけ、すぐ下に `Note`：「本人の確認のため、返事はログインに使っているアカウントのメールアドレスにだけお送りします。運営に届く前に退会すると、この求めは届きません。アカウントとデータをすべて消すときは、設定の『アカウント』から退会もできます。」
    - 内容：`Field`（ラベル「内容」）の中に `textarea`（新しい `textareaClass`）。高さは8行ぶん、縦にだけ伸ばせる。`maxLength` は付けない（コードポイントで数えるため。超えたら送れなくするだけ）。
-   - 文字数：入力欄の下の右に `CharCount`（「123 / 1000」）。数え方は `contactBodySchema` と同じ（正規化して前後の空白を除いたコードポイント）。1000を超えたら「1000文字までです（123文字多い）」の文にする。色は `text-ink-muted` のまま（赤にしない）。`aria-live="polite"` で、超えたときだけ読み上げる。
+   - 文字数：入力欄の下の右に `CharCount`（「123 / 1000」）。数え方は `contactBodySchema` と同じ（正規化して前後の空白を除いたコードポイント。`packages/shared` の `contactBodyLength`）。1000を超えたら「1000文字までです（123文字多い）」の文にする。色は `text-ink-muted` のまま（赤にしない）。`aria-live="polite"` の見えない領域（`sr-only`）に、超えたときだけ同じ文を入れて読み上げる（入力のたびの数は読み上げない）。
    - 送り先の説明（`Note`）：「送った内容は、運営の連絡用の Slack（米国の Slack 社のサービス）に届きます。パスワードや、ほかの人の個人情報は書かないでください。くわしくは」＋「プライバシー ポリシー」（`Link` で `/privacy`）。
    - 送るボタン：`SendButton`（「送る」、`block`）。種類が選ばれていない・内容が空・1000文字を超える・送信中・オフラインのときは押せない。
 3. オフラインの間は、`SubScreen` のオフラインの帯に加えて、ボタンの下に `Note`「オフラインの間は送れません」（T-11「オフライン」）。
@@ -287,7 +287,7 @@ Incoming Webhook の JSON：
   - `packages/shared` の `contactStartAt(): number | null`：`startDate` の `Asia/Tokyo` の0時（`YYYY-MM-DDT00:00:00+09:00`）を Unix ミリ秒で返す。`null` なら `null`（いつまでも閉じたまま）。`isContactOpen(now, startAt)`：`startAt !== null && now >= startAt`。
 - API：`POST /contact-messages` の最初（`requireAuth` より前）で `isContactOpen(deps.now(), deps.contactStartAt)` を見て、閉じていれば知らない経路と同じ404（`app.notFound` と同じ本文。ログも同じ）。outbox に行はできない。`AppDeps.contactStartAt`（既定は `contactStartAt()`）を、E2E のエントリ（`apps/api/src/e2e/entry.ts`）だけが `0` に差し替える。consumer・dispatch は公開の日を見ない（閉じている間は行ができないため）。
 - 画面：端末の時刻（`Date.now()`）で `isContactOpen` を見て、閉じていれば設定のトップの「問い合わせ」の行を出さず、`/settings/contact` は `App.tsx` の振り分けで知らない経路と同じ扱い（みんなのタブ）にする。端末の時刻がずれて早く出ても、API が404 を返すので受け付けない（画面は「送れませんでした。もう一度お試しください。」）。E2E の画面（`E2E=1` の vite）だけは開いた扱いにする（`apps/web/vite.config.ts` の `define` で `__CONTACT_FORCE_OPEN__` を `process.env.E2E === "1"` にする。本番のビルドでは `false`）。
-- デプロイの検査（`effective-date.mjs` の `--deploy`。T-19 の改定の仕様書の5節）に足す：デプロイの日（日本時間の今日）が `startDate` より前なら、ビルドの出力の「改定日（効力が生じる日）：」の日付が `startDate` と同じで、予告の行（「公表日：」）が1つあること。違えば止める。`startDate` が今日以前、または `null` なら条件を足さない。`startDate` は、`null` か暦にある日付でなければ、いつもの検査（`check:release`）で止める。
+- デプロイの検査（`effective-date.mjs` の `contactStartProblems`。`check-web-dist.mjs` が `contactStart.json` を読んで渡す。T-19 の改定の仕様書の5節）に足す：デプロイの日（日本時間の今日）が `startDate` より前なら、ビルドの出力の「改定日（効力が生じる日）：」の日付が `startDate` と同じで、予告の行（「公表日：」）が1つあること。違えば止める。`startDate` が今日以前、または `null` なら条件を足さない。`startDate` は、`null` か暦にある日付でなければ、いつもの検査（`check:release`）で止める。
 - 改定日を過ぎたあとも、`startDate` と判定は残してよい（害がない）。T-19 の「予告の行を外す PR」で消してもよい（任意）。
 
 ## 認可と秘匿
@@ -439,3 +439,4 @@ Incoming Webhook の JSON：
 | 2026-11-23 | 番号を T-24（要件は F-22）にした | T-21〜T-23 がほかのタスクで使われているため |
 | 2026-11-23 | 本文の上限を `idempotent` より前に。Queue のメッセージに payload を載せず、consumer は D1 の行を読む（退避キューは受付番号だけ）。Slack の保持を無料のプランの保持の設定（90日）にし、`retention.ts` に置く。投稿を消せる役割。送信と重なった退会の扱い（条件付きの書き換え、`contact_delivered_after_withdrawal`）。`redirect: "manual"` と `new URL()` での宛先の確かめ、許す宛先の差し替えは E2E のエントリだけ、`e2e_contact_posts.user_id`、`section` を文字の境目で分ける。「問い合わせ番号」を「受付番号」に。プライバシー ポリシーと `retention.ts` をこの実装PRで直し、T-19 の改定の手順（7日前の予告）に従う。contact から `users` を直接読まず identity の関数を使う。429 と401 の判定を退会の直接の確かめと同じ `?now` に。E2E を WebKit でも回す。要求定義書・スキル・設定ファイル・手順書の直すところを足した。テスト計画を足した。決めたことを利用者の回答の3つ（と Slack の無料のプラン）に絞り、ほかを決定事項に移した。画面の番号を26に | 仕様書PRのレビュー（セキュリティ・仕様）、利用者の回答（Slack は一旦無料のプラン） |
 | 2026-11-23 | 内容の上限を1000文字、回数の上限を1人直近24時間に3件にした（生の文字列は8000文字、本文は8KiB、Slack の `section` は最大2つ）。入口の場所・種類の4つ・自動の返信なし・専用のチャンネルを決めたことに移した。公開の日（`contactStart.json`）を足し、改定日より前は入口を出さず API は404、デプロイの検査で改定日と同じことを確かめる。確認事項から、上限・自動の返信・公開の時期を外した | 利用者の回答（pryusei/kokohima-app#148） |
+| 2026-11-23 | 実装した。入口の並びに T-25 の「アプリとして使う」を入れた。webhook の URL は利用者名・パスワード付きも拒む。本文の上限の `Content-Length` が数でなければ400。E2E の確かめる経路の応答の形、文字数の読み上げの作り、デプロイの検査の関数名（`contactStartProblems`）を書いた | T-24 実装PR |
