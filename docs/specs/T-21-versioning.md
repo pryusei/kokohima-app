@@ -1,7 +1,7 @@
-# T-20 仕様書：バージョンの管理とリリースのタグ
+# T-21 仕様書：バージョンの管理とリリースのタグ
 
 - 状態：下書き
-- タスク票：docs/tasks/T-20-versioning.md
+- タスク票：docs/tasks/T-21-versioning.md
 - 関係する要件：要求定義書「技術の選定」の監視、T-12 リリース、T-13 監視、T-18 画面のエラー
 
 ## 概要
@@ -116,7 +116,7 @@
 - 対象なし：利用者の流れは変わらない（画面の見た目・操作に変更がない）。既存の E2E がすべて通ることを確かめる。
 
 ## 直す文書（実装PRで）
-- docs/specs/T-18-client-errors.md：`appVersion` の形を `^\d+\.\d+\.\d+\+([0-9a-f]{7,12}|\d{12})$` に、作り方を「T-20 の `app-version.mjs`」に（T-18 は下書きで未実装なので、実装の前にそろえる）。
+- docs/specs/T-18-client-errors.md：`appVersion` の形を `^\d+\.\d+\.\d+\+([0-9a-f]{7,12}|\d{12})$` に、作り方を「T-21 の `app-version.mjs`」に（T-18 は下書きで未実装なので、実装の前にそろえる）。
 - docs/specs/T-12-release.md：「ビルドとデプロイのコマンド」の `build:prod`・`deploy:prod` に `--var APP_VERSION` と「4.」の検査。「人が行う作業」の手順8の前に「`release` でタグを作り、タグを checkout する」。「デプロイのあとに確かめる」に `version` の確認。
 - docs/specs/T-13-monitoring.md：`GET /api/v1/health` の応答に `version`（「既存の `/api/v1/health` は変えない」の行を直す）。`unhandled_error` の項目に `appVersion`。
 - docs/runbooks/monitoring.md：ログを `appVersion` で絞る手順。
