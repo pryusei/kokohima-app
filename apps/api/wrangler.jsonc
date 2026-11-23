@@ -246,8 +246,8 @@
         "JWT_CURRENT_KID": "prod-1",
         "CALENDAR_TOKEN_CURRENT_KID": "prod-1",
         "NOTIFICATION_CURRENT_KID": "prod-1",
-        // VAPID の公開鍵（秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）。TODO: 環境ごとの鍵の公開鍵に置き換える
-        "VAPID_PUBLIC_KEY": "",
+        // VAPID の公開鍵（prod 用に作った鍵の組。秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）
+        "VAPID_PUBLIC_KEY": "BJe_MldfzmiyTEcmOTpIc7NH9aeg1fXlQOyNHLlS0dSjDO_XVI9YNPlk4E2rz0uWGlgnWob_pto9DycIRAv3KZs",
         "VAPID_SUBJECT": "mailto:ops@kokohima.app",
         "MAIL_FROM": "ここ暇 <notify@kokohima.app>",
         // T-07 を有効にした時刻（Unixミリ秒）。prod の D1 は新しく作り、古い outbox の行がないので "1"（T-12）
