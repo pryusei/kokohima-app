@@ -18,7 +18,10 @@ const SOF = new Set([0xc0, 0xc2]);
 const isApp = (m: number) => m >= APP0 && m <= 0xef;
 const isRst = (m: number) => m >= 0xd0 && m <= 0xd7;
 
+const APP14 = 0xee;
 const JFIF = [0x4a, 0x46, 0x49, 0x46, 0x00];
+const ADOBE = [0x41, 0x64, 0x6f, 0x62, 0x65];
+const isAdobe = (input: Uint8Array, at: number) => ADOBE.every((b, i) => input[at + i] === b);
 const isJfif = (input: Uint8Array, at: number) => JFIF.every((b, i) => input[at + i] === b);
 
 const fail = (error: AvatarJpegError): AvatarJpegResult => ({ ok: false, error });
@@ -31,6 +34,7 @@ export function sanitizeAvatarJpeg(input: Uint8Array): AvatarJpegResult {
   let sawSof = false;
   let sawApp0 = false;
   let sawSos = false;
+  let sawApp14 = false;
   let size: { w: number; h: number } | null = null;
 
   for (;;) {
@@ -86,6 +90,15 @@ export function sanitizeAvatarJpeg(input: Uint8Array): AvatarJpegResult {
         jfif[17] = 0; // Ythumbnail
         parts.push(jfif);
         sawApp0 = true;
+      }
+    } else if (marker === APP14) {
+      // Adobe の APP14 は、色の変換（transform）を持つので基本の部分（長さ14）だけを残す。ほかの APP14 は除く
+      if (!sawApp14 && length >= 14 && isAdobe(input, pos + 2)) {
+        const adobe = input.slice(markerStart, markerStart + 16);
+        adobe[2] = 0x00;
+        adobe[3] = 0x0e;
+        parts.push(adobe);
+        sawApp14 = true;
       }
     } else if (isApp(marker) || marker === COM) {
       // Exif・XMP・位置情報など（APP1〜APP15）とコメントは除く

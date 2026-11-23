@@ -3,6 +3,8 @@
 
 export const AVATAR_SIZE_PX = 256;
 export const AVATAR_QUALITY = 0.85;
+/** 読むときの幅（縦長の写真でも短い辺が 256 を下回らないように、256 の4倍） */
+export const DECODE_WIDTH_PX = 1024;
 /** これより大きいファイルは読まない */
 export const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
 
@@ -18,8 +20,13 @@ export async function makeAvatarJpeg(file: Blob): Promise<Blob> {
   if (file.size === 0 || file.size > MAX_SOURCE_BYTES) throw new AvatarImageError("too_large");
   let bitmap: ImageBitmap;
   try {
-    // 画像の向き（Exif の Orientation）は画像のとおりに直して読む
-    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    // 画像の向き（Exif の Orientation）は画像のとおりに直して読む。大きな写真を元の解像度で展開しないよう、
+    // 幅を DECODE_WIDTH_PX に縮めて読む（高さは比のとおり。切り抜いてから 256×256 にするので、これで足りる）
+    bitmap = await createImageBitmap(file, {
+      imageOrientation: "from-image",
+      resizeWidth: DECODE_WIDTH_PX,
+      resizeQuality: "high",
+    });
   } catch {
     throw new AvatarImageError("unreadable");
   }

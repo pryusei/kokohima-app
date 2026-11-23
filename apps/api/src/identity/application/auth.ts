@@ -257,6 +257,12 @@ export async function getHistoryProfiles(ctx: Ctx, viewerId: string, userIds: st
   return withAvatarUrls(ctx, await repo.findPublicProfiles(ctx.env.DB, { userId: viewerId }, userIds));
 }
 
+/** 名前だけが要る処理向け（カレンダーに書く予定のタイトルなど）。アイコンの URL は作らない */
+export async function getHistoryNames(ctx: Ctx, viewerId: string, userIds: string[]) {
+  const rows = await repo.findPublicProfiles(ctx.env.DB, { userId: viewerId }, userIds);
+  return new Map([...rows].map(([id, r]) => [id, { displayName: r.displayName, withdrawn: r.withdrawn }] as const));
+}
+
 /**
  * 招待の受け口向け（T-02）：招待リンクを確かめたあとの発行者の公開プロフィール。
  * 有効なリンクを示した人には、友達でなくても発行者のアイコンを見せる（T-27 決めたこと2）。リンクを確かめる前に呼ばない

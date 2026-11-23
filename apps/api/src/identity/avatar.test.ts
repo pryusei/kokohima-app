@@ -319,6 +319,27 @@ describe("GET /avatars/{avatarId}", () => {
   });
 });
 
+describe("署名の鍵がない・壊れているとき", () => {
+  it("プロフィールを返す経路は止まらず avatarUrl が null になり、配信は404。ログに鍵は出ない", async () => {
+    const a = await u.user("あき");
+    const b = await u.user("びー");
+    await u.befriend(a, b);
+    const url = await upload(a);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    for (const broken of [undefined, "", "short", "!!!not-base64!!!"]) {
+      h.bindings.AVATAR_URL_KEY = broken as unknown as string;
+      const res = await u.call("GET", "/api/v1/friends", { token: b.token });
+      expect(res.status).toBe(200);
+      expect(friendPageSchema.parse(await res.json()).items.find((f) => f.id === a.id)?.avatarUrl).toBeNull();
+      expect((await fetchImage(url)).status).toBe(404);
+    }
+    const lines = log.mock.calls.map((args) => args.map(String).join(" "));
+    log.mockRestore();
+    expect(lines.some((l) => l.includes("avatar_url_key_invalid"))).toBe(true);
+    expect(lines.some((l) => l.includes("!!!not-base64!!!"))).toBe(false);
+  });
+});
+
 describe("ログ", () => {
   it("置く・検証の失敗・配信・404 のログに、avatarId・署名・画像の中身が出ない", async () => {
     const a = await u.user();

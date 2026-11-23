@@ -16,12 +16,21 @@ export const AVATAR_CLEANUP_LIMIT = 100;
 
 const avatarKey = (avatarId: string) => `avatars/v1/${avatarId}`;
 
-/** 署名つきの相対 URL。avatarId がなければ null */
+/**
+ * 署名つきの相対 URL。avatarId がなければ null。
+ * 鍵（AVATAR_URL_KEY）がない・壊れているときも null にし、プロフィールを返す経路を止めない（画面は1文字めに戻るだけ）。
+ * ログには鍵の値を出さず、イベント名だけを残す
+ */
 export async function avatarUrlFor(ctx: Ctx, avatarId: string | null): Promise<string | null> {
   if (!avatarId) return null;
   const expiry = avatarUrlExpiry(ctx.deps.now());
-  const signature = await hmacTag(ctx.env.AVATAR_URL_KEY, avatarSigningInput(avatarId, expiry));
-  return avatarPath(avatarId, expiry, signature);
+  try {
+    const signature = await hmacTag(ctx.env.AVATAR_URL_KEY ?? "", avatarSigningInput(avatarId, expiry));
+    return avatarPath(avatarId, expiry, signature);
+  } catch {
+    console.log(JSON.stringify({ event: "avatar_url_key_invalid" }));
+    return null;
+  }
 }
 
 export type UploadResult = { kind: "ok" } | { kind: "invalid"; error: AvatarJpegError } | { kind: "not_found" };
@@ -52,7 +61,13 @@ export async function avatarImageFor(ctx: Ctx, avatarId: string, expiryText: str
   if (!expiryText || !/^\d{1,12}$/.test(expiryText) || !signature || signature.length > 64) return null;
   const expiry = Number(expiryText);
   if (!isAvatarExpiryAcceptable(expiry, ctx.deps.now())) return null;
-  const expected = await hmacTag(ctx.env.AVATAR_URL_KEY, avatarSigningInput(avatarId, expiry));
+  let expected: string;
+  try {
+    expected = await hmacTag(ctx.env.AVATAR_URL_KEY ?? "", avatarSigningInput(avatarId, expiry));
+  } catch {
+    console.log(JSON.stringify({ event: "avatar_url_key_invalid" }));
+    return null;
+  }
   if (!timingSafeEqual(expected, signature)) return null;
   if (!(await repo.isCurrentAvatar(ctx.env.DB, avatarId))) return null;
   const object = await ctx.env.AVATARS.get(avatarKey(avatarId));

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { centerSquare, MAX_SOURCE_BYTES } from "../account/avatarImage";
@@ -73,6 +73,8 @@ describe("アイコンの画像の設定", () => {
     const confirm = await within(section).findByRole("button", { name: "この画像にする" });
     // 中央の正方形（400×300 → 横に50ずらした 300×300）を 256×256 に
     expect(drawn.at(-1)).toEqual({ canvas: { width: 256, height: 256 }, draw: [50, 0, 300, 300, 0, 0, 256, 256], type: "image/jpeg", quality: 0.85 });
+    // 大きな写真を元の解像度で展開しないよう、縮めて読む
+    expect(createImageBitmap).toHaveBeenCalledWith(expect.any(File), { imageOrientation: "from-image", resizeWidth: 1024, resizeQuality: "high" });
     await userEvent.click(confirm);
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/me/avatar" && c.init.method === "PUT")).toBe(true));
     const put = calls.find((c) => c.init.method === "PUT")!;
@@ -144,6 +146,18 @@ describe("Avatar", () => {
     expect(container.textContent).toBe("ゆ");
     // URL が変われば、もう一度読む
     rerender(<Avatar name="ゆう" src={`${URL_1}x`} />);
+    expect(container.querySelector("img")).not.toBeNull();
+    // 読めなかったあと、オンラインに戻ったら読み直す
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
     expect(container.querySelector("img")).not.toBeNull();
     rerender(<Avatar name={null} src={null} />);
     expect(container.textContent).toBe("？");

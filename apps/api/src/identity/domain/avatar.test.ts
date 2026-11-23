@@ -81,15 +81,24 @@ describe("sanitizeAvatarJpeg", () => {
     expect(errorOf(new Uint8Array(0))).toBe("invalid_image");
   });
 
-  it("大きな入力でも1回の走査で終わる", () => {
-    const big = jpeg({ scanBytes: 200 * 1024 });
-    const started = performance.now();
-    expect(errorOf(big)).toBe("ok");
-    // 0xFF が並ぶ入力（埋め草）でも同じ
+  it("大きな入力・0xFF が並ぶ入力（埋め草）も正しく判定する", () => {
+    // workerd では同期処理の間 performance.now() が進まないので、時間ではなく結果だけを確かめる
+    expect(errorOf(jpeg({ scanBytes: 200 * 1024 }))).toBe("ok");
     const fill = new Uint8Array(200 * 1024).fill(0xff);
     fill[1] = 0xd8;
     expect(errorOf(fill)).toBe("invalid_image");
-    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it("Adobe の APP14 は基本の部分（色の変換）だけを残し、ほかの APP14 は除く", () => {
+    const adobe = [0xff, 0xee, 0x00, 0x14, ...new TextEncoder().encode("Adobe"), 0, 100, 0, 0, 0, 0, 0, ...new TextEncoder().encode("EXTRA!")];
+    const base = jpeg();
+    const withAdobe = new Uint8Array([...base.subarray(0, 20), ...adobe, ...base.subarray(20)]);
+    const out = ok(withAdobe);
+    expect(includesText(out, "Adobe")).toBe(true);
+    expect(includesText(out, "EXTRA!")).toBe(false);
+    expect(out).toEqual(new Uint8Array([...base.subarray(0, 20), 0xff, 0xee, 0x00, 0x0e, ...adobe.slice(4, 16), ...base.subarray(20)]));
+    const other = [0xff, 0xee, 0x00, 0x08, ...new TextEncoder().encode("Other!")];
+    expect(ok(new Uint8Array([...base.subarray(0, 20), ...other, ...base.subarray(20)]))).toEqual(base);
   });
 });
 

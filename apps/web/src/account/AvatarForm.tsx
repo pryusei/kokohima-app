@@ -33,8 +33,10 @@ export function AvatarForm({ me }: { me: MeResponse }) {
   const saved = (next: MeResponse | undefined) => {
     if (next) queryClient.setQueryData(keys.me(), next);
     else queryClient.setQueryData(keys.me(), { ...me, avatarUrl: null });
-    // 自分が出る一覧（予定の参加者など）にも新しいアイコンを出す
-    void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== keys.me()[0] });
+    // 自分が出る一覧（自分の行きたい・自分の募集）にも新しいアイコンを出す。回数の上限がある友達の一覧は取り直さない
+    void queryClient.invalidateQueries({ queryKey: keys.wishes.mine() });
+    void queryClient.invalidateQueries({ queryKey: ["wishes", "detail"] });
+    void queryClient.invalidateQueries({ queryKey: keys.broadcasts.all() });
   };
 
   const upload = useMutation({
