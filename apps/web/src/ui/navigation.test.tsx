@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
 import { goBack, navigate } from "../router";
@@ -121,7 +121,7 @@ describe("BottomSheet", () => {
     );
   }
 
-  it("Esc・後ろの暗い部分・つまみで閉じ、閉じたら開いたボタンにフォーカスを戻す", async () => {
+  it("Esc・後ろの暗い部分・「閉じる」のボタンで閉じ、閉じたら開いたボタンにフォーカスを戻す", async () => {
     render(<Host />);
     const opener = screen.getByRole("button", { name: "開く" });
     for (const close of [
@@ -135,6 +135,100 @@ describe("BottomSheet", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(opener).toHaveFocus();
     }
+  });
+
+  it("シートを描くときに後ろが inert になってフォーカスが外れても、閉じたら開いたボタンに戻す", async () => {
+    // ブラウザは、フォーカスのある要素が inert になるとフォーカスを外す（jsdom はしないので、同じことを layout effect で起こす）
+    function Blur() {
+      useLayoutEffect(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      }, []);
+      return null;
+    }
+    function BlurHost() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            開く
+          </button>
+          {open && (
+            <>
+              <Blur />
+              <BottomSheet title="試し" label="試し" onClose={() => setOpen(false)}>
+                <p>本文</p>
+              </BottomSheet>
+            </>
+          )}
+        </>
+      );
+    }
+    render(<BlurHost />);
+    const opener = screen.getByRole("button", { name: "開く" });
+    await userEvent.click(opener);
+    expect(screen.getByRole("dialog", { name: "試し" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(opener).toHaveFocus();
+  });
+
+  it("右上の「閉じる」のボタンは1つだけで、つまみは押しても下に引いても閉じるが Tab では止まらない", async () => {
+    render(<Host />);
+    const opener = screen.getByRole("button", { name: "開く" });
+    await userEvent.click(opener);
+    const dialog = screen.getByRole("dialog", { name: "試し" });
+    expect(within(dialog).getAllByRole("button", { name: "閉じる" })).toHaveLength(1);
+    const grip = screen.getByTestId("sheet-grip");
+    expect(grip).toHaveAttribute("aria-hidden", "true");
+    expect(grip).not.toHaveAttribute("tabindex");
+
+    // Tab は「閉じる」→ 一つめ → 二つめ と回り、つまみには止まらない
+    await userEvent.tab();
+    expect(within(dialog).getByRole("button", { name: "閉じる" })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "一つめ" })).toHaveFocus();
+
+    await userEvent.click(grip);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("つまみを押しても下に引いても、onClose は1回だけ呼ぶ（引いたあとに届く click で2回にならない）", () => {
+    const onClose = vi.fn();
+    const { unmount } = render(
+      <BottomSheet title="試し" label="試し" onClose={onClose}>
+        <p>本文</p>
+      </BottomSheet>,
+    );
+    const grip = screen.getByTestId("sheet-grip");
+    const release = (fromY: number, toY: number) =>
+      act(() => {
+        grip.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientY: fromY }));
+        grip.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientY: toY }));
+        grip.dispatchEvent(new MouseEvent("click", { bubbles: true, clientY: toY }));
+      });
+
+    release(100, 200); // 下に引く
+    expect(onClose).toHaveBeenCalledTimes(1);
+    release(100, 102); // 押す
+    expect(onClose).toHaveBeenCalledTimes(2);
+    release(100, 130); // 少しだけ引いて戻す・上に引く：閉じない
+    release(200, 100);
+    expect(onClose).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it("オフラインの帯は、スクロールしても上に残る行（つまみとタイトルの行）の中に出す", () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    render(
+      <BottomSheet title="試し" label="試し" onClose={() => {}}>
+        <p>本文</p>
+      </BottomSheet>,
+    );
+    const header = screen.getByTestId("sheet-grip").parentElement;
+    expect(header?.className).toContain("sticky");
+    expect(header).toContainElement(screen.getByText(/オフライン/));
+    expect(header).toContainElement(screen.getByRole("heading", { name: "試し" }));
+    onLine.mockRestore();
   });
 
   it("開いている間、Tab のフォーカスはシートの外に出ない", async () => {
