@@ -1,6 +1,6 @@
 # T-27 仕様書：アイコン画像のアップロード
 
-- 状態：下書き
+- 状態：合意済み（仕様書PRマージ。pryusei/kokohima-app#162）。実装PRで決めたこと10を足した
 - タスク票：docs/tasks/T-27-avatar-upload.md
 - 関係する要件：F-08、F-17、NF-01、未決事項「表示名・アイコン・プロフィール項目、居住エリアの持ち方」（#43。T-15）
 
@@ -13,20 +13,25 @@
 3. 不適切な画像への対応は、**問い合わせ（`ops@kokohima.app`・T-24 のフォーム）で削除の求めを受け、運営が手で消す**（利用者の回答）。通報ボタン・自動の検査・運営用の画面は作らない。
 4. 画像の URL は、**有効期限つきの署名つき URL** にする。アクセストークンはメモリにだけあり `<img>` では送れないため、閲覧者の条件は「URL を誰に渡すか」（公開プロフィールを作る SQL）で決め、配信の経路は署名と期限だけを確かめる。友達でなくなった人が手元に残した URL は、最長2時間で使えなくなる（受け入れるリスク）。
 5. 画像は端末で作り直し、サーバーは**作り直さずに検証とメタデータの除去だけ**を行う（Workers で画像を描き直す仕組みを持たないため）。受け付けるのは 256×256 の JPEG だけ。
+6. 配信の経路には回数の上限を付けない（利用者の回答。署名を確かめるまで D1・R2 を読まない）。
+7. 友達でなくなった人が、手元に残した URL で最長2時間は画像を見られることを受け入れる（利用者の回答）。
+8. 大きさの上限は 200KiB、縦横は 256×256、端末で作る JPEG の品質は 0.85（利用者の回答）。
+9. アップロードの回数の上限は 60秒に20回だけで、1日の上限は持たない（クローズドの運用の間。利用者の回答）。
+10. 預かる情報が増えるので、T-19 の決めたこと14の改定（今の予告）に含め、決めたこと16と同じく、デプロイのあとに運営が使っている人全員に知らせる（人が行う）。機能は改定日を待たずに使えるようにする（T-22 の行きたいと同じ。T-24 の問い合わせのような公開の日は設けない）。実装PRで決めた（レビューで変えてよい）。
 
 ## API
 `api-conventions` に従う。例外は下の注のとおり。
 
 | メソッド | パス | 認証 | 入力（Zodスキーマ名） | 出力 | 主なエラー |
 | --- | --- | --- | --- | --- | --- |
-| PUT | `/api/v1/me/avatar` | Bearer＋Origin | 本文：画像そのもの（`Content-Type: image/jpeg`、200KiB まで） | 200：`meResponseSchema` | 400 `validation_failed`（`errors[].code`：`unsupported_type`・`too_large`・`invalid_image`・`invalid_size`）、401、429 `rate_limited`（大きすぎる本文も413ではなく400 `too_large`） |
+| PUT | `/api/v1/me/avatar` | Bearer＋Origin | 本文：画像そのもの（`Content-Type: image/jpeg`、200KiB まで） | 200：`meResponseSchema` | 400 `validation_failed`（`errors[].code`：`unsupported_type`・`too_large`・`invalid_image`・`invalid_size`）、401、404 `not_found`（置いている間に退会した。`requireActiveSession` のあとなので、ふつうは起きない）、429 `rate_limited`（大きすぎる本文も413ではなく400 `too_large`） |
 | DELETE | `/api/v1/me/avatar` | Bearer＋Origin | なし | 204 | 401 |
 | GET | `/api/v1/avatars/{avatarId}` | なし（署名つき URL。`<img>` で読むため） | path：`avatarId`（UUID）、query：`e`（期限の Unix 秒）・`s`（署名） | 200：画像（`image/jpeg`） | 404（ない・古い・壊れた ID、署名が違う、期限切れ。すべて同じ本文なしの404） |
 
 - `PUT` にするのは、自分のアイコンという1つしかないものを置き換えるため（作成の `POST` と `Location` にしない）。同じ画像を二度送っても最後の画像が残るだけなので、`Idempotency-Key` は受け付けない（冪等キーの middleware は本文を文字列として読むため、画像の本文にも使わない）。
 - 本文の上限は 200KiB（204,800 バイト）。`Content-Length` がなければ読みながら数え、超えたらそこで止めて400 `too_large`。
 - `PUT` には `RL_USER` のまとまり `avatar_upload`（60秒に20回）を付ける。T-10 の「回数の上限を付ける経路」の表に足す。
-- `GET /avatars/{avatarId}` には回数の上限を付けない。友達の一覧で一度に多くの画像を読むため、`RL_PUBLIC`（60秒に30回）では足りない。署名を確かめるまで D1・R2 を読まないので、でたらめな要求は安い（確認事項1）。
+- `GET /avatars/{avatarId}` には回数の上限を付けない。友達の一覧で一度に多くの画像を読むため、`RL_PUBLIC`（60秒に30回）では足りない。署名を確かめるまで D1・R2 を読まないので、でたらめな要求は安い（決めたこと6）。
 - 応答のヘッダー（`GET /avatars/{avatarId}`）：`Content-Type: image/jpeg`、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'; sandbox`、`Cache-Control: private, max-age=3600`、`Cross-Origin-Resource-Policy: same-origin`、`Content-Disposition: inline`、`Referrer-Policy: no-referrer`。404 は本文なしで `Cache-Control: no-store`（`<img>` が読む経路のため。T-08 の画像の経路と同じ）。
 
 ### 公開プロフィールの `avatarUrl`
@@ -34,19 +39,22 @@
 - `avatarUrl` が入るのは次のときだけ。それ以外は、画像があっても `null`（画像がない人と区別できない）。
   - `GET /me`・`PUT /me/avatar`・`PATCH /me` の自分
   - 閲覧者と友達である相手（`friendships` に `user_id = 閲覧者, friend_id = 相手` の行がある）
-  - `POST /invite-links/lookup` の `inviter`（有効な招待リンクを示した人。T-02）
+  - `POST /invite-links/lookup` の `inviter`（有効な招待リンクを示した人。T-02）と、`POST /invite-links/accept` の `friend`（受けた時点で友達になる）
 - 退会した人は今のとおり `null`（T-16）。
 - 対象の DTO：友達の一覧・友達の詳細・友達のここ暇（`friend`）・誘い（`counterpart`）・予定（`participants`）・募集（`owner`・`recipients`）・お知らせ（`actor`）・行きたい（`owner`・`excludedUsers`）・`meResponseSchema`・招待の受け口の `inviter`。
 
 ### 署名
 - 署名する文字列：`avatar:v1:<avatarId>:<e>`。HMAC-SHA256（鍵は `AVATAR_URL_KEY`、32バイトのランダム値を base64url で表したもの。wrangler secret）の先頭16バイトを base64url で表したものが `s`。
 - 期限 `e` は「今の時刻を1時間単位で切り上げた時刻＋1時間」（有効なのは1〜2時間）。同じ1時間の中では同じ URL になり、端末のキャッシュが効く。
-- 確かめる順：`avatarId` が UUID、`e` が整数で `今 < e ≤ 今＋2時間＋60秒`、`s` が一致（`crypto.subtle.verify` で時間を一定に）→ D1 で `users.avatar_id = ? AND withdrawn_at IS NULL` の行がある → R2 から読む。どこで外れても同じ404。
+- 確かめる順：`avatarId` が UUID、`e` が整数で `今 < e ≤ 今＋2時間＋60秒`、`s` が一致（同じ署名を作り直し、`crypto.subtle.timingSafeEqual` で時間を一定にして比べる。先頭16バイトに切り詰めた署名は `verify` で確かめられないため）→ D1 で `users.avatar_id = ? AND withdrawn_at IS NULL` の行がある → R2 から読む。どこで外れても同じ404。
 - 鍵を変えると、出した URL は次に公開プロフィールを取り直すまで404になる（画面は1文字めに戻るだけ）。鍵の版（kid）は持たない。
+- 鍵がない・壊れているときは、`avatarUrl` を `null` にし、配信は404にする。プロフィールを返す経路は止めない（影響をアイコンだけに留める）。ログはイベント名 `avatar_url_key_invalid` だけで、鍵の値は出さない。
+- 名前だけが要る処理（カレンダーに書く予定のタイトル）は、署名を作らない `getHistoryNames` を使う。
 
 ## データ
 マイグレーション `0016_avatar.sql`（番号は実装のときの次の番号）。
 - `users.avatar_url` を `avatar_id`（TEXT、null可）に置き換える。今は常に `null` なので、データの移行はない（T-15 で予定していた列の置き換えを、このタスクで行う）。
+- インデックス `users_avatar_id (avatar_id)`（配信の「今のアイコンか」と、掃除の「参照されていないか」で引く）。
 - 台帳 `avatar_images`：`id`（TEXT、主キー、UUID）、`created_at`（INTEGER、Unix ミリ秒）。インデックス `avatar_images_created (created_at)`。利用者 ID は持たない（どの画像が誰のものかは `users.avatar_id` だけが持つ）。
 - R2：新しいバケット `kokohima-<env>-avatars`（Terraform の `infra/terraform/modules/kokohima`。リンクのプレビューの画像とは分ける）。バインディング名 `AVATARS`（wrangler の全環境）。キーは `avatars/v1/<avatar_id>`、`httpMetadata.contentType = "image/jpeg"`。
 
@@ -54,7 +62,7 @@
 
 ### 端末での作り直し（Web）
 - `<input type="file" accept="image/*">` で選ぶ。20MB を超えるファイルは読まずに「この画像は使えません」。
-- `createImageBitmap`（画像の向きは画像のとおり）で読み、短い辺に合わせて中央を正方形に切り抜き、`canvas` で 256×256 に縮めて `toBlob("image/jpeg", 0.85)`。読めない画像（ブラウザが扱えない形式など）は「この画像は使えません」。
+- `createImageBitmap`（画像の向きは画像のとおり。大きな写真を元の解像度で展開しないよう、幅を1024に縮めて読む）で読み、短い辺に合わせて中央を正方形に切り抜き、`canvas` で 256×256 に縮めて `toBlob("image/jpeg", 0.85)`。読めない画像（ブラウザが扱えない形式など）は「この画像は使えません」。
 - 切り抜いた結果を丸く表示し、「この画像にする」「やめる」を出す。「この画像にする」で `PUT` する。
 - 作り直した画像はメモリにだけ置く（`localStorage` などに保存しない）。
 
@@ -62,7 +70,9 @@
 - `Content-Type` が `image/jpeg` でなければ400 `unsupported_type`。
 - 先頭が `FF D8`（SOI）、マーカーを順に読む：
   - 残す：APP0（JFIF）、DQT、DHT、DRI、SOF0（ベースライン）・SOF2（プログレッシブ）、SOS とその後の符号化されたデータ、EOI。
-  - 除く：APP1〜APP15（Exif・XMP・位置情報など）、COM。
+  - APP0 は、識別子が `JFIF\0` の最初の1つの、基本の部分（長さ16）だけを写す。サムネイル（Xthumbnail・Ythumbnail 以降）は捨てて長さと大きさを直す。JFXX など JFIF でない APP0 と2つめ以降の APP0 は除く（埋め込みのサムネイルに、元の画像や Exif を持てるため）。
+  - Adobe の APP14 は、色の変換（transform）を持つので、識別子が `Adobe` の最初の1つの基本の部分（長さ14）だけを写す。ほかの APP14 は除く（除くと RGB のまま符号化した画像の色が変わるため）。
+  - 除く：APP1〜APP13・APP15（Exif・XMP・位置情報など）、COM。
   - そのほかのマーカー（ほかの SOF、知らないマーカー）、長さが足りない・はみ出すセグメント、EOI がない・EOI のあとにデータがあるものは400 `invalid_image`。
   - SOF の幅・高さがどちらも256でなければ400 `invalid_size`。成分の数は1か3だけ。
 - 読むのは1回の走査で、かかる時間は大きさに比例する。デコードはしない（壊れた符号化データは端末の表示で崩れるだけで、ほかの人の端末に害はない）。
@@ -81,7 +91,8 @@
 - `apps/web/src/ui/Avatar.tsx` に `src`（`avatarUrl`）を足す。`src` があれば `<img alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` を丸く出し、読めなければ（404・期限切れ）1文字めに戻す。色の決まり（surface-sunken）と大きさは今のまま。
 - 設定画面の「アカウント」に、今のアイコンと「画像を選ぶ」「アイコンを外す」（画像があるときだけ）を出す。送っている間は押せない。失敗は静かな文で出す（エラー色を使わない）。
 - T-15 の初回設定（`/welcome`）の1. は、同じ部品で「画像を選ぶ」（任意）にする。
-- `avatarUrl` は TanStack Query の各一覧のデータに入って届く。画像を別のクエリにしない。自分のアイコンを変えたら `me` と、自分が出る一覧（予定の参加者など）を無効にする。
+- `avatarUrl` は TanStack Query の各一覧のデータに入って届く。画像を別のクエリにしない。自分のアイコンを変えたら `me` を置き換え、自分が出る一覧（自分の行きたい・自分の募集）だけを無効にする（回数の上限がある友達の一覧は取り直さない）。
+- `Avatar` は、読めなかった URL を覚えて1文字めに戻る。404と通信の失敗を区別できないので、オンラインに戻ったら読み直す。
 
 ## 認可と秘匿
 - 閲覧者IDの使い方：
@@ -99,7 +110,8 @@
 - プライバシー ポリシー（`/privacy`）：預かる情報に「アイコンの画像（設定した場合。位置情報などのメタデータは除きます）」、見える相手（自分の友達と、招待リンクを開いた人）、保存する期間（アイコンを変える・外す・退会してから1時間ほどで消す）、置き場所（Cloudflare の R2。T-19 の相当措置の記述の範囲）。T-19 の決めたこと9 を書き換える。T-19 の決まりのとおり、効力の前に知らせる。
 - 利用規約：第5条に、アイコンの画像の削除の求めを `ops@kokohima.app` で受けることと、他人の写真や権利のある画像を本人の同意なくアイコンにしないことを足す。
 - `packages/shared/src/retention.ts` と T-17 の保持期間の表、T-16 の消えるもの、T-10 の回数の上限の表、T-02・api-conventions の「公開プロフィール」の説明（`avatarUrl` は署名つきで、友達などにだけ入る）。
-- 手順書：`AVATAR_URL_KEY` の作り方（`wrangler secret`）と、削除の求めへの手での対応（`users.avatar_id` を NULL にする）。
+- 手順書（docs/runbooks/avatar.md）：`AVATAR_URL_KEY` の作り方（`wrangler secret`）と、削除の求めへの手での対応（`users.avatar_id` を NULL にする）。
+- T-19 の決めたこと14の改定（今の予告）に含める。本文の2.・4.・8.・退会と利用規約の第5条4・第6条を直し、「この改定で変わるところ」に1行ずつ足す。機能は、改定日を待たずに使えるようにする（T-22 の行きたいと同じ扱い。決めたこと10）。
 
 ## テスト計画
 
@@ -127,12 +139,13 @@
 - 友達でない人（履歴の相手）へのアイコンの表示
 
 ## 確認事項（合意前に解消する）
-1. 配信の経路に回数の上限を付けない、でよいか（付けるなら、新しい Rate Limiting のバインディングが要る。T-10）
-2. 友達でなくなった人が、最長2時間は手元の URL で画像を見られることを受け入れてよいか（短くするほど端末のキャッシュが効かなくなる）
-3. 200KiB・256×256・JPEG の品質 0.85 でよいか（256×256 の写真なら、ふつう 20〜40KB）
-4. アップロードの回数は 60秒に20回だけでよいか（1日の上限は持たない。クローズドの運用の間）
+- なし（1〜4 は決めたこと6〜9 に移した）
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-23 | 初版（下書き） | 利用者の要望（アイコン画像を設定したい）。T-15 の確認事項1 への回答 |
+| 2026-11-23 | 確認事項1〜4を推奨どおりに決め、決めたこと6〜9 に移した | 利用者の回答（実装PRの最初のコミット） |
+| 2026-11-23 | 実装に合わせた：署名の比べ方（`timingSafeEqual`）、`users_avatar_id` のインデックス、手順書の置き場所、プライバシー ポリシーを今の予告に含めること（決めたこと10） | 実装PR |
+| 2026-11-23 | レビューを反映：APP0 は JFIF の基本の部分だけを残す、`accept` の `friend` にも入る、`PUT` の404 | 実装PRのレビュー（security-reviewer・spec-reviewer） |
+| 2026-11-23 | 人のレビューを反映：鍵がないときはアイコンだけ null、`getHistoryNames`、APP14 の基本の部分を残す、縮めて読む、無効にするクエリを絞る、オンラインに戻ったら読み直す | 実装PRのレビュー（pryusei/kokohima-app#167） |

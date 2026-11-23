@@ -1,3 +1,4 @@
+import { AVATAR_GRACE_MS } from "../identity/application/avatar";
 import { RETENTION } from "@kokohima/shared";
 import { describe, expect, it } from "vitest";
 import { MAX_LENGTH_MS } from "../availability/domain/validation";
@@ -46,6 +47,11 @@ describe("保存期間の定数（T-19「9.」）", () => {
     expect(countsCutoffDay(Date.parse("2026-11-23T10:00:00Z"))).toBe("2026-11-20");
     expect(IMAGE_GRACE_MS).toBe(RETENTION.linkPreviewImageGraceHours * 60 * 60 * 1000);
     expect(IMAGE_GRACE_MS).toBe(60 * 60 * 1000);
+  });
+
+  it("アイコンの画像は参照がなくなって1時間（T-27）", () => {
+    expect(AVATAR_GRACE_MS).toBe(RETENTION.avatarImageGraceHours * 60 * 60 * 1000);
+    expect(AVATAR_GRACE_MS).toBe(60 * 60 * 1000);
   });
 
   it("行きたいを置いた記録は2日（T-22）", () => {

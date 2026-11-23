@@ -31,7 +31,7 @@
 - 確認の値 `"withdraw"` は、ほかの経路のつもりの要求や二重の押下で退会しないための目印。
 - `Idempotency-Key` は受け付けない（T-10 決定事項2の対象外の表に足す。2回目はセッションがないので401になり、何も変わらない）。
 - `GET /api/v1/me` は、退会した人（`withdrawn_at` あり）を404にする（T-01 の「404（退会の直後など）」）。
-- 履歴の相手のプロフィール `historyProfileSchema`＝`publicProfileSchema`（T-02）＋`withdrawn: boolean` を足し、誘い・募集・予定・お知らせの DTO で使う。退会した人は `withdrawn: true` で、名前とアイコンは null。友達に関わる応答（友達の一覧・ここ暇・招待）は今の `publicProfileSchema` のまま（`withdrawn` を出さない）。T-15 の `avatarId` が先に入っていれば、その形に合わせる。項目の追加なので互換は壊れない。
+- 履歴の相手のプロフィール `historyProfileSchema`＝`publicProfileSchema`（T-02）＋`withdrawn: boolean` を足し、誘い・募集・予定・お知らせの DTO で使う。退会した人は `withdrawn: true` で、名前とアイコンは null。友達に関わる応答（友達の一覧・ここ暇・招待）は今の `publicProfileSchema` のまま（`withdrawn` を出さない）。アイコンは `avatarUrl`（T-27 の署名つき URL。友達にだけ入る）。項目の追加なので互換は壊れない。
 - エラーの code に `reauth_required`（403）を足す（`api-conventions` スキルの表）。
 
 ## データ（マイグレーション：その時点の次の空いている番号）
@@ -42,7 +42,7 @@
 
 ### 入口を止める段（`POST /me/withdrawal` の中。1つの batch）
 D1 の batch は前の文の結果で後続を止められない（T-01）。どの文も何度実行しても同じ結果になる。`withdrawn_at` は最初の時刻を残す。
-- `users`：`withdrawn_at` を今に（`COALESCE(withdrawn_at, ?)`）、`display_name`・`avatar_url`（T-15 なら `avatar_id`）・`email` を NULL、`timezone` を初期値に。
+- `users`：`withdrawn_at` を今に（`COALESCE(withdrawn_at, ?)`）、`display_name`・`avatar_id`（T-27。画像は T-27 の掃除が消す）・`email` を NULL、`timezone` を初期値に。
 - 行を消す：`sessions`（更新用トークンも CASCADE で消える）、`user_identities`、`login_codes`、`invite_links`、`friendships`（両方向）、`sharing_policies`（両方向）、`presets`、`availabilities`、`recurrence_rules`（例外も）、`push_subscriptions`、`notification_preferences`、`notification_daily_counts`（本人の行）、`notifications`（本人あて）、`idempotency_keys`、`ics_tokens`、`calendar_oauth_states`、行きたい（本人の `wishes`。`wish_exclusions` と `link_preview_refs` の参照は CASCADE で消える。本人が見せない相手になっている `wish_exclusions`、本人の `wish_posts`。T-22。友達関係と同じ batch で消すので、相手からはすぐに見えなくなる）。
 - outbox の本人だけに関わる行を消す：`type IN ('SessionStarted','CalendarConnected','CalendarReauthRequired','AvailabilityCancelledByCalendar','ContactMessageSubmitted') AND json_extract(payload, '$.userId') = ?`（処理済み・未処理とも。端末の情報やここ暇の時刻、問い合わせの内容が入るため。`ContactMessageSubmitted` は T-24。まだ届けていない問い合わせも届かなくなる）。
 - outbox に `UserWithdrew` `{ userId, occurredAt }` を書く（後始末の段のきっかけ。dispatch の「常に流す型」に足す）。
@@ -82,7 +82,7 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 - 書き込みの経路は、すべて `requireActiveSession` を通す（セッションがないので401）。冪等キーの処理より前に置く。availability・invitation・notification・wish の経路は、`requireAuth` のあとに GET・HEAD 以外で確かめる `requireActiveSessionForWrites` をまとめて付ける。今 `requireAuth` だけで通っていた書き込みの経路：
   | context | 経路 |
   | --- | --- |
-  | identity | `PATCH /me` |
+  | identity | `PATCH /me`、`PUT`・`DELETE /me/avatar`（T-27） |
   | social | `POST /invite-links/:id/revoke`、`DELETE /friends/:friendId`、`apps/api/src/social/routes.ts` のそのほかの POST |
   | availability | `PUT /me/presets`、`POST`・`DELETE /availabilities`、`POST`・`DELETE /recurrence-rules`、`POST`・`DELETE /recurrence-rules/:id/exceptions` |
   | invitation | `POST /direct-invites`、`POST /direct-invites/:id/responses`、`POST /direct-invites/:id/decide`、`POST /broadcasts`、`POST`・`DELETE /broadcasts/:id/responses(/me)`、`POST /broadcasts/:id/decide`、`POST /meetups/:id/cancel` |
@@ -101,7 +101,7 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 
 ### 画面（設定のアカウント `/settings/account`）
 - 「退会する」のボタンを、ほかの操作から離して置く（T-11 で作らなかった欄）。
-- 押すと確認の画面：消えるもの（名前・ここ暇・友達・連携・お知らせ・書いたひとこと・行きたい）、相手の履歴には「退会したユーザー」と残ること、これからの予定は「やっぱり難しい」になること、取り消せないこと、直前にもう一度ログインすることを書く。「退会する」と「やめる」。
+- 押すと確認の画面：消えるもの（名前とアイコン・ここ暇・友達・連携・お知らせ・書いたひとこと・行きたい）、相手の履歴には「退会したユーザー」と残ること、これからの予定は「やっぱり難しい」になること、取り消せないこと、直前にもう一度ログインすることを書く。「退会する」と「やめる」。
 - 403 `reauth_required` なら、今と同じログインの方法へ移る（`returnTo=/settings/account?withdraw=1`）。別の方法でログインすると別の利用者になる（F-01）ので、方法は API が403 の本文の拡張の項目 `reauthProvider`（`google`・`apple`。ほかの方法なら null で、ログインの画面へ移す）で返す。戻ったら確認の画面をもう一度出す。確認の画面には今の表示名（「〇〇さんのアカウントを退会します」）を出し、違うアカウントで戻ってきたことに気づけるようにする。
 - 204 なら：この端末のプッシュの購読をブラウザでも解除し（T-01 のログアウトと同じ）、手元のアクセストークンと TanStack Query のキャッシュを消して、ログインの画面に「退会しました。」と静かに出す。
 - 401（応答が届かずに押し直した場合など）なら、ログインの画面へ（文言は出さない）。そのほかの失敗は「退会できませんでした。もう一度お試しください」（赤を使わない）。
@@ -175,5 +175,6 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 | 2026-11-22 | 実装済みに。履歴の相手のプロフィールを分ける（決定事項10）、`reauth_required` の code、`requireActiveSessionForWrites`、カレンダーの callback は保存の条件で止める、書き込みの条件に招待リンク・連携の state・公開設定・友達になるを足す、お知らせの文言と E2E の確かめ方 | 実装PR |
 | 2026-11-22 | 受信者が退会した `counter_proposed` は `skipped` にしない。退会と同時に進んだカレンダーの連携の callback は、保存できなければ受け取った許可を revoke して失敗にする。受け入れるリスクに参加者の数のずれを足す | 実装PRのレビュー（pryusei/kokohima-app#107） |
 | 2026-11-23 | 「残すもの」の誘い・募集・予定とお知らせも、終わってから・作ってから30日で消えることを書いた | T-17 実装PR（docs/specs/T-17-retention.md） |
+| 2026-11-23 | アイコンの列を `avatar_id` にした（T-27）。画像は入口を止める段で `avatar_id` を NULL にし、T-27 の掃除が1時間後に R2 から消す。確認画面の「消えるもの」を「名前とアイコン」に | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |
 | 2026-11-23 | 入口を止める段で行きたい（`wishes`・`wish_exclusions`・`wish_posts`）を消す、wish の書き込みの経路を `requireActiveSession` の表に足す、確認画面の「消えるもの」に行きたい | T-22 実装PR（docs/specs/T-22-wishlist.md） |
 | 2026-11-23 | 入口を止める段で消す outbox の型に `ContactMessageSubmitted` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |

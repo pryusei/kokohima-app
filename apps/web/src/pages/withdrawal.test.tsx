@@ -49,7 +49,7 @@ describe("退会", () => {
     const { calls } = mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/me": json(ME) });
     renderApp();
     const dialog = await openConfirm();
-    for (const text of ["名前", "友達", "カレンダーの連携", "お知らせ", "書いたひとこと・エリア・リンク", "行きたい"]) {
+    for (const text of ["名前とアイコン", "友達", "カレンダーの連携", "お知らせ", "書いたひとこと・エリア・リンク", "行きたい"]) {
       expect(within(dialog).getByText(text)).toBeVisible();
     }
     expect(within(dialog).getByText(/「退会したユーザー」と残ります/)).toBeVisible();

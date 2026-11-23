@@ -76,7 +76,7 @@ export function EveryonePage() {
             <ul className="flex flex-col">
               {items.map((item) => (
                 <li key={`${item.friend.id}|${item.startsAt}`} className="flex gap-2 border-b border-line py-3 last:border-b-0">
-                  <Avatar name={item.friend.displayName} />
+                  <Avatar name={item.friend.displayName} src={item.friend.avatarUrl} />
                   <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
                     <Link to={`/friends/${item.friend.id}`} className="font-bold text-ink no-underline">
                       {displayNameOf(item.friend.displayName)}

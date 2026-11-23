@@ -57,7 +57,7 @@ function FriendRow({ friend }: { friend: Friend }) {
   return (
     <li className="flex flex-col gap-1 border-b border-line py-2 last:border-b-0">
       <div className="flex items-center gap-2">
-        <Avatar name={friend.displayName} />
+        <Avatar name={friend.displayName} src={friend.avatarUrl} />
         <Link to={`/friends/${friend.id}`} className="min-w-0 flex-1 truncate font-bold text-ink no-underline">
           {name}
         </Link>

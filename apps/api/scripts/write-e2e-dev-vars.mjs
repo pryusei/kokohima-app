@@ -53,3 +53,8 @@ if (!readFileSync(path, "utf8").includes("VAPID_PRIVATE_KEY=")) {
 if (!readFileSync(path, "utf8").includes("CONTACT_SLACK_WEBHOOK_URL=")) {
   appendFileSync(path, "CONTACT_SLACK_WEBHOOK_URL=https://slack.e2e.invalid/services/e2e\n");
 }
+// T-27 より前に作ったファイルには、アイコンの画像の URL の署名の鍵を足す
+if (!readFileSync(path, "utf8").includes("AVATAR_URL_KEY=")) {
+  const avatarKey = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+  appendFileSync(path, `AVATAR_URL_KEY=${avatarKey}\n`);
+}

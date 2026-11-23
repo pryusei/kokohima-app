@@ -11,6 +11,10 @@ output "r2_bucket_name" {
   value = cloudflare_r2_bucket.ogp_images.name
 }
 
+output "avatars_bucket_name" {
+  value = cloudflare_r2_bucket.avatars.name
+}
+
 output "queue_names" {
   value = {
     outbox = cloudflare_queue.outbox.queue_name

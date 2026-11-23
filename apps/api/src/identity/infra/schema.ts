@@ -1,10 +1,11 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-// migrations/0001_identity.sql と一致させる
+// migrations/0001_identity.sql（と 0016_avatar.sql）と一致させる
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   displayName: text("display_name"),
-  avatarUrl: text("avatar_url"),
+  /** アイコンの画像（R2 の avatars/v1/<avatar_id>。T-27）。NULL ならなし */
+  avatarId: text("avatar_id"),
   email: text("email"),
   timezone: text("timezone").notNull().default("Asia/Tokyo"),
   createdAt: integer("created_at").notNull(),

@@ -18,7 +18,7 @@
   - 他人の表示名とアイコンは、`identity` の `getPublicProfiles(ids)` で取る。この関数は閲覧者の条件を持たないので、閲覧者で絞ったSQLの結果のID（友達一覧の相手、招待リンクの発行者）だけを渡す。パスやbodyのIDをそのまま渡さない（「データ取得は閲覧者IDを引数に取る」の例外。users を読むのは identity だけにするため）
   - 友達関係の確認は、閲覧者側の行（`user_id = 閲覧者`）で行う。両方向の行は `accept` の1つのバッチで一緒に書かれ、解除も1つのバッチで一緒に消すので、片方向の行は残らない。それでもT-03で「ここ暇を見せてよいか」を判定するときは、防御として両方向の行がそろっていることを条件にする
 - 認証は T-01 の `requireAuth` を使い、閲覧者IDは `c.var.viewer.userId` からだけ得る
-- 他人の情報は公開プロフィール（`id`、`displayName`、`avatarUrl`）だけを返す（api-conventions）。履歴の相手（誘い・募集・予定・お知らせ）には、退会したかの `withdrawn` を足した `historyProfileSchema` を使う（T-16）。友達に関わる応答には `withdrawn` を出さない
+- 他人の情報は公開プロフィール（`id`、`displayName`、`avatarUrl`）だけを返す（api-conventions）。`avatarUrl` は署名つきの URL で、閲覧者自身・友達・招待リンクの発行者（`lookup`・`accept`）にだけ入り、それ以外は `null`（T-27）。そのため `getPublicProfiles`・`getHistoryProfiles` は閲覧者 ID を取り、招待の受け口は `getInviterProfile` を使う。履歴の相手（誘い・募集・予定・お知らせ）には、退会したかの `withdrawn` を足した `historyProfileSchema` を使う（T-16）。友達に関わる応答には `withdrawn` を出さない
 
 ## API
 `api-conventions` スキルに従う。例外は「例外」の欄に書く。
@@ -220,3 +220,4 @@
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-23 | 期限から30日を過ぎた招待リンクの掃除と、その無効化が404になること、友達の解除で両方向の「見せる」の公開設定を消すこと（「見せない」は残す）を足した | T-17 実装PR（docs/specs/T-17-retention.md） |
 | 2026-11-23 | 招待リンクの受け口に、利用規約とプライバシー ポリシーへのリンクを足した | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
+| 2026-11-23 | 公開プロフィールの `avatarUrl` を T-27 の署名つき URL にし、入る相手を書いた | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |

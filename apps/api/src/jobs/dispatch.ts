@@ -11,6 +11,7 @@ import {
 import { NOTIFICATION_ONLY_TYPES } from "../notification/domain/events";
 import { deleteExpiredIdempotencyKeys } from "../shared/idempotency";
 import { cleanupLinkPreviews } from "../link-preview/application/previews";
+import { cleanupAvatars } from "../identity/application/avatar";
 import { deleteExceptionsBefore, deleteManualStartedBefore } from "../availability/infra/repository";
 import { deleteInvitesEndedBefore } from "../invitation/infra/repository";
 import { deleteBroadcastsEndedBefore } from "../invitation/infra/broadcastRepository";
@@ -146,6 +147,7 @@ export async function cleanupExpired(ctx: Ctx) {
   await runStep("cleanup_idempotency_keys", () => deleteExpiredIdempotencyKeys(d1, now));
   await runCappedStep("cleanup_notifications", NOTIFICATION_CLEANUP_BATCH, () => cleanupNotifications(ctx));
   await runStep("cleanup_link_previews", () => cleanupLinkPreviews(ctx));
+  await runStep("cleanup_avatars", () => cleanupAvatars(ctx));
   await runStep("cleanup_outbox", () => deleteProcessedOutbox(d1, now - OUTBOX_RETENTION_MS, CLEANUP_BATCH));
   await runStep("cleanup_availabilities", () =>
     deleteManualStartedBefore(d1, now - AVAILABILITY_RETENTION_MS, CLEANUP_BATCH),

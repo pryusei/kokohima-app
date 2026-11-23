@@ -112,7 +112,7 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
       parent="/friends"
       title={
         <div className="flex items-center gap-4">
-          {friend.data && <Avatar name={friend.data.displayName} size="l" />}
+          {friend.data && <Avatar name={friend.data.displayName} src={friend.data.avatarUrl} size="l" />}
           <h2 className="text-xl font-bold">{name}</h2>
         </div>
       }

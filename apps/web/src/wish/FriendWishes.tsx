@@ -30,7 +30,7 @@ export function FriendWishes() {
       <ul aria-label="友達の行きたい" className="flex flex-col">
         {groups.map((group) => (
           <li key={group.friend.id} className="flex gap-2 border-b border-line py-3 last:border-b-0">
-            <Avatar name={group.friend.displayName} />
+            <Avatar name={group.friend.displayName} src={group.friend.avatarUrl} />
             <div className="flex min-w-0 flex-1 flex-col">
               <Link to={`/friends/${group.friend.id}`} className="font-bold text-ink no-underline">
                 {displayNameOf(group.friend.displayName)}

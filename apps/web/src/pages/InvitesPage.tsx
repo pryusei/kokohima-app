@@ -41,6 +41,7 @@ function InviteList({ box }: { box: "received" | "sent" }) {
             <InviteCard
               to={`/invites/${invite.id}`}
               avatarName={invite.counterpart.displayName}
+              avatarUrl={invite.counterpart.avatarUrl}
               title={box === "sent" ? `${honorificOf(invite.counterpart)}へ` : name}
               subtitle={KIND_LABELS[invite.kind]}
               when={formatRange(invite)}
@@ -69,6 +70,7 @@ function BroadcastList({ box }: { box: "received" | "sent" }) {
             <BroadcastCard
               to={`/broadcasts/${b.id}`}
               avatarName={box === "received" ? b.owner.displayName : null}
+              avatarUrl={box === "received" ? b.owner.avatarUrl : null}
               title={box === "received" ? `${honorificOf(b.owner)}の募集` : "暇な人いる？"}
               subtitle={box === "received" ? "暇な人いる？" : "自分の募集"}
               when={formatRange(b)}
@@ -107,6 +109,7 @@ function MeetupList() {
           <InviteCard
             to={`/meetups/${m.id}`}
             avatarName={m.participants[0]?.displayName ?? null}
+            avatarUrl={m.participants[0]?.avatarUrl ?? null}
             title={m.participants.map(nameOfProfile).join("・")}
             subtitle="予定"
             when={formatRange(m)}

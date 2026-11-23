@@ -21,6 +21,12 @@ resource "cloudflare_r2_bucket" "ogp_images" {
   name       = "kokohima-${var.env}-ogp-images"
 }
 
+# アイコンの画像（docs/specs/T-27-avatar-upload.md「データ」）。リンクのプレビューの画像とは分ける
+resource "cloudflare_r2_bucket" "avatars" {
+  account_id = var.account_id
+  name       = "kokohima-${var.env}-avatars"
+}
+
 resource "cloudflare_queue" "outbox" {
   account_id = var.account_id
   queue_name = "kokohima-${var.env}-outbox"

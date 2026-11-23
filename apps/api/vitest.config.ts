@@ -51,6 +51,8 @@ export default defineProject({
           APPLE_LOGIN_ENABLED: "1",
           // 問い合わせ（T-24）。偽の値（本物の Slack には送らない。fetch はテストで差し替える）
           CONTACT_SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/TEST/TEST/test",
+          // アイコンの画像の URL の署名の鍵（T-27）。テスト専用
+          AVATAR_URL_KEY: "YXZhdGFyLXRlc3Qta2V5LWF2YXRhci10ZXN0LWtleSE",
         },
       },
     })),

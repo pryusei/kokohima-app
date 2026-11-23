@@ -11,6 +11,7 @@ import { Link } from "../ui/Link";
 import { Section, SubScreen } from "../ui/Navigation";
 import { useOnline } from "../ui/online";
 import { PresetForm } from "../availability/PresetForm";
+import { AvatarForm } from "../account/AvatarForm";
 import { DisplayNameForm } from "../account/DisplayNameForm";
 import { displayNameOf, meQuery } from "../account/me";
 import { isContactOpenNow } from "../contact/open";
@@ -41,11 +42,11 @@ export function SettingsPage() {
   return (
     <SubScreen title="設定" back="/friends">
       <div className="flex items-center gap-4 py-2">
-        <Avatar name={me.data?.displayName ?? null} size="l" />
+        <Avatar name={me.data?.displayName ?? null} src={me.data?.avatarUrl ?? null} size="l" />
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-l font-bold">{me.data ? (me.data.displayName ?? "表示名は未設定です") : ""}</span>
           <Link to="/settings/account" className="text-s text-action underline">
-            表示名を変える
+            表示名・アイコンを変える
           </Link>
         </div>
       </div>
@@ -129,7 +130,7 @@ function WithdrawSection({ reopen, name }: { reopen: boolean; name: string | nul
             {name !== null && <p className="font-bold">{name}さんのアカウントを退会します。</p>}
             <p>退会すると、次のものが消えます。</p>
             <ul className="list-disc pl-6">
-              <li>名前</li>
+              <li>名前とアイコン</li>
               <li>ここ暇（空いている時間）</li>
               <li>友達</li>
               <li>カレンダーの連携</li>
@@ -184,6 +185,9 @@ export function AccountSettingsPage({ search = "" }: { search?: string }) {
         <div className="rounded-l bg-surface p-4 shadow-card">
           {me.data && <DisplayNameForm initial={me.data.displayName ?? ""} />}
         </div>
+      </Section>
+      <Section title="アイコン">
+        <div className="rounded-l bg-surface p-4 shadow-card">{me.data && <AvatarForm me={me.data} />}</div>
       </Section>
       <Section title="ログアウト" ref={logoutSection}>
         <div className="flex flex-col gap-2 rounded-l bg-surface p-4 shadow-card">
