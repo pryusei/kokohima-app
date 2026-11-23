@@ -33,6 +33,8 @@ describe("lazyPage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("読み込めませんでした。通信状態を確認して、もう一度お試しください");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "もう一度" })).toBeVisible();
+    // この画面の操作は「もう一度」だけなので、押しやすい大きさ m（高さ44px）
+    expect(screen.getByRole("button", { name: "もう一度" })).toHaveClass("min-h-11");
   });
 
   it("「もう一度」でページを読み直す", async () => {

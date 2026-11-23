@@ -9,7 +9,7 @@ import { LoadError } from "./feedback";
 export function ChunkLoadError({ reload = () => window.location.reload() }: { reload?: () => void }) {
   return (
     <main className="mx-auto max-w-md p-6">
-      <LoadError text="読み込めませんでした。通信状態を確認して、もう一度お試しください" retry={reload} />
+      <LoadError text="読み込めませんでした。通信状態を確認して、もう一度お試しください" retry={reload} retrySize="m" />
     </main>
   );
 }
