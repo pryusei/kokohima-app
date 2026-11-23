@@ -30,6 +30,17 @@ function createErrorText(error: unknown) {
   return "置けませんでした。通信状態を確認して、もう一度お試しください";
 }
 
+/** 外す人のうち、今の友達の一覧にいる人だけ */
+const onlyFriends = (ids: string[], friends: Friend[] | undefined) => {
+  const current = new Set((friends ?? []).map((f) => f.id));
+  return ids.filter((id) => current.has(id));
+};
+
+/** 404（友達でない人が含まれていた）なら、友達の一覧を読み直して選び直せるようにする */
+function reloadFriendsOn404(queryClient: ReturnType<typeof useQueryClient>, error: unknown) {
+  if (error instanceof ApiError && error.status === 404) void queryClient.invalidateQueries({ queryKey: keys.friends.all() });
+}
+
 /** 外す人を選ぶ一覧。excluded にある人のチェックが外れている（見せない） */
 function AudiencePicker({
   friends,
@@ -82,7 +93,8 @@ function AddWishSheet({ onClose }: { onClose: () => void }) {
         message,
         area: area.trim() === "" ? null : area,
         url: url.trim() === "" ? null : url.trim(),
-        excludedUserIds: choosing ? excluded : [],
+        // 今の友達の一覧にいる人だけを送る（外したあとに友達でなくなった人が残ると、404が直らない）
+        excludedUserIds: choosing ? onlyFriends(excluded, friends.data) : [],
       };
       const path = "/api/v1/wishes";
       return apiSend("POST", path, body, wishSchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, body)) });
@@ -92,6 +104,7 @@ function AddWishSheet({ onClose }: { onClose: () => void }) {
       void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
       onClose();
     },
+    onError: (error) => reloadFriendsOn404(queryClient, error),
   });
 
   return (
@@ -156,11 +169,13 @@ function AudienceSheet({ wish, onClose }: { wish: Wish; onClose: () => void }) {
   const restored = initial.some((id) => !excluded.includes(id));
 
   const save = useMutation({
-    mutationFn: () => apiSend("PUT", `/api/v1/wishes/${wish.id}/exclusions`, { userIds: excluded }, wishSchema),
+    mutationFn: () =>
+      apiSend("PUT", `/api/v1/wishes/${wish.id}/exclusions`, { userIds: onlyFriends(excluded, friends.data) }, wishSchema),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
       onClose();
     },
+    onError: (error) => reloadFriendsOn404(queryClient, error),
   });
 
   return (

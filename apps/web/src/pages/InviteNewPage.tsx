@@ -1,6 +1,5 @@
 import {
   directInviteSchema,
-  friendPageSchema,
   isValidInviteRange,
   type ExpiresIn,
   type PresetName,
@@ -8,7 +7,7 @@ import {
 } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { apiGet, apiSend } from "../api/client";
+import { apiSend } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import {
@@ -25,6 +24,7 @@ import { SheetScreen } from "../ui/BottomSheet";
 import { Badge } from "../ui/Badge";
 import { buttonClass, SendButton } from "../ui/Button";
 import { inputClass, labelClass } from "../ui/form";
+import { everyFriendQuery } from "../account/friends";
 import { displayNameOf, meQuery } from "../account/me";
 import { Loading } from "../ui/feedback";
 import { wishQuery } from "../wish/queries";
@@ -85,7 +85,8 @@ function InviteForm({ initial }: { initial: Initial }) {
   const [message, setMessage] = useState(initial.message);
   const [url, setUrl] = useState(initial.url);
   const [expiresIn, setExpiresIn] = useState<ExpiresIn>("until_start");
-  const friends = useQuery({ queryKey: keys.friends.list(), queryFn: () => apiGet("/api/v1/friends", friendPageSchema) });
+  // 友達全員を読む（行きたいの持ち主や ?friend の相手が1ページ目にいなくても、「相手」に名前が出るように）
+  const friends = useQuery(everyFriendQuery());
   const presets = useQuery(presetsQuery());
   const range = rangeOf(date, start, end);
   const validRange =
@@ -134,7 +135,7 @@ function InviteForm({ initial }: { initial: Initial }) {
           相手
           <select className={inputClass} value={friendId} onChange={(e) => setFriendId(e.target.value)}>
             <option value="">選んでください</option>
-            {friends.data?.items.map((f) => (
+            {friends.data?.map((f) => (
               <option key={f.id} value={f.id}>
                 {displayNameOf(f.displayName)}
               </option>

@@ -179,6 +179,22 @@ describe("自分の行きたい（ここ暇のタブ）", () => {
     expect(await screen.findByText("行きたいはまだありません")).toBeVisible();
   });
 
+  it("見せる相手：今の友達の一覧にいない人は送らない（友達でなくなった人が残っても404にならない）", async () => {
+    const { calls } = availabilityTab({
+      "/api/v1/wishes": json({ items: [wish({ excludedUsers: [profile(uuid(2), "友2"), profile(uuid(3), "元友")] })], nextCursor: null }),
+      [`/api/v1/wishes/${WISH_ID}/exclusions`]: json(wish()),
+    });
+    renderApp();
+    const list = await screen.findByRole("list", { name: "自分の行きたい" });
+    await userEvent.click(within(list).getByRole("button", { name: "見せる相手" }));
+    const dialog = await screen.findByRole("dialog", { name: "見せる相手" });
+    await within(dialog).findByLabelText("友1");
+    await userEvent.click(within(dialog).getByRole("button", { name: "保存する" }));
+    await waitFor(() => expect(calls.some((c) => c.init.method === "PUT")).toBe(true));
+    const put = calls.find((c) => c.init.method === "PUT");
+    expect(JSON.parse(String(put?.init.body))).toEqual({ userIds: [uuid(2)] });
+  });
+
   it("見せる相手：外していた人を戻すときに注意を出し、一覧ごと送る", async () => {
     const { calls } = availabilityTab({
       "/api/v1/wishes": json({ items: [wish({ excludedUsers: [profile(uuid(2), "友2")] })], nextCursor: null }),
@@ -291,6 +307,20 @@ describe("作成画面の ?wish=<id>", () => {
     await waitFor(() => expect(screen.getByLabelText("相手")).toHaveValue(FRIEND));
     expect(screen.getByLabelText("エリア（任意）")).toHaveValue("渋谷");
     expect(screen.getByLabelText("リンク（任意）")).toHaveValue("https://example.com/ramen");
+  });
+
+  it("誘い：持ち主が友達の一覧の2ページ目にいても、「相手」に名前が出る", async () => {
+    invitePage(`?wish=${WISH_ID}`, {
+      "/api/v1/friends": [
+        json({ items: [friend(2, "はる")], nextCursor: "next" }),
+        json({ items: [friend(1, "あき")], nextCursor: null }),
+      ],
+      [`/api/v1/wishes/${WISH_ID}`]: json(friendsWish()),
+    });
+    renderApp();
+    expect(await screen.findByDisplayValue("〇〇のラーメン行きたい")).toBeVisible();
+    await waitFor(() => expect(screen.getByLabelText("相手")).toHaveValue(FRIEND));
+    expect(within(screen.getByLabelText("相手")).getByRole("option", { name: "あき" })).toBeInTheDocument();
   });
 
   it("誘い：自分の行きたいなら、宛先は ?friend のまま", async () => {

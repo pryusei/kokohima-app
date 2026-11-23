@@ -51,6 +51,8 @@ function Settings({ friend }: { friend: Friend }) {
       queryClient.removeQueries({ queryKey: keys.friends.detail(friend.id) });
       void queryClient.invalidateQueries({ queryKey: keys.friends.all() });
       void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
+      // 解除した友達の行きたいが「みんな」に残らないように（T-22）
+      void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
     },
     onError: () => setFailed(true),
   });
