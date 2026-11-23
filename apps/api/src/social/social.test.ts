@@ -451,6 +451,29 @@ describe("友達になる（accept）", () => {
     expect((await friendsOf(b)).items).toHaveLength(0);
   });
 
+  it("表示名が未設定なら409で、友達にならず、人数を消費せず、招待Cookieを消さない。名前を決めると友達になれる（T-31）", async () => {
+    const a = await user("あき");
+    const b = await user(null);
+    const link = await createLink(a, { maxUses: 1 });
+    const res = await accept(b, link.token, link.id);
+    expect(res.status).toBe(409);
+    expect(problemSchema.parse(await res.json()).code).toBe("invalid_state");
+    expect(cookieValue(res, "__Host-kh_invite")).toBeUndefined();
+    expect((await friendsOf(b)).items).toHaveLength(0);
+    expect((await dbAll<{ uses: number }>("SELECT uses FROM invite_links WHERE id = ?", link.id))[0]?.uses).toBe(0);
+
+    expect((await call("PATCH", "/api/v1/me", { token: b.token, body: { displayName: "ゆう" } })).status).toBe(200);
+    expect((await accept(b, link.token, link.id)).status).toBe(201);
+    expect((await friendsOf(a)).items.map((f) => f.displayName)).toEqual(["ゆう"]);
+  });
+
+  it("表示名が未設定でも、使えないリンク（招待Cookieなし）は今のとおり404（T-31）", async () => {
+    const a = await user();
+    const b = await user(null);
+    const link = await createLink(a);
+    expect((await accept(b, undefined, link.id)).status).toBe(404);
+  });
+
   it("Origin がない・別のOriginなら401", async () => {
     const link = await createLink(await user());
     const b = await user();

@@ -82,6 +82,9 @@ export function socialRoutes() {
       case "own_link":
         clearInviteCookie(c);
         return problemFrom(c, 409, "invalid_state", "Own invite link");
+      case "display_name_required":
+        // 名前を決めてから同じ画面でやり直せるよう、招待Cookieは消さない（T-31）
+        return problemFrom(c, 409, "invalid_state", "Display name required");
       case "not_found":
         // 表示したリンクと違う（別のタブで上書きされた）ときは、正しいタブから続けられるよう消さない
         if (!result.keepCookie) clearInviteCookie(c);
