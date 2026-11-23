@@ -239,13 +239,14 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 ### アクセストークンの取得と失効の検知
 - アクセストークンは、使うたびに更新用トークンで取る。同じ処理の中では使い回す。
 - トークンエンドポイントが `invalid_grant` を返したら、連携が失効したとして扱う。
-  - 書き方：`WHERE status = 'active'` の条件付き UPDATE で、`status = 'needs_reauth'`、`refresh_token_enc = NULL` にする。埋まりの記録と確認の権利も消す（連携し直すまで使わないため）。
+  - 書き方：`WHERE status = 'active'` の条件付き UPDATE で、`status = 'needs_reauth'`、`refresh_token_enc = NULL` にする。埋まりの記録と確認の権利も消す（連携し直すまで使わないため）。退会した人（`withdrawn_at` あり）の連携は変えず、次の outbox も書かない（T-16。入口を止める段のあとに書いた行は消されずに残るため）。
   - outbox に `CalendarReauthRequired`（`{ userId, provider, occurredAt }`）を書く。通知は T-07。
   - それ以外の失敗は一時的な失敗として扱い、再試行する。
 - `active` でない人については、候補・確認・書き込みのどれでもGoogleを呼ばない。
 
 ### カレンダーの空き（候補）
 1. 連携が `active` でなければ、`status` を `none` か `needs_reauth` にして、空で返す。
+   - 退会した人（`withdrawn_at` あり）は、連携の行が後始末の段まで残っていても、連携していない扱いで `none` を返し、Google を呼ばない（読み取りの条件に `withdrawn_at IS NULL` を入れる。T-16「退会のあとのアクセストークン」）。
 2. availability の application で候補の枠を作る。
    - `from`〜`to` を閲覧者のタイムゾーンの日付に分け、日付ごとに閲覧者の今のプリセット（昼・夕方・夜）の枠を作る（T-03 と同じ変換）。
    - 開始が現在以前の枠と、開始が60日より先の枠は外す。T-03 では作れないため。
@@ -274,6 +275,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 #### consumer の手順
 1. 確認の権利を取る。
    - 書き方：`UPDATE calendar_connections SET sync_lease_until = now + 5分 WHERE user_id = ? AND provider = ? AND status = 'active' AND dormant_since IS NULL AND (sync_lease_until IS NULL OR sync_lease_until < now) RETURNING ...`。
+   - 退会した人の連携は取れない。条件に `EXISTS (SELECT 1 FROM users u WHERE u.id = user_id AND u.withdrawn_at IS NULL)` を足す（退会より前に割り当てて Queue に残っていた確認で、Google を呼ばない。T-16）。記録を進める文にも同じ条件を足す（確認の途中で退会した場合）。
    - 0行なら何もしない（休眠中も取れない。T-17）。
 2. 範囲 `[now, now + 60日)` の埋まりを、freeBusy.query（`primary`）で取る。60日にするのは、ここ暇を作れるのが60日先までのため（T-03）。
    - 候補と同じ条件で失敗を判定する（HTTP の失敗、タイムアウト、`primary` がない、`errors` がある）。
@@ -693,3 +695,4 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | 2026-11-21 | 確認の割り当てを最大1000件に、outbox の送出を1回の実行で最大10回の繰り返しにし、処理済みの行の掃除と Cron の各処理の独立を足す | docs/specs/T-12-data-growth.md |
 | 2026-11-21 | Cron の動いた記録、`job_failed`・`job_dead_lettered` を warn で出すことを書いた | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
 | 2026-11-23 | 休眠中の連携（判定、割り当ての条件とインデックス、埋まりの記録を消す、確認の権利・記録・保留の文の条件、ログインと15分ごとに戻す、連携し直しで休眠を外す）と、`ics_tokens (meetup_id)` のインデックスを足した | T-17 実装PR（docs/specs/T-17-retention.md） |
+| 2026-11-23 | 退会した人の連携は、確認の権利・記録を進める文・失効の検知（`needs_reauth` と `CalendarReauthRequired`）・候補で扱わない（候補は `none`）と書いた | pryusei/kokohima-app#114 |
