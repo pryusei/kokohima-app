@@ -4,6 +4,12 @@
 variable "zone_id" {
   type        = string
   description = "kokohima.app のゾーン ID（秘密ではないが、アカウントの ID と同じく実値はコミットしない）"
+
+  # CI の秘密 CLOUDFLARE_ZONE_ID が未登録だと空の文字列が渡り、plan だけは通ってしまう。ここで止める
+  validation {
+    condition     = can(regex("^[0-9a-f]{32}$", var.zone_id))
+    error_message = "zone_id は kokohima.app のゾーン ID（32文字の16進数）を渡す。"
+  }
 }
 
 locals {
