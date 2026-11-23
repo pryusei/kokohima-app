@@ -5,12 +5,12 @@
 - 関係する要件：F-01、NF-04、要求定義書「セキュリティ設計 › 認証とセッション」「テスト環境の認証」
 
 ## 概要
-GoogleまたはSign in with Appleでログインし、再読み込みしてもログインが続くようにする。
+GoogleまたはSign in with Appleでログインし、再読み込みしてもログインが続くようにする。最初のリリースでは Apple を設定値 `APPLE_LOGIN_ENABLED` で止め、Google だけにする（docs/specs/T-12-release.md）。
 API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を処理し、短命のアクセストークン（JWT、メモリのみ）と、ローテーションする更新用トークン（HttpOnly Cookie、D1にはハッシュのみ）を発行する。
 以降のすべてのAPIが、認証済みの閲覧者IDを安全に受け取れるミドルウェアを用意する。
 
 ## 前提
-- PWAとAPIは同じオリジンで配信する（例：`https://<アプリのドメイン>` の `/api/*` をAPI Workerにルーティング）。CORSは設定しない。ローカルではviteが `/api` をwrangler devへ中継し、同じオリジンになる（決定事項1）
+- PWAとAPIは同じオリジンで配信する（`https://kokohima.app` の1つの Worker が、`/api/*` を API、それ以外を画面の静的アセットとして返す。docs/specs/T-12-release.md）。CORSは設定しない。ローカルではviteが `/api` をwrangler devへ中継し、同じオリジンになる（決定事項1）
 - コンテキストは `identity`。`apps/api/src/identity/{domain,application,infra}` に置く
 
 ## API
@@ -159,7 +159,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 - APIクライアントで、401の後の更新が通信エラー・5xxだったときも、ログアウトにはしない（失敗として返す）
 - 画面（仮）：
 - 最終的な見た目と画面のつながりは T-11（docs/specs/T-11-design.md）で置き換えた。下の記述は機能の決まりとして残し、置き場所が変わったものは注記する。
-  - ログイン画面（`/login`）：「Googleでログイン」「Appleでログイン」のボタン（`/api/v1/auth/<provider>/start?returnTo=...` への画面遷移）。`error=login_failed` のときは静かな文言で「ログインできませんでした。もう一度お試しください」を表示する（赤を使わない）
+  - ログイン画面（`/login`）：「Googleでログイン」「Appleでログイン」のボタン（「Appleでログイン」はビルドのときの変数 `VITE_APPLE_LOGIN_ENABLED` が `"1"` のときだけ。本番のビルドでは出さない。T-12）（`/api/v1/auth/<provider>/start?returnTo=...` への画面遷移）。`error=login_failed` のときは静かな文言で「ログインできませんでした。もう一度お試しください」を表示する（赤を使わない）。ボタンの下に「続けると利用規約とプライバシー ポリシーに同意したことになります」（`/terms`・`/privacy` へのリンク）を出す（T-19。チェックボックスと同意の記録はない）
   - ログイン後の仮のホーム（`/`）：「ログイン中」の表示、「ログアウト」「すべての端末からログアウト」のボタン（T-03 で友達タブへ、T-11 で設定のアカウント `/settings/account` へ移した）
   - 未ログインで `/` を開いたら `/login` へ。最終的なデザインはデザインのタスクで差し替える
 
@@ -170,9 +170,10 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `GOOGLE_CLIENT_ID`、`APPLE_CLIENT_ID`（Services ID）、`APPLE_TEAM_ID`、`APPLE_KEY_ID` | vars | 公開されてよい識別子 |
 | `GOOGLE_CLIENT_SECRET`、`APPLE_PRIVATE_KEY`、`JWT_SIGNING_KEYS` | secret | `wrangler secret` でのみ設定。ローカルは `.dev.vars`（コミットしない） |
 | `JWT_CURRENT_KID` | vars | 署名に使う鍵ID |
+| `APPLE_LOGIN_ENABLED` | vars | `"1"` のときだけ Apple の経路が動く。ほかの値は止める（start は `/login?error=login_failed` への303、callback は404。docs/specs/T-12-release.md）。prod は `"0"` |
 
-- ローカルの `http://localhost` では、ChromeとFirefoxがSecure Cookieと `__Host-` を許可するため、本番と同じCookie設定のまま動かす。Safari（WebKit）は許可しないため、ローカルの確認とE2EはChromium（とFirefox）で行い、Safariはstagingで確認する
-- Appleはリダイレクト先に `localhost` や `http` を登録できない。Appleのログインはローカルでは確かめられないため、stagingで人が手動で確認する（Googleはローカルでも確認できる）
+- ローカルの `http://localhost` では、ChromeとFirefoxがSecure Cookieと `__Host-` を許可するため、本番と同じCookie設定のまま動かす。Safari（WebKit）は許可しないため、ローカルの確認とE2EはChromium（とFirefox）で行い、Safariは本番（staging は作らない。T-12）で人が確認する
+- Appleはリダイレクト先に `localhost` や `http` を登録できない。Appleのログインはローカルでは確かめられないため、動かすときに本番に近い環境で人が手動で確認する（最初のリリースでは Apple を止め、staging も作らない。T-12）。Googleはローカルでも確認できる
 
 ### E2E用のテスト用ログイン
 - `POST /__e2e__/login` を `apps/api/src/e2e/` に実装し、`src/e2e/entry.ts` からだけ読み込む（本番のエントリからの読み込みはESLintで禁止済み）
@@ -278,4 +279,5 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | 2026-11-21 | 失効・期限切れから30日を過ぎた `sessions`・`refresh_tokens` の掃除を実装した（利用者ごとに最初のセッションを残す） | セキュリティの点検（pryusei/kokohima-app#54） |
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-23 | ログインでセッションを作る batch で休眠中のカレンダーの連携を戻すこと、休眠の判定に `last_used_at` を使うことを足した | T-17 実装PR（docs/specs/T-17-retention.md） |
+| 2026-11-23 | ログイン画面に、利用規約とプライバシー ポリシーへの同意の1行を足した | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
 | 2026-11-23 | 交換に負けたやり直しで再利用と判定したときは失効させず、`replaced_by` をたどった先の未使用のトークンを印なしで救済する（`decideRacedRefresh`。3つ以上の更新が同時に来ると、正規の利用者のセッションが失効していたため）。残る制限（最初の応答のCookieだけが残った場合）を明記 | pryusei/kokohima-app#115 |

@@ -2,6 +2,7 @@ import { createApp, defaultDeps } from "./app";
 import { DORMANCY_BATCH, markDormantConnections, wakeDormantConnections } from "./calendar/application/dormancy";
 import { assignSyncs } from "./calendar/application/sync";
 import type { AppDeps, Bindings, JobMessage } from "./env";
+import { isApiPath, withApiHeaders, withPageHeaders } from "./http/securityHeaders";
 import { handleBatch } from "./jobs/consumer";
 import { cleanupExpired, dispatchOutbox, recordCronRun, runCappedStep, runStep } from "./jobs/dispatch";
 import {
@@ -34,6 +35,24 @@ export async function runScheduled(cron: string, env: Bindings, deps: AppDeps) {
   await runStep("heartbeat", () => recordCronRun(env.DB, "minutely", deps.now()));
 }
 
+/**
+ * 要求の振り分け（docs/specs/T-12-release.md「振り分け」）。`/api/` は API、それ以外は画面の静的アセット（ASSETS があるとき）。
+ * ASSETS がない環境（ローカル・E2E・単体テスト）は、今までどおりすべて API のアプリが受ける。どの応答にもセキュリティのヘッダーを付ける
+ */
+export async function routeRequest(
+  app: { fetch: (req: Request, env: Bindings, ctx: ExecutionContext) => Response | Promise<Response> },
+  request: Request,
+  env: Bindings,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const { pathname } = new URL(request.url);
+  if (isApiPath(pathname) || !env.ASSETS) return withApiHeaders(await app.fetch(request, env, ctx));
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return withPageHeaders(pathname, new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } }));
+  }
+  return withPageHeaders(pathname, await env.ASSETS.fetch(request));
+}
+
 export function createWorker(overrides: Partial<AppDeps> = {}) {
   const deps: AppDeps = { ...defaultDeps(), ...overrides };
   const app = createApp(deps);
@@ -41,7 +60,7 @@ export function createWorker(overrides: Partial<AppDeps> = {}) {
     app,
     deps,
     handler: {
-      fetch: app.fetch,
+      fetch: (request, env, ctx) => routeRequest(app, request, env, ctx),
       scheduled: async (event, env, ctx) => {
         ctx.waitUntil(runScheduled(event.cron, env, deps));
       },

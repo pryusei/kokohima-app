@@ -13,13 +13,28 @@ export default defineConfig({
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: /release\.spec\.ts/ },
+    // 本番と同じ形（ビルドした画面を同じ Worker の静的アセットとして出す）で、CSP の違反がないかを確かめる（docs/specs/T-12-release.md）
+    {
+      name: "release",
+      use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:8788" },
+      testMatch: /release\.spec\.ts/,
+    },
+  ],
   webServer: [
     {
       command: "pnpm --filter api dev:e2e --port 8787",
       url: "http://localhost:8787/api/v1/health",
       reuseExistingServer: !isCI,
       timeout: 120_000,
+    },
+    {
+      // 画面をビルドし、本番と同じエントリ（src/index.ts）と静的アセットで wrangler dev を起動する（テスト用ログインの経路はない）
+      command: "pnpm --filter api dev:assets",
+      url: "http://localhost:8788/api/v1/health",
+      reuseExistingServer: !isCI,
+      timeout: 180_000,
     },
     {
       command: "E2E=1 pnpm --filter web dev",

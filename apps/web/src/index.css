@@ -134,6 +134,17 @@
       0 0 0 2px var(--color-surface),
       0 0 0 4px var(--color-focus);
   }
+  /* iPhone の Safari の日付・時刻の入力欄は、標準の見た目のままだと中身の幅で広がり、シートの右にはみ出す。
+     見た目の指定を外して幅を親に合わせ、値は左に寄せる（docs/specs/T-11-design.md「画面のつながり」） */
+  input[type="date"],
+  input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+  }
+  ::-webkit-date-and-time-value {
+    text-align: left;
+  }
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
