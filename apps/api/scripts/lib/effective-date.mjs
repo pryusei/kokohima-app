@@ -200,16 +200,19 @@ export function contactStartProblems(texts, { startDate, deploy, today, noticeAl
     if (!sameDay) problems.push(mismatch);
     if (notices !== 1) {
       problems.push(`問い合わせの公開の日（${format(start)}）より前なのに、予告の行（「公表日：」）がありません（${LEGAL_TS} の REVISION_NOTICE_LINE で前もって知らせる）`);
-    } else if (noticeAlreadyPublished !== false && production?.notice !== true) {
-      // 予告がもう出ている（か、本番を読めなかった）のに、本番の予告に問い合わせの行がない
+    } else if (noticeAlreadyPublished === undefined || production === undefined) {
+      problems.push("本番の画面を読めなかったので、予告の途中で問い合わせを足していないかを確かめられません");
+    } else if (noticeAlreadyPublished && !production.notice) {
+      // 予告がもう出ているのに、本番の予告に問い合わせの行がない
       problems.push(
         `予告がもう本番に出ているのに、本番の「この改定で変わるところ」に問い合わせの行がありません（予告の途中で問い合わせを足すと予告が短くなる。公表日のデプロイで一緒に出すか、今の予告が終わってから次の改定にする。docs/specs/T-24-contact.md「10.」）`,
       );
     }
     return problems;
   }
-  if (notices > 0 && !sameDay && production?.policy !== true) {
-    problems.push(`${mismatch}。問い合わせがまだ本番のプライバシー ポリシーにないまま、問い合わせを始める日を過ぎています`);
+  if (notices > 0 && !sameDay) {
+    if (production === undefined) problems.push(`${mismatch}。本番の画面を読めなかったので、問い合わせがもう本番のプライバシー ポリシーにあるかを確かめられません`);
+    else if (!production.policy) problems.push(`${mismatch}。問い合わせがまだ本番のプライバシー ポリシーにないまま、問い合わせを始める日を過ぎています`);
   }
   return problems;
 }
