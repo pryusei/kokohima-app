@@ -17,7 +17,8 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const empty = (status: FreeSlots["status"]): FreeSlots => ({ status, items: [], nextCursor: null });
 
 export async function freeSlots(ctx: Ctx, viewerId: string, from: number, to: number): Promise<FreeSlots> {
-  const row = await repo.findConnection(ctx.env.DB, viewerId, "google");
+  // 退会した人（T-16）は、手元のアクセストークンが切れるまでの間も連携していない扱い（Google を呼ばない）
+  const row = await repo.findConnectionOfActiveUser(ctx.env.DB, viewerId, "google");
   if (!row || row.status === "disconnected") return empty("none");
   if (row.status === "needs_reauth") return empty("needs_reauth");
 
