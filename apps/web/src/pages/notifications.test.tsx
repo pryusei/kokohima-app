@@ -84,7 +84,7 @@ describe("お知らせ一覧", () => {
     expect(screen.getByRole("link", { name: "名前未設定の友達さんが募集しています" })).toHaveAttribute("href", "/broadcasts/b1");
     expect(screen.getByRole("link", { name: "カレンダーの予定と重なったここ暇を2件取り消しました" })).toHaveAttribute("href", "/availability");
     expect(screen.getByRole("link", { name: "カレンダーの連携が切れました" })).toHaveAttribute("href", "/settings/calendar");
-    expect(screen.getByRole("link", { name: "新しい端末でログインがありました（Chrome / Windows）" })).toHaveAttribute("href", "/settings/account");
+    expect(screen.getByRole("link", { name: "新しい端末でログインがありました（Chrome / Windows）" })).toHaveAttribute("href", "/settings/account?from=new_login");
     expect(screen.getByRole("link", { name: "予定から1人抜けました" })).toBeVisible();
   });
 
