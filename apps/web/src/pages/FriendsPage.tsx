@@ -14,7 +14,8 @@ import { DisplayNameForm } from "../account/DisplayNameForm";
 import { displayNameOf, meQuery } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { BottomSheet } from "../ui/BottomSheet";
-import { Button, SendButton } from "../ui/Button";
+import { lineShareHref } from "../line/line";
+import { Button, buttonClass, SendButton } from "../ui/Button";
 import { EmptyState, LoadError, Loading, Note } from "../ui/feedback";
 import { Chip, ChipRow, Field, inputClass } from "../ui/form";
 import { Link } from "../ui/Link";
@@ -130,6 +131,10 @@ function InviteLinkSheet({ onClose }: { onClose: () => void }) {
               <Button variant="primary" onClick={() => void share(created.url)}>
                 共有する
               </Button>
+              {/* LINEのAPIは呼ばず、共有のURLを開くだけ。外のブラウザで開くよう openExternalBrowser=1 を付ける（T-28） */}
+              <a className={buttonClass("secondary")} href={lineShareHref(created.url)} target="_blank" rel="noopener noreferrer">
+                LINEで送る
+              </a>
               <Note>このURLはこの画面でしか表示できません。今のうちに友達に送ってください。</Note>
             </div>
           )}

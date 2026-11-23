@@ -71,3 +71,37 @@ test("友達を解除すると、双方の一覧から消える", async ({ brows
   await b.page.reload();
   await expect(b.page.getByText("まだ友達はいません")).toBeVisible();
 });
+
+// T-28 LINEで送る（docs/specs/T-28-line-share.md「E2Eテスト」）
+test("招待リンクの「LINEで送る」は、openExternalBrowser 付きの招待リンクを本文に持つ（LINEは開かない）", async ({ browser }) => {
+  const a = await newUser(browser, "A");
+  const url = await createInviteUrl(a.page);
+
+  const href = (await a.page.getByRole("link", { name: "LINEで送る" }).getAttribute("href")) ?? "";
+  const prefix = "https://line.me/R/share?text=";
+  expect(href.startsWith(prefix)).toBe(true);
+  const [, shared] = decodeURIComponent(href.slice(prefix.length)).split("\n");
+  const expected = new URL(url);
+  expected.searchParams.set("openExternalBrowser", "1");
+  expect(shared).toBe(expected.toString());
+});
+
+test("LINEのアプリ内ブラウザで招待リンクを開くと、発行者の名前と「ブラウザで開き直す」が出る", async ({ browser }) => {
+  const a = await newUser(browser, "A");
+  const url = await createInviteUrl(a.page);
+  const token = new URLSearchParams(new URL(url).hash.slice(1)).get("t");
+
+  const context = await browser.newContext({
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/15.2.0",
+  });
+  const page = await context.newPage();
+  await page.goto(url);
+  await expect(page.getByText(a.displayName)).toBeVisible();
+  await expect(page.getByRole("link", { name: "ブラウザで開き直す" })).toHaveAttribute(
+    "href",
+    `/invite?openExternalBrowser=1#t=${token}`,
+  );
+  // URLからはトークンが消えている
+  expect(new URL(page.url()).hash).toBe("");
+  await context.close();
+});

@@ -1,6 +1,6 @@
 # T-28 仕様書：LINEで送る
 
-- 状態：下書き
+- 状態：実装済み（実装PR）
 - タスク票：docs/tasks/T-28-line-share.md
 - 関係する要件：F-08、F-01、要求定義書「リスクと対策」（友達が使わない）、docs/specs/T-02-friends.md、docs/specs/T-25-installable-pwa.md
 
@@ -21,6 +21,11 @@
    - 招待の受け口に、発行者の名前が出たか（出れば `#t=` のトークンが残っている。「このリンクは使えません」なら消えている）。
 4. トークンが消える場合は、この仕様書を直してから実装する（確認事項1）。
 
+### 実機の確認の結果（2026-11-23）
+- iPhone（LINE）：Keep メモに送った `?openExternalBrowser=1#t=…` を押すと、Safari で開き、発行者の名前が出た（トークンが残る）。仕様書のまま実装した。
+- Android：まだ確かめていない。手元に端末がないので、実装PRでは確かめずに進めると決めた（タスク票の受け入れ条件1・決めたこと2の Android の分を、マージのあとに回す。Android でトークンが消えるとわかったら、確認事項1の案（`openExternalBrowser` をやめて帯だけ）で直す）。
+- LINEのメニューの名前は記録していない。帯の文言は、確認事項2の案（端末で分けずに「ブラウザで開く」）のまま出す。
+
 ## 画面
 
 ### 招待リンクの発行のシート（`InviteLinkSheet`。T-02・T-11）
@@ -28,13 +33,13 @@
 - 押すと、新しいタブ（`target="_blank"`、`rel="noopener noreferrer"`）で次を開く。`<a href>` で作り、JS で画面遷移しない。
   - `https://line.me/R/share?text=<encodeURIComponent(本文)>`
   - 本文：`ここ暇で友達になろう\n<LINE用の招待リンク>`。名前・ひとことは入れない（送る本人がトークで書ける）。
-- LINE用の招待リンク：API の応答の `url`（`${APP_ORIGIN}/invite#t=<トークン>`）の、`#` の前に `?openExternalBrowser=1` を入れたもの。フロントで作る（`toLineShareUrl(url)`。`URL` で解析し、`searchParams.set("openExternalBrowser", "1")` を足す。`hash` はそのまま）。API の `url` の形は変えない。
+- LINE用の招待リンク：API の応答の `url`（`${APP_ORIGIN}/invite#t=<トークン>`）の、`#` の前に `?openExternalBrowser=1` を入れたもの。フロントで作る（`withOpenExternalBrowser(url)`。`URL` で解析し、`searchParams.set("openExternalBrowser", "1")` を足す。`hash` はそのまま。共有の行き先は `lineShareHref(url)`。どちらも `apps/web/src/line/line.ts`。開き直しのリンクにも `withOpenExternalBrowser` を使う）。API の `url` の形は変えない。
 - 「共有する」（Web Share API）と「このURLはこの画面でしか表示できません」の文は今のまま。
 
 ### LINEのアプリ内ブラウザ向けの案内の帯
 - 出す画面：招待の受け口（`/invite`）と、ログインの画面。ほかの画面には出さない。
 - 出す条件：`navigator.userAgent` に ` Line/`（前に空白、大文字小文字を区別する）が入っているとき（`isLineInAppBrowser()`。決めたこと3）。
-  - 招待の受け口では、状態が「ready」（発行者が出ている）で、ログインしていないときだけ出す。ログイン済みなら、そのまま「友達になる」を押せるので出さない。
+  - 招待の受け口では、状態が「ready」（発行者が出ている）で、ログインしていなくて、URL からトークンを読めたときだけ出す。ログイン済みなら、そのまま「友達になる」を押せるので出さない。トークンがない（ログインから戻った）ときは、開き直した先のブラウザに招待 Cookie がなく使えないリンクになるので出さない（実装PRで足した）。
 - 文言（仮。実機で LINE のメニューの名前を確かめて直す）：「LINEの中で開いています。Googleでログインできないことがあるので、ブラウザで開き直してください。」
 - 操作：「ブラウザで開き直す」（主ボタン。`<a href>`）。
   - 招待の受け口：`/invite?openExternalBrowser=1#t=<トークン>`。トークンは、受け口が URL から読んで消したもの（`readAndClearInviteToken`）を、画面のメモリ（state）にだけ持って使う。localStorage・sessionStorage・Cookie に置かない。
@@ -60,24 +65,24 @@
   - 「LINEで送る」を押すと、招待リンク（トークンを含む）が `line.me` のURLのクエリに入る。フラグメントでないので、LINEの側に残る。本人がLINEで送ると選んだものなので受け入れる。リンクの期限・人数上限・無効化（T-02）で担保する。
   - LINEのトークに貼られたURLは、LINEがプレビューのために取りに来る。フラグメントはサーバーに送られないので、トークンは渡らない。`index.html` の OGP（T-12）は誰が開いても同じで、発行者の名前は出ない（今のまま）。
   - 「ブラウザで開き直す」のURLにはトークンが入る（フラグメント。サーバーのログに残らない）。
-- プライバシー ポリシー：外に渡すものに「LINEで送るを押したとき、招待リンクがLINEに渡る」を足すかを、実装PRで T-19「9.」に照らして決める（本人が選んで送るもので、運営が渡すものではないため、足さなくてよい見込み）。
+- プライバシー ポリシー：「LINEで送るを押したとき、招待リンクがLINEに渡る」は足さない（実装PRで T-19「9.」に照らして決めた。本人が選んで送るもので、運営が預かる情報・外部に渡す情報・委託先・Cookie・保存期間のどれも変わらないため。今の「共有する」（Web Share API）と同じ扱い）。
 
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 正常系：`toLineShareUrl` が `https://example.test/invite#t=abc` を `https://example.test/invite?openExternalBrowser=1#t=abc` にする。すでにクエリがあっても壊さない
-- [ ] 正常系：「LINEで送る」の `href` が `https://line.me/R/share?text=` で始まり、本文を戻すと「ここ暇で友達になろう」と LINE用の招待リンクの2行になる。`target="_blank"`・`rel="noopener noreferrer"`
-- [ ] 正常系：`isLineInAppBrowser` が、LINEの iOS・Android の UA の例で真、Safari・Chrome・ほかのアプリ内ブラウザの例で偽
-- [ ] 正常系：招待の受け口で、LINEの UA・ready・未ログインのときだけ帯が出る。「ブラウザで開き直す」の `href` が `/invite?openExternalBrowser=1#t=<読んだトークン>`
-- [ ] 正常系：ログインの画面で、LINEの UA のときだけ帯が出る。`href` に `openExternalBrowser=1` が足されている
-- [ ] 境界値：受け口でトークンがない・使えないリンクのときは帯を出さない（「このリンクは使えません」のまま）。ログイン済みなら出さない
-- [ ] 秘匿：トークンを localStorage・sessionStorage に書かない（今の受け口のテストに足す）
-- [ ] 帯が赤やエラー色のトークンを使わない（`colors.test.ts` の検査の対象に入れる）
+- [x] 正常系：`withOpenExternalBrowser` が `https://example.test/invite#t=abc` を `https://example.test/invite?openExternalBrowser=1#t=abc` にする。すでにクエリがあっても壊さない
+- [x] 正常系：「LINEで送る」の `href` が `https://line.me/R/share?text=` で始まり、本文を戻すと「ここ暇で友達になろう」と LINE用の招待リンクの2行になる。`target="_blank"`・`rel="noopener noreferrer"`
+- [x] 正常系：`isLineInAppBrowser` が、LINEの iOS・Android の UA の例で真、Safari・Chrome・ほかのアプリ内ブラウザの例で偽
+- [x] 正常系：招待の受け口で、LINEの UA・ready・未ログインのときだけ帯が出る。「ブラウザで開き直す」の `href` が `/invite?openExternalBrowser=1#t=<読んだトークン>`
+- [x] 正常系：ログインの画面で、LINEの UA のときだけ帯が出る。`href` に `openExternalBrowser=1` が足されている
+- [x] 境界値：受け口でトークンがない・使えないリンクのときは帯を出さない（「このリンクは使えません」のまま）。ログイン済みなら出さない
+- [x] 秘匿：トークンを localStorage・sessionStorage に書かない（今の受け口のテストに足す）
+- [x] 帯が赤やエラー色のトークンを使わない（`colors.test.ts` の検査の対象に入れる）
 - 他人のIDでは取得・更新できないテスト：API を足さないので対象外
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 招待リンクを作ったシートの「LINEで送る」のリンク先が、`openExternalBrowser=1` 付きの招待リンクを本文に持つ（LINEは開かない）
-- [ ] UA をLINEにしたブラウザ（Playwright の `userAgent`）で招待リンクを開くと、発行者の名前と案内の帯が出て、「ブラウザで開き直す」の `href` にトークンが入っている
+- [x] 招待リンクを作ったシートの「LINEで送る」のリンク先が、`openExternalBrowser=1` 付きの招待リンクを本文に持つ（LINEは開かない）
+- [x] UA をLINEにしたブラウザ（Playwright の `userAgent`）で招待リンクを開くと、発行者の名前と案内の帯が出て、「ブラウザで開き直す」の `href` にトークンが入っている
 - LINEのアプリ内ブラウザから外のブラウザに開き直す動きは、E2E では確かめられないので、「実装の前に確かめること」の実機の確認で代える。
 
 ## 実装PRで直すもの
@@ -92,11 +97,12 @@
 - LINE以外のアプリ内ブラウザ（Instagram・X など）の見分けと帯
 
 ## 確認事項（合意前に解消する）
-1. **開き直したときにトークンが消える場合**：実機の確認でフラグメントが消えるとわかったら、どうするか。案は、`openExternalBrowser=1` を付けるのをやめ、案内の帯（右上のメニューから開き直す）だけにする。LINE用のURLだけトークンをクエリに入れる案は、T-02 の「サーバーのログやRefererに残さない」に反するので取らない。
-2. **帯の文言**：LINEのメニューの名前（iPhone：「Safariで開く」、Android：「他のアプリで開く」など）を実機で確かめ、端末ごとに文言を分けるか。案は分けずに「ブラウザで開く」とする。
+1. **（解消。iPhone で残ることを確かめた）開き直したときにトークンが消える場合**：実機の確認でフラグメントが消えるとわかったら、どうするか。案は、`openExternalBrowser=1` を付けるのをやめ、案内の帯（右上のメニューから開き直す）だけにする。LINE用のURLだけトークンをクエリに入れる案は、T-02 の「サーバーのログやRefererに残さない」に反するので取らない。
+2. **（解消。分けない）帯の文言**：LINEのメニューの名前（iPhone：「Safariで開く」、Android：「他のアプリで開く」など）を実機で確かめ、端末ごとに文言を分けるか。案は分けずに「ブラウザで開く」とする。
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-23 | 下書き（LINEで送る＋LINEで受け取る） | 新機能の候補の壁打ちから |
 | 2026-11-23 | 「LINEで送る」だけに絞った。LINEで受け取るは T-28b として需要が見えてから。実機の確認を実装の前に置き、LINEのアプリ内ブラウザ向けの案内の帯を足した | 設計の見直しの議論（利用者の回答） |
+| 2026-11-23 | 実装した。iPhone の実機でトークンが残ることを確かめた。受け口の帯は、トークンを読めたときだけ出すことにした。Android の確認はマージのあとに回した。プライバシー ポリシーは変えない。帯の文言は端末で分けない。共有と見分けの関数は `apps/web/src/line/line.ts`、帯は `apps/web/src/line/LineBrowserNotice.tsx` | 実装PR |
