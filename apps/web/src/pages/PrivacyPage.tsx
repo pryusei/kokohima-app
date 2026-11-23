@@ -6,8 +6,8 @@ import { Bullets, Clause, External, LegalDocument, Mail, Numbered, SubClause } f
 
 const R = RETENTION;
 const P = PLATFORM_RETENTION;
-/** ここ暇の枠は、始まってから最長「長さの上限＋終わってから」日で消える */
-const availabilityMaxDays = R.availabilityMaxLengthDays + R.availabilityAfterEndDays;
+/** ここ暇の枠は、始まりから「長さの上限＋猶予」日で消える（終わりからは「猶予」〜「長さの上限＋猶予」日） */
+const availabilityDays = R.availabilityMaxLengthDays + R.availabilityGraceDays;
 
 export function PrivacyPage() {
   return (
@@ -187,13 +187,17 @@ export function PrivacyPage() {
             アカウント（メールアドレス・表示名・タイムゾーン・Google の識別子）、友達、設定、くり返し：退会したときに消します。
           </li>
           <li>
-            ここ暇の枠：終わってから{R.availabilityAfterEndDays}日で消します（枠の長さは最長{R.availabilityMaxLengthDays}
-            日なので、始まってから最長{availabilityMaxDays}日です）。
+            ここ暇の枠：始まってから{availabilityDays}日で消します（枠は最長{R.availabilityMaxLengthDays}日なので、終わってから
+            {R.availabilityGraceDays}〜{availabilityDays}日です）。
           </li>
           <li>くり返しの、予定で外れた日の記録：その日から{R.recurrenceExceptionDaysBefore + 1}日目に消します。</li>
           <li>
             誘い・募集・成立した予定：予定の時間（「この時間なら」で代わりの時間があれば、遅い方）が終わってから
             {R.invitationsDays}日で消します。
+          </li>
+          <li>
+            お知らせの日ごとの数（1日に送る通知の上限を数えるため）：その日から{R.notificationDailyCountsDaysBefore + 1}
+            日目に消します。
           </li>
           <li>
             お知らせ：作ってから{R.notificationsDays}日で消します。新しい端末でのログインのお知らせに入る、ブラウザ名と OS
@@ -217,6 +221,7 @@ export function PrivacyPage() {
             分は残ります。
           </li>
           <li>リンクのプレビュー：使う誘い・募集がなくなり、取ってから{R.linkPreviewsDays}日を過ぎたら消します。</li>
+          <li>リンクのプレビューの画像：使うプレビューがなくなってから{R.linkPreviewImageGraceHours}時間で消します。</li>
           <li>
             処理の記録：処理してから{R.processedOutboxDays}日で消します。まだ送り始めていない通知の記録は、作ってから
             {R.staleNotificationOutboxDays}日で消します。うまく処理できなかった記録は{P.deadLetterQueueDays}日で消えます。

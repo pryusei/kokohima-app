@@ -96,7 +96,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 ### 4. リンクの置き場所
 - **ログインの画面**（`apps/web/src/pages/LoginPage.tsx`）：ボタンの下に、`text-s text-ink-muted` の1行で次を置く。
   - 「続けると利用規約とプライバシー ポリシーに同意したことになります」（「利用規約」「プライバシー ポリシー」をリンクにする。決めたこと7。チェックボックスは置かず、同意の記録は保存しない）
-- **招待リンクの受け口**（`apps/web/src/pages/InvitePage.tsx`）：画面の下に、ログインの画面と同じ1行を置く（ログインしている人には「利用規約」「プライバシー ポリシー」のリンクだけを並べる）。
+- **招待リンクの受け口**（`apps/web/src/pages/InvitePage.tsx`）：画面の下に、ログインの画面と同じ1行を置くのは、続けてログインできるとき（`lookup` が成功し、ログインのボタンを出しているとき）だけ。ログインしている人と、使えないリンク・混み合っている・通信できないなどの表示のときは、「利用規約」「プライバシー ポリシー」のリンクだけを並べる。
   - アプリの中の移動（`apps/web/src/ui/Link.tsx`）で開く。`lookup` が成功していれば、トークンは招待 Cookie（1時間）に移っているので、「戻る」で `/invite` に戻ると、今のとおり Cookie で `lookup` し直して続けられる（T-02）。
   - トークンは開いた直後に URL から消し、招待 Cookie は `lookup` が成功したときに出るので、`lookup` が終わる前に移ると、戻ったときにリンクを読めないことがある。そのため、リンクの1行は `lookup` が終わってから出す（読み込み中の表示のあいだは出さない）。
 - **設定**（`apps/web/src/pages/SettingsPage.tsx`）：今の一覧の下に、節「このアプリについて」（`Section`）を足し、今と同じ `Row` で「プライバシー ポリシー」（`/privacy`）と「利用規約」（`/terms`）を並べる。
@@ -226,9 +226,10 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 
 ## 8. 保存する期間
 - アカウント（メールアドレス・表示名・タイムゾーン・Google の識別子）、友達、設定、くり返し：退会したときに消します。
-- ここ暇の枠：終わってから1日で消します（枠の長さは最長1日なので、始まってから最長2日です）。
+- ここ暇の枠：始まってから2日で消します（枠は最長1日なので、終わってから1〜2日です）。
 - くり返しの、予定で外れた日の記録：その日から3日目に消します。
 - 誘い・募集・成立した予定：予定の時間（「この時間なら」で代わりの時間があれば、遅い方）が終わってから30日で消します。
+- お知らせの日ごとの数（1日に送る通知の上限を数えるため）：その日から4日目に消します。
 - お知らせ：作ってから30日で消します。新しい端末でのログインのお知らせに入る、ブラウザ名と OS 名の要約も同じです。
 - 招待リンク：期限から30日で消します。
 - ログインの記録：使えなくなってから30日で消します。新しい端末でのログインに気づくため、最初のログインの記録だけは退会まで残します。
@@ -238,6 +239,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - カレンダーの空き／埋まりの記録：連携を解除したとき、30日アプリを開かなかったとき、退会したときに消します。
 - カレンダーの空き／埋まりの一時的な記録：5分で消えます。連携を解除しても、最長5分は残ります。
 - リンクのプレビュー：使う誘い・募集がなくなり、取ってから30日を過ぎたら消します。
+- リンクのプレビューの画像：使うプレビューがなくなってから1時間で消します。
 - 処理の記録：処理してから7日で消します。まだ送り始めていない通知の記録は、作ってから30日で消します。うまく処理できなかった記録は4日で消えます。
 - 二重の送信を防ぐための記録：24時間で消します。
 - ログ：7日で消えます。
@@ -381,7 +383,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 
 ### 9. 本文とアプリをそろえ続ける
 - **保存期間の数を1か所に置く**：`packages/shared/src/retention.ts` に、コードが期間を持つものの数を置く（`RETENTION` の定数。日・時間・分の単位の数）。
-  - 対象：誘い・募集・予定（30日。`apps/api/src/jobs/dispatch.ts` の `RETENTION_MS`）、お知らせ（30日。`apps/api/src/notification/application/delivery.ts` の `NOTIFICATION_RETENTION_MS`）、招待リンク（30日）、ログインの記録（30日。`apps/api/src/identity/infra/repository.ts` の `DEAD_SESSION_RETENTION_MS`）、休眠の判定（30日）、ここ暇の枠（`RETENTION` には「終わってから1日」と、枠の長さの上限「1日」を置く。API の `AVAILABILITY_RETENTION_MS` は今の `DAY_MS + MAX_LENGTH_MS` の形のまま、`DAY_MS` を `RETENTION` の「終わってから」の日数から作る。枠の長さの上限 `MAX_LENGTH_MS`（`apps/api/src/availability/domain/validation.ts`）は入力の検証のルールなので domain に残し、`RETENTION` の上限の日数と一致することをテストで確かめる。本文は2つの数から「終わってから1日（始まってから最長2日）」を作る）、くり返しの例外（2日前の日付より前。`exceptionCutoffDate`）、処理済みの処理の記録（7日。`OUTBOX_RETENTION_MS`）、流れないままの通知の記録（30日）、リンクのプレビュー（30日。T-08）、冪等キー（24時間。`apps/api/src/shared/idempotency.ts` の `IDEMPOTENCY_TTL_MS`）、埋まりのキャッシュ（5分。T-10）。
+  - 対象：誘い・募集・予定（30日。`apps/api/src/jobs/dispatch.ts` の `RETENTION_MS`）、お知らせ（30日。`apps/api/src/notification/application/delivery.ts` の `NOTIFICATION_RETENTION_MS`）、招待リンク（30日）、ログインの記録（30日。`apps/api/src/identity/infra/repository.ts` の `DEAD_SESSION_RETENTION_MS`）、休眠の判定（30日）、ここ暇の枠（`RETENTION` には、始まりから数えたときの「長さの上限＋猶予」の猶予 `availabilityGraceDays`（1日）と、枠の長さの上限 `availabilityMaxLengthDays`（1日）を置く。掃除は始まりから2日を過ぎた手動の枠を消す（T-17 の「始まりから1日＋24時間」）。API の `AVAILABILITY_RETENTION_MS` は今の `DAY_MS + MAX_LENGTH_MS` の形のまま、`DAY_MS` を `availabilityGraceDays` から作る。`MAX_LENGTH_MS`（`apps/api/src/availability/domain/validation.ts`）は入力の検証のルールなので domain に残し、`availabilityMaxLengthDays` と一致することをテストで確かめる。本文は2つの数から「始まってから2日（終わってから1〜2日）」を作る）、お知らせの日ごとの数（UTC の今日の3日前の日付より前。`notificationDailyCountsDaysBefore`、`apps/api/src/notification/application/delivery.ts` の `countsCutoffDay`）、リンクのプレビューの画像（参照する結果がなくなって1時間。`linkPreviewImageGraceHours`、`apps/api/src/link-preview/application/previews.ts` の `IMAGE_GRACE_MS`）、くり返しの例外（2日前の日付より前。`exceptionCutoffDate`）、処理済みの処理の記録（7日。`OUTBOX_RETENTION_MS`）、流れないままの通知の記録（30日）、リンクのプレビュー（30日。T-08）、冪等キー（24時間。`apps/api/src/shared/idempotency.ts` の `IDEMPOTENCY_TTL_MS`）、埋まりのキャッシュ（5分。T-10）。
   - API は、今の定数をこの数から作る（値は変えない）。画面の本文の「8.」は、同じ数を表示に使う（文に数を直書きしない）。片方だけを変えることがなくなる。
   - コードが期間を持たないもの（Workers Logs の7日、退避キューの4日、D1 の復元の最大30日、外部の事業者の記録）は、`retention.ts` に「プラットフォームの値」として注記つきで置き、表示に使う。変わったことはコードでは気づけないので、T-17 の表を直す PR のチェックリストで確かめる（下）。
 - 保存期間は T-17「1. 保持期間の一覧」を正とする。表を変える PR では、`retention.ts` と `/privacy` の「8.」も同じPRで直す（T-17 の表の上に注記を足す。「実装PRで直すもの」）。
@@ -401,11 +403,11 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - [x] 正常系：ログインの確認中（`checking`）、API に届かない（`error`）、ログインしていない（`anonymous`）、ログインしている（`authenticated`）のどれでも、`/privacy` と `/terms` が本文を描画し、別の画面に移らない（`apps/web/src/pages/legal.test.tsx`。今の `login.test.tsx` の書き方）
 - [x] 本文：見出し（`h1` は `SubScreen` の題の1つだけ、両方のページのすべての節の `h2`）。`/terms` にも `mailto:` の連絡先（第6条・第12条）と年齢・保護者の同意の文（第2条）、連絡先 `ops@kokohima.app` の `mailto:` リンク、制定日、13歳以上・保護者の同意の文が出る。ページを開いても、`AuthProvider` の `/api/v1/auth/refresh` のほかに API の呼び出し（`fetch`）が起きない
 - [x] オフライン：オフラインの帯が出ていても、本文が出る
-- [x] 保存期間（画面。`apps/web/src/pages/legal.test.tsx`）：`/privacy` の「8.」に、`RETENTION` の数がそのまま出る（テストは `RETENTION` を読み、期待する文を数から作る。ここ暇の枠は「終わってから1日（始まってから最長2日）」の2つの数とも）
-- [x] 保存期間（値。`packages/shared/src/retention.test.ts`）：`RETENTION` の値が T-17 の表と同じ（誘い・募集・予定・お知らせ・招待リンク・ログインの記録・休眠30日、処理の記録7日、ここ暇の枠は終わってから1日と長さの上限1日、冪等キー24時間、埋まりのキャッシュ5分など）。値を変えたら、このテストと T-17 の表を同じPRで直す
+- [x] 保存期間（画面。`apps/web/src/pages/legal.test.tsx`）：`/privacy` の「8.」に、`RETENTION` の数がそのまま出る（テストは `RETENTION` を読み、期待する文を数から作る。ここ暇の枠は「始まってから2日（終わってから1〜2日）」の2つの数とも。お知らせの日ごとの数・リンクのプレビューの画像も）
+- [x] 保存期間（値。`packages/shared/src/retention.test.ts`）：`RETENTION` の値が T-17 の表と同じ（誘い・募集・予定・お知らせ・招待リンク・ログインの記録・休眠30日、処理の記録7日、ここ暇の枠は猶予1日と長さの上限1日、お知らせの日ごとの数は3日前の日付より前、リンクのプレビューの画像1時間、冪等キー24時間、埋まりのキャッシュ5分など）。値を変えたら、このテストと T-17 の表を同じPRで直す
 - [x] 保存期間（API。`apps/api/src/jobs/retention-constants.test.ts`）：API の掃除の定数（`RETENTION_MS`・`NOTIFICATION_RETENTION_MS`・`DEAD_SESSION_RETENTION_MS`・`OUTBOX_RETENTION_MS`・`AVAILABILITY_RETENTION_MS`・`IDEMPOTENCY_TTL_MS` など）が `RETENTION` から作った値と等しい。`MAX_LENGTH_MS` が `RETENTION` の枠の長さの上限と等しく、`AVAILABILITY_RETENTION_MS` が「終わってから」＋「長さの上限」と等しい。既存の掃除のテストも通る
 - [x] タブの題：開くと「プライバシー ポリシー｜ここ暇」「利用規約｜ここ暇」、ページを離れると「ここ暇」
-- [x] リンク：ログインの画面に、2つのページへのリンクと同意の1行「続けると利用規約とプライバシー ポリシーに同意したことになります」がある（チェックボックスはなく、`/api/v1/auth/refresh` のほかに API を呼ばない）。招待リンクの受け口は、`lookup` が終わったあとにリンクが出て、読み込み中は出ない。設定に「このアプリについて」の節と2つの行がある
+- [x] リンク：ログインの画面に、2つのページへのリンクと同意の1行「続けると利用規約とプライバシー ポリシーに同意したことになります」がある（チェックボックスはなく、`/api/v1/auth/refresh` のほかに API を呼ばない）。招待リンクの受け口は、`lookup` が終わったあとにリンクが出て、読み込み中は出ない。同意の1行は、使えるリンクで未ログイン（ログインのボタンを出している）ときだけで、使えないリンク・混み合っている・通信できないときと、ログイン済みのときはリンクだけ。設定に「このアプリについて」の節と2つの行がある
 - [x] 移動：リンクを押すとアプリの中で移り（`navigate`）、「戻る」で前の画面に戻る。外から直接開いた「戻る」は `/` に移る。招待リンクの受け口から開いて戻ると、招待 Cookie で `lookup` し直して続けられる
 - [x] 外へのリンクに `target="_blank"` と `rel="noopener noreferrer"` が付く
 - [x] 制定日の検査（`apps/api/test/effective-date.test.ts`。今の Workers の project。fixture `apps/api/test/fixtures/web-dist-legal.js`）：仮の値の fixture は「制定日：」が1回・本物の日付が0回、`制定日：2026年12月1日` に置き換えたものは両方1回、2回入れたもの・「制定日：」を消したものは数がずれる。形の違う日付（`2026年12月`・`2026/12/1`）と暦にない日付（`2026年13月40日`・`2027年2月29日`）は本物に数えない（`2028年2月29日` は数える）。改定日は、なければ通り、1つなら本物の日付を求め、2つ以上で止まる
@@ -470,3 +472,4 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 | 2026-11-23 | 制定日の検査を、「制定日：」が1回・本物の日付の形が1回で確かめる形に（「◯」を探さない。`EFFECTIVE_DATE_LINE` を1つの文字列に）、テストを今の Workers の project（`apps/api/test/`）と fixture に、CI の `build:prod` で本物の出力の形を確かめる。保存期間に、連携の記録と「ここ暇」カレンダーの識別子（解除しても残り、退会で消える）。端末に置くものに Service Worker とプッシュの購読。ここ暇の枠を「終わってから1日（始まってから最長2日）」にし、`RETENTION` と `MAX_LENGTH_MS` の関係を決めた。保存期間のテストを画面・shared・API の3つに分けた。確認事項をマージの前に決めること（a）と、デプロイの前に人が確かめること（b）に分けた。利用者の回答（同意は1行で記録しない、`profile` を外す、アイコンは表示名の1文字め、ホームページは今は変えない）を決めたこと7〜10に移し、本文・テスト・実装PRで直すものを合わせた | 仕様書PRのレビュー（pryusei/kokohima-app#129） |
 | 2026-11-23 | 実装済みに。共通の部品を `LegalDocument.tsx` に置いた。テスト計画のチェックを付けた（単体：`legal.test.tsx`・`retention.test.ts`・`retention-constants.test.ts`・`effective-date.test.ts`、E2E：`release.spec.ts`・`auth.spec.ts`）。issue #52・#89・#90・#91 の本文とコメントは、PR を開くときに人（コーディネーター）が直す | T-19 実装PR |
 | 2026-11-23 | 実装PRのレビューを反映：日付は暦にあるかも確かめる、改定日の行（`REVISION_DATE_LINE`。初めて改定するまで `null`、1つまで、あれば同じく検査）と本文の「14.」の文を決めた、テストの見出し・連絡先・同意の画面の API の確かめ方を足した。ログインを続ける Cookie の30日は、`packages/shared` に定数がない（API の `REFRESH_TOKEN_TTL_MS` は identity の domain）ので、本文に直書きのまま | 実装PRのレビュー |
+| 2026-11-23 | 実装PRのレビュー（pryusei/kokohima-app#138）を反映：ここ暇の枠を、実際の掃除のとおり「始まってから2日（終わってから1〜2日）」にし、`RETENTION` の名前を `availabilityGraceDays` に。保存期間に、T-17 の表にあったお知らせの日ごとの数と、リンクのプレビューの画像を足した（値は変えない）。招待リンクの受け口の同意の1行は、続けてログインできるときだけにした。ログインを続ける Cookie の30日は、別のタスクにする | 実装PRのレビュー |

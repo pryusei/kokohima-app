@@ -183,7 +183,7 @@ export async function deleteStaleNotificationOutbox(d1: D1Database, createdBefor
 /** 処理済みの outbox の行を残す期間（退避キューの既定の保持期間4日より長く） */
 export const OUTBOX_RETENTION_MS = RETENTION.processedOutboxDays * DAY_MS;
 /** 始まりがこれより前の手動の枠を消す。長さは最大24時間なので、どれも終わってから1日以上たっている */
-export const AVAILABILITY_RETENTION_MS = RETENTION.availabilityAfterEndDays * DAY_MS + MAX_LENGTH_MS;
+export const AVAILABILITY_RETENTION_MS = RETENTION.availabilityGraceDays * DAY_MS + MAX_LENGTH_MS;
 /** 1回の実行で消す行の数の上限（outbox・ここ暇） */
 export const CLEANUP_BATCH = 1000;
 

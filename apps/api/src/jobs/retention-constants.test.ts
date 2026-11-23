@@ -4,8 +4,8 @@ import { MAX_LENGTH_MS } from "../availability/domain/validation";
 import { FREE_BUSY_CACHE_SECONDS } from "../calendar/application/freeSlots";
 import { DORMANT_AFTER_MS } from "../calendar/application/dormancy";
 import { DEAD_SESSION_RETENTION_MS } from "../identity/infra/repository";
-import { PREVIEW_RETENTION_MS } from "../link-preview/application/previews";
-import { NOTIFICATION_RETENTION_MS } from "../notification/application/delivery";
+import { IMAGE_GRACE_MS, PREVIEW_RETENTION_MS } from "../link-preview/application/previews";
+import { countsCutoffDay, NOTIFICATION_RETENTION_MS } from "../notification/application/delivery";
 import { IDEMPOTENCY_TTL_MS } from "../shared/idempotency";
 import { AVAILABILITY_RETENTION_MS, exceptionCutoffDate, OUTBOX_RETENTION_MS, RETENTION_MS } from "./dispatch";
 
@@ -36,8 +36,15 @@ describe("保存期間の定数（T-19「9.」）", () => {
 
   it("ここ暇の枠：枠の長さの上限は RETENTION と同じで、掃除は始まりから「長さの上限＋終わってから1日」", () => {
     expect(MAX_LENGTH_MS).toBe(RETENTION.availabilityMaxLengthDays * DAY);
-    expect(AVAILABILITY_RETENTION_MS).toBe((RETENTION.availabilityAfterEndDays + RETENTION.availabilityMaxLengthDays) * DAY);
+    expect(AVAILABILITY_RETENTION_MS).toBe((RETENTION.availabilityGraceDays + RETENTION.availabilityMaxLengthDays) * DAY);
     expect(AVAILABILITY_RETENTION_MS).toBe(2 * DAY);
+  });
+
+  it("お知らせの日ごとの数は UTC の今日の3日前の日付より前、リンクのプレビューの画像は参照がなくなって1時間", () => {
+    expect(RETENTION.notificationDailyCountsDaysBefore).toBe(3);
+    expect(countsCutoffDay(Date.parse("2026-11-23T10:00:00Z"))).toBe("2026-11-20");
+    expect(IMAGE_GRACE_MS).toBe(RETENTION.linkPreviewImageGraceHours * 60 * 60 * 1000);
+    expect(IMAGE_GRACE_MS).toBe(60 * 60 * 1000);
   });
 
   it("くり返しの例外は UTC の今日の2日前の日付より前", () => {

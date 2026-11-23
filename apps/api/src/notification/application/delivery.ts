@@ -188,6 +188,10 @@ export async function cleanupNotifications(ctx: Ctx) {
   const now = ctx.deps.now();
   const deleted = await repo.deleteOldNotifications(ctx.env.DB, now - NOTIFICATION_RETENTION_MS, NOTIFICATION_CLEANUP_BATCH);
   // どのタイムゾーンの「今日」「昨日」も消さないよう、UTC で3日前より前の日付を消す
-  await repo.deleteOldCounts(ctx.env.DB, new Date(now - 3 * DAY_MS).toISOString().slice(0, 10));
+  await repo.deleteOldCounts(ctx.env.DB, countsCutoffDay(now));
   return deleted;
 }
+
+/** 日ごとの数は、日付が UTC の今日の3日前の日付より前なら消す */
+export const countsCutoffDay = (now: number) =>
+  new Date(now - RETENTION.notificationDailyCountsDaysBefore * DAY_MS).toISOString().slice(0, 10);

@@ -165,7 +165,9 @@ describe("プライバシー ポリシーの本文", () => {
     const text = heading.closest("section")?.textContent ?? "";
     const R = RETENTION;
     const expected = [
-      `終わってから${R.availabilityAfterEndDays}日で消します（枠の長さは最長${R.availabilityMaxLengthDays}日なので、始まってから最長${R.availabilityMaxLengthDays + R.availabilityAfterEndDays}日です）`,
+      `始まってから${R.availabilityMaxLengthDays + R.availabilityGraceDays}日で消します（枠は最長${R.availabilityMaxLengthDays}日なので、終わってから${R.availabilityGraceDays}〜${R.availabilityMaxLengthDays + R.availabilityGraceDays}日です）`,
+      `お知らせの日ごとの数（1日に送る通知の上限を数えるため）：その日から${R.notificationDailyCountsDaysBefore + 1}日目に消します`,
+      `使うプレビューがなくなってから${R.linkPreviewImageGraceHours}時間で消します`,
       `その日から${R.recurrenceExceptionDaysBefore + 1}日目に消します`,
       `が終わってから${R.invitationsDays}日で消します`,
       `作ってから${R.notificationsDays}日で消します`,
@@ -183,7 +185,9 @@ describe("プライバシー ポリシーの本文", () => {
     ];
     for (const e of expected) expect(text).toContain(e);
     // 今の値（T-17 の表）で読める文になっている
-    expect(text).toContain("終わってから1日で消します（枠の長さは最長1日なので、始まってから最長2日です）");
+    expect(text).toContain("ここ暇の枠：始まってから2日で消します（枠は最長1日なので、終わってから1〜2日です）");
+    expect(text).toContain("その日から4日目に消します");
+    expect(text).toContain("なくなってから1時間で消します");
   });
 });
 
@@ -247,6 +251,28 @@ describe("リンクの置き場所", () => {
     expect(await screen.findByRole("button", { name: "友達になる" })).toBeVisible();
     expect(screen.getByRole("link", { name: "利用規約" })).toHaveAttribute("href", "/terms");
     expect(screen.queryByText(/同意したことになります/)).toBeNull();
+  });
+
+  it.each([
+    ["使えないリンク（404）", json({ type: "about:blank", title: "x", status: 404, code: "not_found", requestId: "r" }, 404), "このリンクは使えません"],
+    ["混み合っている（429）", json({ type: "about:blank", title: "x", status: 429, code: "rate_limited", requestId: "r" }, 429), "混み合っています"],
+    ["通信できない", (() => Promise.reject(new TypeError("Failed to fetch"))) as Route, "通信できませんでした"],
+  ])("招待リンクの受け口：%s のときは、未ログインでも同意の1行でなくリンクだけ", async (_, lookup, text) => {
+    window.history.replaceState(null, "", "/invite#t=secret-invite-token");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": lookup });
+    renderApp();
+    expect(await screen.findByText(new RegExp(text))).toBeVisible();
+    expect(screen.getByRole("link", { name: "利用規約" })).toHaveAttribute("href", "/terms");
+    expect(screen.getByRole("link", { name: "プライバシー ポリシー" })).toHaveAttribute("href", "/privacy");
+    expect(screen.queryByText(/同意したことになります/)).toBeNull();
+  });
+
+  it("招待リンクの受け口：使えるリンクで未ログインなら、ログインのボタンと同意の1行", async () => {
+    window.history.replaceState(null, "", "/invite#t=secret-invite-token");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": lookupOk });
+    renderApp();
+    expect(await screen.findByRole("link", { name: "Googleでログイン" })).toBeVisible();
+    expect(screen.getByText((_, el) => el?.tagName === "P" && el.textContent === CONSENT)).toBeVisible();
   });
 
   it("設定：「このアプリについて」に2つの行", async () => {

@@ -78,6 +78,7 @@ export function InvitePage() {
     }
   };
 
+  const canLogIn = state.kind === "ready" && status !== "authenticated" && status !== "checking";
   const loginUrl = (provider: "google" | "apple") => `/api/v1/auth/${provider}/start?returnTo=${encodeURIComponent("/invite")}`;
 
   return (
@@ -149,8 +150,11 @@ export function InvitePage() {
           )}
         </>
       )}
-      {/* lookup が終わってから出す（トークンは招待 Cookie に移ってから。docs/specs/T-19-privacy-terms.md「4.」） */}
-      {state.kind !== "loading" && <LegalLinks consent={status !== "authenticated"} />}
+      {/*
+        lookup が終わってから出す（トークンは招待 Cookie に移ってから。docs/specs/T-19-privacy-terms.md「4.」）。
+        同意の1行は、ログインのボタンを出しているとき（使えるリンクで、未ログイン）だけ。ほかはリンクだけ
+      */}
+      {state.kind !== "loading" && <LegalLinks consent={canLogIn} />}
     </main>
   );
 }

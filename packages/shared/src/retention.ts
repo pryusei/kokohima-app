@@ -13,18 +13,25 @@ export const RETENTION = {
   deadSessionsDays: 30,
   /** カレンダーの連携の休眠：最後に使ってから */
   dormantAfterDays: 30,
-  /** ここ暇の手動の枠：終わってから */
-  availabilityAfterEndDays: 1,
+  /**
+   * ここ暇の手動の枠：始まりから「長さの上限（availabilityMaxLengthDays）＋この日数」で消す。
+   * 終わりから数えるのではない（枠は最長1日なので、終わってから1〜2日で消える）
+   */
+  availabilityGraceDays: 1,
   /** ここ暇の枠の長さの上限（入力の検証のルール。apps/api の availability/domain/validation.ts の MAX_LENGTH_MS と同じ） */
   availabilityMaxLengthDays: 1,
   /** くり返しの例外：日付が UTC の今日のこの日数前より前なら消す（日付から3日目に消える） */
   recurrenceExceptionDaysBefore: 2,
+  /** お知らせの日ごとの数：日付が UTC の今日のこの日数前より前なら消す */
+  notificationDailyCountsDaysBefore: 3,
   /** 処理済みの outbox：処理してから */
   processedOutboxDays: 7,
   /** 流れないままの通知だけの型の outbox：作ってから */
   staleNotificationOutboxDays: 30,
   /** リンクのプレビューの結果：参照がなく、取得から */
   linkPreviewsDays: 30,
+  /** リンクのプレビューの画像（R2・台帳）：参照する結果がなくなり、置いてから */
+  linkPreviewImageGraceHours: 1,
   /** 冪等キー */
   idempotencyKeysHours: 24,
   /** カレンダーの埋まりのキャッシュ（KV） */
