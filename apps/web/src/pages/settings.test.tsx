@@ -32,6 +32,15 @@ describe("設定", () => {
     expect(screen.getByRole("link", { name: /時間帯プリセット/ })).toHaveAttribute("href", "/settings/presets");
     expect(screen.getByRole("link", { name: /通知の設定/ })).toHaveAttribute("href", "/settings/notifications");
     expect(screen.getByRole("link", { name: /^アカウント/ })).toHaveAttribute("href", "/settings/account");
+    expect(screen.getByRole("link", { name: /アプリとして使う/ })).toHaveAttribute("href", "/settings/install");
+  });
+
+  it("「アプリとして使う」：設定から開き、追加の案内を出す（T-25）", async () => {
+    window.history.replaceState(null, "", "/settings/install");
+    mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/notifications/unread-count": json({ count: 0 }) });
+    renderApp();
+    expect(await screen.findByRole("heading", { name: "アプリとして使う", level: 1 })).toBeVisible();
+    expect(screen.getByText(/ホーム画面に追加/)).toBeVisible();
   });
 
   it("時間帯プリセット：境界を変えて保存する（ここ暇タブから移した）", async () => {

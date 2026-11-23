@@ -5,7 +5,7 @@
 - 関係する要件：要求定義書「残りの論点」（XSS対策・Content-Security-Policy）、「AI時代の攻撃を前提にした運用」（使わないルートは閉じる）、F-01（ログイン）。issue pryusei/kokohima-app#42（アプリの中で行う部分）、#52
 
 ## 概要
-- 最初のリリースは、友達だけに向けた Web アプリ（PWA）にする（Google の OAuth は審査を受けずに本番の公開ステータスにする。決定事項7）。アプリストアには出さない（利用者と決めた）。
+- 最初のリリースは、友達だけに向けた Web アプリ（PWA）にする（Google の OAuth は審査を受けずに本番の公開ステータスにする。決定事項7）。アプリストアには出さない（利用者と決めた）。ホーム画面への追加の体験は docs/specs/T-25-installable-pwa.md で整える。
 - 画面（`apps/web` のビルド）を、API と同じ Worker の静的アセットとして `https://kokohima.app` から出す。`/api` と画面が同じオリジンになるので、今の `__Host-` の Cookie と Origin の検査がそのまま使える。
 - ログインは Google だけにする。Sign in with Apple は設定で止め、コードは残す（Apple Developer Program を使わない。利用者と決めた）。
 - 画面と API の応答に、ブラウザ向けのセキュリティのヘッダー（CSP・HSTS など）を付ける。

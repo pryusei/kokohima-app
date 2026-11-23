@@ -326,7 +326,7 @@
   - キャッシュをしない（このタスクではオフライン対応をしない）。
 - iOS
   - ホーム画面に追加した PWA でだけ、Webプッシュを受け取れる。そのため `manifest.webmanifest`（名前・アイコン・`display: standalone`）を足す。
-  - 追加していない人には、設定画面で「ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます」と出す。
+  - 追加していない人には、設定画面で「ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます」と出し、追加の案内（`/settings/install`）へのリンク「追加の方法」を添える。`manifest.webmanifest` のアイコン・`id`・`scope` と案内の画面は docs/specs/T-25-installable-pwa.md。
 
 ### メールの中身
 - 差出人は vars の `MAIL_FROM`（prod は `ここ暇 <notify@kokohima.app>`。T-12）。宛先は `getNotificationAddress`。
