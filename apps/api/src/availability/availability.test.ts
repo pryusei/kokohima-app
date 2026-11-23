@@ -298,6 +298,28 @@ describe("くり返し", () => {
     ).toBe(404);
     expect(await mine(a, 14)).toHaveLength(2);
   });
+
+  it("範囲が上限（9999-01-01T00:00:00Z）を超えると、ルールがあっても3つの一覧とも400（500にしない）", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    await u.befriend(a, b);
+    await u.call("POST", "/api/v1/recurrence-rules", { token: a.token, body: { weekday: 6, preset: "night" } });
+    await u.call("POST", "/api/v1/recurrence-rules", { token: b.token, body: { weekday: 6, preset: "night" } });
+    const q = "from=9999-12-25T00:00:00Z&to=9999-12-31T23:00:00Z";
+    for (const [path, token] of [
+      [`/api/v1/availabilities?${q}`, a.token],
+      [`/api/v1/friend-availabilities?${q}`, a.token],
+      [`/api/v1/friends/${b.id}/availabilities?${q}`, a.token],
+    ] as const) {
+      const res = await u.call("GET", path, { token });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe("validation_failed");
+    }
+    const ok = await u.call("GET", "/api/v1/availabilities?from=9998-12-25T00:00:00Z&to=9999-01-01T00:00:00Z", {
+      token: a.token,
+    });
+    expect(ok.status).toBe(200);
+  });
 });
 
 describe("みんな", () => {

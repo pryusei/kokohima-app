@@ -72,8 +72,17 @@ export type RecurrenceRuleDto = z.infer<typeof recurrenceRuleSchema>;
 
 export const recurrenceExceptionRequestSchema = z.object({ date: localDateSchema });
 
+/** 範囲に指定できる日時の下限・上限（現地の日付と前後1日が4桁の年に収まるように。T-03「入力」） */
+export const RANGE_MIN_ISO = "1970-01-01T00:00:00Z";
+export const RANGE_MAX_ISO = "9999-01-01T00:00:00Z";
+const rangeBound = z.iso
+  .datetime()
+  .refine((v) => Date.parse(v) >= Date.parse(RANGE_MIN_ISO) && Date.parse(v) <= Date.parse(RANGE_MAX_ISO), {
+    message: "out_of_range",
+  });
+
 export const rangeQuerySchema = z
-  .object({ from: z.iso.datetime(), to: z.iso.datetime(), cursor: z.string().max(256).optional() })
+  .object({ from: rangeBound, to: rangeBound, cursor: z.string().max(256).optional() })
   .refine((q) => Date.parse(q.from) < Date.parse(q.to), { message: "from_must_be_before_to" });
 
 export const myAvailabilityListSchema = z.object({ items: z.array(myAvailabilitySchema), nextCursor: z.null() });
