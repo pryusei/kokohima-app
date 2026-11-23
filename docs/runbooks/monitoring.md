@@ -12,9 +12,11 @@
    - `#kokohima-alerts`（すぐ見る）：スマホの通知をオンにする。
    - `#kokohima-notices`（気づけばよい）：通知はオフでよい。1日1回見る。
    - `#kokohima-contact`（問い合わせ。T-24）：通知はオン。メンバーは、アプリ（Incoming Webhook）の投稿を消せる役割（ワークスペースのオーナーか管理者）の運営者だけ。ゲスト・Slack コネクト（外のワークスペースとの共有）・ほかのアプリの連携を入れない。保持の設定を「90日を過ぎたら消す」にする（チャンネルの単位でできなければワークスペース。ワークスペースにすると、監視の2つのチャンネルも90日で消えるが、受け入れる）。
-2. 監視の2つのチャンネル（`#kokohima-alerts`・`#kokohima-notices`）に Incoming Webhook を作る（Slack のアプリの設定 → Incoming Webhooks）。URL はパスワードと同じに扱い、次の2か所にだけ登録する。
-   - `#kokohima-contact` の webhook は別に作り、`wrangler secret put CONTACT_SLACK_WEBHOOK_URL --env prod` にだけ登録する。Cloudflare の通知先・Better Stack には登録しない（staging に入れるかは T-24 の確認事項。入れないと、staging の問い合わせは退避キューに入るだけ）。漏れたら Slack 側で作り直し、`wrangler secret put` し直す。
-3. URL が漏れたら、Slack 側で webhook を作り直し、登録し直す。
+2. 監視の2つのチャンネル（`#kokohima-alerts`・`#kokohima-notices`）に Incoming Webhook を作る（Slack のアプリの設定 → Incoming Webhooks）。URL はパスワードと同じに扱い、次の2か所にだけ登録する（docs/specs/T-13-monitoring.md「6.」）。
+   - Cloudflare の管理画面の通知先（「1-2.」）
+   - 外の監視サービス（Better Stack。「1-5.」。`#kokohima-alerts` の分だけ）
+3. 監視の webhook の URL が漏れたら、Slack 側で webhook を作り直し、上の2か所に登録し直す。
+4. 問い合わせの `#kokohima-contact` の webhook（T-24）は、監視の webhook とは別に作り、上の2か所には登録しない。登録するのは `wrangler secret put CONTACT_SLACK_WEBHOOK_URL --env prod` だけ（staging に入れるかは T-24 の確認事項。入れないと、staging の問い合わせは退避キューに入るだけ）。漏れたら Slack 側で作り直し、`wrangler secret put` し直す。
 
 ### 1-2. Cloudflare の通知先（webhook）
 1. 管理画面の Notifications → Destinations → Webhooks で、2つの webhook を登録する。
