@@ -124,6 +124,17 @@ describe("誰を誘う？（顔の列）", () => {
 });
 
 describe("空の状態（友達の有無で分ける）", () => {
+  it("友達の一覧を読めず、ここ暇もない：顔の列がないので「上の顔から…」の説明は出さない", async () => {
+    everyoneTab({
+      "/api/v1/friends": json({ type: "about:blank", title: "Internal Server Error", status: 500 }, 500),
+    });
+    renderApp();
+    expect(await screen.findByText("友達を読み込めませんでした")).toBeVisible();
+    expect(await screen.findByText("まだ友達のここ暇はありません")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "誰を誘う？" })).toBeNull();
+    expect(screen.queryByText("ここ暇がなくても、上の顔から「ここどう？」と誘えます")).toBeNull();
+  });
+
   it("友達がいて、見えているここ暇がない：顔の列と募るボタンと「まだ友達のここ暇はありません」。招待のボタンは出さない", async () => {
     everyoneTab();
     renderApp();

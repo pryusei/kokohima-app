@@ -58,7 +58,7 @@ function WhoToInvite({ friends }: { friends: Friend[] }) {
       <h2 id={headingId} className="text-l font-bold">
         誰を誘う？
       </h2>
-      <ul className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 lg:-mx-6 lg:px-6">
+      <ul className="-mx-4 flex gap-3 overflow-x-auto px-4 pt-1 pb-1 lg:-mx-6 lg:px-6">
         {friends.map((f) => {
           const name = displayNameOf(f.displayName);
           return (
@@ -117,9 +117,13 @@ export function EveryonePage() {
       {everyone.isError && isRateLimited(everyone.error) && !everyone.data && (
         <LoadError text="少し時間をおいて、もう一度開いてください" />
       )}
-      {/* 友達はいるが、見えているここ暇がない：上の顔の列と募るボタンで誘える（T-34） */}
+      {/* 友達はいるが、見えているここ暇がない：上の顔の列と募るボタンで誘える（T-34）。
+          顔の列が出ていない（友達の一覧を読み込み中・読めない）ときは、顔を指す説明を出さない */}
       {everyone.data?.length === 0 && (
-        <EmptyState title="まだ友達のここ暇はありません" description="ここ暇がなくても、上の顔から「ここどう？」と誘えます" />
+        <EmptyState
+          title="まだ友達のここ暇はありません"
+          description={friends.data ? "ここ暇がなくても、上の顔から「ここどう？」と誘えます" : undefined}
+        />
       )}
       {everyone.data && everyone.data.length > 0 && (
         <section aria-label="みんなのここ暇" className="flex flex-col gap-4">
