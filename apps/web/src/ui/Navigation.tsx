@@ -182,7 +182,11 @@ export function TabScreen({ title, children }: { title: string; children: ReactN
   const desktop = useDesktop();
   return (
     <div className="lg:pl-60">
+      {/* PC では左のナビを中身の前に置き、Tab でナビに先に着くようにする。スマホは今のまま中身のあと。
+          どちらも同じ並びの位置に描くので、幅が変わっても中身は作り直さない */}
+      {desktop && <TabBar />}
       <div className={FRAME}>
+        {/* 高さ68px＝鐘（44px）＋上下の余白。PC で鐘を出さなくても、ヘッダーの高さを変えない */}
         <header className="flex min-h-[68px] items-center justify-between px-4 py-3 lg:px-6">
           <h1 className="text-xl font-bold">{title}</h1>
           {!desktop && <Bell />}
@@ -192,7 +196,7 @@ export function TabScreen({ title, children }: { title: string; children: ReactN
           {children}
         </main>
       </div>
-      <TabBar />
+      {!desktop && <TabBar />}
     </div>
   );
 }
@@ -202,6 +206,8 @@ export function SubScreen({ title, back, children }: { title: string; back: stri
   const desktop = useDesktop();
   return (
     <div className="lg:pl-60">
+      {/* PC では左のナビを中身の前に置く（TabScreen と同じ） */}
+      {desktop && <TabBar />}
       <div className={FRAME}>
         <header className="flex items-center gap-1 px-2 py-3 lg:px-4">
           <button type="button" aria-label="戻る" className="grid size-11 place-items-center rounded-full text-ink" onClick={() => goBack(back)}>
@@ -216,7 +222,6 @@ export function SubScreen({ title, back, children }: { title: string; back: stri
           {children}
         </main>
       </div>
-      {desktop && <TabBar />}
     </div>
   );
 }

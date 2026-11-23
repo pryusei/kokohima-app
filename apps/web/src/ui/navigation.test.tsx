@@ -1,4 +1,4 @@
-import { onlineManager } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useLayoutEffect, useState } from "react";
@@ -9,6 +9,7 @@ import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
 import { AvailabilityChip } from "./AvailabilityChip";
 import { BottomSheet } from "./BottomSheet";
 import { HeadCount } from "./HeadCount";
+import { TabScreen } from "./Navigation";
 import { Switch } from "./Switch";
 import { DESKTOP_QUERY, useDesktop } from "./useDesktop";
 
@@ -509,21 +510,31 @@ describe("PC の配置（docs/specs/T-20-desktop-layout.md）", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("幅が変わっても、開いているシートと入力中の内容は残る", async () => {
+  it("幅が変わっても、タブの画面の中身は作り直さない（入力中の内容が残る）。鐘とナビの位置だけが変わる", async () => {
     const media = stubMatchMedia(false);
-    function Host() {
-      return (
-        <BottomSheet title="試し" label="試し" onClose={() => {}}>
+    mockFetch(tabs);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TabScreen title="試し">
           <input aria-label="ひとこと" />
-        </BottomSheet>
-      );
-    }
-    render(<Host />);
+        </TabScreen>
+      </QueryClientProvider>,
+    );
     const input = screen.getByRole("textbox", { name: "ひとこと" });
     await userEvent.type(input, "こんにちは");
+    expect(within(screen.getByRole("banner")).getByRole("link", { name: "お知らせ" })).toBeInTheDocument();
     media.set(true);
     expect(screen.getByRole("textbox", { name: "ひとこと" })).toBe(input);
     expect(input).toHaveValue("こんにちは");
-    expect(screen.getByRole("button", { name: "閉じる" })).toBeVisible();
+    expect(within(screen.getByRole("banner")).queryByRole("link")).toBeNull();
+    // PC ではナビが中身より前（Tab で先に着く）
+    const nav = screen.getByRole("navigation", { name: "タブ" });
+    expect(nav.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    media.set(false);
+    expect(screen.getByRole("textbox", { name: "ひとこと" })).toBe(input);
+    expect(input).toHaveValue("こんにちは");
+    // スマホでは今のまま、ナビは中身のあと
+    expect(screen.getByRole("navigation", { name: "タブ" }).compareDocumentPosition(input) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 });
