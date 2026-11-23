@@ -236,8 +236,8 @@
       "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
       "vars": {
         "APP_ORIGIN": "https://kokohima.app",
-        // TODO: 本番の OAuth クライアント ID を転記する（docs/specs/T-12-release.md「人が行う作業」3）
-        "GOOGLE_CLIENT_ID": "",
+        // 本番の OAuth クライアント ID（Google Cloud のプロジェクト kokohima の kokohima-prod。秘密ではない）
+        "GOOGLE_CLIENT_ID": "220837211336-2pelj3laks6rvgoi61eeba4upluvpp98.apps.googleusercontent.com",
         "APPLE_CLIENT_ID": "",
         "APPLE_TEAM_ID": "",
         "APPLE_KEY_ID": "",
