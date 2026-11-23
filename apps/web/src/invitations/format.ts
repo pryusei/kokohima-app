@@ -1,7 +1,7 @@
 import type { Broadcast, DirectInvite, InviteKind } from "@kokohima/shared";
 import type { Tone } from "../ui/Badge";
 import { linkHostname } from "@kokohima/shared";
-import { formatDate, formatSlot, localDateOf } from "../availability/format";
+import { formatDate, formatSlot, formatTime, localDateOf } from "../availability/format";
 
 // 誘いの表示（docs/specs/T-04-direct-invite.md「画面」）。断り・期限切れ・見送り・キャンセルは静かな灰色で、理由は出さない
 
@@ -16,6 +16,26 @@ export function formatRange(range: { startsAt: string; endsAt: string }) {
   return `${formatDate(localDateOf(range.startsAt))} ${formatSlot({ ...range, label: null })}`;
 }
 
+type Range = { startsAt: string; endsAt: string };
+
+/**
+ * 誘いのカードと詳細に大きく出す時間と、小さく添える時間（docs/specs/T-46-countered-card-focus-ring.md）。
+ * 「この時間なら」が返った送信の誘いは、「決める」で決まる代わりの時間を大きく出し、元の時間を「最初の時間 15:00〜17:00」と添える。
+ * 元の時間が代わりの時間と別の日なら、日付も添える。それ以外は誘いの時間だけ
+ */
+export function inviteTimes(
+  invite: Range & Pick<DirectInvite, "status" | "direction" | "counterProposal">,
+): { when: string; original: string | null } {
+  const proposal = invite.direction === "sent" && invite.status === "counter_proposed" ? invite.counterProposal : null;
+  if (!proposal) return { when: formatRange(invite), original: null };
+  const sameDay = localDateOf(invite.startsAt) === localDateOf(proposal.startsAt);
+  const original = sameDay ? formatSlot({ startsAt: invite.startsAt, endsAt: invite.endsAt, label: null }) : formatRange(invite);
+  return { when: formatRange(proposal), original: `最初の時間 ${original}` };
+}
+
+/** 「この時間なら」を決めるボタンの文言。「13:00〜で決める」 */
+export const decideLabel = (proposal: Range) => `${formatTime(proposal.startsAt)}〜で決める`;
+
 /** 閲覧者から見た状態の文言 */
 export function statusText(invite: Pick<DirectInvite, "status" | "direction" | "counterProposal">) {
   const sent = invite.direction === "sent";
@@ -23,9 +43,8 @@ export function statusText(invite: Pick<DirectInvite, "status" | "direction" | "
     case "pending":
       return sent ? "返事待ち" : "返事をしてください";
     case "counter_proposed":
-      return sent && invite.counterProposal
-        ? `この時間なら：${formatRange(invite.counterProposal)}`
-        : "この時間ならと返しました";
+      // 送信者のバッジは短い語だけ。代わりの時間はカードと詳細の本文に大きく出す（inviteTimes。T-46）
+      return sent ? "この時間なら" : "この時間ならと返しました";
     case "confirmed":
       return "成立";
     case "declined":

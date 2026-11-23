@@ -127,12 +127,11 @@
     font-family: var(--font-sans);
     line-height: 1.5;
   }
-  /* フォーカスは surface の2pxの隙間の外に focus の2pxの輪 */
+  /* フォーカスは2pxの隙間の外に focus の2pxの輪（docs/specs/T-46-countered-card-focus-ring.md）。
+     box-shadow だと shadow-card などの影のクラスに上書きされ、強制カラーのモードでは消えるので outline で描く */
   :focus-visible {
-    outline: none;
-    box-shadow:
-      0 0 0 2px var(--color-surface),
-      0 0 0 4px var(--color-focus);
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
   }
   /* iPhone の Safari の日付・時刻の入力欄は、標準の見た目のままだと中身の幅で広がり、シートの右にはみ出す。
      見た目の指定を外して幅を親に合わせ、値は左に寄せる（docs/specs/T-11-design.md「画面のつながり」） */

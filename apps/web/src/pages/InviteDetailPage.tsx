@@ -5,7 +5,7 @@ import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { addDays, formatDate, formatTime, localDateOf, localInstant } from "../availability/format";
-import { formatRange, KIND_LABELS, statusText, statusTone } from "../invitations/format";
+import { decideLabel, inviteTimes, KIND_LABELS, statusText, statusTone } from "../invitations/format";
 import { inviteQuery } from "../invitations/queries";
 import { honorificOf, nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
@@ -119,6 +119,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
   const d = invite.data;
   const name = d ? nameOfProfile(d.counterpart) : "";
   const named = d ? honorificOf(d.counterpart) : "";
+  const times = d ? inviteTimes(d) : null;
 
   return (
     <SheetScreen
@@ -149,7 +150,8 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
             {d.direction === "received" ? "誘ってくれた人" : "誘った相手"}：{name}
           </p>
           <div className="flex flex-col gap-1">
-            <p className="text-xl font-bold tabular-nums">{formatRange(d)}</p>
+            <p className="text-xl font-bold tabular-nums">{times?.when}</p>
+            {times?.original && <p className="text-s text-ink-muted tabular-nums">{times.original}</p>}
             {d.area && <p className="text-ink-muted">エリア：{d.area}</p>}
           </div>
           {d.message && <p className="whitespace-pre-wrap">{d.message}</p>}
@@ -194,7 +196,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
             <div className="flex flex-col gap-3">
               <ResponseButtons>
                 <SendButton variant="primary" onClick={() => act.mutate({ path: "decide", body: { decision: "accept" } })}>
-                  決める
+                  {d.counterProposal ? decideLabel(d.counterProposal) : "決める"}
                 </SendButton>
                 <SendButton onClick={() => act.mutate({ path: "decide", body: { decision: "skip" } })}>
                   見送る

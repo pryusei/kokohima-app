@@ -75,8 +75,28 @@ test("AがCに、ここ暇がない時間で誘う（ここどう？）→ Cが�
   await expect(sheet(c.page).getByText("この時間ならと返しました")).toBeVisible();
 
   await a.page.reload();
-  await expect(sheet(a.page).getByText(/この時間なら：.* 13:00〜15:00/)).toBeVisible();
-  await a.page.getByRole("button", { name: "決める" }).click();
+  await expect(sheet(a.page).getByText("この時間なら", { exact: true })).toBeVisible();
+  await expect(sheet(a.page).getByText(/^\d+\/\d+（.） 13:00〜15:00$/)).toBeVisible();
+  await expect(sheet(a.page).getByText("最初の時間 10:00〜12:00")).toBeVisible();
+
+  // 送信の一覧のカード（T-46）：スマホの幅で崩れず、Tab で着いたカードにフォーカスの輪が出る
+  await a.page.goto("/invites?tab=sent");
+  const card = a.page.getByRole("list", { name: "送信した誘い" }).getByRole("link").filter({ hasText: c.displayName });
+  const badge = card.getByText("この時間なら", { exact: true });
+  const name = card.getByText(`${c.displayName}さんへ`);
+  await expect(badge).toBeVisible();
+  await expect(card.getByText("最初の時間 10:00〜12:00")).toBeVisible();
+  const [cardBox, badgeBox, nameBox] = await Promise.all([card.boundingBox(), badge.boundingBox(), name.boundingBox()]);
+  expect(badgeBox!.x + badgeBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
+  expect(nameBox!.width).toBeGreaterThan(40);
+  await a.page.getByRole("link", { name: "成立", exact: true }).focus();
+  await a.page.keyboard.press("Tab");
+  await expect(card).toBeFocused();
+  await expect(card).toHaveCSS("outline-style", "solid");
+  await expect(card).toHaveCSS("outline-width", "2px");
+
+  await card.click();
+  await a.page.getByRole("button", { name: "13:00〜で決める" }).click();
   await expect(sheet(a.page).getByText("成立", { exact: true })).toBeVisible();
 
   await expect((await meetupsOf(a.page)).getByText(/13:00〜15:00/)).toBeVisible();

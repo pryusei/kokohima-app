@@ -26,7 +26,7 @@ export function Switch({ checked, onChange, disabled, children, description }: P
         />
         <span
           aria-hidden="true"
-          className="absolute inset-0 rounded-full border border-line-strong bg-surface-sunken transition-colors peer-checked:border-action peer-checked:bg-action peer-focus-visible:shadow-[0_0_0_2px_var(--color-surface),0_0_0_4px_var(--color-focus)] after:absolute after:top-[3px] after:left-[3px] after:size-5 after:rounded-full after:bg-surface after:shadow-card after:transition-transform peer-checked:after:translate-x-5 peer-checked:after:bg-on-action peer-disabled:opacity-50"
+          className="absolute inset-0 rounded-full border border-line-strong bg-surface-sunken transition-colors peer-checked:border-action peer-checked:bg-action peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus after:absolute after:top-[3px] after:left-[3px] after:size-5 after:rounded-full after:bg-surface after:shadow-card after:transition-transform peer-checked:after:translate-x-5 peer-checked:after:bg-on-action peer-disabled:opacity-50"
         />
       </span>
     </label>

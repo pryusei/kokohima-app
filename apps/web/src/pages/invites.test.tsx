@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
-import { initialRange, linkLabel, nextQuarter, statusText } from "../invitations/format";
+import { decideLabel, initialRange, inviteTimes, linkLabel, nextQuarter, statusText } from "../invitations/format";
 import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
 
 // 時計は 2026-10-10T00:00:00Z（東京は土曜 09:00）
@@ -93,7 +93,38 @@ describe("表示の関数", () => {
         direction: "sent",
         counterProposal: { startsAt: "2026-10-10T11:00:00Z", endsAt: "2026-10-10T14:00:00Z" },
       }),
-    ).toBe("この時間なら：10/10（土） 20:00〜23:00");
+    ).toBe("この時間なら");
+    expect(statusText({ status: "counter_proposed", direction: "received", counterProposal: null })).toBe(
+      "この時間ならと返しました",
+    );
+  });
+
+  it("「この時間なら」が返った送信の誘いは、代わりの時間を大きく、最初の時間を小さく出す（T-46）", () => {
+    const base = { startsAt: "2026-10-10T06:00:00Z", endsAt: "2026-10-10T08:00:00Z" };
+    const counterProposal = { startsAt: "2026-10-10T04:00:00Z", endsAt: "2026-10-10T06:00:00Z" };
+    expect(inviteTimes({ ...base, status: "counter_proposed", direction: "sent", counterProposal })).toEqual({
+      when: "10/10（土） 13:00〜15:00",
+      original: "最初の時間 15:00〜17:00",
+    });
+    // 代わりの時間が別の日なら、最初の時間にも日付を添える
+    expect(
+      inviteTimes({
+        ...base,
+        status: "counter_proposed",
+        direction: "sent",
+        counterProposal: { startsAt: "2026-10-11T04:00:00Z", endsAt: "2026-10-11T06:00:00Z" },
+      }),
+    ).toEqual({ when: "10/11（日） 13:00〜15:00", original: "最初の時間 10/10（土） 15:00〜17:00" });
+    // 受信者・ほかの状態は誘いの時間だけ
+    expect(inviteTimes({ ...base, status: "counter_proposed", direction: "received", counterProposal })).toEqual({
+      when: "10/10（土） 15:00〜17:00",
+      original: null,
+    });
+    expect(inviteTimes({ ...base, status: "confirmed", direction: "sent", counterProposal })).toEqual({
+      when: "10/10（土） 15:00〜17:00",
+      original: null,
+    });
+    expect(decideLabel(counterProposal)).toBe("13:00〜で決める");
   });
 });
 
@@ -268,8 +299,11 @@ describe("誘いの詳細と返答", () => {
       ),
     });
     renderApp();
-    expect(await screen.findByText("この時間なら：10/10（土） 20:00〜23:00")).toBeVisible();
-    expect(screen.getByRole("button", { name: "決める" })).toBeVisible();
+    expect(await screen.findByText("この時間なら", { exact: true })).toBeVisible();
+    // 決める時間（代わりの時間）を大きく、最初の時間を小さく出し、決めるボタンにも時刻を入れる（T-46）
+    expect(screen.getByText("10/10（土） 20:00〜23:00")).toBeVisible();
+    expect(screen.getByText("最初の時間 19:00〜23:00")).toBeVisible();
+    expect(screen.getByRole("button", { name: "20:00〜で決める" })).toBeVisible();
     expect(screen.getByRole("button", { name: "見送る" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "行く" })).toBeNull();
   });
@@ -287,6 +321,34 @@ describe("誘いタブと成立した予定", () => {
     expect(await within(list).findByText("今回は難しいみたい")).toBeVisible();
     expect(within(list).getByText("あきさんへ")).toBeVisible();
     expect(within(list).getByText("あそぼ")).toBeVisible();
+  });
+
+  it("「この時間なら」が返った送信の誘いのカード：バッジは短い語だけ、代わりの時間を大きく、最初の時間を小さく（T-46）", async () => {
+    window.history.replaceState(null, "", "/invites?tab=sent");
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/direct-invites": json({
+        items: [
+          invite({
+            direction: "sent",
+            kind: "kokodou",
+            status: "counter_proposed",
+            counterProposal: { startsAt: "2026-10-10T11:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z" },
+          }),
+        ],
+        nextCursor: null,
+      }),
+    });
+    renderApp();
+    const list = await screen.findByRole("list", { name: "送信した誘い" });
+    const badge = await within(list).findByText("この時間なら", { exact: true });
+    expect(badge).toHaveAttribute("data-tone", "lamp");
+    expect(within(list).getByText("10/10（土） 20:00〜23:00")).toBeVisible();
+    expect(within(list).getByText("最初の時間 19:00〜23:00")).toBeVisible();
+    expect(within(list).queryByText(/この時間なら：/)).toBeNull();
+    // 宛先の名前と種類は1行で切り詰める（バッジに押されて縦に並ばない）
+    expect(within(list).getByText("あきさんへ")).toHaveClass("truncate");
+    expect(within(list).getByText("ここどう？")).toHaveClass("truncate");
   });
 
   it("やっぱり難しい：押したらすぐキャンセルを表示する", async () => {
