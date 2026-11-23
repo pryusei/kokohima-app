@@ -172,6 +172,37 @@ describe("解析", () => {
     expect(ogp?.title).toBe("A & B ああ <i> x y");
   });
 
+  it("引用符の中の > でタグを終えない（#117）", () => {
+    // 二重引用符の中の >
+    expect(
+      parseOgp(page(`<meta property="og:title" content="ニュース > 国内 > 記事名"><meta property="og:description" content="A > B">`)),
+    ).toMatchObject({ title: "ニュース > 国内 > 記事名", description: "A > B" });
+    // 一重引用符の中の >、もう一方の引用符を含む値
+    expect(parseOgp(page(`<meta property='og:title' content='A > "B"'>`))?.title).toBe('A > "B"');
+    expect(parseOgp(page(`<meta property="og:title" content="It's > ok">`))?.title).toBe("It's > ok");
+    // 引用符の外の > ではタグを終える（引用符なしの値、/> の閉じ）
+    expect(parseOgp(page(`<meta property=og:title content=題><meta name="description" content="説" />`))).toMatchObject({
+      title: "題",
+      description: "説",
+    });
+    // 文字参照の &gt; は今までどおり戻す
+    expect(parseOgp(page(`<meta property="og:title" content="A &gt; B">`))?.title).toBe("A > B");
+  });
+
+  it("閉じのない引用符があれば、そこで読むのを終える", () => {
+    expect(parseOgp(page(`<meta property="og:title" content="先頭"><meta property="og:description" content="閉じない>`))).toEqual({
+      title: "先頭",
+      description: null,
+      siteName: null,
+      image: null,
+    });
+    expect(parseOgp(page(`<meta property="og:title" content="閉じない><title>題</title>`))?.title).toBe("題");
+    const t = Date.now();
+    expect(parseOgp(page(`<title>題</title>${'<meta content="'.repeat(100_000)}`))?.title).toBe("題");
+    expect(parseOgp(page(`<title>題</title>${`<meta content='a' x="`.repeat(50_000)}`))?.title).toBe("題");
+    expect(Date.now() - t).toBeLessThan(1000);
+  });
+
   it("長さの上限で切る", () => {
     const ogp = parseOgp(
       page(`<meta property="og:title" content="${"あ".repeat(250)}"><meta property="og:description" content="${"い".repeat(400)}"><meta property="og:site_name" content="${"う".repeat(150)}">`),
