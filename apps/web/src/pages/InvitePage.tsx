@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch } from "../api/client";
 import { keys } from "../api/keys";
 import { useAuth } from "../auth/AuthProvider";
+import { isLineInAppBrowser, withOpenExternalBrowser } from "../line/line";
+import { LineBrowserNotice } from "../line/LineBrowserNotice";
 import { navigate } from "../router";
 
 import { Avatar } from "../ui/Avatar";
@@ -38,12 +40,15 @@ export function InvitePage() {
   const { status } = useAuth();
   const [state, setState] = useState<State>({ kind: "loading" });
   const [sending, setSending] = useState(false);
+  // LINEのアプリ内ブラウザから開き直すために、読んだトークンを画面のメモリにだけ持つ（ストレージに置かない。T-28）
+  const [token, setToken] = useState<string | null>(null);
   const started = useRef(false);
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     const token = readAndClearInviteToken();
+    setToken(token);
     void (async () => {
       try {
         const res = await fetch("/api/v1/invite-links/lookup", {
@@ -138,6 +143,10 @@ export function InvitePage() {
             <Loading />
           ) : (
             <>
+              {/* トークンがあるときだけ（ないと、開き直した先で招待 Cookie がなく使えないリンクになる） */}
+              {token && isLineInAppBrowser() && (
+                <LineBrowserNotice reopenHref={withOpenExternalBrowser(`/invite#${new URLSearchParams({ t: token })}`)} />
+              )}
               <p className="text-ink-muted">友達になるには、ログインしてください。</p>
               <a className={buttonClass("secondary", { block: true })} href={loginUrl("google")}>
                 Googleでログイン

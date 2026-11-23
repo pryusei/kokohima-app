@@ -114,6 +114,57 @@ describe("招待リンクの受け口", () => {
     expect(screen.queryByRole("link", { name: "友達一覧" })).toBeNull();
   });
 
+  describe("LINEのアプリ内ブラウザ（T-28）", () => {
+    const LINE_UA = "Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/15.2.0";
+
+    it("未ログインなら、トークン入りの「ブラウザで開き直す」を出し、ストレージに置かない", async () => {
+      vi.spyOn(navigator, "userAgent", "get").mockReturnValue(LINE_UA);
+      const setItem = vi.spyOn(Storage.prototype, "setItem");
+      window.history.replaceState(null, "", "/invite?openExternalBrowser=1#t=secret-invite-token");
+      mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": lookupOk });
+      renderApp();
+      const reopen = await screen.findByRole("link", { name: "ブラウザで開き直す" });
+      expect(reopen).toHaveAttribute("href", "/invite?openExternalBrowser=1#t=secret-invite-token");
+      expect(window.location.hash).toBe("");
+      expect(window.location.search).toBe("");
+      expect(setItem).not.toHaveBeenCalled();
+      expect(screen.getByRole("region", { name: "ブラウザで開き直す" }).className).not.toMatch(/red|rose|error|warn/);
+    });
+
+    it("ログイン済みなら帯を出さない", async () => {
+      vi.spyOn(navigator, "userAgent", "get").mockReturnValue(LINE_UA);
+      window.history.replaceState(null, "", "/invite#t=x");
+      mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/invite-links/lookup": lookupOk });
+      renderApp();
+      expect(await screen.findByRole("button", { name: "友達になる" })).toBeVisible();
+      expect(screen.queryByRole("link", { name: "ブラウザで開き直す" })).toBeNull();
+    });
+
+    it("トークンがない（ログインから戻った）・使えないリンクなら帯を出さない", async () => {
+      vi.spyOn(navigator, "userAgent", "get").mockReturnValue(LINE_UA);
+      window.history.replaceState(null, "", "/invite");
+      mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": lookupOk });
+      const { unmount } = renderApp();
+      expect(await screen.findByRole("link", { name: "Googleでログイン" })).toBeVisible();
+      expect(screen.queryByRole("link", { name: "ブラウザで開き直す" })).toBeNull();
+      unmount();
+
+      window.history.replaceState(null, "", "/invite#t=x");
+      mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": json({}, 404) });
+      renderApp();
+      expect(await screen.findByText(/このリンクは使えません/)).toBeVisible();
+      expect(screen.queryByRole("link", { name: "ブラウザで開き直す" })).toBeNull();
+    });
+
+    it("LINE以外のブラウザでは帯を出さない", async () => {
+      window.history.replaceState(null, "", "/invite#t=x");
+      mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": lookupOk });
+      renderApp();
+      expect(await screen.findByRole("link", { name: "Googleでログイン" })).toBeVisible();
+      expect(screen.queryByRole("link", { name: "ブラウザで開き直す" })).toBeNull();
+    });
+  });
+
   it("使えないリンク（lookup が404）は1種類の文言だけ", async () => {
     window.history.replaceState(null, "", "/invite#t=x");
     mockFetch({ "/api/v1/auth/refresh": json({}, 401), "/api/v1/invite-links/lookup": json({}, 404) });
@@ -204,5 +255,14 @@ describe("友達タブ", () => {
     await userEvent.click(await within(sheet).findByRole("button", { name: "招待リンクを作る" }));
     expect(await within(sheet).findByLabelText("招待リンクのURL")).toHaveValue(url);
     expect(screen.getByText(/この画面でしか表示できません/)).toBeVisible();
+    // LINEで送る（T-28）：line.me の共有のURLを新しいタブで開く。本文に openExternalBrowser 付きの招待リンク
+    const line = within(sheet).getByRole("link", { name: "LINEで送る" });
+    expect(line).toHaveAttribute("target", "_blank");
+    expect(line).toHaveAttribute("rel", "noopener noreferrer");
+    const href = line.getAttribute("href") ?? "";
+    expect(href.startsWith("https://line.me/R/share?text=")).toBe(true);
+    expect(decodeURIComponent(href.slice("https://line.me/R/share?text=".length))).toBe(
+      "ここ暇で友達になろう\nhttp://localhost:5173/invite?openExternalBrowser=1#t=abc",
+    );
   });
 });

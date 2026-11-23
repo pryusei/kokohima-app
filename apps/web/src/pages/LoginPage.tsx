@@ -1,3 +1,5 @@
+import { isLineInAppBrowser, withOpenExternalBrowser } from "../line/line";
+import { LineBrowserNotice } from "../line/LineBrowserNotice";
 import { buttonClass } from "../ui/Button";
 import { LegalLinks } from "./LegalDocument";
 // ログイン画面（docs/specs/T-01-auth.md、キャンバス「2 ログイン」）
@@ -32,6 +34,9 @@ export function LoginPage({ search }: { search: string }) {
         <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
           ログインできませんでした。もう一度お試しください。
         </p>
+      )}
+      {isLineInAppBrowser() && (
+        <LineBrowserNotice reopenHref={withOpenExternalBrowser(`${window.location.pathname}${search}`)} />
       )}
       <div className="flex flex-col gap-2">
         <a className={buttonClass("secondary", { block: true })} href={startUrl("google")}>
