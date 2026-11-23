@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  contactStartProblems,
   countEffectiveDateLines,
   countOldRevisionDateLines,
   countRealEffectiveDates,
@@ -15,6 +16,7 @@ import {
   type CalendarDay,
 } from "../scripts/lib/effective-date.mjs";
 import chunk from "./fixtures/web-dist-legal.js?raw";
+import contactStart from "../../../packages/shared/src/contactStart.json";
 
 // 制定日・改定日・公表日の行の検査（docs/specs/T-19-privacy-terms.md「5.」「8.」）。fixture は vite が圧縮した chunk をまねたもの
 const PLACEHOLDER = "制定日：2026年◯月◯日";
@@ -251,5 +253,39 @@ describe("日本時間の今日", () => {
     expect(jstToday(Date.UTC(2026, 10, 24, 14, 59, 59))).toEqual(day(2026, 11, 24));
     expect(jstToday(Date.UTC(2026, 10, 24, 15, 0, 0))).toEqual(day(2026, 11, 25));
     expect(jstToday(Date.UTC(2026, 11, 31, 15, 0, 0))).toEqual(day(2027, 1, 1));
+  });
+});
+
+// 問い合わせの公開の日（docs/specs/T-24-contact.md「振る舞い 11.」「テスト計画」）
+describe("問い合わせの公開の日の検査", () => {
+  const dated = withDate("2026年11月23日");
+  const announced = `${dated}${rev("2026年12月2日")}${notice("2026年11月25日")}`;
+  const BEFORE = day(2026, 11, 25);
+
+  it("今日が公開の日より前：改定日の日付が公開の日と同じで、予告の行があれば通る", () => {
+    expect(contactStartProblems([announced], { startDate: "2026-12-02", deploy: true, today: BEFORE })).toEqual([]);
+  });
+
+  it("今日が公開の日より前：改定日が違う・改定日がない・予告の行がないと止まる", () => {
+    expect(contactStartProblems([announced], { startDate: "2026-12-03", deploy: true, today: BEFORE })).toHaveLength(1);
+    expect(contactStartProblems([dated], { startDate: "2026-12-02", deploy: true, today: BEFORE })).toHaveLength(2);
+    expect(contactStartProblems([`${dated}${rev("2026年12月2日")}`], { startDate: "2026-12-02", deploy: true, today: BEFORE })).toHaveLength(1);
+  });
+
+  it("今日が公開の日以後・null なら条件を見ない。いつもの検査（deploy でない）も日付の大小を見ない", () => {
+    expect(contactStartProblems([dated], { startDate: "2026-12-02", deploy: true, today: day(2026, 12, 2) })).toEqual([]);
+    expect(contactStartProblems([dated], { startDate: "2026-12-02", deploy: true, today: LATE })).toEqual([]);
+    expect(contactStartProblems([dated], { startDate: null, deploy: true, today: BEFORE })).toEqual([]);
+    expect(contactStartProblems([dated], { startDate: "2026-12-02", deploy: false })).toEqual([]);
+  });
+
+  it("暦にない日付・形の違う文字列は、いつもの検査でも止まる", () => {
+    for (const startDate of ["2026-02-30", "2026-13-01", "2026/12/02", "2026-12-2", "", 20261202]) {
+      expect(contactStartProblems([dated], { startDate, deploy: false }), String(startDate)).toHaveLength(1);
+    }
+  });
+
+  it("今の contactStart.json の値は、いつもの検査を通る", () => {
+    expect(contactStartProblems([announced], { startDate: contactStart.startDate, deploy: false })).toEqual([]);
   });
 });

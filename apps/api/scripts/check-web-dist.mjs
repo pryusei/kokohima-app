@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { effectiveDateProblems, jstToday, revisionNoticeLine } from "./lib/effective-date.mjs";
+import { contactStartProblems, effectiveDateProblems, jstToday, revisionNoticeLine } from "./lib/effective-date.mjs";
 import { isNoticePublished, PRODUCTION_ORIGIN } from "./lib/published-notice.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
@@ -67,6 +67,10 @@ if (notice) {
   }
 }
 errors.push(...effectiveDateProblems(texts, { deploy, today, noticeAlreadyPublished }));
+// 問い合わせの公開の日は、改定日（効力が生じる日）と同じ日（docs/specs/T-24-contact.md「振る舞い 11.」）
+const contactStartPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "shared", "src", "contactStart.json");
+const { startDate } = JSON.parse(readFileSync(contactStartPath, "utf8"));
+errors.push(...contactStartProblems(texts, { startDate, deploy, today }));
 
 if (errors.length > 0) {
   for (const e of errors) console.error(`::error::${e}`);
