@@ -11,6 +11,7 @@ import {
   effectiveDateProblems,
   EXPECTED_EFFECTIVE_DATE_LINES,
   jstToday,
+  revisionNoticeLine,
   type CalendarDay,
 } from "../scripts/lib/effective-date.mjs";
 import chunk from "./fixtures/web-dist-legal.js?raw";
@@ -28,21 +29,21 @@ describe("制定日の検査", () => {
 
   it("仮の値：いつもの検査は通り、--deploy では止まる", () => {
     expect(effectiveDateProblems([chunk], { deploy: false })).toEqual([]);
-    expect(effectiveDateProblems([chunk], { deploy: true })).toHaveLength(1);
+    expect(effectiveDateProblems([chunk], { deploy: true, today: LATE })).toHaveLength(1);
   });
 
   it("本物の日付：どちらも通る", () => {
     for (const date of ["2026年12月1日", "2027年1月15日"]) {
       const text = withDate(date);
       expect(countRealEffectiveDates(text)).toBe(1);
-      expect(effectiveDateProblems([text], { deploy: true })).toEqual([]);
+      expect(effectiveDateProblems([text], { deploy: true, today: LATE })).toEqual([]);
     }
   });
 
   it("形の違う日付は本物に数えない", () => {
     for (const date of ["2026年12月", "2026/12/1", "26年12月1日", "2026年◯月1日", "2026年13月40日", "2026年2月30日", "2026年0月1日"]) {
       expect(countRealEffectiveDates(withDate(date))).toBe(0);
-      expect(effectiveDateProblems([withDate(date)], { deploy: true })).toHaveLength(1);
+      expect(effectiveDateProblems([withDate(date)], { deploy: true, today: LATE })).toHaveLength(1);
     }
   });
 
@@ -61,14 +62,14 @@ describe("制定日の検査", () => {
   it("改定日：まだなければ通る。1つなら本物の日付を求め、2つ以上は止まる", () => {
     const dated = withDate("2026年12月1日");
     expect(countRevisionDateLines(dated)).toBe(0);
-    expect(effectiveDateProblems([dated], { deploy: true })).toEqual([]);
+    expect(effectiveDateProblems([dated], { deploy: true, today: LATE })).toEqual([]);
     const revised = `${dated}${rev("2027年4月1日")}`;
     expect(countRevisionDateLines(revised)).toBe(1);
     expect(countRealRevisionDates(revised)).toBe(1);
     expect(effectiveDateProblems([revised], { deploy: true, today: day(2027, 4, 1) })).toEqual([]);
     expect(effectiveDateProblems([`${dated}${rev("2027年◯月◯日")}`], { deploy: false })).toEqual([]);
-    expect(effectiveDateProblems([`${dated}${rev("2027年◯月◯日")}`], { deploy: true, today: TODAY })).toHaveLength(1);
-    expect(effectiveDateProblems([`${dated}${rev("2027年13月40日")}`], { deploy: true, today: TODAY })).toHaveLength(1);
+    expect(effectiveDateProblems([`${dated}${rev("2027年◯月◯日")}`], { deploy: true, today: LATE })).toHaveLength(1);
+    expect(effectiveDateProblems([`${dated}${rev("2027年13月40日")}`], { deploy: true, today: LATE })).toHaveLength(1);
     expect(effectiveDateProblems([revised, rev("2027年5月1日")], { deploy: false })).toHaveLength(1);
   });
 
@@ -78,7 +79,9 @@ describe("制定日の検査", () => {
     expect(countOldRevisionDateLines(old)).toBe(1);
     expect(countRevisionDateLines(old)).toBe(0);
     expect(effectiveDateProblems([old], { deploy: false })).toHaveLength(1);
-    expect(effectiveDateProblems([old], { deploy: true, today: TODAY })).toHaveLength(1);
+    expect(effectiveDateProblems([old], { deploy: true, today: LATE })).toHaveLength(1);
+    // 新しい形と並んでいても、前の形の問題だけを出す（日付の大小は見ない）
+    expect(effectiveDateProblems([`${old}${rev("2031年1月1日")}`], { deploy: true, today: LATE })).toHaveLength(1);
     // 新しい形と予告の行は、前の形に数えない（「改定日から」は「改定日：」ではない）
     expect(countOldRevisionDateLines(`${rev("2026年12月2日")}${notice("2026年11月25日")}`)).toBe(0);
   });
@@ -89,6 +92,8 @@ const rev = (date: string) => `const R="改定日（効力が生じる日）：$
 const notice = (date: string) => `const N="公表日：${date}（この版は改定日から適用します。それまでは、前の版を適用します）";`;
 const day = (year: number, month: number, d: number): CalendarDay => ({ year, month, day: d });
 const TODAY = day(2026, 11, 25);
+/** 制定日などより十分あとの今日（大小の検査に当たらない日） */
+const LATE = day(2030, 1, 1);
 /** 制定日・改定日・公表日（なければ null）を入れた fixture */
 const page = (r: string, p: string | null) => `${withDate("2026年11月23日")}${rev(r)}${p === null ? "" : notice(p)}`;
 
@@ -132,10 +137,26 @@ describe("公表日（予告の行）の検査", () => {
 });
 
 describe("--deploy の日付の大小（予告の間：P ≦ 今日 ≦ R、R − P は7日以上30日以下）", () => {
-  const check = (r: string, p: string | null, today: CalendarDay) => effectiveDateProblems([page(r, p)], { deploy: true, today });
+  // 本番にこの予告の行がもう出ている（2回め以降のデプロイ）。初めて出すデプロイは下の describe
+  const check = (r: string, p: string | null, today: CalendarDay, noticeAlreadyPublished = true) =>
+    effectiveDateProblems([page(r, p)], { deploy: true, today, noticeAlreadyPublished });
 
   it("公表日の日に、改定日をその7日後にしたデプロイは通る（今の legal.ts の形）", () => {
-    expect(check("2026年12月2日", "2026年11月25日", day(2026, 11, 25))).toEqual([]);
+    expect(check("2026年12月2日", "2026年11月25日", day(2026, 11, 25), false)).toEqual([]);
+    expect(check("2026年12月2日", "2026年11月25日", day(2026, 11, 25), true)).toEqual([]);
+  });
+
+  it("初めて予告を出すデプロイ（本番にまだ出ていない）は、公表日＝今日だけ通る", () => {
+    expect(check("2026年12月2日", "2026年11月25日", day(2026, 11, 25), false)).toEqual([]);
+    // 公表日より後に初めてデプロイした（予告が7日より短くなる）
+    expect(check("2026年12月2日", "2026年11月25日", day(2026, 11, 26), false)).toHaveLength(1);
+    expect(check("2026年12月2日", "2026年11月25日", day(2026, 11, 30), false)).toHaveLength(1);
+    // 公表日より前
+    expect(check("2026年12月2日", "2026年11月25日", day(2026, 11, 24), false)).toHaveLength(1);
+  });
+
+  it("本番に出ているかが分からなければ止まる", () => {
+    expect(effectiveDateProblems([page("2026年12月2日", "2026年11月25日")], { deploy: true, today: TODAY })).toHaveLength(1);
   });
 
   it("R − P が7日・30日なら通り、6日・31日なら止まる", () => {
@@ -179,6 +200,29 @@ describe("--deploy の日付の大小（予告の間：P ≦ 今日 ≦ R、R �
   });
 });
 
+describe("--deploy の制定日の大小（制定日 ≦ 今日、制定日 ＜ 公表日 ≦ 改定日、予告がなければ 制定日 ＜ 改定日）", () => {
+  const effective = (e: string, r: string | null, p: string | null) =>
+    `${withDate(e)}${r === null ? "" : rev(r)}${p === null ? "" : notice(p)}`;
+  const problems = (text: string, today: CalendarDay) =>
+    effectiveDateProblems([text], { deploy: true, today, noticeAlreadyPublished: true });
+
+  it("制定日が今日より後なら止まる", () => {
+    expect(problems(effective("2026年11月23日", null, null), day(2026, 11, 23))).toEqual([]);
+    expect(problems(effective("2026年11月24日", null, null), day(2026, 11, 23))).toHaveLength(1);
+  });
+
+  it("公表日は制定日より後", () => {
+    expect(problems(effective("2026年11月24日", "2026年12月2日", "2026年11月25日"), TODAY)).toEqual([]);
+    expect(problems(effective("2026年11月25日", "2026年12月2日", "2026年11月25日"), TODAY)).toHaveLength(1);
+  });
+
+  it("予告がなければ、改定日は制定日より後", () => {
+    expect(problems(effective("2026年11月23日", "2026年11月24日", null), TODAY)).toEqual([]);
+    expect(problems(effective("2026年11月24日", "2026年11月24日", null), TODAY)).toHaveLength(1);
+    expect(problems(effective("2026年11月25日", "2026年11月24日", null), TODAY)).toHaveLength(1);
+  });
+});
+
 describe("--deploy の日付の大小（予告のあと：R ≦ 今日）", () => {
   const check = (r: string, today: CalendarDay) => effectiveDateProblems([page(r, null)], { deploy: true, today });
 
@@ -190,6 +234,15 @@ describe("--deploy の日付の大小（予告のあと：R ≦ 今日）", () =
   it("改定日が今日より後なのに予告の行がなければ止まる", () => {
     expect(check("2026年12月2日", day(2026, 12, 1))).toHaveLength(1);
     expect(check("2027年1月1日", day(2026, 12, 31))).toHaveLength(1);
+  });
+});
+
+describe("予告の行を取り出す", () => {
+  it("dist の JS から「公表日：…（…）」の全体を返し、なければ null", () => {
+    expect(revisionNoticeLine([chunk, page("2026年12月2日", "2026年11月25日")])).toBe(
+      "公表日：2026年11月25日（この版は改定日から適用します。それまでは、前の版を適用します）",
+    );
+    expect(revisionNoticeLine([page("2026年12月2日", null)])).toBeNull();
   });
 });
 

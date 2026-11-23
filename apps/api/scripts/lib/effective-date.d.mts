@@ -21,5 +21,9 @@ export declare function countRealRevisionDates(text: string): number;
 export declare function countRevisionNoticeLines(text: string): number;
 export declare function countRealRevisionNoticeDates(text: string): number;
 export declare function countOldRevisionDateLines(text: string): number;
-export declare function effectiveDateProblems(texts: string[], options: { deploy: boolean; today?: CalendarDay }): string[];
+export declare function effectiveDateProblems(
+  texts: string[],
+  options: { deploy: boolean; today?: CalendarDay; noticeAlreadyPublished?: boolean },
+): string[];
+export declare function revisionNoticeLine(texts: string[]): string | null;
 export declare function jstToday(now: number): CalendarDay;
