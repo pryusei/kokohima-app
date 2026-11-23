@@ -44,3 +44,18 @@ test("未ログインで / を開くとログイン画面になる", async ({ pa
   await expect(page.getByRole("link", { name: "Appleでログイン" })).toBeVisible();
   await expect(page).toHaveURL(/\/login$/);
 });
+
+for (const name of ["プライバシー ポリシー", "利用規約"]) {
+  test(`未ログインで、ログイン画面から「${name}」を開き、「戻る」でログイン画面に戻る`, async ({ page }) => {
+    // docs/specs/T-19-privacy-terms.md「E2Eテスト」
+    await page.goto("/login");
+    await expect(page.getByText("続けると利用規約とプライバシー ポリシーに同意したことになります")).toBeVisible();
+    await page.getByRole("link", { name, exact: true }).click();
+    await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
+    await expect(page).toHaveTitle(`${name}｜ここ暇`);
+    await page.getByRole("button", { name: "戻る" }).click();
+    await expect(page.getByRole("link", { name: "Googleでログイン" })).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveTitle("ここ暇");
+  });
+}
