@@ -6,7 +6,7 @@ import { useEffect } from "react";
  * 制定日の行。「制定日：」と日付を分けずに1つの文字列で持つ（ビルドした JS で並びを検査するため。check-web-dist.mjs）。
  * 仮の値のままでは deploy:prod が止まる。決めたら「制定日：YYYY年M月D日」にする
  */
-export const EFFECTIVE_DATE_LINE = "制定日：2026年◯月◯日";
+export const EFFECTIVE_DATE_LINE = "制定日：2026年11月23日";
 
 /**
  * 改定日の行。初めて改定したときに「改定日：YYYY年M月D日」の1つの文字列にし、次からは日付を書き換える（行は1つだけ）。
