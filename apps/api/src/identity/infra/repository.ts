@@ -344,6 +344,16 @@ export async function findEmail(db: Db, userId: string) {
   return row?.email ?? null;
 }
 
+/** 退会していないかと、メールアドレス（T-24）。行がなければ null */
+export async function findContactSender(db: Db, userId: string) {
+  const row = await db
+    .select({ email: users.email, withdrawnAt: users.withdrawnAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  return row ? { active: row.withdrawnAt === null, email: row.email ?? null } : null;
+}
+
 /** このセッションより前に作られた、その人のセッションがあるか（失効・期限切れも数える） */
 export async function hasEarlierSession(db: Db, userId: string, sessionId: string) {
   const current = await db
@@ -402,6 +412,8 @@ export const PERSONAL_OUTBOX_TYPES = [
   "CalendarConnected",
   "CalendarReauthRequired",
   "AvailabilityCancelledByCalendar",
+  // 問い合わせ（内容が入る。処理済み・未処理とも消し、まだ届けていなければ届かない。T-24「振る舞い 5.」）
+  "ContactMessageSubmitted",
 ] as const;
 
 /**

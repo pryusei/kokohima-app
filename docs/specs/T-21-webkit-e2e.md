@@ -41,6 +41,7 @@
   | `e2e/navigation.spec.ts` | 4つのテストすべて（下のタブ、募集の作成のシートを「閉じる」で閉じる、誘いの詳細のシート、URL を直接開いて閉じる） |
   | `e2e/invites.spec.ts` | AがBの見えている枠から誘う（あそぼ）→ Bが「行く」→ 双方の「成立」に予定が出る |
   | `e2e/broadcasts.spec.ts` | AがB・C・Dに募集 → BとCが応じる → Aには人数だけ → 決める → A・B・Cに予定、Dは募集中のまま |
+  | `e2e/contact.spec.ts` | 友達タブ → 設定 → 問い合わせで、不具合を送ると「送りました」が出て、偽の Slack にエスケープされて1通届く（T-24。複数行の入力欄・チップ・画面の幅のはみ出し） |
 
 - 新しいテストを WebKit でも回すかは、そのテストの仕様書で決める（決めたら `@iphone` を付ける）。
 
@@ -97,3 +98,4 @@
 | --- | --- | --- |
 | 2026-11-23 | 初版 | 利用者の依頼（pryusei/kokohima-app#139 のレビューで、iPhone のはみ出しは Chromium の E2E では再現しないと指摘された） |
 | 2026-11-23 | 実装した。WebKit は `http://localhost` で `Secure` の Cookie を保存しないので、`iphone` 用に HTTPS の画面（`:5174`）と Origin を合わせた E2E の API（`:8789`）を足した（利用者と決めた）。Linux の WebKit では iPhone のはみ出しが再現しないことを確かめた。T-20 で `chromium` のプロジェクトが `mobile` になったのに合わせた | 実装PR |
+| 2026-11-23 | WebKit で回すテストに問い合わせの流れを足した | T-24 実装PR（docs/specs/T-24-contact.md） |

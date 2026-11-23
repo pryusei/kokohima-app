@@ -46,7 +46,7 @@
 | --- | --- | --- |
 | `kind` | enum | `error`（捕まえていない例外）・`unhandled_rejection`・`render`（描画の例外）・`push_subscribe`（プッシュの購読の失敗）・`sw_register`（Service Worker の登録の失敗） |
 | `name` | enum | `TypeError`・`RangeError`・`SyntaxError`・`ReferenceError`・`AbortError`・`NotAllowedError`・`InvalidStateError`・`QuotaExceededError`・`SecurityError`・`NetworkError`・`ZodError`・`Error`・`other` |
-| `route` | enum | `/`・`/availability`・`/invites`・`/friends`・`/invites/new`・`/broadcasts/new`・`/invites/:id`・`/broadcasts/:id`・`/meetups/:id`・`/friends/:id`・`/notifications`・`/settings`・`/settings/calendar`・`/settings/presets`・`/settings/notifications`・`/settings/account`・`/login`・`/invite`・`/auth/complete`・`other` |
+| `route` | enum | `/`・`/availability`・`/invites`・`/friends`・`/invites/new`・`/broadcasts/new`・`/invites/:id`・`/broadcasts/:id`・`/meetups/:id`・`/friends/:id`・`/notifications`・`/settings`・`/settings/calendar`・`/settings/presets`・`/settings/notifications`・`/settings/account`・`/settings/contact`（T-24）・`/login`・`/invite`・`/auth/complete`・`other` |
 | `appVersion` | string | `^([0-9a-f]{7,12}\|\d{12})$`（git の短い SHA か、ビルドの日時 `YYYYMMDDHHmm`） |
 
 - `route` と `name` の一覧は、画面の経路や集める例外が変わったら、この表と `packages/shared` を同じPRで直す。
@@ -159,3 +159,4 @@
 | 2026-11-22 | `route`・`name` を決めた値の一覧から選ぶ形に、`appVersion` の形を固定、上限を超えた分のログを出さない・全体の上限、処理の順番、本文の上限を400で（新しい code を足さない）、`ApiError` を送らない、ErrorBoundary の位置、`sendBeacon`・`no-cors` を使わない、T-12 リリースの後に実装、テスト計画と直す文書を足す | 仕様書PRの前のレビュー（セキュリティ・仕様） |
 | 2026-11-22 | 専用の回数の上限2つ（IP ごと10回・全体60回）と処理の順番（全体は検証のあと）、`client_error_dropped`、判定できないときは捨てる、オフラインでは送らず `online` の項目をやめる、API の置き場所、1024バイトと `charset`、`sendBeacon` を使わない理由、リスナーの登録の順番、人が確かめること（Workers Logs の自動の項目・Issues） | 仕様書PRのレビュー（pryusei/kokohima-app#109） |
 | 2026-11-22 | `client_error_dropped` を warn で出してアラートを足す、判定できないときも `rate_limit_skipped` は出す（`AppDeps.rateLimit` を3つの値に）、wrangler の5つの環境と `namespace_id` の番号 | 仕様書PRのレビュー（2回目） |
+| 2026-11-23 | `route` の一覧に `/settings/contact` を足した（T-18 の実装PRで `packages/shared` にも足す） | T-24 実装PR（docs/specs/T-24-contact.md） |

@@ -44,6 +44,8 @@ export type Bindings = {
   APPLE_LOGIN_ENABLED?: string;
   /** 画面（apps/web のビルド）の静的アセット。prod と、ローカル専用の assets の環境にだけある（docs/specs/T-12-release.md「振り分け」） */
   ASSETS?: Fetcher;
+  /** 問い合わせを届ける Slack の Incoming Webhook の URL（secret。docs/specs/T-24-contact.md「8.」）。ないと consumer は送らずに失敗する */
+  CONTACT_SLACK_WEBHOOK_URL?: string;
   E2E_MODE?: string;
 };
 
@@ -86,7 +88,16 @@ export type AppDeps = {
     /** タイムアウト（ミリ秒）。1回の取得（本文を読み終えるまで）・ページか画像の全体・名前解決の1回。テストでだけ短くする */
     timeouts: { fetchMs: number; totalMs: number; dnsMs: number };
   };
+  /**
+   * 問い合わせの webhook の許す宛先（T-24「振る舞い 3.」）。既定は hooks.slack.com の /services/。
+   * 差し替えるのは E2E のエントリ（src/e2e/entry.ts）だけ（環境変数では切り替えない）
+   */
+  contactWebhookTarget: ContactWebhookTarget;
+  /** 問い合わせの公開の日（Unix ミリ秒。null は未定）。既定は packages/shared の contactStartAt()。E2E のエントリだけが 0 にする */
+  contactStartAt: number | null;
 };
+
+export type ContactWebhookTarget = { hostname: string; pathPrefix: string };
 
 /** 名前解決の結果。addresses は A・AAAA の data。not_found は NXDOMAIN、error は SERVFAIL・タイムアウトなど */
 export type ResolveResult =

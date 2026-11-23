@@ -104,6 +104,7 @@
 - 通知先は Slack の2つのチャンネルに分ける。どちらも非公開のチャンネルにする。
   - `#kokohima-alerts`（すぐ見る）：スマホの通知をオンにする。
   - `#kokohima-notices`（気づけばよい）：通知はオフでよい。1日1回見る。
+  - 問い合わせの `#kokohima-contact`（T-24）は監視の通知先ではない。問い合わせの内容とメールアドレスが入るので、「ログの本文は Slack に流さない」の例外はこのチャンネルだけ。監視の2つのチャンネルには今までどおり流さない。
 - Monitors は、本番の Worker の Workers Logs を対象に、`event` ごとに件数を数える。同じ条件が続く間の再通知は1時間ごと（既定）。
 - 閾値は、友達だけ（100人程度）の運用を前提にした最初の値。運用で見直し、変えたらこの表と手順書を直す。
 
@@ -131,6 +132,7 @@
 | `notification_mail_rejected` | 1時間に10件以上 | メールの配信サービスに拒否されている |
 | `notification_mail_global_limit` | 1時間に1件以上 | サービス全体の1日のメール数の上限に達した |
 | `calendar_sync_held` | 1時間に5件以上 | カレンダーの大きな変化での保留が多い（T-06） |
+| `contact_delivered_after_withdrawal` | 1時間に1件以上 | 問い合わせを Slack に届けている間に送り主が退会した（T-24）。ログの `id`（受付番号）のメッセージを `#kokohima-contact` で探して消す |
 | `cleanup_capped`（毎分の step：`cleanup_notifications`・`cleanup_invitations`・`cleanup_broadcasts`・`cleanup_invite_links`・`cleanup_recurrence_exceptions`・`cleanup_stale_notification_outbox`） | 1時間に30件以上（これらの step の合計の件数） | 毎分の保持期間の掃除が、上限いっぱいまで処理する実行が続いている（1つの step が詰まり続けると1時間に60件。T-17「9.」）。`step` を見て上限の見直し。お知らせを30日に変えた直後や、最初の掃除では一時的に出る |
 | `cleanup_capped`（15分ごとの step：`mark_dormant_connections`・`wake_dormant_connections`・`cleanup_push_subscriptions`） | 1時間に3件以上（これらの step の合計の件数） | 休眠の処理・購読の掃除が、上限いっぱいまで処理する実行が続いている（1時間に4回の実行。T-17「9.」）。`step` を見て上限の見直し |
 
@@ -163,7 +165,7 @@
 1. **設定**：Slack のチャンネルと Incoming Webhook の作り方、Cloudflare の通知先の登録、Monitors の一覧（上の表のとおりの名前・条件・閾値）、Issues の自動の通知、外の監視サービスの設定。
 2. **アラートごとの最初の対応**：上の表の「意味と、最初にすること」を、ログの引き方（Workers Logs の Query Builder で `event` と時間帯を指定）と一緒に書く。
 3. **退避キューの調べ方とやり直し方**（下の「8.」）。
-4. **問い合わせの調べ方**（下の「9.」）。
+4. **不具合の知らせの調べ方**（下の「9.」）。
 5. **ログを見られる人**（下の「10.」）。
 
 ### 8. 退避キューの調べ方とやり直し方
@@ -183,10 +185,11 @@
   - 調べ終えたら、consumer を外す。
   - 本文には outbox の payload（時刻などの行動の情報）や、利用者ID（`calendar_sync`）が入る。Slack・issue・PR に貼らない。
   - 読むための API トークンは、Queues の読み書きだけに絞り、使い終えたら消す。
+- `type` が `ContactMessageSubmitted`（T-24）のメッセージは受付番号（`id`）だけで、内容はない。やり直しは outbox の行の `processed_at` を NULL に戻す（届かなかった行は内容が残っている）。webhook の作り直し・チャンネルの削除・`CONTACT_SLACK_WEBHOOK_URL` の設定を疑う。
 - 退避キューのメッセージは4日で消える。消える前に調べられなくても、outbox の行（7日）からやり直せる。
 - 退避キューを自動で読む処理は作らない（スコープ外）。
 
-### 9. 問い合わせの調べ方
+### 9. 不具合の知らせの調べ方
 - 最初のリリース（友達だけ）では、画面に問い合わせ番号（`requestId`）を出さない。画面は変えない。
 - 友達から「うまく動かなかった」と聞いたら、起きた時刻（おおよそ）と、何をしていたかを聞く。その時間帯の `unhandled_error`・`job_dead_lettered`・`health_degraded` を Workers Logs で引く。
 - `unhandled_error` のログには `requestId` がある。ブラウザの開発者ツールで応答が見られる場合は、応答の `requestId` と突き合わせる。
@@ -196,7 +199,7 @@
 ### 10. ログを見られる人の範囲
 - Workers Logs・Issues・Monitors を見られるのは、Cloudflare のアカウントのメンバーだけ。いまは開発者本人だけ。2段階認証を必ず有効にする。
 - 人を足すときは、読み取りだけの役割にする。足したら手順書の一覧に書く。
-- Slack の2つのチャンネルは非公開にし、メンバーは運営者だけにする。
+- Slack の2つのチャンネルは非公開にし、メンバーは運営者だけにする。問い合わせの `#kokohima-contact`（T-24）も同じく非公開で、メンバーは運営者だけ（アプリの投稿を消せる役割）。
 - ログの保持は Workers Logs の7日。それより長く残す仕組み（Logpush など）は作らない（保存するデータを減らす方針。監査ログは #41）。
 
 ## 認可と秘匿
@@ -280,3 +283,5 @@
 | 2026-11-22 | Workers Issues にリクエストの URL（トークンが入りうる）が載らないかを、Slack への通知を作る前に確かめることを足した。退避キューの本文に利用者ID が入りうることを書いた。T-10 の回数の上限の表に `health_ready` を足した | 実装のあとのレビュー（セキュリティ・仕様） |
 | 2026-11-23 | ログの一覧（気づけばよい）に `cleanup_capped`（`step`・`count`）を足した | T-17 実装PR（docs/specs/T-17-retention.md） |
 | 2026-11-23 | `cleanup_capped` を、毎分の step と15分ごとの step の2つのモニターに分けた（Monitors は合計の件数で数えるので、15分ごとの step は1時間に30件に届かない） | T-17 実装PRのレビュー |
+| 2026-11-23 | `#kokohima-contact` が監視の通知先でなく、ログの本文を流さない決まりの例外であること、`contact_delivered_after_withdrawal`、退避キューの `ContactMessageSubmitted`、見られる人を足した | T-24 実装PR（docs/specs/T-24-contact.md） |
+| 2026-11-23 | 「9. 問い合わせの調べ方」を「9. 不具合の知らせの調べ方」にした（問い合わせのフォームと名前が重なるため。手順書の「4.」と同じ名前） | T-24 実装PR（docs/specs/T-24-contact.md） |

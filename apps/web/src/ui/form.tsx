@@ -40,3 +40,20 @@ export function ChipRow({ label, children }: { label: string; children: ReactNod
     </div>
   );
 }
+
+/** 複数行の入力欄（inputClass に複数行の分を足したもの。幅の指定 min-w-0・max-w-full を含む） */
+export const textareaClass = `${inputClass} py-2 min-h-40 resize-y leading-normal`;
+
+/** 文字数（「count / max」）。超えたら超えた数の文にする。色は赤にせず、超えたときだけ読み上げる（aria-live="polite"） */
+export function CharCount({ count, max }: { count: number; max: number }) {
+  const over = count - max;
+  const text = over > 0 ? `${max}文字までです（${over}文字多い）` : `${count} / ${max}`;
+  return (
+    <div className="text-right text-xs text-ink-muted tabular-nums">
+      <span aria-hidden={over > 0 ? true : undefined}>{text}</span>
+      <span className="sr-only" aria-live="polite">
+        {over > 0 ? text : ""}
+      </span>
+    </div>
+  );
+}
