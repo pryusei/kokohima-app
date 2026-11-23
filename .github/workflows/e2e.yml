@@ -29,17 +29,19 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # 版を先に出す。分類が失敗しても、版は e2e に渡り、e2e は回る（判定に失敗したときは回す側に倒す）
+      - id: playwright
+        run: node scripts/ci/playwright-version.mjs
+      # 比べる先は PR の宛先ではなく既定のブランチ（ci の changes と同じ理由）
       - id: classify
         if: github.event_name == 'pull_request'
         env:
-          BASE: origin/${{ github.base_ref }}
+          BASE: origin/${{ github.event.repository.default_branch }}
         run: node scripts/ci/changes.mjs "$BASE"
-      - id: playwright
-        run: node scripts/ci/playwright-version.mjs
 
   e2e:
     needs: prepare
-    # 飛ばす条件は ci の unit と同じ（prepare が成功して文書だけのときだけ）。prepare が失敗したときは、版が空でコンテナが起動せず落ちる
+    # 飛ばす条件は ci の unit と同じ（prepare が成功して文書だけのときだけ）。版が出せずに prepare が落ちたときは、版が空でコンテナが起動せず落ちる
     if: ${{ !cancelled() && !(needs.prepare.result == 'success' && needs.prepare.outputs.docs_only == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -51,6 +53,8 @@ jobs:
       options: --ipc=host
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
