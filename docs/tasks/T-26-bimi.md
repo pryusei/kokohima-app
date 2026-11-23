@@ -10,16 +10,17 @@
 
 ## スコープ
 - やること：
-  - DMARC に `rua` を足し、レポートを見てから `quarantine` の `pct=100` へ段階的に上げる（`infra/terraform/envs/prod/dns.tf`）
+  - DMARC に `rua` を足し、レポートを見てから段階的に `quarantine` へ上げる（最後の記録は `pct` を書かない）（`infra/terraform/envs/prod/dns.tf`）
   - BIMI 用のロゴ（SVG Tiny PS）を `apps/web/public/bimi/logo.svg` に置く
-  - 証明書（VMC か CMC）を取り、`apps/web/public/bimi/vmc.pem` に置く（**人が行う**）
+  - 証明書（VMC か CMC）を取り、`apps/web/public/bimi/cert.pem` に置く（**人が行う**）
   - `default._bimi.kokohima.app` の TXT を `dns.tf` に足す
-  - 単体テスト（ロゴの条件、記録とファイルの一致）
+  - `check-web-dist.mjs` に `dist/bimi/logo.svg` の存在の検査を足す
+  - 単体テスト（ロゴの条件、記録とファイルの一致。置き場所は `apps/web`）
 - やらないこと：アプリのアイコン・メール本文・差出人の変更、商標の出願、`terraform apply`（人が行う）
 
 ## 受け入れ条件
 - [ ] 仕様書の確認事項1〜4が解消している（特に、証明書を取るか・どれを取るか）
-- [ ] DMARC の記録が `rua` つきで、レポートで Resend 以外の失敗がないことを確かめてから `p=quarantine; pct=100` にしている
+- [ ] DMARC の記録が `rua` つきで、レポートで Resend 以外の失敗がないことを確かめてから `p=quarantine`（`pct` なし、`sp=none` なし）にしている
 - [ ] `logo.svg` が SVG Tiny PS の条件（仕様書「テスト計画」）を満たし、`Content-Type: image/svg+xml` で認証なしに取れる
 - [ ] `dns.tf` の BIMI の記録の URL が、置いたファイルと一致する。Terraform は `fmt`・`validate` を通し、`plan` の結果を PR に貼ってある。`apply` はしていない
 - [ ] BIMI Group の Inspector で記録・ロゴ・証明書が通り、Gmail（または確認事項3の端末）でロゴが出ることを人が確かめた
