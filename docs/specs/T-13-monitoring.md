@@ -131,6 +131,8 @@
 | `notification_push_rejected` | 1時間に10件以上 | プッシュの送り先に拒否されている |
 | `notification_mail_rejected` | 1時間に10件以上 | メールの配信サービスに拒否されている |
 | `notification_mail_global_limit` | 1時間に1件以上 | サービス全体の1日のメール数の上限に達した |
+| `wish_suggest_global_limit` | 1時間に1件以上 | 行きたいのAI提案の、サービス全体の1日の回数の上限に達した（T-29）。悪用か、上限が低すぎるか。Anthropic の Console で使用料も確かめる |
+| `wish_suggest_config_invalid` | 1時間に1件以上 | 行きたいのAI提案の設定値（`ANTHROPIC_API_KEY`・上限）がない・形が違う（T-29）。機能が止まっている |
 | `calendar_sync_held` | 1時間に5件以上 | カレンダーの大きな変化での保留が多い（T-06） |
 | `contact_delivered_after_withdrawal` | 1時間に1件以上 | 問い合わせを Slack に届けている間に送り主が退会した（T-24）。ログの `id`（受付番号）のメッセージを `#kokohima-contact` で探して消す |
 | `cleanup_capped`（毎分の step：`cleanup_notifications`・`cleanup_invitations`・`cleanup_broadcasts`・`cleanup_invite_links`・`cleanup_recurrence_exceptions`・`cleanup_stale_notification_outbox`） | 1時間に30件以上（これらの step の合計の件数） | 毎分の保持期間の掃除が、上限いっぱいまで処理する実行が続いている（1つの step が詰まり続けると1時間に60件。T-17「9.」）。`step` を見て上限の見直し。お知らせを30日に変えた直後や、最初の掃除では一時的に出る |
@@ -285,3 +287,4 @@
 | 2026-11-23 | `cleanup_capped` を、毎分の step と15分ごとの step の2つのモニターに分けた（Monitors は合計の件数で数えるので、15分ごとの step は1時間に30件に届かない） | T-17 実装PRのレビュー |
 | 2026-11-23 | `#kokohima-contact` が監視の通知先でなく、ログの本文を流さない決まりの例外であること、`contact_delivered_after_withdrawal`、退避キューの `ContactMessageSubmitted`、見られる人を足した | T-24 実装PR（docs/specs/T-24-contact.md） |
 | 2026-11-23 | 「9. 問い合わせの調べ方」を「9. 不具合の知らせの調べ方」にした（問い合わせのフォームと名前が重なるため。手順書の「4.」と同じ名前） | T-24 実装PR（docs/specs/T-24-contact.md） |
+| 2026-11-23 | 監視の表に `wish_suggest_global_limit`・`wish_suggest_config_invalid` を足した | T-29 実装PR（docs/specs/T-29-wish-suggestion.md） |

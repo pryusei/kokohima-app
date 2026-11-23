@@ -364,7 +364,7 @@ describe("プライバシー ポリシーの本文", () => {
     expect(eight).toContain(
       `行きたいをAIで探した回数の記録（1日に探せる回数を数えるため）：その日から${RETENTION.wishSuggestionAttemptsDaysBefore + 1}日目に消します。`,
     );
-    expect(eight).toContain("ここ暇・行きたい・AIで探した回数の記録・設定");
+    expect(eight).toContain("AIで探した回数の記録は、退会したときにあなたとのつながりを切り、上の期間で消します（サービス全体の1日の回数を数えるため、時刻と結果の種類だけが残ります）。");
   });
 
   it("問い合わせ（T-24）：「2.」の種類と内容、「3.」の目的とメールアドレス、「5.」の Slack、「8.」の期間と退会、「12.」の求め方", async () => {

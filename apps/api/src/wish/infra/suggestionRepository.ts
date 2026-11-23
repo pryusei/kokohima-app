@@ -76,7 +76,11 @@ export async function deleteAttemptsBefore(d1: D1Database, createdBefore: number
   return r.meta.changes;
 }
 
-/** 退会（T-16）：本人の行を消す文 */
+/**
+ * 退会（T-16）：本人とのつながりを切る文（行は消さない）。
+ * 消すと、退会してログインし直すたびにサービス全体の1日の数が戻り、上限（利用料の歯止め）が効かなくなる。
+ * 残るのは時刻と結果の種類だけで、行は掃除（UTC で3日より前）で消える
+ */
 export const withdrawalPurgeStatements = (d1: D1Database, userId: string): D1PreparedStatement[] => [
-  d1.prepare("DELETE FROM wish_suggestion_attempts WHERE user_id = ?1").bind(userId),
+  d1.prepare("UPDATE wish_suggestion_attempts SET user_id = NULL WHERE user_id = ?1").bind(userId),
 ];

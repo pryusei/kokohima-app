@@ -165,8 +165,10 @@ describe("探す（POST /wish-suggestions）", () => {
     expect(Object.keys(rows[0]!).sort()).toEqual(["created_at", "finished_at", "id", "outcome", "user_id"]);
   });
 
-  it("Claude に渡すのはエリアと言葉と固定の system だけ。利用者の ID・名前は入らない。モデル・ツール・上限は決めたとおり", async () => {
+  it("Claude に渡すのはエリアと言葉と固定の system だけ。利用者の ID・名前・友達は入らない。モデル・ツール・上限は決めたとおり", async () => {
     const a = await u.user("あき");
+    const friend = await u.user("ともだちのはる");
+    await u.befriend(a, friend);
     await resultOf(await suggest(a, { area: "鎌倉", query: "海の見えるカフェ" }));
     const req = h.claude.state.requests[0]!;
     expect(req.url).toBe("https://api.anthropic.com/v1/messages");
@@ -184,11 +186,30 @@ describe("探す（POST /wish-suggestions）", () => {
     const sent = JSON.stringify(req.json);
     expect(sent).not.toContain(a.id);
     expect(sent).not.toContain("あき");
+    expect(sent).not.toContain(friend.id);
+    expect(sent).not.toContain("ともだちのはる");
+  });
+
+  it("モデルは設定値（WISH_SUGGEST_MODEL）のものを使う", async () => {
+    h.bindings.WISH_SUGGEST_MODEL = "claude-sonnet-5-5";
+    const a = await u.user();
+    await resultOf(await suggest(a));
+    expect(h.claude.state.requests[0]?.json.model).toBe("claude-sonnet-5-5");
   });
 
   it("入力が不正なら400（ストリームにならない）。数えない", async () => {
     const a = await u.user();
-    for (const body of [{ area: "" }, { query: "  " }, { query: "あ".repeat(61) }, { query: "a\nb" }, { area: "渋谷", query: "x", extra: 1 }]) {
+    for (const body of [
+      { area: "" },
+      { area: "あ".repeat(31) },
+      { area: "渋\n谷" },
+      { area: "渋\u0007谷" },
+      { query: "  " },
+      { query: "あ".repeat(61) },
+      { query: "a\nb" },
+      { query: "ラー\u202eメン" },
+      { area: "渋谷", query: "x", extra: 1 },
+    ]) {
       const res = await suggest(a, body);
       expect(res.status).toBe(400);
       expect(res.headers.get("Content-Type")).toContain("application/problem+json");
@@ -342,11 +363,17 @@ describe("掃除と退会", () => {
     expect(await attempts(a.id)).toHaveLength(0);
   });
 
-  it("退会で本人の行を消す", async () => {
+  it("退会で本人とのつながりを切る（行は消さず、全体の1日の数は減らない）。退会してログインし直しても、全体の上限は戻らない", async () => {
+    const today = Date.parse("2026-10-10T00:00:00Z");
+    const totalToday = async () =>
+      (await env.DB.prepare("SELECT COUNT(*) AS n FROM wish_suggestion_attempts WHERE created_at >= ?1").bind(today).first<{ n: number }>())
+        ?.n ?? 0;
     const a = await u.user();
     const b = await u.user();
     await resultOf(await suggest(a));
     await resultOf(await suggest(b));
+    const before = await totalToday();
+    h.bindings.WISH_SUGGEST_GLOBAL_DAILY_LIMIT = String(before + 1);
     const res = await u.call("POST", "/api/v1/me/withdrawal", {
       token: a.token,
       body: { confirm: "withdraw" },
@@ -355,6 +382,11 @@ describe("掃除と退会", () => {
     expect(res.status).toBe(204);
     expect(await attempts(a.id)).toHaveLength(0);
     expect(await attempts(b.id)).toHaveLength(1);
+    expect(await totalToday()).toBe(before);
+    // 退会のあとの新しい利用者は、残り1回だけ通り、その次は全体の上限で503
+    const c = await u.user();
+    await resultOf(await suggest(c));
+    expect((await suggest(c)).status).toBe(503);
   });
 
   it("退会したあとのアクセストークンでは探せない", async () => {

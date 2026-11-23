@@ -53,7 +53,7 @@ export async function withdraw(ctx: Ctx, viewer: Viewer): Promise<WithdrawResult
     ...withdrawalPurgeSharingStatements(d1, userId),
     // 行きたい（T-22）：友達の行と同じ batch で消し、後始末を待たずに見えなくする
     ...wishPurge(d1, userId),
-    // 行きたいのAI提案の回数の記録（T-29）
+    // 行きたいのAI提案の回数の記録（T-29）：つながりを切る（全体の上限の数には残す）
     ...wishSuggestionPurge(d1, userId),
     ...availabilityPurge(d1, userId),
     ...notificationPurge(d1, userId),

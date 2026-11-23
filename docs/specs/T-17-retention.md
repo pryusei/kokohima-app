@@ -62,7 +62,7 @@
 | 行きたい（`wishes`）と、リンクの参照 | 本人が消すまで・退会のとき | T-22 |
 | 行きたいの見せない相手（`wish_exclusions`） | 行きたいを消したとき・退会のとき（友達を解除しても残す） | T-22 |
 | 行きたいを置いた記録（`wish_posts`） | 作ってから2日（`RETENTION.wishPostsDays`） | T-22 |
-| 行きたいのAI提案の回数の記録（`wish_suggestion_attempts`。いつ・結果の種類だけ） | 日付が UTC の今日の3日前より前（`RETENTION.wishSuggestionAttemptsDaysBefore`）・退会のとき | T-29 |
+| 行きたいのAI提案の回数の記録（`wish_suggestion_attempts`。いつ・結果の種類だけ） | 日付が UTC の今日の3日前より前（`RETENTION.wishSuggestionAttemptsDaysBefore`）。退会では消さず、本人とのつながり（`user_id`）だけを切る | T-29 |
 | 処理済みの outbox | 処理から7日 | T-12 データの増加 |
 | 問い合わせの outbox の payload の種類・内容（`ContactMessageSubmitted`） | Slack に届けたとき（届かなかった行は、処理から7日で行ごと消える） | T-24 |
 | 問い合わせの outbox の行（`userId`・`occurredAt`・`delivered` だけ） | 処理から7日（`RETENTION.processedOutboxDays`） | T-24 |

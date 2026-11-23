@@ -123,16 +123,30 @@ describe("AIで探す", () => {
   it("進み具合を出し、3件の候補を出す。「行きたいに置く」で置くシートに3つの値が入る。候補をストレージに置かない", async () => {
     let release = () => {};
     const hold = new Promise<void>((r) => (release = r));
+    let releaseChoosing = () => {};
+    const holdChoosing = new Promise<void>((r) => (releaseChoosing = r));
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     const { calls } = availabilityTab({
-      "/api/v1/wish-suggestions": sseResponse(
-        [ev("progress", { stage: "searching" }), ev("progress", { stage: "choosing" }), ev("result", { candidates: [candidate(1), candidate(2), candidate(3)] })],
-        hold,
-      ),
+      "/api/v1/wish-suggestions": () => {
+        const encoder = new TextEncoder();
+        const body = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(encoder.encode(ev("progress", { stage: "searching" })));
+            await holdChoosing;
+            controller.enqueue(encoder.encode(ev("progress", { stage: "choosing" })));
+            await hold;
+            controller.enqueue(encoder.encode(ev("result", { candidates: [candidate(1), candidate(2), candidate(3)] })));
+            controller.close();
+          },
+        });
+        return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8" } });
+      },
     });
     const dialog = await openSheet();
     await fill(dialog);
     await userEvent.click(within(dialog).getByRole("button", { name: "候補を探す" }));
+    expect(await within(dialog).findByText("Webで探しています")).toBeVisible();
+    releaseChoosing();
     expect(await within(dialog).findByText("候補を選んでいます")).toBeVisible();
     // 探している間は、もう一度押せない（ボタンがない）
     expect(within(dialog).queryByRole("button", { name: "候補を探す" })).toBeNull();

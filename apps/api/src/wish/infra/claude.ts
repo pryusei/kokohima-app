@@ -65,8 +65,8 @@ export async function searchCandidates(call: ClaudeCall): Promise<ClaudeResult> 
       for await (const event of stream) {
         if (event.type !== "content_block_start") continue;
         if (event.content_block.type === "server_tool_use") progress("searching");
-        // 答えの文が始まった。途中の文（検査の前の URL）は画面に送らない
-        if (event.content_block.type === "text" && sent.searching) progress("choosing");
+        // 答えの文（構造化出力）が始まった。途中の文（検査の前の URL）は画面に送らない
+        if (event.content_block.type === "text") progress("choosing");
       }
       message = await stream.finalMessage();
     } catch (e) {
