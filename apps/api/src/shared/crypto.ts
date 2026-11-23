@@ -109,3 +109,26 @@ export function secretKid(stored: string): string | null {
   const parts = stored.split(".");
   return parts.length === 4 && parts[0] === "v1" ? (parts[1] ?? null) : null;
 }
+
+const hmacKeys = new Map<string, Promise<CryptoKey>>();
+
+/**
+ * HMAC-SHA256 の先頭 bytes バイトを base64url で返す（署名つき URL。docs/specs/T-27-avatar-upload.md「署名」）。
+ * 鍵は32バイトの base64url。読めない・長さが違う鍵は例外（鍵の値はメッセージに入れない）
+ */
+export async function hmacTag(keyBase64Url: string, input: string, bytes = 16): Promise<string> {
+  let key = hmacKeys.get(keyBase64Url);
+  if (!key) {
+    let raw: Uint8Array<ArrayBuffer>;
+    try {
+      raw = fromBase64Url(keyBase64Url);
+    } catch {
+      throw new Error("invalid_hmac_key");
+    }
+    if (raw.byteLength !== 32) throw new Error("invalid_hmac_key");
+    key = crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    hmacKeys.set(keyBase64Url, key);
+  }
+  const mac = await crypto.subtle.sign("HMAC", await key, new TextEncoder().encode(input));
+  return toBase64Url(new Uint8Array(mac).subarray(0, bytes));
+}

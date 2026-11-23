@@ -11,6 +11,7 @@ import { calendarRoutes } from "./calendar/routes";
 import { CONTACT_WEBHOOK_TARGET } from "./contact/domain/webhook";
 import { contactRoutes } from "./contact/routes";
 import { identityRoutes } from "./identity/routes";
+import { avatarRoutes } from "./identity/avatarRoutes";
 import { invitationRoutes } from "./invitation/routes";
 import { resolveDoh } from "./link-preview/infra/dns";
 import { linkPreviewRoutes } from "./link-preview/routes";
@@ -68,6 +69,7 @@ export function createApp(overrides: Partial<AppDeps> = {}): Hono<AppEnv> {
   // 深い死活確認（D1 を読むので IP ごとに回数の上限をかける。docs/specs/T-13-monitoring.md）
   app.get("/api/v1/health/ready", rateLimit({ group: "health_ready", limiter: "RL_PUBLIC", by: "ip" }), healthReady);
   app.route("/api/v1", identityRoutes());
+  app.route("/api/v1", avatarRoutes());
   app.route("/api/v1", socialRoutes());
   app.route("/api/v1", availabilityRoutes());
   app.route("/api/v1", invitationRoutes());

@@ -81,7 +81,7 @@ function toInviteDto(
 async function inviteDtos(ctx: Ctx, viewerId: string, rows: repo.InviteRow[]) {
   // 渡すのは、閲覧者が参加者として SQL で絞った誘いの相手のIDだけ
   const ids = [...new Set(rows.map((r) => (r.recipient_id === viewerId ? r.sender_id : r.recipient_id)))];
-  const profiles = await getHistoryProfiles(ctx.env, ids);
+  const profiles = await getHistoryProfiles(ctx, viewerId, ids);
   // 渡すのは、閲覧者が参加者として SQL で絞った誘いだけ
   const previews = await previewsFor(
     ctx.env.DB,
@@ -342,7 +342,7 @@ async function meetupDtos(ctx: Ctx, viewerId: string, rows: repo.MeetupRow[]): P
   );
   // 渡すのは、閲覧者が参加者として SQL で絞った予定の参加者のIDだけ
   const others = new Set([...participants.values()].flat().filter((id) => id !== viewerId));
-  const profiles = await getHistoryProfiles(ctx.env, [...others]);
+  const profiles = await getHistoryProfiles(ctx, viewerId, [...others]);
   // 予定は元の誘い・募集の参照を使う
   const previews = await previewsFor(
     ctx.env.DB,

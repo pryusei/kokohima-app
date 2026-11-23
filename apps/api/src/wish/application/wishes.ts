@@ -27,13 +27,13 @@ const iso = (ms: number) => new Date(ms).toISOString();
  * 行の DTO。プロフィールとプレビューは、閲覧者で絞って読んだ行の ID でだけ取る。
  * excludedUsers は置いた人（forOwner）にだけ配列で返す
  */
-async function toDtos(ctx: Ctx, rows: repo.WishRow[], forOwner: string | null): Promise<Wish[]> {
+async function toDtos(ctx: Ctx, viewerId: string, rows: repo.WishRow[], forOwner: string | null): Promise<Wish[]> {
   if (rows.length === 0) return [];
   const d1 = ctx.env.DB;
   const exclusions = forOwner ? await repo.exclusionsOf(d1, forOwner, rows.map((r) => r.id)) : [];
   const profileIds = [...new Set([...rows.map((r) => r.owner_id), ...exclusions.map((e) => e.user_id)])];
   const [profiles, previews] = await Promise.all([
-    getPublicProfiles(ctx.env, profileIds),
+    getPublicProfiles(ctx, viewerId, profileIds),
     previewsFor(
       d1,
       rows.map((r) => ({ directInviteId: null, broadcastId: null, wishId: r.id, url: r.url })),
@@ -82,7 +82,7 @@ export async function createWish(ctx: Ctx, viewerId: string, input: CreateWish):
     );
     if (ok) {
       const row = await repo.findMine(d1, viewerId, id);
-      const [wish] = row ? await toDtos(ctx, [row], viewerId) : [];
+      const [wish] = row ? await toDtos(ctx, viewerId, [row], viewerId) : [];
       // 書いた直後に消された（同時の DELETE）ときは、書けなかったのと同じに扱う
       if (wish) return { kind: "created", wish };
       return { kind: "conflict" };
@@ -96,14 +96,14 @@ export async function createWish(ctx: Ctx, viewerId: string, input: CreateWish):
 }
 
 export function listMine(ctx: Ctx, viewerId: string) {
-  return repo.listMine(ctx.env.DB, viewerId).then((rows) => toDtos(ctx, rows, viewerId));
+  return repo.listMine(ctx.env.DB, viewerId).then((rows) => toDtos(ctx, viewerId, rows, viewerId));
 }
 
 /** 1件：自分のもの、または見られる友達のもの。どちらでもなければ null（同じ404にする） */
 export async function getWish(ctx: Ctx, viewerId: string, id: string) {
   const row = await repo.findForViewer(ctx.env.DB, viewerId, id);
   if (!row) return null;
-  const [wish] = await toDtos(ctx, [row], row.owner_id === viewerId ? viewerId : null);
+  const [wish] = await toDtos(ctx, viewerId, [row], row.owner_id === viewerId ? viewerId : null);
   return wish ?? null;
 }
 
@@ -116,7 +116,7 @@ export async function updateExclusions(ctx: Ctx, viewerId: string, id: string, u
   if (!exclusionsValid(viewerId, userIds, await repo.countMutualFriends(d1, viewerId, userIds))) return { kind: "not_found" };
   await repo.replaceExclusions(d1, viewerId, id, userIds, ctx.deps.now());
   const row = await repo.findMine(d1, viewerId, id);
-  const [wish] = row ? await toDtos(ctx, [row], viewerId) : [];
+  const [wish] = row ? await toDtos(ctx, viewerId, [row], viewerId) : [];
   return wish ? { kind: "ok", wish } : { kind: "not_found" };
 }
 
@@ -126,7 +126,7 @@ export const deleteWish = (ctx: Ctx, viewerId: string, id: string) => repo.delet
 export async function friendWishes(ctx: Ctx, viewerId: string, friendId: string) {
   const d1 = ctx.env.DB;
   if (!(await repo.isMutualFriend(d1, viewerId, friendId))) return null;
-  return toDtos(ctx, await repo.listVisibleOf(d1, viewerId, friendId), null);
+  return toDtos(ctx, viewerId, await repo.listVisibleOf(d1, viewerId, friendId), null);
 }
 
 /** 「みんな」の友達の行きたい（友達ごと。並びは友達の一覧と同じ） */
@@ -134,7 +134,7 @@ export async function friendWishGroups(ctx: Ctx, viewerId: string, limit: number
   const d1 = ctx.env.DB;
   const friends = await repo.friendsWithWishes(d1, viewerId, limit, cursor);
   const page = friends.slice(0, limit);
-  const wishes = await toDtos(ctx, await repo.visibleWishesOf(d1, viewerId, page.map((f) => f.friend_id)), null);
+  const wishes = await toDtos(ctx, viewerId, await repo.visibleWishesOf(d1, viewerId, page.map((f) => f.friend_id)), null);
   const byOwner = new Map<string, Wish[]>();
   for (const w of wishes) byOwner.set(w.owner.id, [...(byOwner.get(w.owner.id) ?? []), w]);
   const last = page.at(-1);

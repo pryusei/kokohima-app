@@ -67,7 +67,7 @@ async function dtos(ctx: Ctx, viewerId: string, rows: repo.BroadcastRow[]) {
   );
   const ids = new Set(rows.map((r) => r.owner_id));
   for (const list of recipients.values()) for (const id of list) ids.add(id);
-  const profiles = await getHistoryProfiles(ctx.env, [...ids]);
+  const profiles = await getHistoryProfiles(ctx, viewerId, [...ids]);
   // 渡すのは、閲覧者が募集者か宛先として SQL で絞った募集だけ
   const previews = await previewsFor(
     ctx.env.DB,

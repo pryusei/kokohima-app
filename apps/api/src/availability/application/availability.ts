@@ -333,7 +333,7 @@ export async function friendAvailabilities(ctx: Ctx, viewerId: string, range: Ra
   const sorted = buildFriendSlots(byFriend, mine);
   const page = pageAfter(sorted, cursor, FRIEND_PAGE_SIZE);
   // 3条件で絞った結果のIDだけを渡す（T-02の制約）
-  const profiles = await getPublicProfiles(ctx.env, [...new Set(page.items.map((s) => s.friendId))]);
+  const profiles = await getPublicProfiles(ctx, viewerId, [...new Set(page.items.map((s) => s.friendId))]);
   return {
     items: page.items.flatMap((s) => {
       const friend = profiles.get(s.friendId);

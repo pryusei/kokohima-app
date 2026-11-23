@@ -32,6 +32,8 @@ export const RETENTION = {
   linkPreviewsDays: 30,
   /** リンクのプレビューの画像（R2・台帳）：参照する結果がなくなり、置いてから */
   linkPreviewImageGraceHours: 1,
+  /** アイコンの画像（R2・台帳）：変えた・外した・退会して参照されなくなり、置いてから（T-27） */
+  avatarImageGraceHours: 1,
   /** 行きたいを置いた回数の記録（置く回数の上限を数える。中身は持たない）：作ってから。行きたい自体は本人が消すまで・退会まで（T-22） */
   wishPostsDays: 2,
   /** 冪等キー */

@@ -289,7 +289,7 @@ export async function isSessionActive(db: Db, viewer: { userId: string; sessionI
 
 export async function findMe(db: Db, viewerId: string) {
   const row = await db
-    .select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl })
+    .select({ id: users.id, displayName: users.displayName, avatarId: users.avatarId })
     .from(users)
     // 退会した人（T-16）は404
     .where(and(eq(users.id, viewerId), isNull(users.withdrawnAt)))
@@ -298,29 +298,89 @@ export async function findMe(db: Db, viewerId: string) {
 }
 
 
-/** 公開プロフィール（ID・表示名・アイコン）。他のコンテキストはこの関数を通してだけ users を読む */
-export type PublicProfileRow = { id: string; displayName: string | null; avatarUrl: string | null; withdrawn: boolean };
+/**
+ * 公開プロフィール（ID・表示名・アイコン）。他のコンテキストはこの関数を通してだけ users を読む。
+ * avatarId は、閲覧者自身か、閲覧者と友達である相手（friendships に user_id = 閲覧者 の行がある）のときだけ入れる（T-27 決めたこと2）。
+ * viewerId が "inviter" のときは、招待リンクを確かめたあとの発行者として、条件なしで入れる
+ */
+export type PublicProfileRow = { id: string; displayName: string | null; avatarId: string | null; withdrawn: boolean };
 
-export async function findPublicProfiles(db: Db, userIds: string[]) {
+export async function findPublicProfiles(d1: D1Database, viewer: { userId: string } | "inviter", userIds: string[]) {
   if (userIds.length === 0) return new Map<string, PublicProfileRow>();
-  // D1のパラメータ数の上限（100）に収まるよう分けて読む
+  // D1のパラメータ数の上限（100）に収まるよう分けて読む（json_each で1つにまとめる）
   const chunks: string[][] = [];
   for (let i = 0; i < userIds.length; i += 90) chunks.push(userIds.slice(i, i + 90));
+  const avatarVisible =
+    viewer === "inviter"
+      ? "1"
+      : "(u.id = ?2 OR EXISTS (SELECT 1 FROM friendships f WHERE f.user_id = ?2 AND f.friend_id = u.id))";
   const results = await Promise.all(
-    chunks.map((ids) =>
-      db
-        .select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl, withdrawnAt: users.withdrawnAt })
-        .from(users)
-        .where(inArray(users.id, ids)),
-    ),
+    chunks.map(async (ids) => {
+      const stmt = d1.prepare(
+        `SELECT u.id, u.display_name, u.withdrawn_at, CASE WHEN ${avatarVisible} THEN u.avatar_id END AS avatar_id
+         FROM users u WHERE u.id IN (SELECT value FROM json_each(?1))`,
+      );
+      const bound = viewer === "inviter" ? stmt.bind(JSON.stringify(ids)) : stmt.bind(JSON.stringify(ids), viewer.userId);
+      const { results } = await bound.all<{ id: string; display_name: string | null; withdrawn_at: number | null; avatar_id: string | null }>();
+      return results;
+    }),
   );
   // 退会した人（T-16）は、列の値によらず名前とアイコンを出さない
   return new Map(
     results.flat().map((r): [string, PublicProfileRow] => {
-      const withdrawn = r.withdrawnAt !== null;
-      return [r.id, { id: r.id, displayName: withdrawn ? null : r.displayName, avatarUrl: withdrawn ? null : r.avatarUrl, withdrawn }];
+      const withdrawn = r.withdrawn_at !== null;
+      return [r.id, { id: r.id, displayName: withdrawn ? null : r.display_name, avatarId: withdrawn ? null : r.avatar_id, withdrawn }];
     }),
   );
+}
+
+/** アイコンの画像の台帳に行を書く（R2 に置く前。T-27「置く・外す」） */
+export async function insertAvatarImage(d1: D1Database, avatarId: string, now: number) {
+  await d1.prepare("INSERT INTO avatar_images (id, created_at) VALUES (?1, ?2)").bind(avatarId, now).run();
+}
+
+/** 閲覧者自身のアイコンを変える（退会した人には書かない）。null で外す */
+export async function setAvatarId(d1: D1Database, viewerId: string, avatarId: string | null, now: number) {
+  const r = await d1
+    .prepare("UPDATE users SET avatar_id = ?2, updated_at = ?3 WHERE id = ?1 AND withdrawn_at IS NULL")
+    .bind(viewerId, avatarId, now)
+    .run();
+  return r.meta.changes > 0;
+}
+
+/** 配信：利用中の誰かの今のアイコンか */
+export async function isCurrentAvatar(d1: D1Database, avatarId: string) {
+  const row = await d1
+    .prepare("SELECT 1 AS ok FROM users WHERE avatar_id = ?1 AND withdrawn_at IS NULL LIMIT 1")
+    .bind(avatarId)
+    .first<{ ok: number }>();
+  return row !== null;
+}
+
+/** 台帳のうち、createdBefore より前に置かれ、どの利用者からも参照されていない画像（上限つき） */
+export async function orphanAvatarImages(d1: D1Database, createdBefore: number, limit: number) {
+  const { results } = await d1
+    .prepare(
+      `SELECT a.id FROM avatar_images a
+       WHERE a.created_at < ?1 AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_id = a.id)
+       ORDER BY a.created_at LIMIT ?2`,
+    )
+    .bind(createdBefore, limit)
+    .all<{ id: string }>();
+  return results.map((r) => r.id);
+}
+
+/** 台帳の行を消す（まだ参照されていないときだけ） */
+export async function deleteAvatarLedger(d1: D1Database, avatarIds: string[]) {
+  if (avatarIds.length === 0) return;
+  await d1
+    .prepare(
+      `DELETE FROM avatar_images
+       WHERE id IN (SELECT value FROM json_each(?1))
+         AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar_id = avatar_images.id)`,
+    )
+    .bind(JSON.stringify(avatarIds))
+    .run();
 }
 
 /** 閲覧者自身の表示名だけを更新する */
@@ -425,7 +485,7 @@ export function withdrawalStatements(d1: D1Database, userId: string, now: number
   return [
     d1
       .prepare(
-        `UPDATE users SET withdrawn_at = COALESCE(withdrawn_at, ?2), display_name = NULL, avatar_url = NULL,
+        `UPDATE users SET withdrawn_at = COALESCE(withdrawn_at, ?2), display_name = NULL, avatar_id = NULL,
            email = NULL, timezone = 'Asia/Tokyo', updated_at = ?2 WHERE id = ?1`,
       )
       .bind(userId, now),

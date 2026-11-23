@@ -6,6 +6,7 @@ import { type Provider, verifiedEmail } from "../domain/idTokenClaims";
 import { decideRefresh, nextTokenExpiry, SESSION_TTL_MS } from "../domain/refresh";
 import { sanitizeReturnTo } from "../domain/returnTo";
 import { issueAccessToken } from "../infra/accessToken";
+import { avatarUrlFor } from "./avatar";
 import { authorizeUrl, exchangeCode, LoginFailed, type OidcProviderName } from "../infra/oidc";
 import { deleteSubscriptionsOf, deleteSubscriptionsOfSession } from "../../notification/application/subscriptions";
 import * as repo from "../infra/repository";
@@ -218,7 +219,13 @@ export async function logoutAll(ctx: Ctx, viewer: Viewer) {
 }
 
 export async function getMe(ctx: Ctx, viewerId: string) {
-  return repo.findMe(repo.db(ctx.env.DB), viewerId);
+  return meWithAvatarUrl(ctx, await repo.findMe(repo.db(ctx.env.DB), viewerId));
+}
+
+/** 自分のプロフィール（`meResponseSchema`）。アイコンは署名つき URL にする（T-27） */
+async function meWithAvatarUrl(ctx: Ctx, row: { id: string; displayName: string | null; avatarId: string | null } | null) {
+  if (!row) return null;
+  return { id: row.id, displayName: row.displayName, avatarUrl: await avatarUrlFor(ctx, row.avatarId) };
 }
 
 export async function isSessionActive(ctx: Ctx, viewer: Viewer) {
@@ -228,26 +235,43 @@ export async function isSessionActive(ctx: Ctx, viewer: Viewer) {
 export async function updateDisplayName(ctx: Ctx, viewerId: string, displayName: string) {
   const db = repo.db(ctx.env.DB);
   await repo.updateDisplayName(db, viewerId, displayName, ctx.deps.now());
-  return repo.findMe(db, viewerId);
+  return meWithAvatarUrl(ctx, await repo.findMe(db, viewerId));
 }
 
 /**
  * 他のコンテキスト向け：公開プロフィール（ID・表示名・アイコン）。
- * 閲覧者の条件を持たないので、閲覧者で絞ったSQLの結果のID（友達一覧の相手、招待リンクの発行者など）だけを渡すこと。
- * パスやbodyのIDをそのまま渡してはいけない（docs/specs/T-02-friends.md「前提」）
+ * 閲覧者で絞ったSQLの結果のID（友達一覧の相手など）だけを渡すこと。パスやbodyのIDをそのまま渡してはいけない（docs/specs/T-02-friends.md「前提」）。
+ * アイコン（`avatarUrl`）は、閲覧者自身と閲覧者の友達のときだけ入る。それ以外は画像があっても null（docs/specs/T-27-avatar-upload.md）
  */
-export async function getPublicProfiles(env: Bindings, userIds: string[]) {
-  const rows = await repo.findPublicProfiles(repo.db(env.DB), userIds);
+export async function getPublicProfiles(ctx: Ctx, viewerId: string, userIds: string[]) {
+  const rows = await getHistoryProfiles(ctx, viewerId, userIds);
   // 友達に関わる応答では、退会した人を区別させない（`withdrawn` を出さない。T-16）
   return new Map([...rows].map(([id, r]) => [id, { id: r.id, displayName: r.displayName, avatarUrl: r.avatarUrl }]));
 }
 
 /**
  * 履歴の相手向け（誘い・募集・予定・お知らせ・.ics）：公開プロフィールに `withdrawn` を足したもの（T-16）。
- * 渡してよい ID は getPublicProfiles と同じ
+ * 渡してよい ID とアイコンの条件は getPublicProfiles と同じ
  */
-export async function getHistoryProfiles(env: Bindings, userIds: string[]) {
-  return repo.findPublicProfiles(repo.db(env.DB), userIds);
+export async function getHistoryProfiles(ctx: Ctx, viewerId: string, userIds: string[]) {
+  return withAvatarUrls(ctx, await repo.findPublicProfiles(ctx.env.DB, { userId: viewerId }, userIds));
+}
+
+/**
+ * 招待の受け口向け（T-02）：招待リンクを確かめたあとの発行者の公開プロフィール。
+ * 有効なリンクを示した人には、友達でなくても発行者のアイコンを見せる（T-27 決めたこと2）。リンクを確かめる前に呼ばない
+ */
+export async function getInviterProfile(ctx: Ctx, ownerId: string) {
+  const rows = await withAvatarUrls(ctx, await repo.findPublicProfiles(ctx.env.DB, "inviter", [ownerId]));
+  const r = rows.get(ownerId);
+  return r ? { id: r.id, displayName: r.displayName, avatarUrl: r.avatarUrl } : null;
+}
+
+async function withAvatarUrls(ctx: Ctx, rows: Map<string, repo.PublicProfileRow>) {
+  const entries = await Promise.all(
+    [...rows].map(async ([id, r]) => [id, { id: r.id, displayName: r.displayName, avatarUrl: await avatarUrlFor(ctx, r.avatarId), withdrawn: r.withdrawn }] as const),
+  );
+  return new Map(entries);
 }
 
 /** 他のコンテキスト向け：閲覧者自身のタイムゾーン（IANA）。行がなければ初期値 */

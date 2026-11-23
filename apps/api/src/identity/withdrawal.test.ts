@@ -39,7 +39,7 @@ const count = async (sql: string, ...binds: unknown[]) =>
 const userRow = (id: string) =>
   env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<{
     display_name: string | null;
-    avatar_url: string | null;
+    avatar_id: string | null;
     email: string | null;
     timezone: string;
     withdrawn_at: number | null;
@@ -114,7 +114,7 @@ describe("入口を止める段", () => {
     expect(cookieValue(res, "__Host-kh_rt")).toBe("");
 
     const row = await userRow(a.id);
-    expect(row).toMatchObject({ display_name: null, avatar_url: null, email: null, timezone: "Asia/Tokyo", withdrawal_completed_at: null });
+    expect(row).toMatchObject({ display_name: null, avatar_id: null, email: null, timezone: "Asia/Tokyo", withdrawal_completed_at: null });
     expect(row?.withdrawn_at).toBe(h.clock.now);
     for (const [table, column] of [
       ["sessions", "user_id"],

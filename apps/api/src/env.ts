@@ -38,6 +38,10 @@ export type Bindings = {
   RL_USER?: RateLimit;
   /** リンクのプレビューの画像（R2。docs/specs/T-08-link-preview.md） */
   OGP_IMAGES: R2Bucket;
+  /** アイコンの画像（R2。docs/specs/T-27-avatar-upload.md） */
+  AVATARS: R2Bucket;
+  /** アイコンの画像の URL の署名の鍵（32バイトの base64url。secret。T-27「署名」） */
+  AVATAR_URL_KEY: string;
   /** アプリ自身の登録ドメイン（カンマ区切りの小文字のホスト名）。このドメインとそのサブドメインは取りに行かない */
   LINK_PREVIEW_OWN_DOMAINS: string;
   /** Sign in with Apple を動かすか（"1" のときだけ。docs/specs/T-12-release.md） */

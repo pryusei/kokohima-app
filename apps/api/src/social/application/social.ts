@@ -1,7 +1,7 @@
 import type { CreateInviteLinkRequest } from "@kokohima/shared";
 import { getSharingFor, setSharing, unfriendPurgeSharingStatements } from "../../availability/application/sharing";
 import type { AppDeps, Bindings } from "../../env";
-import { getPublicProfiles } from "../../identity/application/auth";
+import { getInviterProfile, getPublicProfiles } from "../../identity/application/auth";
 import { decodeCursor, encodeCursor } from "../../shared/cursor";
 import { randomToken, sha256 } from "../../shared/crypto";
 import { DAY_MS, expiresAt, isUsable, ISSUE_LIMIT_PER_DAY, issueRetryAfterSeconds } from "../domain/inviteLink";
@@ -36,7 +36,7 @@ export async function createInviteLink(
 ): Promise<CreateInviteResult> {
   const now = ctx.deps.now();
   const db = repo.db(ctx.env.DB);
-  const me = (await getPublicProfiles(ctx.env, [viewerId])).get(viewerId);
+  const me = (await getPublicProfiles(ctx, viewerId, [viewerId])).get(viewerId);
   if (!me?.displayName) return { kind: "display_name_required" };
 
   const since = now - DAY_MS;
@@ -101,7 +101,7 @@ export async function lookupInvite(ctx: Ctx, token: string | undefined) {
   if (!token || token.length > 128) return null;
   const link = await repo.findInviteLinkByTokenHash(repo.db(ctx.env.DB), await sha256(token));
   if (!link || !isUsable(link, ctx.deps.now())) return null;
-  const inviter = (await getPublicProfiles(ctx.env, [link.ownerId])).get(link.ownerId);
+  const inviter = await getInviterProfile(ctx, link.ownerId);
   if (!inviter) return null;
   return { linkId: link.id, inviter: { displayName: inviter.displayName, avatarUrl: inviter.avatarUrl } };
 }
@@ -131,7 +131,7 @@ export async function acceptInvite(
   // 3. 自分のリンク
   if (link.ownerId === viewerId) return { kind: "own_link" };
 
-  const inviter = (await getPublicProfiles(ctx.env, [link.ownerId])).get(link.ownerId);
+  const inviter = await getInviterProfile(ctx, link.ownerId);
   if (!inviter) return { kind: "not_found" };
 
   // 4. 人数の消費・両方向の行・イベントを1つのバッチで書く
@@ -152,7 +152,7 @@ export async function listFriends(ctx: Ctx, viewerId: string, limit: number, cur
   const ids = page.map((r) => r.friendId);
   // 公開設定は availability の関数を通して1回で取る（SQLのJOINはしない）
   const [profiles, sharing] = await Promise.all([
-    getPublicProfiles(ctx.env, ids),
+    getPublicProfiles(ctx, viewerId, ids),
     getSharingFor(ctx.env.DB, viewerId, ids),
   ]);
   const last = page.at(-1);
@@ -180,7 +180,7 @@ export async function updateFriend(ctx: Ctx, viewerId: string, friendId: string,
   const friendship = await repo.findFriendship(db, viewerId, friendId);
   if (!friendship) return null;
   await setSharing(ctx.env.DB, viewerId, friendId, sharesMyAvailability, ctx.deps.now());
-  const profile = (await getPublicProfiles(ctx.env, [friendId])).get(friendId);
+  const profile = (await getPublicProfiles(ctx, viewerId, [friendId])).get(friendId);
   if (!profile) return null;
   return {
     id: profile.id,
@@ -209,7 +209,7 @@ export async function getFriend(ctx: Ctx, viewerId: string, friendId: string) {
   ]);
   if (!mine || !theirs) return null;
   const [profiles, sharing] = await Promise.all([
-    getPublicProfiles(ctx.env, [friendId]),
+    getPublicProfiles(ctx, viewerId, [friendId]),
     getSharingFor(ctx.env.DB, viewerId, [friendId]),
   ]);
   const profile = profiles.get(friendId);
