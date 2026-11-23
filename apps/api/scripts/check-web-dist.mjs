@@ -3,11 +3,11 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { effectiveDateProblems } from "./lib/effective-date.mjs";
+import { effectiveDateProblems, jstToday } from "./lib/effective-date.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
 const errors = [];
-// --deploy：deploy:prod のときだけ。制定日が決まっていなければ止める（docs/specs/T-19-privacy-terms.md「5.」）
+// --deploy：deploy:prod のときだけ。制定日・改定日・公表日が決まっていない、または今日（日本時間）と合わなければ止める（docs/specs/T-19-privacy-terms.md「5.」）
 const deploy = process.argv.includes("--deploy");
 
 const index = join(dist, "index.html");
@@ -50,9 +50,11 @@ for (const file of walk(dist)) {
   }
 }
 
-// 制定日の行：いつも「制定日：」がちょうど1回。--deploy では本物の日付であることも（docs/specs/T-19-privacy-terms.md「5.」）
+// 制定日・改定日・公表日の行：いつも「制定日：」がちょうど1回、改定日・公表日は1回まで（日付の大小は見ない）。
+// --deploy では本物の日付であることと、デプロイする時刻の日本時間の日付との大小も（docs/specs/T-19-privacy-terms.md「5.」）
 const scripts = walk(dist).filter((f) => f.endsWith(".js"));
-errors.push(...effectiveDateProblems(scripts.map((f) => readFileSync(f, "utf8")), { deploy }));
+const today = deploy ? jstToday(Date.now()) : undefined;
+errors.push(...effectiveDateProblems(scripts.map((f) => readFileSync(f, "utf8")), { deploy, today }));
 
 if (errors.length > 0) {
   for (const e of errors) console.error(`::error::${e}`);
