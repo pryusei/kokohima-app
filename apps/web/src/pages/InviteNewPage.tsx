@@ -4,6 +4,7 @@ import {
   isValidInviteRange,
   type ExpiresIn,
   type PresetName,
+  type Wish,
 } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -24,24 +25,36 @@ import { SheetScreen } from "../ui/BottomSheet";
 import { Badge } from "../ui/Badge";
 import { buttonClass, SendButton } from "../ui/Button";
 import { inputClass, labelClass } from "../ui/form";
-import { displayNameOf } from "../account/me";
+import { displayNameOf, meQuery } from "../account/me";
+import { Loading } from "../ui/feedback";
+import { wishQuery } from "../wish/queries";
 
 // 誘いの作成（docs/specs/T-04-direct-invite.md「画面」、キャンバス「10 誘いの作成」）。送る前のリンクのプレビューは出さない（T-08 決定事項1）
 // 後ろに「みんな」を出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
 
 const MINUTE_MS = 60 * 1000;
 
-function initialFields(search: string) {
+type Initial = { friendId: string; date: string; start: string; end: string; area: string; message: string; url: string };
+
+/**
+ * 初期値。?wish=<id> の行きたいが読めたら、ひとこと・エリア・リンクを入れる（docs/specs/T-22-wishlist.md「誘い・募集の作成画面に入れる」）。
+ * 友達の行きたいなら宛先は持ち主（?friend より優先）、自分の行きたいなら ?friend のまま
+ */
+function initialFields(search: string, wish: Wish | null, myId: string | null): Initial {
   const params = new URLSearchParams(search);
   const startsAt = Date.parse(params.get("startsAt") ?? "");
   const endsAt = Date.parse(params.get("endsAt") ?? "");
   const start = Number.isNaN(startsAt) ? nextQuarter(Date.now() + 60 * MINUTE_MS) : startsAt;
   const end = Number.isNaN(endsAt) ? start + 2 * 60 * MINUTE_MS : endsAt;
+  const friendsWish = wish !== null && myId !== null && wish.owner.id !== myId;
   return {
-    friendId: params.get("friend") ?? "",
+    friendId: friendsWish ? wish.owner.id : (params.get("friend") ?? ""),
     date: localDateOf(start),
     start: formatTime(start),
     end: formatTime(end),
+    area: wish?.area ?? "",
+    message: wish?.message ?? "",
+    url: wish?.url ?? "",
   };
 }
 
@@ -62,17 +75,15 @@ function KindPreview({ friendId, date, startsAt, endsAt }: { friendId: string; d
   );
 }
 
-export function InviteNewPage() {
-  const { search } = useLocation();
+function InviteForm({ initial }: { initial: Initial }) {
   const queryClient = useQueryClient();
-  const [initial] = useState(() => initialFields(search));
   const [friendId, setFriendId] = useState(initial.friendId);
   const [date, setDate] = useState(initial.date);
   const [start, setStart] = useState(initial.start);
   const [end, setEnd] = useState(initial.end);
-  const [area, setArea] = useState("");
-  const [message, setMessage] = useState("");
-  const [url, setUrl] = useState("");
+  const [area, setArea] = useState(initial.area);
+  const [message, setMessage] = useState(initial.message);
+  const [url, setUrl] = useState(initial.url);
   const [expiresIn, setExpiresIn] = useState<ExpiresIn>("until_start");
   const friends = useQuery({ queryKey: keys.friends.list(), queryFn: () => apiGet("/api/v1/friends", friendPageSchema) });
   const presets = useQuery(presetsQuery());
@@ -112,7 +123,6 @@ export function InviteNewPage() {
   };
 
   return (
-    <SheetScreen title="誘う" label="誘う" parent="/">
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
@@ -186,6 +196,24 @@ export function InviteNewPage() {
           </p>
         )}
       </form>
+  );
+}
+
+export function InviteNewPage() {
+  const { search } = useLocation();
+  const wishId = new URLSearchParams(search).get("wish");
+  // 行きたいは読めなかったら（404・通信の失敗）空で開き、エラーは出さない（消された・外されたと区別させない）
+  const wish = useQuery({ ...wishQuery(wishId ?? ""), enabled: wishId !== null });
+  const me = useQuery({ ...meQuery(), enabled: wish.isSuccess });
+  const ready = wishId === null || wish.isError || (wish.isSuccess && !me.isPending);
+  // 初期値は、そろったときに1回だけ作る
+  const [initial, setInitial] = useState<Initial | null>(null);
+  if (ready && initial === null) {
+    setInitial(initialFields(search, wish.data ?? null, me.data?.id ?? null));
+  }
+  return (
+    <SheetScreen title="誘う" label="誘う" parent="/">
+      {initial ? <InviteForm initial={initial} /> : <Loading />}
     </SheetScreen>
   );
 }
