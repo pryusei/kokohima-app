@@ -180,6 +180,17 @@ describe("終わった募集・予定", () => {
     for (const who of [owner, friend, other]) {
       expect((await u.call("GET", `/api/v1/broadcasts/${ended}`, { token: who.token })).status).toBe(404);
       expect((await u.call("GET", `/api/v1/meetups/${meetupId}`, { token: who.token })).status).toBe(404);
+      // 一覧からも消える（30日以内の募集は残る）
+      for (const box of ["sent", "received"]) {
+        const page = await u.call("GET", `/api/v1/broadcasts?box=${box}`, { token: who.token });
+        expect(page.status).toBe(200);
+        const text = JSON.stringify(await page.json());
+        expect(text).not.toContain(ended);
+        // 一覧自体は読めている（30日以内の募集は出る）
+        if ((who === owner) === (box === "sent")) expect(text).toContain(later);
+      }
+      const meetups = await u.call("GET", "/api/v1/meetups", { token: who.token });
+      expect(JSON.stringify(await meetups.json())).not.toContain(meetupId);
     }
   });
 });

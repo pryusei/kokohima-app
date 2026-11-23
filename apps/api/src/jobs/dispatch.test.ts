@@ -516,9 +516,14 @@ describe("インデックスを使う（EXPLAIN QUERY PLAN）", () => {
     const cutoff = now - DORMANT_AFTER_MS;
     expect(await scansOf((d1) => calendarRepo.markDormantConnections(d1, now, cutoff, DORMANCY_BATCH))).toEqual([]);
     expect(await scansOf((d1) => calendarRepo.wakeDormantConnections(d1, now, cutoff, DORMANCY_BATCH))).toEqual([]);
-    const { db, recorded } = recordingD1(env.DB);
-    await calendarRepo.wakeDormantConnections(db, now, cutoff, DORMANCY_BATCH);
-    expect((await queryPlan(env.DB, recorded[0]!)).join("\n")).toMatch(/calendar_connections_sync \(status=\? AND dormant_since>\?\)/);
+    // 休眠にする文：status = 'active' と dormant_since IS NULL の範囲を読む（範囲の中は全部読む。読む量は T-17「8.」で受け入れた）
+    const mark = recordingD1(env.DB);
+    await calendarRepo.markDormantConnections(mark.db, now, cutoff, DORMANCY_BATCH);
+    expect((await queryPlan(env.DB, mark.recorded[0]!)).join("\n")).toMatch(/calendar_connections_sync \(status=\? AND dormant_since=\?\)/);
+    // 戻す文：休眠中の行（dormant_since IS NOT NULL）の範囲だけを読む
+    const wake = recordingD1(env.DB);
+    await calendarRepo.wakeDormantConnections(wake.db, now, cutoff, DORMANCY_BATCH);
+    expect((await queryPlan(env.DB, wake.recorded[0]!)).join("\n")).toMatch(/calendar_connections_sync \(status=\? AND dormant_since>\?\)/);
   });
 
   it("ここ暇の4つの検索", async () => {

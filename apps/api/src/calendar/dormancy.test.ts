@@ -463,7 +463,13 @@ describe("上限", () => {
     );
     await runScheduled(CRON_15, h.bindings, h.deps);
     expect(events("cleanup_capped")).toEqual([{ event: "cleanup_capped", step: "wake_dormant_connections", count: 100 }]);
-    const dormant = await env.DB.prepare("SELECT COUNT(*) AS n FROM calendar_connections WHERE dormant_since IS NOT NULL").first<{ n: number }>();
-    expect(dormant?.n).toBe(1);
+    const dormant = async () =>
+      (await env.DB.prepare("SELECT COUNT(*) AS n FROM calendar_connections WHERE dormant_since IS NOT NULL").first<{ n: number }>())?.n;
+    expect(await dormant()).toBe(1);
+    // 残りは次の実行で戻る
+    logs.length = 0;
+    await runScheduled(CRON_15, h.bindings, h.deps);
+    expect(await dormant()).toBe(0);
+    expect(events("cleanup_capped")).toEqual([]);
   });
 });
