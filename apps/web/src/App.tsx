@@ -4,6 +4,7 @@ import { AuthCompletePage } from "./pages/AuthCompletePage";
 import { AvailabilityPage } from "./pages/AvailabilityPage";
 import { CalendarSettingsPage } from "./pages/CalendarSettingsPage";
 import { EveryonePage } from "./pages/EveryonePage";
+import { InstallPage } from "./pages/InstallPage";
 import { FriendDetailPage } from "./pages/FriendDetailPage";
 import { BroadcastDetailPage } from "./pages/BroadcastDetailPage";
 import { BroadcastNewPage } from "./pages/BroadcastNewPage";
@@ -123,6 +124,7 @@ export function App() {
   if (pathname === "/settings/calendar") return <CalendarSettingsPage search={search} />;
   if (pathname === "/settings/presets") return <PresetSettingsPage />;
   if (pathname === "/settings/notifications") return <NotificationSettingsPage />;
+  if (pathname === "/settings/install") return <InstallPage />;
   if (pathname === "/settings/account") return <AccountSettingsPage search={search} />;
 
   const sheet = sheetOf(pathname, search);

@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { defineProject } from "vitest/config";
 
 // 単体テストは Workers のランタイム（Miniflare）上で動かす。D1にはマイグレーションを適用してから使う
 export default defineProject({
+  // メールの色が web のトークンと一致することを確かめる（notification/domain/mail.test.ts）。Workers には fs がないので、ここで読む
+  define: { __WEB_INDEX_CSS__: JSON.stringify(readFileSync(path.join(import.meta.dirname, "../web/src/index.css"), "utf8")) },
   plugins: [
     cloudflareTest(async () => ({
       wrangler: { configPath: "./wrangler.jsonc" },

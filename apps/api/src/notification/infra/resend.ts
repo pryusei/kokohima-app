@@ -31,7 +31,7 @@ export async function sendMail(
         "Content-Type": "application/json",
         "Idempotency-Key": input.idempotencyKey,
       },
-      body: JSON.stringify({ from: env.MAIL_FROM, to: [input.to], subject: input.mail.subject, text: input.mail.text }),
+      body: JSON.stringify({ from: env.MAIL_FROM, to: [input.to], subject: input.mail.subject, text: input.mail.text, html: input.mail.html }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {
