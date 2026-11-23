@@ -83,6 +83,9 @@ test("誘いのカードから詳細が中央のダイアログで開き、Esc �
   expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
   expect(box.width).toBe(512);
   expect(box.y + box.height).toBeLessThan(viewport.height);
+  // つまみは出さず、右上の「閉じる」を使う
+  await expect(detail.getByTestId("sheet-grip")).toBeHidden();
+  await expect(detail.getByRole("button", { name: "閉じる" })).toBeVisible();
 
   await b.page.keyboard.press("Escape");
   await expect(sheet(b.page)).toHaveCount(0);
