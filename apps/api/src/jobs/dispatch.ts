@@ -17,6 +17,7 @@ import { deleteBroadcastsEndedBefore } from "../invitation/infra/broadcastReposi
 import { deleteInviteLinksExpiredBefore } from "../social/infra/repository";
 import { MAX_LENGTH_MS } from "../availability/domain/validation";
 import { retryIncompleteWithdrawals } from "../identity/application/withdrawal";
+import { deleteOldPosts as deleteOldWishPosts } from "../wish/application/wishes";
 
 // outbox を Queues に流す（docs/specs/T-06-calendar.md「outbox を Queues に流す」）
 // 送ってから処理済みにする。途中で止まっても行は未処理のまま残り、次の実行で送り直す（少なくとも1回は届く）
@@ -147,6 +148,8 @@ export async function cleanupExpired(ctx: Ctx) {
       deleteStaleNotificationOutbox(d1, cutoff, CLEANUP_BATCH),
     );
   }
+  // 行きたいを置いた記録（2日。docs/specs/T-22-wishlist.md「期限と保存期間」）
+  await runCappedStep("cleanup_wish_posts", CLEANUP_BATCH, () => deleteOldWishPosts(d1, now, CLEANUP_BATCH));
   // 退会の後始末の取りこぼし（docs/specs/T-16-withdrawal.md）
   await runStep("retry_withdrawals", () => retryIncompleteWithdrawals(ctx));
 }

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { unreadCountQuery } from "../notifications/queries";
 import { goBack, useLocation } from "../router";
 import { OfflineBanner } from "./feedback";
@@ -247,9 +247,19 @@ export function PublicSubScreen({ title, back, children }: { title: string; back
 }
 
 /** 一覧の節の見出し */
-export function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+export function Section({
+  title,
+  aside,
+  children,
+  ref,
+}: {
+  title: string;
+  aside?: ReactNode;
+  children: ReactNode;
+  ref?: Ref<HTMLElement>;
+}) {
   return (
-    <section className="flex flex-col gap-2">
+    <section ref={ref} className="flex flex-col gap-2">
       <h2 className="flex items-baseline justify-between gap-2 text-l font-bold">
         {title}
         {aside && <span className="text-s font-normal text-ink-muted">{aside}</span>}

@@ -2,16 +2,16 @@ import {
   BROADCAST_MAX_RECIPIENTS,
   BROADCAST_MIN_RECIPIENTS,
   broadcastSchema,
-  friendPageSchema,
   isValidInviteRange,
   type Broadcast,
   type ExpiresIn,
   type Friend,
   type PresetName,
+  type Wish,
 } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ApiError, apiGet, apiSend, isIdempotencyConflict } from "../api/client";
+import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { formatTime, localDateOf, PRESET_LABELS, PRESET_NAMES } from "../availability/format";
@@ -24,27 +24,13 @@ import { EXPIRES, rangeOf, sendErrorText } from "../invitations/form";
 import { nextQuarter } from "../invitations/format";
 import { broadcastQuery } from "../invitations/queries";
 import { navigate, useLocation } from "../router";
-import { displayNameOf } from "../account/me";
+import { everyFriendQuery } from "../account/friends";
+import { displayNameOf, meQuery } from "../account/me";
+import { wishQuery } from "../wish/queries";
 
 // 募集の作成（docs/specs/T-05-broadcast.md「画面」、キャンバス「11 募集の作成」）。後ろに「みんな」を出したシートで開く。「もう一度募集する」は ?from=<募集のID> で開く
 
 const MINUTE_MS = 60 * 1000;
-
-/** 友達全員を読む（宛先の初期値は全員なので、続きのページも読む） */
-const everyFriendQuery = () => ({
-  queryKey: keys.friends.everyone(),
-  queryFn: async () => {
-    const items: Friend[] = [];
-    let cursor: string | null = null;
-    do {
-      const path: string = `/api/v1/friends?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
-      const page = await apiGet(path, friendPageSchema);
-      items.push(...page.items);
-      cursor = page.nextCursor;
-    } while (cursor);
-    return items;
-  },
-});
 
 type Initial = {
   recipientIds: string[];
@@ -56,8 +42,11 @@ type Initial = {
   url: string;
 };
 
-/** 初期値。宛先は全員（100人まで）か、再募集なら元の宛先のうち今も友達の人。時間は過ぎていれば空 */
-function initialOf(friends: Friend[], from: Broadcast | null, now: number): Initial {
+/**
+ * 初期値。宛先は全員（100人まで）か、再募集なら元の宛先のうち今も友達の人。時間は過ぎていれば空。
+ * 自分の行きたい（?wish）なら、ひとこと・エリア・リンクを入れる（docs/specs/T-22-wishlist.md。友達の行きたいは入れない）
+ */
+function initialOf(friends: Friend[], from: Broadcast | null, wish: Wish | null, now: number): Initial {
   const friendIds = friends.map((f) => f.id);
   const recipientIds = from
     ? (from.recipients ?? []).map((r) => r.id).filter((id) => friendIds.includes(id))
@@ -70,9 +59,9 @@ function initialOf(friends: Friend[], from: Broadcast | null, now: number): Init
     date: past ? "" : localDateOf(start),
     start: past ? "" : formatTime(start),
     end: past ? "" : formatTime(end),
-    area: from?.area ?? "",
-    message: from?.message ?? "",
-    url: from?.url ?? "",
+    area: from?.area ?? wish?.area ?? "",
+    message: from?.message ?? wish?.message ?? "",
+    url: from?.url ?? wish?.url ?? "",
   };
 }
 
@@ -222,19 +211,27 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
 
 export function BroadcastNewPage() {
   const { search } = useLocation();
-  const fromId = new URLSearchParams(search).get("from");
+  const params = new URLSearchParams(search);
+  const fromId = params.get("from");
+  // 再募集（?from）があれば ?wish は使わない
+  const wishId = fromId === null ? params.get("wish") : null;
   const friends = useQuery(everyFriendQuery());
   const from = useQuery({ ...broadcastQuery(fromId ?? ""), enabled: fromId !== null });
+  // 行きたいは読めなかったら空で開き、エラーは出さない。自分のものかは応答の owner.id で決める
+  const wish = useQuery({ ...wishQuery(wishId ?? ""), enabled: wishId !== null });
+  const me = useQuery({ ...meQuery(), enabled: wish.isSuccess });
   // 時刻は開いたときに1回だけ読む（描画のたびに時計を読まない）
   const [openedAt] = useState(() => Date.now());
-  const ready = friends.data && (fromId === null || from.data || from.isError);
+  const wishReady = wishId === null || wish.isError || (wish.isSuccess && !me.isPending);
+  const ownWish = wish.data && me.data && wish.data.owner.id === me.data.id ? wish.data : null;
+  const ready = friends.data && (fromId === null || from.data || from.isError) && wishReady;
 
   return (
     <SheetScreen title="暇な人いる？と募る" label="暇な人いる？と募る" parent="/">
       {friends.isPending && <Loading />}
       {friends.isError && <LoadError retry={() => void friends.refetch()} />}
       {ready && friends.data && (
-        <BroadcastForm friends={friends.data} initial={initialOf(friends.data, from.data ?? null, openedAt)} />
+        <BroadcastForm friends={friends.data} initial={initialOf(friends.data, from.data ?? null, ownWish, openedAt)} />
       )}
     </SheetScreen>
   );

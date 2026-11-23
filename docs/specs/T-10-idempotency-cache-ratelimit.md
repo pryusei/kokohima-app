@@ -45,6 +45,7 @@
 | `POST /api/v1/availabilities`、`POST /api/v1/recurrence-rules` | T-03 |
 | `POST /api/v1/direct-invites`、`POST /api/v1/direct-invites/{id}/responses`、`POST /api/v1/direct-invites/{id}/decide`、`POST /api/v1/meetups/{id}/cancel` | T-04 |
 | `POST /api/v1/broadcasts`、`POST /api/v1/broadcasts/{id}/decide` | T-05 |
+| `POST /api/v1/wishes` | T-22 |
 
 - 受け付けない経路と理由：
   - 応答に秘密値が入る：`POST /invite-links`（招待トークン）、`POST /meetups/{id}/ics-links`（.ics のトークン）。保存すると D1 に平文が残るため。二重に作っても、無効化と期限で害がない。
@@ -63,6 +64,7 @@
 | `GET /api/v1/ics/{token}` | `ics` | IP | 同上 | `RL_PUBLIC` | 429（本文なし。OS のカレンダーが開く経路のため） |
 | `GET /api/v1/calendar/free-slots` | `free_slots` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited` |
 | `GET /api/v1/friend-availabilities` | `friend_availabilities` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited`（T-14） |
+| `GET /api/v1/friend-wishes` | `friend_wishes` | 利用者 ID | 60秒に20回（拠点ごと、おおよそ） | `RL_USER` | 429 `rate_limited`（T-22） |
 | `GET /api/v1/link-previews/images/{imageId}` | `link_image` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429（本文なし。`<img>` が読む経路のため。T-08） |
 | `GET /api/v1/health/ready` | `health_ready` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429 `rate_limited`（T-13） |
 | `POST /api/v1/meetups/{id}/ics-links` | — | 利用者 ID | 直近5分で20本（厳密） | D1（`ics_tokens` の行の数） | 429 `rate_limited` |
@@ -257,3 +259,4 @@
 | 2026-11-21 | T-08 の OGP は KV を使わず D1 で兼ねることにした（概要・部品の役割・決定事項1）。回数の上限の表に `link_image` を足した | T-08 の決定事項4（pryusei/kokohima-app#75） |
 | 2026-11-21 | 回数の上限の表に `friend_availabilities` を足した | T-14 の実装PR（docs/specs/T-14-friend-availabilities-ratelimit.md） |
 | 2026-11-22 | 回数の上限の表に `health_ready` を足した（実装は T-13 で済んでいる） | T-13 の実装のあとのレビュー（docs/specs/T-13-monitoring.md） |
+| 2026-11-23 | 冪等キーの表に `POST /wishes`、回数の上限の表に `friend_wishes` を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |

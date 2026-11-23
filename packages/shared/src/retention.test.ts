@@ -18,6 +18,7 @@ describe("保存期間の数（T-19「9.」）", () => {
       staleNotificationOutboxDays: 30,
       linkPreviewsDays: 30,
       linkPreviewImageGraceHours: 1,
+      wishPostsDays: 2,
       idempotencyKeysHours: 24,
       freeBusyCacheMinutes: 5,
     });

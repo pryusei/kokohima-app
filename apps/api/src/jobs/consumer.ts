@@ -23,7 +23,7 @@ const cancelledPayload = z.object({
   occurredAt: z.iso.datetime(),
 });
 const withdrewPayload = z.object({ userId: z.string() });
-const linkAttachedPayload = z.object({ subjectType: z.enum(["direct_invite", "broadcast"]), subjectId: z.string() });
+const linkAttachedPayload = z.object({ subjectType: z.enum(["direct_invite", "broadcast", "wish"]), subjectId: z.string() });
 
 /**
  * 通知のほかの処理：カレンダーの処理や自動の「今回は難しい」（T-06）、リンクのプレビューの取得（T-08）。
