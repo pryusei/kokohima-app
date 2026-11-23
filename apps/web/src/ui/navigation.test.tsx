@@ -1,6 +1,7 @@
+import { onlineManager } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
 import { goBack, navigate } from "../router";
@@ -9,6 +10,7 @@ import { AvailabilityChip } from "./AvailabilityChip";
 import { BottomSheet } from "./BottomSheet";
 import { HeadCount } from "./HeadCount";
 import { Switch } from "./Switch";
+import { DESKTOP_QUERY, useDesktop } from "./useDesktop";
 
 // 画面のつながり・シート・部品（docs/specs/T-11-design.md「画面のつながり」「オフライン」、テスト計画）
 
@@ -121,7 +123,7 @@ describe("BottomSheet", () => {
     );
   }
 
-  it("Esc・後ろの暗い部分・つまみで閉じ、閉じたら開いたボタンにフォーカスを戻す", async () => {
+  it("Esc・後ろの暗い部分・「閉じる」（スマホではつまみ、PC では右上の✕）で閉じ、閉じたら開いたボタンにフォーカスを戻す", async () => {
     render(<Host />);
     const opener = screen.getByRole("button", { name: "開く" });
     for (const close of [
@@ -135,6 +137,38 @@ describe("BottomSheet", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(opener).toHaveFocus();
     }
+  });
+
+  it("開いたときに後ろが inert になってフォーカスが外れても、閉じたら開いたボタンに戻す（ブラウザは inert で body にフォーカスを移す）", async () => {
+    function InertHost() {
+      const [open, setOpen] = useState(false);
+      const behind = useRef<HTMLDivElement>(null);
+      // jsdom は inert でフォーカスを外さないので、ブラウザと同じく描画の確定時に外す
+      useLayoutEffect(() => {
+        if (open && behind.current?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+      }, [open]);
+      return (
+        <>
+          <div ref={behind} inert={open ? true : undefined}>
+            <button type="button" onClick={() => setOpen(true)}>
+              開く
+            </button>
+          </div>
+          {open && (
+            <BottomSheet title="試し" label="試し" onClose={() => setOpen(false)}>
+              <p>本文</p>
+            </BottomSheet>
+          )}
+        </>
+      );
+    }
+    render(<InertHost />);
+    const opener = screen.getByRole("button", { name: "開く" });
+    await userEvent.click(opener);
+    expect(screen.getByRole("dialog")).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(opener).toHaveFocus();
   });
 
   it("開いている間、Tab のフォーカスはシートの外に出ない", async () => {
@@ -300,5 +334,137 @@ describe("レビューの指摘（pryusei/kokohima-app#95）", () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
     act(() => window.dispatchEvent(new Event("offline")));
     expect(within(view.container).getByRole("switch")).toBeDisabled();
+  });
+});
+
+/** matchMedia の差し替え。matches を変えて change を送れる */
+function stubMatchMedia(initial: boolean) {
+  const listeners = new Set<() => void>();
+  const media = {
+    matches: initial,
+    media: DESKTOP_QUERY,
+    addEventListener: (_: string, l: () => void) => listeners.add(l),
+    removeEventListener: (_: string, l: () => void) => listeners.delete(l),
+  };
+  const matchMedia = vi.fn((query: string) => (query === DESKTOP_QUERY ? media : { ...media, matches: false }));
+  vi.stubGlobal("matchMedia", matchMedia);
+  return {
+    set(matches: boolean) {
+      media.matches = matches;
+      act(() => listeners.forEach((l) => l()));
+    },
+  };
+}
+
+describe("PC の配置（docs/specs/T-20-desktop-layout.md）", () => {
+  // 前のオフラインのテストで止まった TanStack Query の onlineManager を、つながった状態に戻す（QueryClient がまだないので online のイベントは届かない）
+  beforeEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  it("useDesktop：matchMedia の結果と change に合わせて変わる。matchMedia がなければ false", () => {
+    function Probe() {
+      return <p>{useDesktop() ? "PC" : "スマホ"}</p>;
+    }
+    const first = render(<Probe />);
+    expect(screen.getByText("スマホ")).toBeVisible();
+    first.unmount();
+    const media = stubMatchMedia(true);
+    render(<Probe />);
+    expect(screen.getByText("PC")).toBeVisible();
+    media.set(false);
+    expect(screen.getByText("スマホ")).toBeVisible();
+    media.set(true);
+    expect(screen.getByText("PC")).toBeVisible();
+  });
+
+  it("左のナビに4つのタブとお知らせ・設定。ヘッダーの鐘は出さない", async () => {
+    stubMatchMedia(true);
+    mockFetch(tabs);
+    renderApp();
+    const nav = await screen.findByRole("navigation", { name: "タブ" });
+    const links = within(nav).getAllByRole("link");
+    expect(links.map((l) => l.getAttribute("aria-label"))).toEqual(["みんな", "ここ暇", "誘い", "友達", "お知らせ", "設定"]);
+    expect(within(nav).getByRole("link", { name: "みんな" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getAllByRole("link", { name: "お知らせ" })).toHaveLength(1);
+    expect(within(screen.getByRole("banner")).queryByRole("link")).toBeNull();
+  });
+
+  it.each([
+    ["/notifications", "お知らせ"],
+    ["/settings", "設定"],
+    ["/settings/calendar", "設定"],
+  ])("%s を開いているときは、ナビの「%s」に aria-current", async (path, name) => {
+    stubMatchMedia(true);
+    window.history.replaceState(null, "", path);
+    mockFetch({ ...tabs, "/api/v1/notifications": empty, "/api/v1/me": json({ id: FRIEND_ID, displayName: "あき", avatarUrl: null }) });
+    renderApp();
+    const nav = await screen.findByRole("navigation", { name: "タブ" });
+    await waitFor(() => expect(within(nav).getByRole("link", { name })).toHaveAttribute("aria-current", "page"));
+    for (const other of within(nav).getAllByRole("link").filter((l) => l.getAttribute("aria-label") !== name)) {
+      expect(other).not.toHaveAttribute("aria-current");
+    }
+  });
+
+  it.each([
+    [0, null, "お知らせ"],
+    [5, "5", "お知らせ 5件の未読"],
+    [99, "99+", "お知らせ 99件以上の未読"],
+  ])("ナビのお知らせの未読：%i件なら印は %s、読み上げは「%s」（鐘と同じ）", async (count, badge, label) => {
+    stubMatchMedia(true);
+    mockFetch({ ...tabs, "/api/v1/notifications/unread-count": json({ count }) });
+    renderApp();
+    const nav = await screen.findByRole("navigation", { name: "タブ" });
+    const link = await within(nav).findByRole("link", { name: label });
+    if (badge) expect(within(link).getByText(badge)).toBeInTheDocument();
+    else expect(link.textContent).toBe("お知らせ");
+  });
+
+  it("スマホの配置では、ナビにお知らせ・設定を出さず、ヘッダーに鐘を出す。設定の画面ではナビを出さない", async () => {
+    stubMatchMedia(false);
+    mockFetch(tabs);
+    renderApp();
+    const nav = await screen.findByRole("navigation", { name: "タブ" });
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
+    expect(within(screen.getByRole("banner")).getByRole("link", { name: "お知らせ" })).toBeVisible();
+    await userEvent.click(within(nav).getByRole("link", { name: "友達" }));
+    window.history.pushState(null, "", "/settings");
+    act(() => window.dispatchEvent(new PopStateEvent("popstate")));
+    expect(await screen.findByRole("heading", { name: "設定", level: 1 })).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "タブ" })).toBeNull();
+  });
+
+  it("幅が変わっても、開いているシートと入力中の内容は残る", async () => {
+    const media = stubMatchMedia(false);
+    function Host() {
+      return (
+        <BottomSheet title="試し" label="試し" onClose={() => {}}>
+          <input aria-label="ひとこと" />
+        </BottomSheet>
+      );
+    }
+    render(<Host />);
+    const input = screen.getByRole("textbox", { name: "ひとこと" });
+    await userEvent.type(input, "こんにちは");
+    media.set(true);
+    expect(screen.getByRole("textbox", { name: "ひとこと" })).toBe(input);
+    expect(input).toHaveValue("こんにちは");
+    expect(screen.getByRole("button", { name: "閉じる" })).toBeVisible();
+  });
+
+  it("PC の配置では、つまみを下に引いても閉じない（押せば閉じる）", () => {
+    stubMatchMedia(true);
+    const onClose = vi.fn();
+    render(
+      <BottomSheet title="試し" label="試し" onClose={onClose}>
+        <p>本文</p>
+      </BottomSheet>,
+    );
+    const close = screen.getByRole("button", { name: "閉じる" });
+    act(() => {
+      close.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientY: 0 }));
+      close.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientY: 200 }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
