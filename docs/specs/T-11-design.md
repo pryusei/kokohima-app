@@ -50,6 +50,7 @@
 - `apps/web/src/ui/` に置く。デザインシステムのコンポーネントと同じ名前にする：
   - `Button`、`Badge`、`AvailabilityChip`、`SlotChips`、`InviteCard`、`BroadcastCard`、`ResponseButtons`、`HeadCount`、`LinkCard`
   - `NotificationRow`、`TabBar`、`Header`、`BottomSheet`、`Switch`、`Avatar`、`Toast`、`EmptyState`、`StatusStates`
+  - 問い合わせ（T-24）で足した部品：`ui/form.tsx` の `textareaClass`（`inputClass` に複数行の分を足した複数行の入力欄）と `CharCount`（「count / max」と、超えたときの文）。
   - 実装の置き場所：`Header` は `ui/Navigation.tsx` の `TabScreen`（鐘つき）と `SubScreen`（戻るつき）、`StatusStates` は `ui/feedback.tsx` の `Loading`・`LoadError`・`OfflineBanner`、`SlotChips` は `ui/form.tsx` の `Chip`・`ChipRow`。
 - 状態ごとの見た目は、真偽値の props を増やさず、`variant`（`"meet" | "pending" | "lamp" | "quiet"`）などの1つの値で渡す（`vercel-composition-patterns`）。
 - 誘いの状態 → バッジの対応は、`apps/web/src/invitations/format.ts` に関数を1つだけ置く（`statusTone`）：
@@ -107,7 +108,8 @@
   | `/settings/calendar` | カレンダー連携 | 今のまま |
   | `/settings/presets` | 時間帯プリセット | 今のここ暇タブの「プリセットの境界の変更」を移す |
   | `/settings/notifications` | 通知の設定 | 今のまま |
-  | `/settings/install` | アプリとして使う | ホーム画面に追加する案内（docs/specs/T-25-installable-pwa.md）。設定のトップの「このアプリについて」の先頭から開く |
+  | `/settings/contact` | 問い合わせ | 新しい画面（docs/specs/T-24-contact.md）。設定のトップの「このアプリについて」の先頭から開く。公開の日より前は行を出さない |
+  | `/settings/install` | アプリとして使う | ホーム画面に追加する案内（docs/specs/T-25-installable-pwa.md）。設定のトップの「このアプリについて」の「問い合わせ」の次から開く |
   | `/settings/account` | アカウント | 今の友達タブの表示名の設定（`PATCH /me`）・ログアウト・全端末ログアウトを移す |
   | `/privacy`・`/terms` | プライバシー ポリシー・利用規約 | T-19。ログインの状態によらず出す。設定のトップの節「このアプリについて」、ログイン画面と招待リンクの受け口の下からも開く。「戻る」は1つ前へ（外から開いたら `/`） |
 
@@ -133,6 +135,7 @@
   | 17 招待リンクの発行 | `FriendsPage` の中のフォーム |
   | 18 お知らせ | `NotificationsPage` |
   | 19〜23 設定 | `CalendarSettingsPage`・`NotificationSettingsPage` と新しい3画面 |
+  | キャンバスなし（26 問い合わせ） | `ContactPage`（T-24） |
 
   - 「3 初回設定」は作らない（#43）。
   - 「23 アカウント」のログインの方法の欄は、作らない（#45）。退会の欄は T-16 で、ほかの操作から離した節と確認のシートで作る（赤を使わない）。
@@ -231,3 +234,4 @@
 | 2026-11-23 | 新しい端末のログインのお知らせから開いたアカウントの設定に、理由と心当たりがないときの操作の説明を出し、ログアウトの節へスクロールすることにした | 利用者の報告（お知らせを押すと、理由がわからないままアカウントの設定に移る） |
 | 2026-11-23 | 新しい端末のログインのお知らせから開いたアカウントの設定の説明とスクロールを実装した（`Section` に `ref` を渡せるようにした） | 実装PR |
 | 2026-11-23 | ここ暇・みんなのタブと友達の詳細に行きたいの欄（T-22）を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |
+| 2026-11-23 | 共通の部品に `textareaClass`・`CharCount`、画面のつながりに `/settings/contact`、画面ごとの置き換えに `ContactPage` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |

@@ -162,6 +162,37 @@ export function revisionNoticeLine(texts) {
   return null;
 }
 
+const CONTACT_START_JSON = "packages/shared/src/contactStart.json";
+
+/**
+ * 問い合わせの公開の日（docs/specs/T-24-contact.md「振る舞い 11.」）の検査。startDate は contactStart.json の値（"YYYY-MM-DD" か null）。
+ * いつも：null か暦にある日付でなければ止める。
+ * deploy が真で、今日（日本時間）が startDate より前なら：ビルドの出力の改定日（効力が生じる日）が startDate と同じで、予告の行（「公表日：」）が1つあること。
+ * startDate が今日以前・null なら条件を足さない
+ */
+export function contactStartProblems(texts, { startDate, deploy, today }) {
+  if (startDate === null) return [];
+  const m = typeof startDate === "string" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate) : null;
+  const start = m ? { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) } : null;
+  if (!start || !isCalendarDate(start.year, start.month, start.day)) {
+    return [`問い合わせの公開の日が日付になっていません（${CONTACT_START_JSON} の startDate を null か "YYYY-MM-DD" の暦にある日付にする）`];
+  }
+  if (!deploy) return [];
+  if (!today) return ["今日の日付がないので、問い合わせの公開の日を確かめられません"];
+  if (daysBetween(today, start) <= 0) return [];
+  const problems = [];
+  const revisions = texts.flatMap((t) => realDates(t, REVISION_DATE_LABEL));
+  if (revisions.length !== 1 || daysBetween(revisions[0], start) !== 0) {
+    problems.push(
+      `問い合わせの公開の日（${format(start)}）が、プライバシー ポリシーの改定日（効力が生じる日）と違います（${CONTACT_START_JSON} の startDate と ${LEGAL_TS} の REVISION_DATE_LINE を同じ日にする）`,
+    );
+  }
+  if (sum(texts, countRevisionNoticeLines) !== 1) {
+    problems.push(`問い合わせの公開の日（${format(start)}）より前なのに、予告の行（「公表日：」）がありません（${LEGAL_TS} の REVISION_NOTICE_LINE で前もって知らせる）`);
+  }
+  return problems;
+}
+
 /** 日本時間の今日（{ year, month, day }）。now はミリ秒の時刻 */
 export function jstToday(now) {
   const d = new Date(now + 9 * 60 * 60 * 1000);

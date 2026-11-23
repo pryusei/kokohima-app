@@ -2,6 +2,7 @@ import { PLATFORM_RETENTION, RETENTION } from "@kokohima/shared";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import contactStart from "../../../../packages/shared/src/contactStart.json";
 import { tokenStore } from "../auth/tokenStore";
 import { json, mockFetch, renderApp, tokenBody, type Route } from "../test/helpers";
 import {
@@ -70,6 +71,7 @@ const PRIVACY_CHANGES = [
   "「5.」「6.」「7.」：外国の事業者に取り扱いを任せるときの書き方を直し、「7.」に、外国の名称、事業者がとる措置、その確かめ方などを書きました。",
   "「12.」：「7.」の情報の提供を求められることを書きました。",
   "「2.」「4.」「8.」と退会したとき：行きたい（ひとこと・エリア・リンク・見せない相手）を預かる情報に足し、見える相手と保存する期間を書きました。",
+  "「2.」「3.」「5.」「7.」「8.」「12.」：アプリの中の問い合わせのフォームを足したことに合わせて、預かる情報（問い合わせの種類と内容）、使う目的、任せる事業者（Slack）、保存する期間、開示などの求め方を書きました。",
 ];
 const TERMS_CHANGES = ["第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。"];
 const pages = [
@@ -274,7 +276,7 @@ describe("プライバシー ポリシーの本文", () => {
       "もっと詳しく知りたいとき",
     ]);
     const names = within(sub("外国の名称")).getAllByRole("listitem").map((li) => li.textContent);
-    expect(names[0]).toBe("米国：Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者");
+    expect(names[0]).toBe("米国：Cloudflare・Google・Resend・Slack・ブラウザのプッシュ通知の事業者");
     expect(names.slice(1).map((t) => t?.split("：")[0])).toEqual([
       "Cloudflare での通信の処理",
       "Cloudflare での保管（データベース・ファイル・処理の待ち行列・一時的な記録・ログ）",
@@ -282,9 +284,9 @@ describe("プライバシー ポリシーの本文", () => {
     const providers = within(sub("体制を整えていることの確かめ方"))
       .getAllByRole("listitem")
       .map((li) => li.textContent?.split("：")[0]);
-    expect(providers).toEqual(["Cloudflare", "Google", "Resend", "ブラウザのプッシュ通知の事業者"]);
+    expect(providers).toEqual(["Cloudflare", "Google", "Resend", "Slack", "ブラウザのプッシュ通知の事業者"]);
     const how = sub("体制を整えていることの確かめ方").textContent ?? "";
-    expect(how).not.toMatch(/Slack|Better Stack|Google API の利用規約|ユーザーデータに関するポリシー/);
+    expect(how).not.toMatch(/障害の知らせ|Better Stack|Google API の利用規約|ユーザーデータに関するポリシー/);
     expect(sub("事業者がとる措置").textContent).toContain("任された目的の範囲でだけ情報を扱うこと");
     expect(sub("確かめ続けること").textContent).toContain("年に1回と、事業者が契約・条件を変えたと知ったとき");
     expect(sub("外国の個人情報の保護の制度").textContent).toContain("個人情報保護委員会の「外国における個人情報の保護に関する制度等の調査」");
@@ -298,11 +300,11 @@ describe("プライバシー ポリシーの本文", () => {
     };
     const items = (name: string) => Array.from(sub(name).querySelectorAll("li")).map(own);
     expect(Array.from(seven.querySelectorAll(":scope > p")).map((p) => p.textContent)).toEqual([
-      "「5.」の事業者のうち、Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者は、外国の事業者です。運営は、個人情報保護法の基準に適合する体制（日本の法律の定めに沿った措置を続けてとるための体制）を整えている事業者にだけ、個人データの取り扱いを任せます。本人の同意によらずに任せるため、外国にある第三者に個人データを渡すときに本人の求めに応じて知らせることになっている事項を、求めを待たずにここに書きます。",
-      "障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません。",
+      "「5.」の事業者のうち、Cloudflare・Google・Resend・Slack・ブラウザのプッシュ通知の事業者は、外国の事業者です。運営は、個人情報保護法の基準に適合する体制（日本の法律の定めに沿った措置を続けてとるための体制）を整えている事業者にだけ、個人データの取り扱いを任せます。本人の同意によらずに任せるため、外国にある第三者に個人データを渡すときに本人の求めに応じて知らせることになっている事項を、求めを待たずにここに書きます。",
+      "監視のための障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません（問い合わせを届ける Slack は含めます）。",
     ]);
     expect(items("外国の名称")).toEqual([
-      "米国：Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者",
+      "米国：Cloudflare・Google・Resend・Slack・ブラウザのプッシュ通知の事業者",
       "Cloudflare での通信の処理：世界各地の拠点（データセンター）で処理します。どの国の拠点で処理されるかは、アクセスする場所などによって変わるため、前もって特定できません。",
       "Cloudflare での保管（データベース・ファイル・処理の待ち行列・一時的な記録・ログ）：保管する場所の国を指定していないため、Cloudflare が選びます。前もって特定できません。",
     ]);
@@ -313,6 +315,7 @@ describe("プライバシー ポリシーの本文", () => {
       "Cloudflare：Cloudflare のデータ処理に関する契約（DPA）",
       "Google：Google が、ログインとカレンダーの連携で預かるデータの処理について定める条件",
       "Resend：Resend のデータ処理に関する契約（DPA）",
+      "Slack：Slack のデータ処理に関する契約（DPA）",
       "ブラウザのプッシュ通知の事業者：それぞれの事業者が、プッシュ通知の配信について定める条件。渡すのは、その事業者が発行した宛先と、中身のない合図だけです。",
     ]);
     expect(items("事業者がとる措置")).toEqual([
@@ -332,6 +335,53 @@ describe("プライバシー ポリシーの本文", () => {
     expect(items("もっと詳しく知りたいとき")).toEqual([
       "体制の整え方、事業者がとる措置、確かめる頻度と方法、外国の制度、支障の有無とその対応について、もっと詳しく知りたいときは、ops@kokohima.app に求めてください（「12.」）。遅滞なくお知らせします。",
     ]);
+  });
+
+  it("問い合わせ（T-24）：「2.」の種類と内容、「3.」の目的とメールアドレス、「5.」の Slack、「8.」の期間と退会、「12.」の求め方", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    expect(clause("2. 預かる情報").textContent).toContain(
+      "問い合わせの種類と内容。送るときに、ログインに使っているメールアドレスと、利用者を区別する番号を一緒に運営に届けます。",
+    );
+    const three = clause("3. 使う目的");
+    const purposes = Array.from(three.querySelectorAll("ol > li")).map((li) => li.textContent);
+    expect(purposes[6]).toBe("不正な利用を防ぎ、障害に気づいて直すため。問い合わせで知らせてもらった不具合を直すため");
+    expect(purposes[8]).toBe("問い合わせでもらったご意見をもとに、このサービスを良くするため");
+    expect(three.textContent).toContain("問い合わせのときは、返信先として運営の連絡用の Slack に届けます");
+    // 仕様書の6節の文案と同じ並び（Slack は Resend とプッシュ通知の事業者の間）
+    expect(within(clause("5. 外部の事業者に任せること（委託）")).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "Cloudflare, Inc.（米国）",
+      "Google LLC（米国）",
+      "Resend（米国の事業者。メールは東京の拠点から送ります）",
+      "Slack Technologies, LLC（米国）",
+      "ブラウザのプッシュ通知の事業者（Google・Apple・Mozilla・Microsoft）",
+      "監視のためのサービス",
+      "リンクのプレビューを作るとき",
+    ]);
+    const slack = within(clause("5. 外部の事業者に任せること（委託）"))
+      .getByRole("heading", { name: "Slack Technologies, LLC（米国）", level: 3 })
+      .closest("section") as HTMLElement;
+    expect(within(slack).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "任せること：問い合わせを運営者に届けて、保管すること",
+      "渡すもの：問い合わせの種類・内容・受け付けた時刻・利用者を区別する番号・返信先のメールアドレス",
+    ]);
+    const eight = clause("8. 保存する期間").textContent ?? "";
+    expect(eight).toContain(
+      `問い合わせ：運営に届けたら、このサービスのデータベースから内容を消します。うまく届かなかったものは、処理の記録として${RETENTION.processedOutboxDays}日で消えます。運営の連絡用の Slack に届いたものは、対応を終えたら消し、遅くとも Slack に届いてから${PLATFORM_RETENTION.contactSlackDays}日で消えます。`,
+    );
+    expect(eight).toContain("遅くとも Slack に届いてから90日で消えます");
+    expect(eight).toContain("まだ運営に届いていない問い合わせは、届けずに消します。");
+    expect(clause("12. 開示・訂正・削除などの求め").textContent).toContain(
+      "ログインしているなら、アプリの「設定 → 問い合わせ」（種類「個人情報の開示・削除の請求」）からも求められます。",
+    );
+  });
+
+  it("問い合わせの公開の日（contactStart.json）は、改定日（効力が生じる日）と同じ日（T-24「11.」）", () => {
+    const m = /改定日（効力が生じる日）：(\d{4})年(\d{1,2})月(\d{1,2})日/.exec(REVISION_DATE_LINE ?? "");
+    const revision = m ? `${m[1]}-${m[2]?.padStart(2, "0")}-${m[3]?.padStart(2, "0")}` : null;
+    expect(contactStart.startDate).toBe(revision);
   });
 
   it("「12.」：「7.」の情報の提供を求められる", async () => {

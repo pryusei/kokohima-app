@@ -46,6 +46,7 @@
 | `POST /api/v1/direct-invites`、`POST /api/v1/direct-invites/{id}/responses`、`POST /api/v1/direct-invites/{id}/decide`、`POST /api/v1/meetups/{id}/cancel` | T-04 |
 | `POST /api/v1/broadcasts`、`POST /api/v1/broadcasts/{id}/decide` | T-05 |
 | `POST /api/v1/wishes` | T-22 |
+| `POST /api/v1/contact-messages`（本文の上限（8KiB）を `idempotent` より前に置く。大きな本文を読んでハッシュを作り、行を作らないため） | T-24 |
 
 - 受け付けない経路と理由：
   - 応答に秘密値が入る：`POST /invite-links`（招待トークン）、`POST /meetups/{id}/ics-links`（.ics のトークン）。保存すると D1 に平文が残るため。二重に作っても、無効化と期限で害がない。
@@ -68,12 +69,13 @@
 | `GET /api/v1/link-previews/images/{imageId}` | `link_image` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429（本文なし。`<img>` が読む経路のため。T-08） |
 | `GET /api/v1/health/ready` | `health_ready` | IP | 60秒に30回（拠点ごと、おおよそ） | `RL_PUBLIC` | 429 `rate_limited`（T-13） |
 | `POST /api/v1/meetups/{id}/ics-links` | — | 利用者 ID | 直近5分で20本（厳密） | D1（`ics_tokens` の行の数） | 429 `rate_limited` |
+| `POST /api/v1/contact-messages` | `contact_messages`（ログの `group`） | 利用者 ID | 直近24時間で3件（厳密） | D1（outbox の `ContactMessageSubmitted` の行の数） | 429 `rate_limited`（T-24） |
 
 - 付けない経路と理由：
   - `GET /auth/google/callback`・`POST /auth/apple/callback`・`POST /auth/complete`・`GET /calendar/google/callback`：どれも1回限りの値（state・完了コード）を消費するので、連打しても書き込みは増えない。経路をまとめて数えると、同じ回線の他人が軽い経路の連打で、ほかの人のログインを止められるため。
   - `POST /auth/refresh`：ページを開くたびに呼ばれ、失敗するとログアウトに見えるため。更新用トークンの交換そのものが1回限り（T-01）。
   - `POST /calendar/google/authorizations`：T-06 の D1 の上限（10分に10回）があるので、重ねない。
-- 429 の `Retry-After`：Rate Limiting なら `60`。`ics-links` なら、最も古い行が5分を過ぎるまでの秒数（切り上げ）。
+- 429 の `Retry-After`：Rate Limiting なら `60`。`ics-links` なら、最も古い行が5分を過ぎるまでの秒数（切り上げ）。`contact-messages` なら、同じ時刻で数え直した最も古い行が24時間を過ぎるまでの秒数（切り上げ。1以上。読めなければ1。T-24）。
 - 認証なしの経路の IP の上限は、学校・会社・携帯の回線で多くの人が同じ IP になることを考えて、ふつうの使い方では届かない値にする（決定事項4）。
 
 ### 出力・例外（共通）
@@ -260,3 +262,4 @@
 | 2026-11-21 | 回数の上限の表に `friend_availabilities` を足した | T-14 の実装PR（docs/specs/T-14-friend-availabilities-ratelimit.md） |
 | 2026-11-22 | 回数の上限の表に `health_ready` を足した（実装は T-13 で済んでいる） | T-13 の実装のあとのレビュー（docs/specs/T-13-monitoring.md） |
 | 2026-11-23 | 冪等キーの表に `POST /wishes`、回数の上限の表に `friend_wishes` を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |
+| 2026-11-23 | 冪等キーの表と回数の上限の表に `POST /contact-messages` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |
