@@ -23,9 +23,9 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 | リンクのプレビュー | LinkPreview | 誘い・募集・行きたいに添えたリンクの OGP のカード（link-preview コンテキスト。docs/specs/T-08-link-preview.md）。取れるまでと取れなかったときはドメインだけ |
 | 見せる／見せない | SharingPolicy | 自分のここ暇を友達ごとに見せるか（初期値：見せる） |
 | 行きたい | Wish | 行きたい店やしたいことを、日時を決めずに置いておくもの（wish コンテキスト。docs/specs/T-22-wishlist.md）。状態の遷移はない |
+| 見せない相手（行きたいの） | WishExclusion | その行きたいを見せない友達。行きたいごとに選ぶ。SharingPolicy とは別 |
 | 問い合わせ | ContactMessage | 設定から運営に送る問い合わせ（contact コンテキスト。docs/specs/T-24-contact.md）。Slack の非公開のチャンネルに届く |
 | 受付番号 | receiptId | 問い合わせの outbox の id。T-13 の問い合わせ番号（requestId）とは別 |
-| 見せない相手（行きたいの） | WishExclusion | その行きたいを見せない友達。行きたいごとに選ぶ。SharingPolicy とは別 |
 | 退会したユーザー | （プロフィールの withdrawn） | 履歴の相手が退会した人。「名前未設定の友達」と区別し、「さん」を付けない（docs/specs/T-16-withdrawal.md） |
 
 ## DirectInvite の状態
