@@ -284,6 +284,17 @@ describe("作成画面の ?wish=<id>", () => {
     expect(screen.queryByText(/読み込めませんでした/)).toBeNull();
   });
 
+  it("誘い：自分の ID が読めなければ、友達の行きたいを ?friend の宛先に入れず、空で開く", async () => {
+    invitePage(`?wish=${WISH_ID}&friend=${uuid(2)}`, {
+      "/api/v1/me": json({ code: "internal_error" }, 500),
+      [`/api/v1/wishes/${WISH_ID}`]: json(friendsWish()),
+    });
+    renderApp();
+    const message = await screen.findByLabelText("ひとこと（任意）");
+    expect(message).toHaveValue("");
+    expect(screen.queryByDisplayValue("〇〇のラーメン行きたい")).toBeNull();
+  });
+
   const broadcastPage = (search: string, over: Routes = {}) => {
     window.history.replaceState(null, "", `/broadcasts/new${search}`);
     return mockFetch({

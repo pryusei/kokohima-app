@@ -206,10 +206,12 @@ export function InviteNewPage() {
   const wish = useQuery({ ...wishQuery(wishId ?? ""), enabled: wishId !== null });
   const me = useQuery({ ...meQuery(), enabled: wish.isSuccess });
   const ready = wishId === null || wish.isError || (wish.isSuccess && !me.isPending);
+  // 自分の ID が読めなければ、持ち主を決められないので、読めなかったのと同じに空で開く
+  const usableWish = wish.isSuccess && me.isSuccess ? wish.data : null;
   // 初期値は、そろったときに1回だけ作る
   const [initial, setInitial] = useState<Initial | null>(null);
   if (ready && initial === null) {
-    setInitial(initialFields(search, wish.data ?? null, me.data?.id ?? null));
+    setInitial(initialFields(search, usableWish, me.data?.id ?? null));
   }
   return (
     <SheetScreen title="誘う" label="誘う" parent="/">
