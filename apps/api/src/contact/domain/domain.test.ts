@@ -82,7 +82,7 @@ describe("Slack の文", () => {
       body: "内容",
     });
     expect(m.text).toBe("問い合わせ：個人情報の開示・削除の請求");
-    const texts = m.blocks.flatMap((b) => ("fields" in b ? b.fields : [b.text]));
+    const texts = m.blocks.flatMap((b) => ("fields" in b && b.fields ? b.fields : "text" in b && b.text ? [b.text] : []));
     expect(texts.every((t) => t.type === "plain_text" && t.emoji === false)).toBe(true);
     expect(texts.map((t) => t.text)).toContain("返信先：登録なし");
   });
