@@ -1,5 +1,5 @@
 import type { CreateInviteLinkRequest } from "@kokohima/shared";
-import { getSharingFor, setSharing } from "../../availability/application/sharing";
+import { getSharingFor, setSharing, unfriendPurgeSharingStatements } from "../../availability/application/sharing";
 import type { AppDeps, Bindings } from "../../env";
 import { getPublicProfiles } from "../../identity/application/auth";
 import { decodeCursor, encodeCursor } from "../../shared/cursor";
@@ -195,7 +195,8 @@ export async function updateFriend(ctx: Ctx, viewerId: string, friendId: string,
 export async function unfriend(ctx: Ctx, viewerId: string, friendId: string) {
   const db = repo.db(ctx.env.DB);
   if (!(await repo.findFriendship(db, viewerId, friendId))) return false;
-  await repo.deleteFriendship(db, viewerId, friendId);
+  // 友達の行と、両方向の「見せる」の公開設定を同じ batch で消す（docs/specs/T-17-retention.md「7.」）
+  await repo.deleteFriendship(ctx.env.DB, viewerId, friendId, unfriendPurgeSharingStatements(ctx.env.DB, viewerId, friendId));
   return true;
 }
 
