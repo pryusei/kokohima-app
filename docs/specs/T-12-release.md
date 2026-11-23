@@ -5,7 +5,7 @@
 - 関係する要件：要求定義書「残りの論点」（XSS対策・Content-Security-Policy）、「AI時代の攻撃を前提にした運用」（使わないルートは閉じる）、F-01（ログイン）。issue pryusei/kokohima-app#42（アプリの中で行う部分）、#52
 
 ## 概要
-- 最初のリリースは、友達だけ（Google のテストユーザーに登録した100人まで）に向けた Web アプリ（PWA）にする。アプリストアには出さない（利用者と決めた）。
+- 最初のリリースは、友達だけに向けた Web アプリ（PWA）にする（Google の OAuth は審査を受けずに本番の公開ステータスにする。決定事項7）。アプリストアには出さない（利用者と決めた）。
 - 画面（`apps/web` のビルド）を、API と同じ Worker の静的アセットとして `https://kokohima.app` から出す。`/api` と画面が同じオリジンになるので、今の `__Host-` の Cookie と Origin の検査がそのまま使える。
 - ログインは Google だけにする。Sign in with Apple は設定で止め、コードは残す（Apple Developer Program を使わない。利用者と決めた）。
 - 画面と API の応答に、ブラウザ向けのセキュリティのヘッダー（CSP・HSTS など）を付ける。
@@ -142,11 +142,16 @@
    - `kokohima.app` に既存の A・AAAA・CNAME の記録があれば消す（カスタムドメインを付けられないため）
    - メール転送で `ops@kokohima.app` を人のアドレスへ転送する（`VAPID_SUBJECT`）
 2. Terraform（infra/README.md の初回の手順を prod で）：状態ファイル用の R2 バケット `kokohima-tfstate` を作る → `infra/terraform/envs/prod` で `terraform init -backend-config=...` → `plan -var account_id=...` → `apply`（D1・KV・R2・Queues）。出力の D1・KV の ID を wrangler の prod に転記する PR を出す（Claude に頼んでよい）。
-3. Google Cloud：プロジェクトで Google Calendar API を有効にする。同意画面（ユーザーの種類は「外部」、公開ステータスは「テスト」）と、本番の OAuth クライアント（ウェブ アプリケーション）。
+3. Google Cloud：プロジェクトで Google Calendar API を有効にする。同意画面（ユーザーの種類は「外部」、公開ステータスは「本番」。審査は受けない。決定事項7）と、本番の OAuth クライアント（ウェブ アプリケーション）。
    - 承認済みのリダイレクト URI：`https://kokohima.app/api/v1/auth/google/callback` と `https://kokohima.app/api/v1/calendar/google/callback`
    - 同意画面のスコープ：`openid`・`email`・`profile` と、カレンダーの `calendar.freebusy`・`calendar.app.created`（T-06 決定事項1）
-   - 友達の Google アカウントをテストユーザーに足す。クライアント ID を wrangler に転記。
-   - 既知の制約：公開ステータスが「テスト」の間は、Google の更新用トークンが7日で失効するので、カレンダーの連携が毎週切れて `needs_reauth` になり、「つなぎ直し」のお知らせ（T-06・T-07 の `CalendarReauthRequired`）が届く（決定事項7。一般公開のときに審査を受けて解消する）。
+   - クライアント ID を wrangler に転記。
+   - 同意画面の「対象」で「アプリを公開」を押し、公開ステータスを「本番」にする（テストユーザーの登録は要らない）。押したときの画面の説明（審査の要否・人数の上限）を確かめ、下の「本番にしたときの扱い」と違えば、この仕様書を直す。
+   - 本番にしたときの扱い（決定事項7。公式の資料はこの作業環境から読めなかったため、公開の画面の説明で確かめる）：
+     - ログイン（`openid`・`email`・`profile`。審査の要らないスコープ）は、Google アカウントがあれば誰でもでき、確認されていないアプリの警告は出ない。
+     - カレンダーの連携（`calendar.freebusy`・`calendar.app.created`。審査の対象のスコープ）では、「Google はこのアプリを確認していません」の画面が出る。利用者は「詳細」から進む。審査を受けるまで、連携できる人数に上限（100人）がある。
+     - 「テスト」のときの、更新用トークンが7日で失効する制約はなくなる（毎週の `needs_reauth` と「つなぎ直し」のお知らせは起きない）。
+   - 誰でも Google でログインしてアカウントを作れるようになるが、ここ暇・誘い・募集が見えるのは招待リンクで友達になった相手だけ（T-02・T-03）なので、知らない人に友達の暇は見えない。
 4. Resend：`kokohima.app` を送信ドメインに足し、表示された記録（SPF・DKIM と、送信用のサブドメインの MX）に DMARC を加えて、Terraform の `cloudflare_dns_record` で足す PR を出す（infra/README.md「管理画面で手動変更しない」。値を受け取れば Claude が PR を書く）。
 5. 鍵と秘密（prod）：
    - VAPID の鍵の組を作る（秘密鍵は P-256 の PKCS#8 の PEM、公開鍵は base64url の非圧縮の点。T-07）。公開鍵を wrangler に転記する。
@@ -201,7 +206,7 @@
 - アプリストアへの公開、Apple のログイン、Apple カレンダー（T-09）。
 - WAF・ボット対策・エッジのレート制限（#42 の残り）。
 - 退会（#37）、古いデータの掃除（#38）、初回設定（#43）、画面のデザイン（T-11）。
-- Google の審査（一般公開のときに行う）。
+- Google の審査（一般公開のとき、または連携する人が100人に近づいたときに行う）。
 
 ## 決定事項（仕様書PR pryusei/kokohima-app#83 のマージで合意）
 1. 最初のリリースは、友達だけに向けた Web アプリ。ログインは Google だけ（利用者と決めた）。
@@ -210,7 +215,7 @@
 4. Apple は設定値で止め、コードは残す（あとで戻せるように）。
 5. 最初のリリースは prod だけにし、staging は作らない（利用者と決めた）。
 6. カスタムドメインの DNS の記録は、Workers（`custom_domain: true`）が作り、管理する。Terraform の DNS の管理（infra/README.md）の例外として README に書く。Resend の記録などほかの DNS の記録は Terraform で持つ。
-7. Google の OAuth の公開ステータスは「テスト」のままにし、カレンダーの連携が7日ごとに切れることを受け入れる（友達だけの間。一般公開の前に審査を受ける）。
+7. Google の OAuth の公開ステータスは、審査を受けずに「本番」にする（友達をテストユーザーに1人ずつ足す手間と、カレンダーの連携が7日ごとに切れることをなくす。利用者と決めた）。カレンダーの連携で出る確認されていないアプリの警告と、連携できる人数の上限（100人）は受け入れる。一般公開の前に審査を受ける。
 
 ## 確認事項（解消済み）
 - 決定事項2〜4・6・7と、送信のメールアドレス `notify@kokohima.app` は、仕様書PRのマージで合意した。
@@ -226,3 +231,4 @@
 | 2026-11-21 | 実装PRのレビューを反映：`assets` を書く環境、`Content-Type` のない応答は304だけ HTML とみなす、wrangler の設定の検査の項目、`db:migrate:prod` のコマンド | 実装PRのレビュー（仕様） |
 | 2026-11-21 | 実装PRのセキュリティのレビューを反映：deploy:prod でも API のビルドの E2E の名前と `main` を検査、どの環境も workers.dev を開けない検査、Apple のボタンは目印 `data-provider="apple-login"` で検査 | 実装PRのレビュー（セキュリティ） |
 | 2026-11-22 | 実装PRのレビューを反映：deploy:prod だけで転記を忘れた値を検査（`--deploy`）、`ASSETS` がないときの API のヘッダーの扱い、デプロイのあとの `//` のパスの確認、本番と同じ形の E2E に `/invite`、assets の環境のローカルの D1 を e2e と分ける | 実装PRのレビュー |
+| 2026-11-23 | 決定事項7を変えた：Google の OAuth を審査なしで「本番」の公開ステータスにする（テストユーザーの登録と7日の失効をなくす）。人が行う作業3と概要を合わせた | 利用者の回答（最初のリリースのあと） |
