@@ -35,6 +35,11 @@ const repeated = {
   label: "day",
 };
 const friend = { id: FRIEND_ID, displayName: "あき", avatarUrl: null };
+// 「みんな」の顔の列（T-34）で読む友達の一覧
+const friends = json({
+  items: [{ ...friend, sharesMyAvailability: true, friendsSince: "2026-10-07T00:00:00.000Z" }],
+  nextCursor: null,
+});
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -77,6 +82,7 @@ describe("みんな", () => {
     window.history.replaceState(null, "", "/");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/friends": friends,
       "/api/v1/friend-availabilities": json({
         items: [
           { friend, startsAt: "2026-10-10T10:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z", label: "night", overlapsMine: true },
@@ -102,6 +108,7 @@ describe("みんな", () => {
     window.history.replaceState(null, "", "/");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/friends": friends,
       "/api/v1/friend-availabilities": [json({ items: [], nextCursor: "next-1" }), empty],
     });
     renderApp();
@@ -133,6 +140,7 @@ describe("みんな：回数の上限（docs/specs/T-14-friend-availabilities-ra
       window.history.replaceState(null, "", "/");
       const { calls } = mockFetch({
         "/api/v1/auth/refresh": json(tokenBody()),
+        "/api/v1/friends": friends,
         "/api/v1/friend-availabilities": json({ type: "about:blank", title: "Internal Server Error", status: 500 }, 500),
       });
       renderApp();
@@ -149,6 +157,7 @@ describe("みんな：回数の上限（docs/specs/T-14-friend-availabilities-ra
     window.history.replaceState(null, "", "/");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/friends": friends,
       "/api/v1/friend-availabilities": limited,
     });
     renderApp();
@@ -162,6 +171,7 @@ describe("みんな：回数の上限（docs/specs/T-14-friend-availabilities-ra
     window.history.replaceState(null, "", "/");
     const { calls } = mockFetch({
       "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/friends": friends,
       "/api/v1/friend-availabilities": [okPage, limited],
     });
     renderApp();
