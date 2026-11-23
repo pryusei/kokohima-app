@@ -18,3 +18,9 @@ export const nameOfProfile = (p: Named) => (p.withdrawn ? WITHDRAWN_USER : displ
 export const honorificOf = (p: Named) => (p.withdrawn ? WITHDRAWN_USER : `${displayNameOf(p.displayName)}さん`);
 
 export const meQuery = () => ({ queryKey: keys.me(), queryFn: () => apiGet("/api/v1/me", meResponseSchema) });
+
+/**
+ * 名前の画面の判定に使う GET /me（docs/specs/T-31-display-name-first-step.md）。
+ * 読み込めないときに長く読み込み中で止めないよう、読み直しは1回まで。オフラインでも一時停止せずに失敗として扱う
+ */
+export const meGateQuery = () => ({ ...meQuery(), retry: 1, retryDelay: 300, networkMode: "always" as const });

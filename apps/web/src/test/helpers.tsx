@@ -37,8 +37,8 @@ export const tokenBody = (accessToken = "access-1") => ({
   expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
 });
 
-export function renderApp() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+/** client を渡さなければ、読み直しなし（retry: false）の QueryClient を使う */
+export function renderApp(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={client}>
       <AuthProvider skipInitialRefresh={window.location.pathname === "/auth/complete"}>

@@ -1,3 +1,4 @@
+import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -124,6 +125,26 @@ describe("名前の画面（招待を経由しないとき）", () => {
     expect(screen.queryByRole("heading", { name: "表示名を決めてください" })).toBeNull();
   });
 
+  it("読み直しの設定が既定のままの QueryClient でも、GET /me が読めなければ1回だけ読み直して、いつもの画面を出す", async () => {
+    window.history.replaceState(null, "", "/availability");
+    const { calls } = mockFetch({ ...availabilityTab, "/api/v1/me": () => Promise.reject(new TypeError("Failed to fetch")) });
+    renderApp(new QueryClient());
+    expect(await screen.findByRole("heading", { name: "ここ暇", level: 1 })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "表示名を決めてください" })).toBeNull();
+    expect(calls.filter((c) => c.url === "/api/v1/me").length).toBeLessThanOrEqual(2);
+  });
+
+  it("GET /me を読み込むあいだは、読み込み中の表示を出す", async () => {
+    window.history.replaceState(null, "", "/availability");
+    const { calls } = mockFetch({ ...availabilityTab, "/api/v1/me": () => new Promise<Response>(() => {}) });
+    renderApp();
+    // ログインの確かめが済んで GET /me を読み始めたあと
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/me")).toBe(true));
+    expect(screen.getByRole("status", { name: "読み込み中" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "ここ暇", level: 1 })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "表示名を決めてください" })).toBeNull();
+  });
+
   it("名前があれば名前の画面を出さない", async () => {
     window.history.replaceState(null, "", "/availability");
     mockFetch({ ...availabilityTab, "/api/v1/me": json(me("ゆう")) });
@@ -216,6 +237,18 @@ describe("友達になった直後の1画面（/welcome）", () => {
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: "お知らせを受け取る" }));
     expect(await screen.findByText("通知が許可されていません。端末の設定で許可すると受け取れます")).toBeVisible();
+  });
+
+  it("登録できなければ、静かな文言で設定の通知へ促す", async () => {
+    stubPush({ permission: "default", endpoint: null });
+    welcome({
+      "/api/v1/push/vapid-key": json({ publicKey: "BONDPuYKWDQXZ6vrw0gaiA" }),
+      "/api/v1/push/subscriptions": problem(500, "internal"),
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "お知らせを受け取る" }));
+    const text = await screen.findByText("受け取れるようにできませんでした。設定の通知からお試しください。");
+    expect(text.className).not.toMatch(/red|rose|error/);
   });
 
   it("すでに受け取る状態なら、ボタンの代わりに「この端末で受け取ります」", async () => {

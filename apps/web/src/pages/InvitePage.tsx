@@ -7,7 +7,7 @@ import {
 } from "@kokohima/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { meQuery } from "../account/me";
+import { meGateQuery } from "../account/me";
 import { ApiError, apiFetch, apiSend } from "../api/client";
 import { keys } from "../api/keys";
 import { useAuth } from "../auth/AuthProvider";
@@ -79,7 +79,7 @@ export function InvitePage() {
 
   const queryClient = useQueryClient();
   // 名前があるか（docs/specs/T-31-display-name-first-step.md「名前の画面（招待リンクの受け口）」）
-  const me = useQuery({ ...meQuery(), enabled: status === "authenticated" && state.kind === "ready" });
+  const me = useQuery({ ...meGateQuery(), enabled: status === "authenticated" && state.kind === "ready" });
   const [name, setName] = useState("");
   const [nameFailed, setNameFailed] = useState(false);
 

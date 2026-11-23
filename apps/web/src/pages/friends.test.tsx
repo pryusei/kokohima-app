@@ -228,6 +228,19 @@ describe("招待リンクの受け口", () => {
       expect(await screen.findByText(/友達になれませんでした。招待リンクをもう一度開いてください/)).toBeVisible();
     });
 
+    it("GET /me を読み込むあいだは、ボタンの位置に読み込み中の表示を出す", async () => {
+      window.history.replaceState(null, "", "/invite");
+      mockFetch({
+        "/api/v1/auth/refresh": json(tokenBody()),
+        "/api/v1/invite-links/lookup": lookupOk,
+        "/api/v1/me": () => new Promise<Response>(() => {}),
+      });
+      renderApp();
+      expect(await screen.findByText("あきさんから、ここ暇の友達の招待が届いています。")).toBeVisible();
+      expect(screen.getByRole("status", { name: "読み込み中" })).toBeVisible();
+      expect(screen.queryByRole("button", { name: /友達になる/ })).toBeNull();
+    });
+
     it("GET /me が読めなければ、ボタンを出さずに開き直しを促す", async () => {
       window.history.replaceState(null, "", "/invite");
       const { calls } = mockFetch({

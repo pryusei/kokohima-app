@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { Button } from "../ui/Button";
 import { Loading, Note } from "../ui/feedback";
 import { DisplayNameForm } from "./DisplayNameForm";
-import { meQuery } from "./me";
+import { meGateQuery } from "./me";
 
 // 名前の画面（docs/specs/T-31-display-name-first-step.md「名前の画面（招待を経由しないとき）」）
 // 表示名が空のあいだは、開こうとした画面の代わりに出す。URL は変えないので、保存すると開こうとした画面がそのまま出る
@@ -44,7 +44,7 @@ function NamePage() {
 
 /** ログイン済みの画面の前に置く。読み込めなかったときは止めない */
 export function NameGate({ children }: { children: ReactNode }) {
-  const me = useQuery(meQuery());
+  const me = useQuery(meGateQuery());
   // 読み込み中で止めるのは最初の1回だけ。読み込めなかったあとに、ほかの画面の取り直しで止めて画面を描き直さないため
   const [settled, setSettled] = useState(false);
   if (!me.isPending && !settled) setSettled(true);
