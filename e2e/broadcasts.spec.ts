@@ -43,7 +43,7 @@ async function meetupsOf(page: Page) {
   await page.goto("/invites?tab=meetups");
 }
 
-test("AがB・C・Dに募集 → BとCが応じる → Aには人数だけ → 決める → A・B・Cに予定、Dは募集中のまま", async ({ browser }) => {
+test("AがB・C・Dに募集 → BとCが応じる → Aには人数だけ → 決める → A・B・Cに予定、Dは募集中のまま", { tag: "@iphone" }, async ({ browser }) => {
   const a = await newUser(browser, "A");
   const [b, c, d] = [await newUser(browser, "B"), await newUser(browser, "C"), await newUser(browser, "D")];
   for (const f of [b, c, d]) await befriend(a, f);

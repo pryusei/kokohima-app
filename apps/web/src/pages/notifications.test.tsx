@@ -219,6 +219,7 @@ describe("通知の設定", () => {
     renderApp();
     expect(await screen.findByText("ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます")).toBeVisible();
     expect(screen.queryByRole("button", { name: "この端末でプッシュ通知を受け取る" })).toBeNull();
+    expect(screen.getByRole("link", { name: "追加の方法" })).toHaveAttribute("href", "/settings/install");
   });
 
   it("「この端末でプッシュ通知を受け取る」：許可を取り、公開鍵で購読し、endpoint だけを送る。やめると DELETE する", async () => {
