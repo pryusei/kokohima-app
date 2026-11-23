@@ -1,12 +1,24 @@
 import type { ReactNode } from "react";
 import { Link } from "../ui/Link";
 import { PublicSubScreen } from "../ui/Navigation";
-import { CONTACT_EMAIL, EFFECTIVE_DATE_LINE, REVISION_DATE_LINE, useDocumentTitle } from "./legal";
+import { CONTACT_EMAIL, EFFECTIVE_DATE_LINE, REVISION_DATE_LINE, REVISION_NOTICE_LINE, useDocumentTitle } from "./legal";
 
 // プライバシー ポリシーと利用規約の画面の形（docs/specs/T-19-privacy-terms.md「2.」「3.」）。
 // 本文は JSX のテキストで書く（HTML の文字列の差し込みや Markdown の変換は使わない）。表は使わない
 
-export function LegalDocument({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * changes：「この改定で変わるところ」のそのページの箇条書き（legal.ts の PRIVACY_REVISION_CHANGES など）。
+ * 予告の行（REVISION_NOTICE_LINE）があり、箇条書きもあるときだけ節を出す（決めたこと15・「8.」）
+ */
+export function LegalDocument({
+  title,
+  changes,
+  children,
+}: {
+  title: string;
+  changes: readonly string[] | null;
+  children: ReactNode;
+}) {
   useDocumentTitle(title);
   return (
     <PublicSubScreen title={title} back="/">
@@ -14,7 +26,17 @@ export function LegalDocument({ title, children }: { title: string; children: Re
         <div className="flex flex-col text-s text-ink-muted">
           <p>{EFFECTIVE_DATE_LINE}</p>
           {REVISION_DATE_LINE && <p>{REVISION_DATE_LINE}</p>}
+          {REVISION_NOTICE_LINE && <p>{REVISION_NOTICE_LINE}</p>}
         </div>
+        {REVISION_NOTICE_LINE && changes && changes.length > 0 && (
+          <Clause title="この改定で変わるところ">
+            <Bullets>
+              {changes.map((change) => (
+                <li key={change}>{change}</li>
+              ))}
+            </Bullets>
+          </Clause>
+        )}
         {children}
       </article>
     </PublicSubScreen>
