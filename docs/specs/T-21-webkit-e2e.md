@@ -52,7 +52,7 @@
 - `navigation.spec.ts` のこのテストの `page.setViewportSize({ width: 390, height: 844 })` は、`mobile` で回すときのために残す。
 
 ### CI（決定事項3）
-- `.github/workflows/e2e.yml` の `playwright install --with-deps chromium` を `chromium webkit` にする。`pnpm e2e` は今のまま（全プロジェクトが回る）。
+- CI の E2E（`.github/workflows/e2e.yml`）で WebKit も回す。T-21 では `playwright install --with-deps chromium` を `chromium webkit` にした。T-30 で `playwright install --with-deps` をやめ、Chromium と WebKit の入った Playwright の公式のコンテナで回すようにした（docs/specs/T-30-ci-review.md「3. E2E」）。`pnpm e2e` は今のまま（全プロジェクトが回る）。
 - ジョブは1つのまま分けない。`timeout-minutes` は今の30分のまま。実装PRで CI の時間を測り、PR の説明に書く。
 - 落ちたときのレポートの保存（`playwright-report`）は今のまま。
 
@@ -99,3 +99,4 @@
 | 2026-11-23 | 初版 | 利用者の依頼（pryusei/kokohima-app#139 のレビューで、iPhone のはみ出しは Chromium の E2E では再現しないと指摘された） |
 | 2026-11-23 | 実装した。WebKit は `http://localhost` で `Secure` の Cookie を保存しないので、`iphone` 用に HTTPS の画面（`:5174`）と Origin を合わせた E2E の API（`:8789`）を足した（利用者と決めた）。Linux の WebKit では iPhone のはみ出しが再現しないことを確かめた。T-20 で `chromium` のプロジェクトが `mobile` になったのに合わせた | 実装PR |
 | 2026-11-23 | WebKit で回すテストに問い合わせの流れを足した | T-24 実装PR（docs/specs/T-24-contact.md） |
+| 2026-11-23 | CI の E2E を Playwright の公式のコンテナで回すようにした（`playwright install --with-deps` をやめた） | T-30 実装PR（docs/specs/T-30-ci-review.md） |

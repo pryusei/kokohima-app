@@ -1,6 +1,6 @@
 # T-30 仕様書：CI の見直し（テストを回すタイミングと中身）
 
-- 状態：下書き
+- 状態：実装済み
 - タスク票：docs/tasks/T-30-ci-review.md
 - 関係する要件：要求定義書「技術」の CI。CLAUDE.md「テスト」「仕様書とPRの流れ」。T-21（docs/specs/T-21-webkit-e2e.md）
 
@@ -23,11 +23,13 @@
 ## 振る舞い
 
 ### 1. 変更の分類（`scripts/ci/changes.mjs`）
-- PR の差分（`git diff --name-status -M origin/<宛先>...HEAD` の行）を受け取り、次の3つを返す Node のスクリプトを足す。判定の関数を export し、単体テストで確かめる。
-  - `docsOnly`：変更がすべて文書のとき true。文書とは、`docs/` の下のファイルと、`apps/`・`packages/`・`e2e/`・`scripts/` の外にある `.md`（`CLAUDE.md`、`.claude/skills/**/*.md`、`.github/pull_request_template.md` など）。差分が空のときは false にする（念のため回す）。
-  - `needsUnitTest`：追加・変更・名前の変更（A・M・R）のファイルのうち、`apps/`・`packages/`・`scripts/` の下にあり、`.md` でも `package.json` でもないものが1つでもあれば true。消しただけ（D）は数えない。名前の変更は移動先のパスで判定する。
-  - `hasUnitTest`：追加・変更・名前の変更のファイルに単体テストが1つでもあれば true。単体テストとは、`apps/`・`packages/`・`scripts/` の下の `*.test.ts`・`*.test.tsx` と、`e2e/` の下の `*.unit.ts`。消したテストは数えない。
-- 文書を飛ばしてよい根拠：単体テスト・E2E・本番のビルドは、`docs/` と `.md` を読まない。2026-11-23 に、テストと設定が `readFileSync`・`?raw`・`import.meta.glob`・`define` で読むファイルと、本番のビルドの検査（`apps/api/scripts/`）を確かめた。パッケージの外で読んでいるのは `infra/terraform/envs/prod/waf.tf`（WAF のテスト）だけで、これは文書に入らないので回る。テストやビルドで `docs/` や `.md` を読むようにするときは、この分類も直す。
+- PR の差分（`git diff --name-status -z -M origin/main...HEAD` の出力）を受け取り、次の3つを返す Node のスクリプトを足す。判定の関数を export し、単体テストで確かめる。
+  - 比べる先は、PR の宛先ではなく既定のブランチ（`main`）。チェックの結果は PR ではなくコミットに付くので、宛先で結果が変わると、同じコミットで宛先を main 以外にした PR を作るだけで、必須チェック（`unit`・`require-unit-tests`）を飛ばせてしまう（実装PRのセキュリティのレビューで見つけた）。宛先が main 以外の PR は、main からの差分全体で判定する（テストを回す側に倒れる）。
+  - `-z`（NUL 区切り）で読む。`-z` がないと、git は日本語や `"` を含むパスを引用符で囲んでエスケープするので、置き場所の判定に合わず、日本語名のコードを足しても単体テストを求めなくなる（実装PRのレビューで見つけた）。
+  - `docsOnly`：変更がすべて文書のとき true。文書とは、`docs/` の下のファイルと、`apps/`・`packages/`・`e2e/`・`scripts/` の外にある `.md`（`CLAUDE.md`、`.claude/skills/**/*.md`、`.github/pull_request_template.md` など）。差分が空のときは false にする（念のため回す）。名前の変更は、移動元と移動先の両方が文書のときだけ文書に数える。
+  - `needsUnitTest`：消した（D）のでないファイル（追加・変更・名前の変更・複写など）のうち、`apps/`・`packages/`・`scripts/` の下にあり、`.md` でも `package.json` でもないものが1つでもあれば true。消しただけ（D）は数えない。名前の変更は移動先のパスで判定する。
+  - `hasUnitTest`：消した（D）のでないファイルに単体テストが1つでもあれば true。単体テストとは、`apps/`・`packages/`・`scripts/` の下の `*.test.ts`・`*.test.tsx` と、`e2e/` の下の `*.unit.ts`。消したテストは数えない。
+- 文書を飛ばしてよい根拠：単体テスト・E2E・本番のビルドは、`docs/` と `.md` を読まない。2026-11-23 に、テストと設定が `readFileSync`・`?raw`・`import.meta.glob`・`define` で読むファイルと、本番のビルドの検査（`apps/api/scripts/`）を確かめた。パッケージの外で読んでいるのは、`infra/terraform/envs/prod/waf.tf`（WAF のテスト）と、この仕様で足すテストが読む `.github/workflows/*.yml`・`pnpm-lock.yaml` だけで、どれも文書に入らないので回る。テストやビルドで `docs/` や `.md` を読むようにするときは、この分類も直す。
 - Dependabot の依存の更新（`package.json` と `pnpm-lock.yaml` だけ）は、`docsOnly` も `needsUnitTest` も false になる。テストは回り、単体テストの追加は求めない。
 - `infra/`・`.github/`・`e2e/` とルートの設定ファイルだけの変更にも、単体テストの追加は求めない（検査の対象外）。テストが要るかは、その仕様書のテスト計画とレビューで決める。
 
@@ -36,7 +38,7 @@
   - `pull_request`（宛先のブランチを問わない）と、`main` への `push`。main 以外のブランチへの push だけでは回さない。PR を作れば回る。
   - 同じ PR に新しい push が来たら、その PR の古い実行は取り消す（`concurrency` の `cancel-in-progress`）。main への push はコミットごとに別のグループにし、取り消さない（マージごとに確かめる）。
 - ジョブ：
-  - `changes`（新規）：PR のときだけ、上の分類の `docsOnly` を出す。秘密は使わない。
+  - `changes`（新規）：PR のときだけ、上の分類の `docsOnly` を出す（既定のブランチと比べる）。秘密は使わない。
   - `unit`（名前は変えない）：型チェック・lint・単体テスト・本番のビルド（`build:prod`）。中身は変えない。`changes` が成功して `docsOnly` が true のときだけ、ジョブの `if:` で飛ばす。`changes` が失敗・取り消しになったときは飛ばさずに回す（判定の失敗で検査が抜けないように、回す側に倒す）。main への push では常に回す。
   - `require-unit-tests`（名前は変えない）：すべての PR で回す（`feat/*` の条件をなくす）。自分で差分を取って上の分類を使い、`needsUnitTest` が true で `hasUnitTest` が false なら「実装PRには単体テスト（*.test.ts）の追加・変更が必要です」で落とす。`changes` には頼らない（`changes` が失敗したときに、この検査が飛ばされないように）。
 - 文書だけの変更は、ワークフローの `paths-ignore` ではなく、ジョブの `if:` で飛ばす。`paths-ignore` だとワークフローが動かず、必須チェックにしたジョブが「待機中」のまま止まって、マージできなくなるため。ジョブを `if:` で飛ばした場合は、必須チェックを満たした扱いになる。
@@ -49,13 +51,13 @@
   - 手動（`workflow_dispatch`。新規）
 - `concurrency` は ci と同じにする（PR は古い実行を取り消し、main はコミットごとに回す）。
 - ジョブ：
-  - `prepare`（新規）：PR のときは上の分類の `docsOnly` を出す。あわせて、`pnpm-lock.yaml` で解決した `@playwright/test` の版（例：`1.65.0`）を出す（`scripts/ci/playwright-version.mjs`）。秘密は使わない。
-  - `e2e`（名前は変えない）：飛ばす条件は ci の `unit` と同じ（`prepare` が成功して `docsOnly` のときだけ飛ばす）。
+  - `prepare`（新規）：`pnpm-lock.yaml` で解決した `@playwright/test` の版（例：`1.65.0`）を出す（`scripts/ci/playwright-version.mjs`）。そのあと、PR のときは上の分類の `docsOnly` を出す（既定のブランチと比べる）。版を先に出すので、分類が失敗しても版は `e2e` に渡る。秘密は使わない。
+  - `e2e`（名前は変えない）：飛ばす条件は ci の `unit` と同じ（`prepare` が成功して `docsOnly` のときだけ飛ばす）。分類が失敗したときは回す。版を出せずに `prepare` が落ちたときは、コンテナが起動できないので `e2e` も落ちる（違う版で回さない）。
 - `e2e` は Playwright の公式のコンテナ（`mcr.microsoft.com/playwright:v<版>-<Ubuntu の名前>`）の中で回す。
   - 版は `prepare` が出した版を使い、`pnpm-lock.yaml` と常に一致させる。Dependabot が Playwright を上げても、ワークフローを直さずに済む。
   - `playwright install --with-deps` はやめる。OS の依存とブラウザ（Chromium・WebKit）はコンテナに入っている。
   - Chromium のために、コンテナに `--ipc=host` を付ける（Playwright の Docker の案内のとおり）。
-  - Ubuntu の名前（`noble` など）は、実装PRで、その版に出ているタグを確かめて決める。
+  - Ubuntu は 24.04（`noble`）にする。1.65.0 には `noble`（24.04）・`resolute`（26.04）・`jammy`（22.04）のタグがある（実装PRで確かめた）。作業環境と同じ 24.04 にして、CI で落ちたときに手元で同じ条件で再現できるようにする。
   - ブラウザのキャッシュは使わない。遅かったのは OS の依存の取得で、ブラウザの取得は速かったため（概要の4.）。
 - main への push の E2E が落ちたら、GitHub の通知（そのコミットをした人）で気づく。直す PR をほかの PR より先に出す。
 - 落ちたときのレポートの保存（`playwright-report`、7日）は今のまま。`timeout-minutes` は30分のまま。
@@ -73,10 +75,14 @@
   - 原因が上のとおりなら、テストを直す。Esc を押す前に、シートにフォーカスが入ったこと（`toBeFocused()`）を待つ。フォーカスを移すのは Esc を受ける処理を付けるのと同じ effect の中なので、これを待てば Esc が効く。利用者にも見える状態（キーボードの利用者はシートの中から操作を始める）を待つので、固定の wait にはしない。
   - 原因がアプリにあり、利用者の操作でも起きるとき（シートが付け直されて、Esc が効かない時間がある、など）は、アプリを直し、T-11 の仕様書（docs/specs/T-11-design.md）も同じ PR で直す。
 - 直したあと、`navigation.spec.ts` を WebKit で `--repeat-each 20` で回し、落ちないことを確かめる。結果は PR に書く。
-- ほかの Esc でシートを閉じるテスト（`e2e/fixtures.ts` の `addAvailability`、`availability.spec.ts`、`friends.spec.ts`、`desktop.spec.ts`）は、シートの中の操作の結果を待ってから Esc を押しているので変えない。flaky が出たら、同じ方法で直す。
+- 実装PRで確かめた結果（WebKit、作業環境の Ubuntu 24.04）：
+  - 直す前は、20回のうち1回落ちた（CI と同じ落ち方）。
+  - Esc を押した瞬間のフォーカスの場所を記録して40回回すと、落ちた1回だけフォーカスが `body` にあり、通った39回はシート（`dialog`）にあった。文書に付ける Esc の処理が付いていれば `body` で押しても閉じるので、Esc を受ける処理を付ける effect がまだ動いていなかった。上の「考えられる原因」のとおり。
+  - 利用者の操作では起きない（シートが出てから数ミリ秒のうちに Esc を押すことになる。iPhone には Esc がない）ので、アプリは変えず、テストでフォーカスを待つようにした。
+- ほかの Esc でシートを閉じるテスト（`e2e/fixtures.ts` の `addAvailability`、`availability.spec.ts`、`friends.spec.ts`、`desktop.spec.ts`）は変えない。どれもアプリの中のクリックで開いたシートで、クリックのような利用者の操作で起きた描画では、React が effect をその場で動かすので、見えた時点で Esc を受けられる。直接開いたときだけ、シートはログインの取り直しと誘いの取得のあとに描かれ、effect があとに回る。flaky が出たら、同じ方法で直す。
 
 ### 6. terraform（`.github/workflows/terraform.yml`）
-- 回すタイミングは今のまま（`infra/**` を変えた、main への PR）。
+- 回すタイミング：`infra/**` を変えた main への PR（今のまま）に加えて、このワークフロー（`.github/workflows/terraform.yml`）を変えた PR でも回す。変えた検査をその PR で確かめるため（実装PRのレビューで、この PR で `check` を確かめられないと指摘された）。
 - ジョブを2つに分ける。
   - `check`（新規）：秘密を使わず、承認も待たない。`terraform fmt -check -recursive infra/terraform` を1回と、`staging`・`prod` のそれぞれで `terraform init -backend=false` と `terraform validate`。
   - `plan`（名前は変えない）：`check` が通ってから回す。承認（環境 `terraform-plan`）のあとに、今と同じ `init`（R2 の状態）と `plan`。`fmt` と `validate` は `check` に移したので外す。
@@ -92,39 +98,42 @@
 - 閲覧者IDの使い方：変えない。
 - 他人のデータに届かないことの保証：変えない。テスト用ログイン（`POST /__e2e__/login`）は、今までどおり E2E の環境でだけ使う。本番のビルドの検査（`build:prod`）は `unit` に残す（要求定義書の「CIで本番のビルドにテスト用の経路が含まれていないことを確認する」）。
 - 区別させない応答：変えない。
-- ワークフローの権限は今のまま `contents: read`。新しいジョブ（`changes`・`prepare`・`check`）は秘密を使わない。E2E はコンテナにしても秘密を使わない（テスト用の鍵は、今までどおりその場で生成する）。terraform の秘密は、今と同じく承認のあとの `plan` だけで使う。
+- ワークフローの権限は今のまま `contents: read`。すべての checkout に `persist-credentials: false` を付け、読み取りのトークンも作業ディレクトリに残さない。新しいジョブ（`changes`・`prepare`・`check`）は秘密を使わない。E2E はコンテナにしても秘密を使わない（テスト用の鍵は、今までどおりその場で生成する）。terraform の秘密は、今と同じく承認のあとの `plan` だけで使う。
 - アクションは今までどおりコミットの SHA で固定する。コンテナのイメージは版のタグで指定し、SHA（ダイジェスト）では固定しない（決定事項4）。
 
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 変更の分類（`scripts/ci/changes.test.ts`。ルートの `vitest.config.ts` に `ci` のプロジェクトを足す）：
-  - [ ] `docs/` だけ、または `.md` だけ（`CLAUDE.md`、`.claude/skills/x/SKILL.md`）→ `docsOnly`
-  - [ ] `apps/` の下の `.md`、`infra/terraform/envs/prod/waf.tf`、`.github/workflows/ci.yml`、`pnpm-lock.yaml` のどれかが混じる → `docsOnly` でない
-  - [ ] 差分が空 → `docsOnly` でない
-  - [ ] `apps/api/src/x.ts` を変えて、テストがない → `needsUnitTest` が true で `hasUnitTest` が false
-  - [ ] `apps/api/src/x.test.ts`、`apps/api/test/y.test.ts`、`apps/web/src/z.test.tsx`、`e2e/w.unit.ts`、`scripts/ci/v.test.ts` のどれかを足す・変える → `hasUnitTest`
-  - [ ] テストを消しただけ（D）→ `hasUnitTest` でない
-  - [ ] コードを消しただけ（D）→ `needsUnitTest` でない
-  - [ ] 名前の変更（`R100` の行。移動元と移動先の2つのパス）→ 移動先のパスで判定する
-  - [ ] `apps/web/package.json` と `pnpm-lock.yaml` だけ（Dependabot）→ `needsUnitTest` も `docsOnly` も false
-  - [ ] `e2e/x.spec.ts` だけ → `needsUnitTest` でない（E2E だけの変更）
-- [ ] Playwright の版（`scripts/ci/playwright-version.test.ts`）：`pnpm-lock.yaml` のルートの `@playwright/test` の版を返す。見つからないときはエラーで止める（違う版のコンテナで回さない）。
-- [ ] ワークフローの設定（`scripts/ci/workflows.test.ts`。YAML を読んで確かめる。読むために `yaml` を開発用の依存に足す）：
-  - [ ] ci：`push` は `main` だけ、`pull_request` は宛先を絞らない。`concurrency` は PR だけ取り消す。`unit` は `changes` が成功して `docsOnly` のときだけ飛ぶ。`require-unit-tests` にブランチ名の条件がない。`unit` が `build:prod` を回す。
-  - [ ] e2e：`pull_request`（main）・`push`（main）・`workflow_dispatch` で回る。`e2e` はコンテナで、イメージの版は `prepare` の出力を使い、`--ipc=host` を付ける。`playwright install` を実行しない。飛ぶ条件が ci の `unit` と同じ。
-  - [ ] terraform：`check` は `environment` を持たず、秘密（`secrets.`）を参照しない。`plan` は `needs: check` と `environment: terraform-plan` を持つ。
-  - [ ] すべてのワークフロー：`uses:` が40桁の SHA で固定されている。`permissions` が `contents: read` だけ。
-- [ ] Playwright の設定（`e2e/playwright-config.unit.ts` に足す）：CI のとき `failOnFlakyTests` が true で `retries` が1。CI でないときは `failOnFlakyTests` が false で `retries` が0。
+- [x] 変更の分類（`scripts/ci/changes.test.ts`。ルートの `vitest.config.ts` に `ci` のプロジェクトを足す）：
+  - [x] `docs/` だけ、または `.md` だけ（`CLAUDE.md`、`.claude/skills/x/SKILL.md`）→ `docsOnly`
+  - [x] `apps/` の下の `.md`、`infra/terraform/envs/prod/waf.tf`、`.github/workflows/ci.yml`、`pnpm-lock.yaml` のどれかが混じる → `docsOnly` でない
+  - [x] 差分が空 → `docsOnly` でない
+  - [x] `apps/api/src/x.ts` を変えて、テストがない → `needsUnitTest` が true で `hasUnitTest` が false
+  - [x] `apps/api/src/x.test.ts`、`apps/api/test/y.test.ts`、`apps/web/src/z.test.tsx`、`e2e/w.unit.ts`、`scripts/ci/v.test.ts` のどれかを足す・変える → `hasUnitTest`
+  - [x] テストを消しただけ（D）→ `hasUnitTest` でない
+  - [x] コードを消しただけ（D）→ `needsUnitTest` でない
+  - [x] 名前の変更（`R100` の行。移動元と移動先の2つのパス）→ 移動先のパスで判定する。文書から文書への名前の変更は `docsOnly`
+  - [x] 日本語や `"` を含むパスのコードを足して、テストがない → 検査で落ちる。日本語のファイル名の文書だけ → `docsOnly`
+  - [x] `apps/web/package.json` と `pnpm-lock.yaml` だけ（Dependabot）→ `needsUnitTest` も `docsOnly` も false
+  - [x] `e2e/x.spec.ts` だけ → `needsUnitTest` でない（E2E だけの変更）
+- [x] Playwright の版（`scripts/ci/playwright-version.test.ts`）：`pnpm-lock.yaml` のルートの `@playwright/test` の版を返す。見つからないときはエラーで止める（違う版のコンテナで回さない）。
+- [x] ワークフローの設定（`scripts/ci/workflows.test.ts`。YAML を読んで確かめる。読むために `yaml` を開発用の依存に足す）：
+  - [x] ci：`push` は `main` だけ、`pull_request` は宛先を絞らない。`concurrency` は PR だけ取り消す。`unit` は `changes` が成功して `docsOnly` のときだけ飛ぶ。`require-unit-tests` にブランチ名の条件がない。`unit` が `build:prod` を回す。
+  - [x] e2e：`pull_request`（main）・`push`（main）・`workflow_dispatch` で回る。`e2e` はコンテナで、イメージの版は `prepare` の出力を使い、`--ipc=host` を付ける。`playwright install` を実行しない。飛ぶ条件が ci の `unit` と同じ。`prepare` は版を分類より先に出す。
+  - [x] 分類（`changes`・`require-unit-tests`・`prepare`）は既定のブランチと比べ、`base_ref` を使わない。秘密を参照しない。
+  - [x] terraform：`infra/**` とこのワークフローの変更で回る。`check` は `environment` を持たず、秘密（`secrets.`）を参照しない。`plan` は `needs: check` と `environment: terraform-plan` を持つ。
+  - [x] すべてのワークフロー：`uses:` が40桁の SHA で固定されている。`permissions` が `contents: read` だけ。checkout が `persist-credentials: false`。
+- [x] Playwright の設定（`e2e/playwright-config.unit.ts` に足す）：CI のとき `failOnFlakyTests` が true で `retries` が1。CI でないときは `failOnFlakyTests` が false で `retries` が0。
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 「お知らせのリンクのように誘いの URL を直接開いて閉じると…」が、`iphone`（WebKit）で `--repeat-each 20` で回しても落ちない。`mobile` でも通る。
+- [x] 「お知らせのリンクのように誘いの URL を直接開いて閉じると…」が、`iphone`（WebKit）で `--repeat-each 20` で回しても落ちない。`mobile` でも通る（実装PRで、WebKit で40回続けて通り、`mobile` でも通った）。
 - 新しい利用者の流れは足さない。変えるのは CI と、テストの待ち方だけ。
 
 ### CI での確かめ（実装PRで行い、PR の説明に書く）
 - [ ] 実装PRで、ci と E2E がそれぞれ1本ずつだけ走る（push の分が走らない）。
 - [ ] `claude/*` のブランチの実装PRで、`require-unit-tests` が回って通る。
 - [ ] コンテナで回した E2E の所要時間を、今（3〜4分）と比べる。
+- [ ] terraform の `check` が、承認を待たずに回って通る（この PR はワークフローを変えるので回る）。手元では、通信の要らない `terraform fmt -check -recursive infra/terraform` だけを確かめる（この作業環境からは provider を取れないので、`validate` は CI で確かめる）。
 - [ ] マージ後：main への push で ci と E2E が回る。マージ後の最初の仕様書PRで、`unit` と `e2e` が飛ばされ、マージできる。
 
 ## スコープ外
@@ -151,3 +160,5 @@
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-23 | 初版 | 利用者の依頼（GitHub Actions の見直し：テストを回すタイミングと中身） |
+| 2026-11-23 | 実装した。コンテナの Ubuntu を 24.04（`noble`）に決めた。flaky の原因を WebKit で確かめ（Esc を押したときにまだフォーカスが body にあり、Esc を受ける処理が付いていなかった）、テストでフォーカスを待つようにした。名前の変更を文書に数える条件を書いた | T-30 実装PR |
+| 2026-11-23 | 実装PRのレビューの反映：分類の比べる先を PR の宛先から既定のブランチにした（宛先を変えた PR で必須チェックを飛ばせた）。`git diff -z` で読むようにした（日本語のパスで検査を抜けられた）。`prepare` で版を分類より先に出すようにした。terraform をこのワークフローの変更でも回すようにした。checkout に `persist-credentials: false` を付けた。ほかの Esc のテストを変えない理由、文書の根拠を実態に合わせた | T-30 実装PRのレビュー |
