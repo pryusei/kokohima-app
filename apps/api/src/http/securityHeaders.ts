@@ -57,8 +57,18 @@ function isHtml(pathname: string, res: Response) {
 export const IMMUTABLE_ASSET_CACHE = "public, max-age=31536000, immutable";
 
 /**
+ * `/assets/` の下で immutable を付けてよい応答か。200 は HTML でないもの、304 は `Content-Type` があって HTML でないものだけ。
+ * `Content-Type` のない304は、見つからない資産の SPA の入口（index.html）の再検証かもしれないので付けない
+ * （304 のヘッダーは保存された応答を書き換えるので、HTML が1年残ってしまう）
+ */
+function isAsset(res: Response) {
+  if (res.status === 200) return true;
+  return res.status === 304 && res.headers.has("Content-Type");
+}
+
+/**
  * 画面の側の応答：セキュリティのヘッダーは常に上書きする。
- * `Cache-Control` は `/sw.js` と HTML を no-cache、`/assets/` の下の200・304（HTML でないもの）を1年の immutable にする。
+ * `Cache-Control` は `/sw.js` と HTML を no-cache、`/assets/` の下の200と `Content-Type` のある304（HTML でないもの）を1年の immutable にする。
  * ほかの応答（405・リダイレクト・ほかの画面のファイル）は触らない（docs/specs/T-49-perf-small-fixes.md「2.」）
  */
 export function withPageHeaders(pathname: string, res: Response): Response {
@@ -66,8 +76,6 @@ export function withPageHeaders(pathname: string, res: Response): Response {
   for (const [k, v] of Object.entries(COMMON_HEADERS)) out.headers.set(k, v);
   out.headers.set("Content-Security-Policy", PAGE_CSP);
   if (pathname === "/sw.js" || isHtml(pathname, res)) out.headers.set("Cache-Control", "no-cache");
-  else if (pathname.startsWith("/assets/") && (res.status === 200 || res.status === 304)) {
-    out.headers.set("Cache-Control", IMMUTABLE_ASSET_CACHE);
-  }
+  else if (pathname.startsWith("/assets/") && isAsset(res)) out.headers.set("Cache-Control", IMMUTABLE_ASSET_CACHE);
   return out;
 }

@@ -42,7 +42,9 @@ function fakeAssets() {
       if (path === "/moved") return Response.redirect("https://kokohima.app/", 307);
       if (path === "/icon.svg") return new Response("<svg/>", { headers: { "Content-Type": "image/svg+xml" } });
       // 静的アセットの既定（再検証させる値）。Worker が immutable に上書きする
-      if (path === "/assets/app.js" && req.headers.get("If-None-Match")) return new Response(null, { status: 304, headers: { ETag: '"b"' } });
+      if (path === "/assets/app.js" && req.headers.get("If-None-Match"))
+        return new Response(null, { status: 304, headers: { ETag: '"b"', "Content-Type": "text/javascript" } });
+      if (path === "/assets/bare.js" && req.headers.get("If-None-Match")) return new Response(null, { status: 304, headers: { ETag: '"c"' } });
       if (path === "/assets/app.js")
         return new Response("1", { headers: { "Content-Type": "text/javascript", "Cache-Control": "public, max-age=0, must-revalidate" } });
       if (path === "/assets/style.css")
@@ -177,7 +179,7 @@ describe("セキュリティのヘッダー", () => {
     expect((await call("/sw.js")).headers.get("Cache-Control")).toBe("no-cache");
   });
 
-  it("/assets/ の下の200・304は1年の immutable。HTML（見つからない資産の SPA の入口）・405・リダイレクト・ほかのパスは除く", async () => {
+  it("/assets/ の下の200と Content-Type のある304は1年の immutable。Content-Type のない304・HTML（見つからない資産の SPA の入口）・405・リダイレクト・ほかのパスは除く", async () => {
     const { call } = setup();
     expect((await call("/assets/app.js")).headers.get("Cache-Control")).toBe(IMMUTABLE_ASSET_CACHE);
     expect(IMMUTABLE_ASSET_CACHE).toBe("public, max-age=31536000, immutable");
@@ -187,6 +189,13 @@ describe("セキュリティのヘッダー", () => {
     expect(notModified.headers.get("Cache-Control")).toBe(IMMUTABLE_ASSET_CACHE);
     // 見つからない資産は SPA の index.html が返る。HTML なので no-cache のまま（長く持たせない）
     expect((await call("/assets/missing-abc.js")).headers.get("Cache-Control")).toBe("no-cache");
+    // その再検証の304（Content-Type なし。SPA の入口かもしれない）には immutable を付けない
+    const bare = await call("/assets/missing-abc.js", { headers: { "If-None-Match": '"a"' } });
+    expect(bare.status).toBe(304);
+    expect(bare.headers.get("Cache-Control")).toBeNull();
+    const bareAsset = await call("/assets/bare.js", { headers: { "If-None-Match": '"c"' } });
+    expect(bareAsset.status).toBe(304);
+    expect(bareAsset.headers.get("Cache-Control")).toBeNull();
     expect((await call("/assets/app.js", { method: "POST" })).headers.get("Cache-Control")).toBeNull();
     expect((await call("/assets/moved.js")).headers.get("Cache-Control")).toBeNull();
     // 先頭が /assets/ でないもの（ハッシュの付かない public のファイル）は既定のまま

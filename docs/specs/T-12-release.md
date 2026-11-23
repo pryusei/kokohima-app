@@ -87,7 +87,7 @@
   - 画像は自分のオリジンだけ（OGP の画像は T-08 で自分のオリジンから出している。アバターの URL は今は外から読まない）。
 - API の応答（`/api/`）で、経路が CSP を付けていなければ `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` を付ける（JSON をブラウザで開いても何も読み込ませない）。
 - `ASSETS` のバインディングがない環境（ローカル・E2E・単体テスト）では、Hono が返すすべての応答（`/__e2e__/*` も含む）を API の応答として扱い、API のヘッダーを付ける。
-- キャッシュ：画面の側の応答のうち、パスが `/sw.js` の応答と、`Content-Type` が `text/html` の応答（SPA の入口。`Content-Type` がない304は、パスが `/`・`.html` で終わる・拡張子がない（SPA の経路）なら HTML とみなす）には `Cache-Control: no-cache` を付ける（Service Worker と画面の入口が古いまま残らないように）。パスが `/assets/` で始まる200・304（HTML でないもの。vite がハッシュ付きの名前で出すファイル）には `Cache-Control: public, max-age=31536000, immutable` を付ける（T-49。docs/specs/T-49-perf-small-fixes.md「2.」）。ほかの画面のファイル（`/icon.svg` などハッシュの付かないもの）と405・リダイレクトは、静的アセットの既定のまま。
+- キャッシュ：画面の側の応答のうち、パスが `/sw.js` の応答と、`Content-Type` が `text/html` の応答（SPA の入口。`Content-Type` がない304は、パスが `/`・`.html` で終わる・拡張子がない（SPA の経路）なら HTML とみなす）には `Cache-Control: no-cache` を付ける（Service Worker と画面の入口が古いまま残らないように）。パスが `/assets/` で始まる200と `Content-Type` のある304（HTML でないもの。vite がハッシュ付きの名前で出すファイル）には `Cache-Control: public, max-age=31536000, immutable` を付ける（T-49。docs/specs/T-49-perf-small-fixes.md「2.」）。ほかの画面のファイル（`/icon.svg` などハッシュの付かないもの）と405・リダイレクトは、静的アセットの既定のまま。
 
 ### Apple のログインを止める
 - 変数 `APPLE_LOGIN_ENABLED`（秘密ではない）。`"1"` のときだけ Apple の経路が動く。ほかの値・未設定は止める（fail closed）。
