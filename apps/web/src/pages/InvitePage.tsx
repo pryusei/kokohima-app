@@ -7,6 +7,7 @@ import { navigate } from "../router";
 import { Avatar } from "../ui/Avatar";
 import { buttonClass, SendButton } from "../ui/Button";
 import { Loading } from "../ui/feedback";
+import { LegalLinks } from "./LegalDocument";
 
 // 招待リンクの受け口（docs/specs/T-02-friends.md「招待リンクの受け口」）
 // トークンはURLのフラグメントから読んだらすぐ消し、ブラウザのストレージには置かない（サーバーが招待Cookieで持ち越す）
@@ -148,6 +149,8 @@ export function InvitePage() {
           )}
         </>
       )}
+      {/* lookup が終わってから出す（トークンは招待 Cookie に移ってから。docs/specs/T-19-privacy-terms.md「4.」） */}
+      {state.kind !== "loading" && <LegalLinks consent={status !== "authenticated"} />}
     </main>
   );
 }

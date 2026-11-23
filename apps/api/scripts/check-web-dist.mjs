@@ -3,9 +3,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { effectiveDateProblems } from "./lib/effective-date.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
 const errors = [];
+// --deploy：deploy:prod のときだけ。制定日が決まっていなければ止める（docs/specs/T-19-privacy-terms.md「5.」）
+const deploy = process.argv.includes("--deploy");
 
 const index = join(dist, "index.html");
 if (!existsSync(index)) {
@@ -46,6 +49,10 @@ for (const file of walk(dist)) {
     if (re.test(text) || re.test(utf8)) errors.push(`${file.slice(dist.length + 1)} に ${re} があります`);
   }
 }
+
+// 制定日の行：いつも「制定日：」がちょうど1回。--deploy では本物の日付であることも（docs/specs/T-19-privacy-terms.md「5.」）
+const scripts = walk(dist).filter((f) => f.endsWith(".js"));
+errors.push(...effectiveDateProblems(scripts.map((f) => readFileSync(f, "utf8")), { deploy }));
 
 if (errors.length > 0) {
   for (const e of errors) console.error(`::error::${e}`);
