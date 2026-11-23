@@ -89,7 +89,7 @@
 | `outbox_dispatch_capped` | outbox を10回か20秒で打ち切った | `reason`（`count`・`time`）、`sent` |
 | `calendar_sync_assign_full` | カレンダーの確認の割り当てが上限で埋まった | `assigned` |
 | `cron_step_failed` | 定期処理の1つが例外を投げた | `step`、`name` |
-| `cleanup_capped` | 保持期間の掃除・休眠の処理が上限いっぱいまで処理した（T-17「9.」） | `step`、`count` |
+| `cleanup_capped` | 保持期間の掃除・休眠の処理が上限いっぱいまで処理した（T-17「9.」。アラートは毎分の step と15分ごとの step の2つに分ける。T-13） | `step`、`count` |
 
 ## 認可と秘匿
 - 閲覧者IDの使い方：変えない。友達の空き（`visibleManual`）は、いままでどおり `VISIBLE_OWNERS`（両方向の友達と「見せない」の設定）で絞る。足すのは時刻の条件だけ。
@@ -125,7 +125,7 @@
 - queue の consumer の並列化（いまは1件ずつ順に処理する）、お知らせの配信の D1 往復の削減。
 - フロントエンドのページの遅延読み込み（`React.lazy`）と TanStack Query の `staleTime`。
 - 回数の上限（Rate Limiting）を付ける経路の追加、リンクのプレビューの DNS の確認と接続先のずれ。
-- くり返しの例外（`recurrence_exceptions`）の過去の日付の掃除。表が小さく、ルールを消すと一緒に消えるため（T-17 で足した。docs/specs/T-17-retention.md「6.」）。
+- くり返しの例外（`recurrence_exceptions`）の過去の日付の掃除（T-17 で対応。docs/specs/T-17-retention.md「6.」）。
 - 流す型がまだない outbox の未処理の行の扱い。
 - `availabilities_starts` 以外の、使われていないインデックスの整理。
 - #38 のうち、この仕様書で扱わない掃除：終わった誘い・募集・予定、使い切った `invite_links`、くり返しの例外。保持期間は T-17（docs/specs/T-17-retention.md）で決め、保持期間の一覧もそこに置いた。

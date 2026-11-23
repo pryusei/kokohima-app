@@ -131,7 +131,8 @@
 | `notification_mail_rejected` | 1時間に10件以上 | メールの配信サービスに拒否されている |
 | `notification_mail_global_limit` | 1時間に1件以上 | サービス全体の1日のメール数の上限に達した |
 | `calendar_sync_held` | 1時間に5件以上 | カレンダーの大きな変化での保留が多い（T-06） |
-| `cleanup_capped`（`step`・`count`） | 1時間に30件以上 | 保持期間の掃除・休眠の処理が、上限いっぱいまで処理する実行が続いている（T-17「9.」）。`step` を見て上限の見直し。お知らせを30日に変えた直後や、最初の掃除では一時的に出る |
+| `cleanup_capped`（毎分の step：`cleanup_notifications`・`cleanup_invitations`・`cleanup_broadcasts`・`cleanup_invite_links`・`cleanup_recurrence_exceptions`・`cleanup_stale_notification_outbox`） | 1時間に30件以上（これらの step の合計の件数） | 毎分の保持期間の掃除が、上限いっぱいまで処理する実行が続いている（1つの step が詰まり続けると1時間に60件。T-17「9.」）。`step` を見て上限の見直し。お知らせを30日に変えた直後や、最初の掃除では一時的に出る |
+| `cleanup_capped`（15分ごとの step：`mark_dormant_connections`・`wake_dormant_connections`・`cleanup_push_subscriptions`） | 1時間に3件以上（これらの step の合計の件数） | 休眠の処理・購読の掃除が、上限いっぱいまで処理する実行が続いている（1時間に4回の実行。T-17「9.」）。`step` を見て上限の見直し |
 
 - 通知の中身：Monitors の通知は、モニターの名前と数だけにする。モニターの名前に、個人を表す値を入れない。ログの本文（`sessionId` など）は Slack に流さず、Cloudflare の管理画面で見る。
 - Workers Issues の通知には、例外の要約が入る。個人情報が入りうるかは、設定するときに実際の通知で確かめる（「確認事項」）。
@@ -278,3 +279,4 @@
 | 2026-11-21 | 実装した。Monitors は本文の文字列の一致で `event` を絞ることにし、実装PRで確かめたことを書いた。手順書（docs/runbooks/monitoring.md）を足した | 実装PR |
 | 2026-11-22 | Workers Issues にリクエストの URL（トークンが入りうる）が載らないかを、Slack への通知を作る前に確かめることを足した。退避キューの本文に利用者ID が入りうることを書いた。T-10 の回数の上限の表に `health_ready` を足した | 実装のあとのレビュー（セキュリティ・仕様） |
 | 2026-11-23 | ログの一覧（気づけばよい）に `cleanup_capped`（`step`・`count`）を足した | T-17 実装PR（docs/specs/T-17-retention.md） |
+| 2026-11-23 | `cleanup_capped` を、毎分の step と15分ごとの step の2つのモニターに分けた（Monitors は合計の件数で数えるので、15分ごとの step は1時間に30件に届かない） | T-17 実装PRのレビュー |

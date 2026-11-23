@@ -179,7 +179,11 @@
 - SQL は各コンテキストに置く（invitation の infra：誘い・募集、social の infra：招待リンク、availability：例外は infra・公開設定は `application/sharing.ts`（「7.」）、notification の infra：お知らせ・購読、calendar の infra：休眠にする・戻す（ログインの文は application から identity に渡す）、jobs：outbox）。
 - 上限いっぱいまで処理した（残っている見込み）ときは、どの step も `{ event: "cleanup_capped", step, count }` を出す（`count` は、その実行で消した行、または休眠にした・戻した行の数。件数だけで、ID は出さない。T-13 のログの一覧に足す）。
   - 対象は、この仕様書で足した・変えた step（毎分の5つと `cleanup_notifications`、15分ごとの3つ）。T-12 の `cleanup_outbox`・`cleanup_availabilities` などには付けない（ログの形を変えない）。共通の道具は `apps/api/src/jobs/dispatch.ts` の `runCappedStep`。
-  - T-13 の「気づけばよい」の一覧に、`cleanup_capped` を「1時間に30件以上」（半分以上の実行で上限に届く。追いついていない）で足す。お知らせを30日に変えた直後などは一時的に出る。
+  - T-13 の「気づけばよい」の一覧に、モニターを2つに分けて足す（Monitors は絞った行の合計の件数で数えるので、実行の間隔が違う step を1つにまとめると、15分ごとの step は閾値に届かない）。
+    - `cleanup_capped_minutely`：毎分の step（`cleanup_notifications`・`cleanup_invitations`・`cleanup_broadcasts`・`cleanup_invite_links`・`cleanup_recurrence_exceptions`・`cleanup_stale_notification_outbox`）。1時間に30件以上。毎分の step の合計で数える。1つの step が上限に届き続けると1時間に60件になるので、半分以上の実行で上限に届く（詰まり続けている）と鳴る。
+    - `cleanup_capped_15min`：15分ごとの step（`mark_dormant_connections`・`wake_dormant_connections`・`cleanup_push_subscriptions`）。1時間に3件以上（1つの step なら、1時間の4回の実行のうち3回で上限に届く）。
+    - どちらも本文の `"event":"cleanup_capped"` と、`"step":"<名前>"` のどれかを含むことで絞る（手順書の既存の「かつ」「／」の書き方。「含まない」で除く書き方は手順書で確かめていないので使わず、毎分の step も名前を並べる）。step を足したら、どちらかのモニターの並びに足す。
+    - お知らせを30日に変えた直後などは、毎分のほうが一時的に鳴る。
 
 ## 認可と秘匿
 - 閲覧者IDの使い方：API がないので、閲覧者はいない。掃除はすべての利用者の行を、時刻と状態だけで選ぶ。ログインで休眠を戻すのは、そのセッションの利用者（本人）の連携だけ（`user_id = ?userId`）。
@@ -227,7 +231,7 @@
 - T-07：お知らせの保持を30日に、掃除に上限（217行目・486行目）。未設定の間の通知だけの型の行の掃除。使えないセッションの購読の15分ごとの掃除（232行目の近く）。
 - T-08：参照の行は、誘い・募集の保持期間の掃除でも CASCADE で消える（91行目・234行目）。
 - T-12 データの増加：掃除の一覧と step の名前（80行目・82行目）、スコープ外の「くり返しの例外」（127行目）と「#38 のうち、この仕様書で扱わない掃除」（130行目）。
-- T-13：ログの一覧に `cleanup_capped`（`step`・`count`）。手順書（`docs/runbooks/monitoring.md`）のモニターの表にも足す。
+- T-13：ログの一覧に `cleanup_capped`（`step`・`count`）を、毎分と15分ごとの2つのモニターに分けて足す（「9.」）。手順書（`docs/runbooks/monitoring.md`）のモニターの表にも足す。
 - T-16：「残すもの」（68行目）に、誘い・募集・予定は終わってから30日で消えること。
 - `calendar-integration` スキル：休眠中は確認しないこと。
 
@@ -248,3 +252,4 @@
 | 2026-11-22 | お知らせを30日に、休眠の判定を使える更新用トークンにし、休眠で埋まりの記録を消して状態の列で割り当てから外す、公開設定を解除で消す、流れないままの通知の記録の掃除、`ics_tokens (meetup_id)` のインデックス、募集の上限を100、保持期間の表の値と抜けを直す、直す文書を足す | 仕様書PRの前のレビュー（セキュリティ・仕様）、利用者の回答 |
 | 2026-11-22 | 公開設定は解除で「見せる」の行だけを消し「見せない」は退会まで残す（マイグレーションも。文は availability が持ち social の batch に入れる）、休眠の判定に最後に使った時刻（30日）を足す、休眠にするときに確認の権利と `sync_id` を変え、確認の文に `dormant_since IS NULL` を足す、ログインの batch で戻す・15分ごとに取りこぼしを戻す・退会した人を外す、休眠の処理を15分ごとの Cron に移して100行に、お知らせの掃除に上限、`cleanup_capped` を `count` にそろえる、使えないセッションの購読の掃除、保持期間の表（購読・連携の行）を直す、割り当てのインデックスを T-16 の条件に合わせて書き直す、境界のテストに「ちょうど30日は残る」、確認事項を決めたこと1に入れる | 仕様書PRのレビュー（pryusei/kokohima-app#108） |
 | 2026-11-23 | 実装済みに。マイグレーションの番号（0014）、`wakeConnectionsStatement` に `now` を足す、購読の掃除の SQL を `CROSS JOIN` と `revoked_at <= ?now` に（インデックスを使う計画にするため）、`cleanup_capped` を出す step と T-13 の閾値を書いた | 実装PR |
+| 2026-11-23 | `cleanup_capped` のモニターを毎分の step（1時間に30件以上）と15分ごとの step（1時間に3件以上）の2つに分けた | 実装PRのレビュー |
