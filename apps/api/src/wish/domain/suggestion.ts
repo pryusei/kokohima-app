@@ -1,5 +1,6 @@
 import {
   AREA_MAX,
+  linkUrlSchema,
   SUGGEST_MAX_CANDIDATES,
   SUGGEST_PLACE_NAME_MAX,
   SUGGEST_REASON_MAX,
@@ -176,7 +177,12 @@ export function reviewCandidates(
 ): { accepted: WishSuggestionCandidate[]; dropped: DroppedCounts } {
   const exact = new Map<string, string>();
   const loose = new Map<string, Set<string>>();
-  for (const url of searchResultUrls) {
+  // 差し替えに使う検索の結果の URL も、行きたいのリンクと同じ検査（linkUrlSchema：http・https、認証情報・制御文字・空白なし、
+  // 2048文字まで）を通し、通ったものの正規化した href だけを使う
+  for (const raw of searchResultUrls) {
+    const checked = linkUrlSchema.safeParse(raw);
+    const url = checked.success ? checked.data : null;
+    if (url === null) continue;
     const key = normalizeUrl(url);
     const lkey = looseUrlKey(url);
     if (key === null || lkey === null) continue;
