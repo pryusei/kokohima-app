@@ -350,6 +350,16 @@ describe("プライバシー ポリシーの本文", () => {
     expect(purposes[6]).toBe("不正な利用を防ぎ、障害に気づいて直すため。問い合わせで知らせてもらった不具合を直すため");
     expect(purposes[8]).toBe("問い合わせでもらったご意見をもとに、このサービスを良くするため");
     expect(three.textContent).toContain("問い合わせのときは、返信先として運営の連絡用の Slack に届けます");
+    // 仕様書の6節の文案と同じ並び（Slack は Resend とプッシュ通知の事業者の間）
+    expect(within(clause("5. 外部の事業者に任せること（委託）")).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "Cloudflare, Inc.（米国）",
+      "Google LLC（米国）",
+      "Resend（米国の事業者。メールは東京の拠点から送ります）",
+      "Slack Technologies, LLC（米国）",
+      "ブラウザのプッシュ通知の事業者（Google・Apple・Mozilla・Microsoft）",
+      "監視のためのサービス",
+      "リンクのプレビューを作るとき",
+    ]);
     const slack = within(clause("5. 外部の事業者に任せること（委託）"))
       .getByRole("heading", { name: "Slack Technologies, LLC（米国）", level: 3 })
       .closest("section") as HTMLElement;
@@ -359,9 +369,9 @@ describe("プライバシー ポリシーの本文", () => {
     ]);
     const eight = clause("8. 保存する期間").textContent ?? "";
     expect(eight).toContain(
-      `問い合わせ：運営に届けたら、このサービスのデータベースから内容を消します。うまく届かなかったものは、処理の記録として${RETENTION.processedOutboxDays}日で消えます。運営の連絡用の Slack に届いたものは、対応を終えたら消し、遅くとも受け付けから${PLATFORM_RETENTION.contactSlackDays}日で消えます。`,
+      `問い合わせ：運営に届けたら、このサービスのデータベースから内容を消します。うまく届かなかったものは、処理の記録として${RETENTION.processedOutboxDays}日で消えます。運営の連絡用の Slack に届いたものは、対応を終えたら消し、遅くとも Slack に届いてから${PLATFORM_RETENTION.contactSlackDays}日で消えます。`,
     );
-    expect(eight).toContain("遅くとも受け付けから90日で消えます");
+    expect(eight).toContain("遅くとも Slack に届いてから90日で消えます");
     expect(eight).toContain("まだ運営に届いていない問い合わせは、届けずに消します。");
     expect(clause("12. 開示・訂正・削除などの求め").textContent).toContain(
       "ログインしているなら、アプリの「設定 → 問い合わせ」（種類「個人情報の開示・削除の請求」）からも求められます。",

@@ -151,16 +151,16 @@ export function PrivacyPage() {
             </li>
           </Bullets>
         </SubClause>
-        <SubClause title="ブラウザのプッシュ通知の事業者（Google・Apple・Mozilla・Microsoft）">
-          <Bullets>
-            <li>任せること：プッシュ通知の配信</li>
-            <li>渡すもの：通知の宛先と、中身のない合図だけ。誰から何が届いたかは渡しません。</li>
-          </Bullets>
-        </SubClause>
         <SubClause title="Slack Technologies, LLC（米国）">
           <Bullets>
             <li>任せること：問い合わせを運営者に届けて、保管すること</li>
             <li>渡すもの：問い合わせの種類・内容・受け付けた時刻・利用者を区別する番号・返信先のメールアドレス</li>
+          </Bullets>
+        </SubClause>
+        <SubClause title="ブラウザのプッシュ通知の事業者（Google・Apple・Mozilla・Microsoft）">
+          <Bullets>
+            <li>任せること：プッシュ通知の配信</li>
+            <li>渡すもの：通知の宛先と、中身のない合図だけ。誰から何が届いたかは渡しません。</li>
           </Bullets>
         </SubClause>
         <SubClause title="監視のためのサービス">
@@ -314,7 +314,7 @@ export function PrivacyPage() {
           <li>二重の送信を防ぐための記録：{R.idempotencyKeysHours}時間で消します。</li>
           <li>
             問い合わせ：運営に届けたら、このサービスのデータベースから内容を消します。うまく届かなかったものは、処理の記録として
-            {R.processedOutboxDays}日で消えます。運営の連絡用の Slack に届いたものは、対応を終えたら消し、遅くとも受け付けから
+            {R.processedOutboxDays}日で消えます。運営の連絡用の Slack に届いたものは、対応を終えたら消し、遅くとも Slack に届いてから
             {P.contactSlackDays}日で消えます。
           </li>
           <li>ログ：{P.workersLogsDays}日で消えます。</li>
