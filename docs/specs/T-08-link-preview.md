@@ -15,8 +15,8 @@
 - 新しいコンテキスト `link-preview`（`apps/api/src/link-preview/{domain,application,infra}`）。
   - domain（純粋）：URL の検査（取りに行ってよいか）、IP アドレスの検査、HTML からの OGP の取り出し、文字列の整え方、画像の種類と大きさの判定（先頭のバイト）。
   - infra：取得（`AppDeps.fetch`）、名前解決（DNS over HTTPS）、D1、R2。
-  - application：イベントから取得して保存する処理、画像の配信、invitation から呼ぶ読み取り（`previewsFor(subjects)`）。
-- invitation は、誘い・募集の作成の batch に、outbox の `LinkAttached` を書く（outbox は全コンテキストが書く表。link-preview の表には触らない）。応答の DTO には、link-preview の application の `previewsFor` で読んだプレビューを足す（invitation は link-preview の表を直接読まない）。
+  - application：イベントから取得して保存する処理、画像の配信、invitation と wish（T-22）から呼ぶ読み取り（`previewsFor(subjects)`）。
+- invitation は、誘い・募集の作成の batch に、outbox の `LinkAttached` を書く（wish も、行きたいを置く batch に書く。T-22）（outbox は全コンテキストが書く表。link-preview の表には触らない）。応答の DTO には、link-preview の application の `previewsFor` で読んだプレビューを足す（invitation は link-preview の表を直接読まない）。
 
 ### 公式で確かめたこと（2026-11-18）
 - Workers の `fetch` は、IP アドレスあての URL を直接は取れない（URL のホスト名で取る）。
@@ -78,16 +78,17 @@
 
 - R2 に画像を置く前に、この行を書く。R2 の画像を消すのは、この台帳から判定する掃除だけ（R2 の `list` は使わない。キーの順にしか読めず、置いた時刻で絞れないため）。
 
-### `link_preview_refs`（誘い・募集がどの結果を見せるか）
+### `link_preview_refs`（誘い・募集・行きたいがどの結果を見せるか）
 | 列 | 型 | 内容 |
 | --- | --- | --- |
 | `id` | TEXT PK | UUID |
 | `direct_invite_id` | TEXT | → `direct_invites.id`（`ON DELETE CASCADE`）。NULL 可。UNIQUE |
 | `broadcast_id` | TEXT | → `broadcasts.id`（`ON DELETE CASCADE`）。NULL 可。UNIQUE |
+| `wish_id` | TEXT | → `wishes.id`（`ON DELETE CASCADE`）。NULL 可。UNIQUE（T-22。マイグレーション `0015_wish.sql` で表を作り直して足した） |
 | `preview_id` | TEXT | → `link_previews.id` |
 | `created_at` | INTEGER | |
 
-- `CHECK ((direct_invite_id IS NULL) <> (broadcast_id IS NULL))`（どちらか一方だけ）。`preview_id` のインデックス。
+- `CHECK ((direct_invite_id IS NOT NULL) + (broadcast_id IS NOT NULL) + (wish_id IS NOT NULL) = 1)`（3つのうち1つだけ。T-22 で2つのうち1つから変えた）。行きたいを消すと、参照の行も CASCADE で消える。`preview_id` のインデックス。
 - 誘い・募集ごとに外部キーの列を分け、誘い・募集が消えたとき（利用者の削除の CASCADE。T-04・T-05。終わってから30日を過ぎた誘い・募集の掃除。T-17）に参照の行も一緒に消えるようにする。退会（T-16）では誘い・募集の行は消さず、書いた内容（`url` など）を消すときに参照の行も消す。`insertRef` は誘い・募集に `url` が残っているときだけ書く（消したあとに作り直さない）。種類と ID の組で持つと、誘い・募集が消えても参照の行が残り、結果の行がずっと「参照あり」になって掃除されないため。
 - 成立した予定は、元の誘い・募集の参照を使う（予定は自分の `url` を持たず、元の誘い・募集の `url` を返す。T-04・T-05）。
 
@@ -110,7 +111,7 @@
 ### 取得のきっかけ
 1. 誘い・募集の作成で、`url` があれば、同じ batch で outbox に `LinkAttached` を書く。
    - 既存の outbox の行と同じく、`WHERE EXISTS (SELECT 1 FROM direct_invites（または broadcasts） WHERE id = ?)` の条件付き。送信が拒否された（友達でない・同じ誘いがある・送信上限）ときは、`LinkAttached` も書かない。
-   - payload：`{ subjectType: "direct_invite" | "broadcast", subjectId, occurredAt }`（URL は入れない。T-04 の決まりのとおり ID だけ）。
+   - payload：`{ subjectType: "direct_invite" | "broadcast" | "wish", subjectId, occurredAt }`（`wish` は T-22）（URL は入れない。T-04 の決まりのとおり ID だけ）。
 2. `LinkAttached` は、dispatch の「常に流す型」（今の `CALENDAR_TYPES` の側。`NOTIFICATION_START_AT` に左右されない）に足す。
 3. consumer は `LinkAttached` を受けたら、すでにその誘い・募集の参照の行があれば何もしない。なければ、invitation の application の関数（閲覧者で絞らない consumer 用。`calendarFacing.ts` と同じ扱い）で `url` を読み、次の手順で結果を決めて、参照の行を書く。
    - 誘い・募集がすでにない（利用者の削除で消えた）なら、何もせずに終える（投げない）。参照の行は `INSERT OR IGNORE ... SELECT ... WHERE EXISTS (SELECT 1 FROM direct_invites（または broadcasts） WHERE id = ?)` で書き、処理の間に消えていたら書かずに終える。
@@ -124,7 +125,7 @@
    - 権利を取った処理が一時的な失敗で投げるときは、投げる前に権利を手放す：`DELETE FROM link_previews WHERE id = ? AND status = 'fetching' AND claimed_at = ?`（自分が取った時刻。引き継がれていたら消さない）。手放さないと、同じメッセージの再試行が自分の権利に阻まれ、10分を過ぎるまで（今の再試行の間隔では6回めまで）取りに行けないため。手放すのに失敗しても、10分の引き継ぎで救われる。
    - consumer は `handleJob` にメッセージの試行の回数（`message.attempts`）を渡す。最後の試行（`attempts > MAX_RETRIES`。`message.attempts` は1から数えるので、最初の1回と再試行5回で6回め）でも失敗したら、`failed` の行を書いて参照し、投げずに終える（退避キューに送らない）。権利を持っていれば、その行を条件付き UPDATE で `failed` にする（新しい行は入れない）。
    - E2E の drain など試行の回数がない呼び出しは、最後の試行として扱わない。
-- 量の上限：取得のきっかけは誘い・募集の作成だけなので、送信上限（誘いと募集を合わせて24時間に20件。T-04・T-05）が、利用者ごとの取得の上限になる（決定事項5）。
+- 量の上限：取得のきっかけは誘い・募集の作成と行きたいを置くこと（T-22）なので、送信上限（誘いと募集を合わせて24時間に20件。T-04・T-05）と置く回数（24時間に20回。T-22）が、利用者ごとの取得の上限になる（合わせて40回。決定事項5）。
 - 見え方：誘い・募集を作った直後は、使い回せる結果があってもなくても、consumer が処理するまで `pending`。処理（毎分の dispatch のあと）で `ok`・`failed` になる。使い回したときと新しく取ったときの差は、取得の数秒だけ（受け入れるリスク）。
 
 ### 取りに行ってよい URL（domain）
@@ -195,7 +196,7 @@
 - CI の本番ビルドの検査に、偽のホスト名と E2E の名前を足す。
 
 ## 認可と秘匿
-- 閲覧者IDの使い方：プレビューは、誘い・募集・予定の DTO の一部として、今と同じ閲覧者の条件で読む。link-preview の `previewsFor` は、invitation が閲覧者で絞って読んだ誘い・募集の ID からだけ呼ぶ（link-preview は閲覧者の条件を持たない。T-02 の `getPublicProfiles` と同じ扱い）。
+- 閲覧者IDの使い方：プレビューは、誘い・募集・予定の DTO の一部として、今と同じ閲覧者の条件で読む。link-preview の `previewsFor` は、invitation が閲覧者で絞って読んだ誘い・募集の ID と、wish が見られる条件で絞って読んだ行きたいの ID（T-22）からだけ呼ぶ（link-preview は閲覧者の条件を持たない。T-02 の `getPublicProfiles` と同じ扱い）。
 - 他人のデータに届かないことの保証：誘い・募集・予定を見られない人には、今までどおり404。取得の結果は URL ごとで、誰が送ったかを持たない。
 - どの URL が送られたかを確かめられないこと：誘い・募集ごとの参照の行で見せるので、作った直後は使い回せる結果があっても `pending`（取得の結果を共有していることは、作成の応答や直後の詳細からはわからない）。
 - 画像の経路は認証なし。推測できない UUID で、URL からは作らない。配信するのは公開のページの画像だけ。
@@ -253,7 +254,7 @@
 2. 取りに行く前に DNS over HTTPS で A・AAAA を引き、IPv4 は拒否の一覧、IPv6 は `2000::/3` の許可の一覧で判定する。リダイレクト先も毎回同じ検査をする。DNS rebinding は受け入れるリスクとし、多重の防御で抑える。
 3. `global_fetch_strictly_public` の互換性フラグを付ける。
 4. 同じ URL の結果は D1 の `link_previews` に持ち、それを「同じ URL のキャッシュ」にする（`ok` は7日、`failed` は24時間使い回す）。見せるのは誘い・募集ごとの参照の行で、作った直後は `pending`。利用者は「キャッシュは KV」と答えていたが、取得の結果は保存が要件（F-15「取得・保存」）で、同じ URL を同時に取りに行かないことには強い整合性が要るため、D1 の行で兼ね、KV は使わない（T-10 の仕様書の該当の3か所は実装PRで直した）
-5. 利用者ごとの取得の上限は、送信上限（24時間に20件）で兼ねる。
+5. 利用者ごとの取得の上限は、送信上限（24時間に20件）で兼ねる。T-22 で、行きたいを置く回数（24時間に20回）も取得のきっかけになり、合わせて40回になった。
 6. 画像は R2 にそのまま保存し、推測できない UUID の経路から、種類と先頭のバイトと大きさが合うものだけを配信する。SVG は扱わない。（利用者は「R2 に保存して出す」と答えた）
 
 ## 確認事項（解消済み）
@@ -273,3 +274,4 @@
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-21 | 古い結果の行の掃除のためのインデックス `(status, fetched_at)`・`(status, claimed_at)` を書いた | T-12 の実装PR（docs/specs/T-12-data-growth.md） |
 | 2026-11-23 | 参照の行は、誘い・募集の保持期間の掃除（終わってから30日）でも CASCADE で消えることを書いた | T-17 実装PR（docs/specs/T-17-retention.md） |
+| 2026-11-23 | 参照の対象に行きたい（`wish_id`、`CHECK` を3つのうち1つ）、`LinkAttached` の `subjectType` に `wish`、取得の上限を合わせて40回、`previewsFor` を wish からも呼ぶことを書いた | T-22 実装PR（docs/specs/T-22-wishlist.md） |
