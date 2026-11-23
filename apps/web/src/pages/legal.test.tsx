@@ -73,6 +73,7 @@ const PRIVACY_CHANGES = [
   "「2.」「4.」「8.」と退会したとき：行きたい（ひとこと・エリア・リンク・見せない相手）を預かる情報に足し、見える相手と保存する期間を書きました。",
   "「2.」「3.」「5.」「7.」「8.」「12.」：アプリの中の問い合わせのフォームを足したことに合わせて、預かる情報（問い合わせの種類と内容）、使う目的、任せる事業者（Slack）、保存する期間、開示などの求め方を書きました。問い合わせのフォームについてのこれらの定めは、フォームを使い始める2026年11月23日から適用します。",
   "「2.」「4.」「8.」と退会したとき：アイコンに画像を設定できるようにしたことに合わせて、預かる情報（アイコンの画像）、見える相手（友達と、招待リンクを開いた人）、保存する期間を書きました。",
+  "「2.」「3.」「5.」「7.」「8.」と退会したとき：行きたいをAIで探せるようにしたことに合わせて、預かる情報（探した回数の記録。入力した言葉と候補は残しません）、使う目的、任せる事業者（Anthropic）、保存する期間を書きました。",
 ];
 const TERMS_CHANGES = [
   "第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。",
@@ -280,7 +281,7 @@ describe("プライバシー ポリシーの本文", () => {
       "もっと詳しく知りたいとき",
     ]);
     const names = within(sub("外国の名称")).getAllByRole("listitem").map((li) => li.textContent);
-    expect(names[0]).toBe("米国：Cloudflare・Google・Resend・Slack・ブラウザのプッシュ通知の事業者");
+    expect(names[0]).toBe("米国：Cloudflare・Google・Resend・Slack・Anthropic・ブラウザのプッシュ通知の事業者");
     expect(names.slice(1).map((t) => t?.split("：")[0])).toEqual([
       "Cloudflare での通信の処理",
       "Cloudflare での保管（データベース・ファイル・処理の待ち行列・一時的な記録・ログ）",
@@ -288,7 +289,7 @@ describe("プライバシー ポリシーの本文", () => {
     const providers = within(sub("体制を整えていることの確かめ方"))
       .getAllByRole("listitem")
       .map((li) => li.textContent?.split("：")[0]);
-    expect(providers).toEqual(["Cloudflare", "Google", "Resend", "Slack", "ブラウザのプッシュ通知の事業者"]);
+    expect(providers).toEqual(["Cloudflare", "Google", "Resend", "Slack", "Anthropic", "ブラウザのプッシュ通知の事業者"]);
     const how = sub("体制を整えていることの確かめ方").textContent ?? "";
     expect(how).not.toMatch(/障害の知らせ|Better Stack|Google API の利用規約|ユーザーデータに関するポリシー/);
     expect(sub("事業者がとる措置").textContent).toContain("任された目的の範囲でだけ情報を扱うこと");
@@ -304,11 +305,11 @@ describe("プライバシー ポリシーの本文", () => {
     };
     const items = (name: string) => Array.from(sub(name).querySelectorAll("li")).map(own);
     expect(Array.from(seven.querySelectorAll(":scope > p")).map((p) => p.textContent)).toEqual([
-      "「5.」の事業者のうち、Cloudflare・Google・Resend・Slack・ブラウザのプッシュ通知の事業者は、外国の事業者です。運営は、個人情報保護法の基準に適合する体制（日本の法律の定めに沿った措置を続けてとるための体制）を整えている事業者にだけ、個人データの取り扱いを任せます。本人の同意によらずに任せるため、外国にある第三者に個人データを渡すときに本人の求めに応じて知らせることになっている事項を、求めを待たずにここに書きます。",
+      "「5.」の事業者のうち、Cloudflare・Google・Resend・Slack・Anthropic・ブラウザのプッシュ通知の事業者は、外国の事業者です。運営は、個人情報保護法の基準に適合する体制（日本の法律の定めに沿った措置を続けてとるための体制）を整えている事業者にだけ、個人データの取り扱いを任せます。本人の同意によらずに任せるため、外国にある第三者に個人データを渡すときに本人の求めに応じて知らせることになっている事項を、求めを待たずにここに書きます。",
       "監視のための障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません（問い合わせを届ける Slack は含めます）。",
     ]);
     expect(items("外国の名称")).toEqual([
-      "米国：Cloudflare・Google・Resend・Slack・ブラウザのプッシュ通知の事業者",
+      "米国：Cloudflare・Google・Resend・Slack・Anthropic・ブラウザのプッシュ通知の事業者",
       "Cloudflare での通信の処理：世界各地の拠点（データセンター）で処理します。どの国の拠点で処理されるかは、アクセスする場所などによって変わるため、前もって特定できません。",
       "Cloudflare での保管（データベース・ファイル・処理の待ち行列・一時的な記録・ログ）：保管する場所の国を指定していないため、Cloudflare が選びます。前もって特定できません。",
     ]);
@@ -320,6 +321,7 @@ describe("プライバシー ポリシーの本文", () => {
       "Google：Google が、ログインとカレンダーの連携で預かるデータの処理について定める条件",
       "Resend：Resend のデータ処理に関する契約（DPA）",
       "Slack：Slack のデータ処理に関する契約（DPA）",
+      "Anthropic：Anthropic のデータ処理に関する契約（DPA）",
       "ブラウザのプッシュ通知の事業者：それぞれの事業者が、プッシュ通知の配信について定める条件。渡すのは、その事業者が発行した宛先と、中身のない合図だけです。",
     ]);
     expect(items("事業者がとる措置")).toEqual([
@@ -341,6 +343,30 @@ describe("プライバシー ポリシーの本文", () => {
     ]);
   });
 
+  it("行きたいのAI提案（T-29）：「2.」の入力と記録、「3.」の目的、「5.」の Anthropic、「8.」の期間と退会", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    expect(clause("2. 預かる情報").textContent).toContain(
+      "行きたいをAIで探すときに入力したエリアと「何をしたい？」の言葉（AIに渡して候補を作るためだけに使い、このサービスには残しません）",
+    );
+    const purposes = Array.from(clause("3. 使う目的").querySelectorAll("ol > li")).map((li) => li.textContent);
+    expect(purposes.at(-1)).toBe("行きたいを置くときに、入力したエリアとしたいことから、AIで店や場所の候補を探すため");
+    const anthropic = within(clause("5. 外部の事業者に任せること（委託）"))
+      .getByRole("heading", { name: "Anthropic, PBC（米国）", level: 3 })
+      .closest("section") as HTMLElement;
+    expect(within(anthropic).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "任せること：AI（Claude）で、Web を検索して、店や場所の候補を作ること",
+      "渡すもの：「行きたいを探す」に入力したエリアと言葉だけ。利用者を区別する番号・名前・メールアドレス・友達・ここ暇・カレンダーの情報は渡しません。",
+    ]);
+    const eight = clause("8. 保存する期間").textContent ?? "";
+    expect(eight).toContain(
+      `行きたいをAIで探した回数の記録（1日に探せる回数を数えるため）：その日から${RETENTION.wishSuggestionAttemptsDaysBefore + 1}日目に消します。`,
+    );
+    expect(eight).toContain("AIで探した回数の記録は、退会したときにあなたとのつながりを切り、上の期間で消します（サービス全体の1日の回数を数えるため、時刻と結果の種類だけが残ります）。");
+  });
+
   it("問い合わせ（T-24）：「2.」の種類と内容、「3.」の目的とメールアドレス、「5.」の Slack、「8.」の期間と退会、「12.」の求め方", async () => {
     window.history.replaceState(null, "", "/privacy");
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
@@ -360,6 +386,7 @@ describe("プライバシー ポリシーの本文", () => {
       "Google LLC（米国）",
       "Resend（米国の事業者。メールは東京の拠点から送ります）",
       "Slack Technologies, LLC（米国）",
+      "Anthropic, PBC（米国）",
       "ブラウザのプッシュ通知の事業者（Google・Apple・Mozilla・Microsoft）",
       "監視のためのサービス",
       "リンクのプレビューを作るとき",

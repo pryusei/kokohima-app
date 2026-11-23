@@ -17,6 +17,7 @@ import { resolveDoh } from "./link-preview/infra/dns";
 import { linkPreviewRoutes } from "./link-preview/routes";
 import { notificationRoutes } from "./notification/routes";
 import { socialRoutes } from "./social/routes";
+import { SUGGEST_TIMEOUT_MS } from "./wish/domain/suggestion";
 import { wishRoutes } from "./wish/routes";
 
 export { problem };
@@ -51,6 +52,7 @@ export function defaultDeps(): AppDeps {
     // 問い合わせ（docs/specs/T-24-contact.md）。差し替えるのは E2E のエントリだけ
     contactWebhookTarget: CONTACT_WEBHOOK_TARGET,
     contactStartAt: contactStartAt(),
+    wishSuggest: { timeoutMs: SUGGEST_TIMEOUT_MS },
   };
 }
 

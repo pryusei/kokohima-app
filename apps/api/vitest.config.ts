@@ -53,6 +53,8 @@ export default defineProject({
           CONTACT_SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/TEST/TEST/test",
           // アイコンの画像の URL の署名の鍵（T-27）。テスト専用
           AVATAR_URL_KEY: "YXZhdGFyLXRlc3Qta2V5LWF2YXRhci10ZXN0LWtleSE",
+          // 行きたいのAI提案（T-29）。偽の値（本物の Claude には送らない。fetch はテストで差し替える）
+          ANTHROPIC_API_KEY: "sk-ant-test",
         },
       },
     })),

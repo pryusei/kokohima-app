@@ -10,3 +10,4 @@ export * from "./retention";
 export * from "./schemas/wish";
 export * from "./schemas/contact";
 export * from "./contactStart";
+export * from "./schemas/wishSuggestion";

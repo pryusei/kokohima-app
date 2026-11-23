@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { createLocalJWKSet, exportJWK, exportPKCS8, generateKeyPair, type JWK, SignJWT } from "jose";
 import { createApp, defaultDeps } from "../src/app";
 import type { AppDeps, Bindings, JobMessage } from "../src/env";
+import { createFakeClaude } from "./fake-claude";
 import { createFakeDelivery } from "./fake-delivery";
 import { createFakeGoogle } from "./fake-google";
 import { createFakeSlack } from "./fake-slack";
@@ -44,6 +45,7 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
   const delivery = createFakeDelivery();
   const web = createFakeWeb();
   const slack = createFakeSlack();
+  const claude = createFakeClaude();
 
   /** 次にトークンエンドポイントが返すIDトークンの作り方。テストごとに差し替える */
   let tokenResponder: (req: { provider: ProviderName; body: URLSearchParams }) => Promise<Response> = async () =>
@@ -56,6 +58,7 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
     if (delivery.handles(new URL(url))) return delivery.handle(new URL(url), init);
     if (web.handles(new URL(url))) return web.handle(new URL(url), init);
     if (slack.handles(new URL(url))) return slack.handle(new URL(url), init);
+    if (claude.handles(new URL(url))) return claude.handle(new URL(url), init);
     const provider: ProviderName | null = url.startsWith("https://oauth2.googleapis.com/token")
       ? "google"
       : url.startsWith("https://appleid.apple.com/auth/token")
@@ -87,6 +90,7 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
     now: () => clock.now,
     // テストではタイムアウトを短くする（タイムアウトのテストを速くするため）
     linkPreview: { ...base.linkPreview, timeouts: { fetchMs: 300, totalMs: 600, dnsMs: 300 } },
+    wishSuggest: { timeoutMs: 500 },
     ...overrides,
   };
   const app = createApp(deps);
@@ -180,6 +184,7 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
     delivery,
     web,
     slack,
+    claude,
     jobs,
     deps,
     limiter,

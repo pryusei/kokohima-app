@@ -53,6 +53,8 @@
 | `notification_push_rejected` | `"event":"notification_push_rejected"` | 1時間に10件以上 |
 | `notification_mail_rejected` | `"event":"notification_mail_rejected"` | 1時間に10件以上 |
 | `notification_mail_global_limit` | `"event":"notification_mail_global_limit"` | 1時間に1件以上 |
+| `wish_suggest_global_limit` | `"event":"wish_suggest_global_limit"` | 1時間に1件以上 |
+| `wish_suggest_config_invalid` | `"event":"wish_suggest_config_invalid"` | 1時間に1件以上 |
 | `calendar_sync_held` | `"event":"calendar_sync_held"` | 1時間に5件以上 |
 | `contact_delivered_after_withdrawal` | `"event":"contact_delivered_after_withdrawal"` | 1時間に1件以上 |
 | `cleanup_capped_minutely` | `"event":"cleanup_capped"` かつ `"step":"cleanup_notifications"`／`"step":"cleanup_invitations"`／`"step":"cleanup_broadcasts"`／`"step":"cleanup_invite_links"`／`"step":"cleanup_recurrence_exceptions"`／`"step":"cleanup_stale_notification_outbox"` | 1時間に30件以上 |

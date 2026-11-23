@@ -12,6 +12,8 @@ import { EmptyState, LoadError, Loading, Note } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { Section } from "../ui/Navigation";
 import { myWishesQuery } from "./queries";
+import { suggestionQuotaQuery } from "./suggest";
+import { SuggestSheet, type PlaceDraft } from "./SuggestSheet";
 import { WishCard } from "./WishCard";
 
 // ここ暇タブの「行きたい」の欄（docs/specs/T-22-wishlist.md「画面」）。置く・見せる相手・消すのシートは URL を持たない
@@ -77,11 +79,12 @@ function AudiencePicker({
   );
 }
 
-function AddWishSheet({ onClose }: { onClose: () => void }) {
+/** draft：AIの提案の候補から開いたときの値（T-29）。置く処理は同じ */
+function AddWishSheet({ onClose, draft }: { onClose: () => void; draft?: PlaceDraft }) {
   const queryClient = useQueryClient();
-  const [message, setMessage] = useState("");
-  const [area, setArea] = useState("");
-  const [url, setUrl] = useState("");
+  const [message, setMessage] = useState(draft?.message ?? "");
+  const [area, setArea] = useState(draft?.area ?? "");
+  const [url, setUrl] = useState(draft?.url ?? "");
   const [choosing, setChoosing] = useState(false);
   const [excluded, setExcluded] = useState<string[]>([]);
   const friends = useQuery({ ...everyFriendQuery(), enabled: choosing });
@@ -109,6 +112,7 @@ function AddWishSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <BottomSheet title="行きたいを置く" label="行きたいを置く" onClose={onClose}>
+      {draft && <Note>候補から入れました。直してから置けます。</Note>}
       <Note>日時を決めずに置いておけます。友達はこれを見て誘えます。置いても友達には通知しません。</Note>
       <form
         className="flex flex-col gap-3"
@@ -223,10 +227,18 @@ function DeleteSheet({ wish, onClose }: { wish: Wish; onClose: () => void }) {
   );
 }
 
-type Open = { kind: "add" } | { kind: "audience"; wish: Wish } | { kind: "delete"; wish: Wish } | null;
+type Open =
+  | { kind: "add"; draft?: PlaceDraft }
+  | { kind: "suggest" }
+  | { kind: "audience"; wish: Wish }
+  | { kind: "delete"; wish: Wish }
+  | null;
 
 export function MyWishes() {
   const wishes = useQuery(myWishesQuery());
+  // 設定がない（limit 0）・読めないときは「AIで探す」を出さない（T-29）
+  const quota = useQuery(suggestionQuotaQuery());
+  const canSuggest = (quota.data?.limit ?? 0) > 0;
   const [open, setOpen] = useState<Open>(null);
   const items = wishes.data?.items ?? [];
   const full = items.length >= WISH_MAX_ACTIVE;
@@ -236,9 +248,16 @@ export function MyWishes() {
     <Section
       title="行きたい"
       aside={
-        <Button variant="ghost" size="s" disabled={!wishes.data || full} onClick={() => setOpen({ kind: "add" })}>
-          ＋ 行きたいを置く
-        </Button>
+        <div className="flex flex-wrap justify-end gap-1">
+          {canSuggest && (
+            <Button variant="ghost" size="s" disabled={!wishes.data || full} onClick={() => setOpen({ kind: "suggest" })}>
+              AIで探す
+            </Button>
+          )}
+          <Button variant="ghost" size="s" disabled={!wishes.data || full} onClick={() => setOpen({ kind: "add" })}>
+            ＋ 行きたいを置く
+          </Button>
+        </div>
       }
     >
       {full && <Note>{FULL_TEXT}</Note>}
@@ -274,7 +293,8 @@ export function MyWishes() {
           ))}
         </ul>
       )}
-      {open?.kind === "add" && <AddWishSheet onClose={close} />}
+      {open?.kind === "add" && <AddWishSheet onClose={close} draft={open.draft} />}
+      {open?.kind === "suggest" && <SuggestSheet onClose={close} onPlace={(draft) => setOpen({ kind: "add", draft })} />}
       {open?.kind === "audience" && <AudienceSheet wish={open.wish} onClose={close} />}
       {open?.kind === "delete" && <DeleteSheet wish={open.wish} onClose={close} />}
     </Section>

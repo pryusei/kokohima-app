@@ -1,5 +1,11 @@
-import { createWishRequestSchema, listQuerySchema, updateWishExclusionsRequestSchema } from "@kokohima/shared";
+import {
+  createWishRequestSchema,
+  createWishSuggestionRequestSchema,
+  listQuerySchema,
+  updateWishExclusionsRequestSchema,
+} from "@kokohima/shared";
 import { Hono, type Context } from "hono";
+import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { AppEnv } from "../env";
 import { idempotent } from "../http/idempotency";
@@ -8,7 +14,9 @@ import { rateLimit } from "../http/rateLimit";
 import { validationFailed } from "../http/validation";
 import { requireActiveSessionForWrites, requireAuth } from "../identity/middleware";
 import { decodeCursor, encodeCursor } from "../shared/cursor";
+import * as suggestions from "./application/suggestions";
 import * as wishes from "./application/wishes";
+import { KEEP_ALIVE_MS } from "./domain/suggestion";
 
 // 行きたいの API（docs/specs/T-22-wishlist.md「API」）
 // 友達でない・見せない相手にされている・存在しない ID は、すべて同じ404にする
@@ -28,6 +36,8 @@ export function wishRoutes() {
   app.use("/wishes/*", requireAuth, requireActiveSessionForWrites);
   app.use("/friend-wishes", requireAuth, requireActiveSessionForWrites);
   app.use("/friends/:friendId/wishes", requireAuth, requireActiveSessionForWrites);
+  app.use("/wish-suggestions", requireAuth, requireActiveSessionForWrites);
+  app.use("/wish-suggestions/*", requireAuth, requireActiveSessionForWrites);
 
   app.post("/wishes", idempotent, async (c) => {
     const body = createWishRequestSchema.safeParse(await json(c));
@@ -82,6 +92,47 @@ export function wishRoutes() {
     const items = friendId.success ? await wishes.friendWishes(ctx(c), c.var.viewer.userId, friendId.data) : null;
     return items ? c.json({ items, nextCursor: null }) : notFound(c);
   });
+
+  // 行きたいのAI提案（docs/specs/T-29-wish-suggestion.md「API」）。ストリームの前のエラーは problem+json、
+  // ストリームが始まったら progress と最後の result（失敗も0件の result）だけを送る
+  app.post("/wish-suggestions", async (c) => {
+    const body = createWishSuggestionRequestSchema.safeParse(await json(c));
+    if (!body.success) return validationFailed(c, body.error);
+    const started = await suggestions.startSuggestion(ctx(c), c.var.viewer.userId, {
+      area: body.data.area as string,
+      query: body.data.query as string,
+    });
+    if (started.kind === "unavailable") return problem(c.get("requestId"), 503, "unavailable", "Service Unavailable");
+    if (started.kind === "in_flight") return conflict(c);
+    if (started.kind === "rate_limited") {
+      const res = problem(c.get("requestId"), 429, "rate_limited", "Too Many Requests");
+      res.headers.set("Retry-After", String(started.retryAfterSeconds));
+      return res;
+    }
+    const client = new AbortController();
+    const requestSignal = c.req.raw.signal;
+    requestSignal.addEventListener("abort", () => client.abort(), { once: true });
+    const res = streamSSE(c, async (stream) => {
+      stream.onAbort(() => client.abort());
+      const keepAlive = setInterval(() => void stream.write(": keep-alive\n\n").catch(() => undefined), KEEP_ALIVE_MS);
+      try {
+        await started.run(
+          {
+            progress: (stage) => stream.writeSSE({ event: "progress", data: JSON.stringify({ stage }) }),
+            result: (candidates) => stream.writeSSE({ event: "result", data: JSON.stringify({ candidates }) }),
+          },
+          client.signal,
+        );
+      } finally {
+        clearInterval(keepAlive);
+      }
+    });
+    res.headers.set("Cache-Control", "no-store");
+    res.headers.set("Content-Type", "text/event-stream; charset=utf-8");
+    return res;
+  });
+
+  app.get("/wish-suggestions/quota", async (c) => c.json(await suggestions.quota(ctx(c), c.var.viewer.userId)));
 
   return app;
 }

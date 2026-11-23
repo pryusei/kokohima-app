@@ -52,6 +52,8 @@ export const keys = {
     detail: (id: string) => ["wishes", "detail", id] as const,
     friends: () => ["wishes", "friends"] as const,
     friend: (id: string) => ["wishes", "friend", id] as const,
+    /** 行きたいのAI提案の今日の残りの回数（T-29） */
+    suggestionQuota: () => ["wishes", "suggestion-quota"] as const,
   },
   inviteLinks: {
     list: () => ["invite-links", "list"] as const,

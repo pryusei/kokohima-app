@@ -16,7 +16,7 @@
 - `apps/api/src/<context>/{domain,application,infra}`。contextは invitation / availability / social / wish / calendar / notification / link-preview / identity / contact
 - IMPORTANT: `domain/` はCloudflare・D1・Hono・fetchをimportしない。純粋なTypeScriptに保つ
 - 状態遷移は集約のメソッド経由のみ。D1の更新は `WHERE status = ?` の条件付きUPDATEにする
-- 外部連携（通知・OGP・カレンダー書き込み）はoutboxテーブル経由でQueuesへ。APIハンドラから直接呼ばない
+- 外部連携（通知・OGP・カレンダー書き込み）はoutboxテーブル経由でQueuesへ。APIハンドラから直接呼ばない（例外は、本人がその場で待つ読み取り：カレンダーの空きの候補（T-06）と行きたいのAI提案（T-29））
 - 誘い・募集のルールは `invitation-domain` スキルを読んでから触る
 - 入力検証のZodスキーマは `packages/shared` に置き、APIとフロントで共有する
 - APIのパス・ID・日時・ページング・エラー形式は `api-conventions` スキルに従う
