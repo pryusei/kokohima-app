@@ -1,11 +1,11 @@
-# T-26 仕様書：WordPress系スキャンのエッジでの遮断
+# T-26 仕様書：脆弱性スキャンのエッジでの遮断（WordPress・設定ファイル系）
 
 - 状態：下書き
 - タスク票：docs/tasks/T-26-wp-scan-block.md
 - 関係する要件：NF-02、要求定義書「AI時代の攻撃を前提にした運用」
 
 ## 概要
-- 本番のログに、`/wp-admin/install.php`・`/wp-login.php` などWordPress向けのスキャンが毎日届く。このアプリはWordPressではなく、該当するページもない。
+- 本番のログに、`/wp-admin/install.php`・`/wp-login.php` などWordPress向けのスキャンと、`/.env`・`/.git/config`・`/.aws/credentials`・`/phpinfo.php` など設定ファイル・認証情報を探すスキャンが毎日届く（過去24時間で52件。4秒で22件の連続試行もある）。このアプリはWordPressでもPHPでもなく、該当するファイルもない。
 - いまは、これらがWorkerに届き、`env.ASSETS.fetch` で静的アセットを引いたうえでセキュリティのヘッダーを付けて返している（`apps/api/src/worker.ts`）。外部のホストへは転送していない。
 - WorkerよりCloudflareのWAFで先に遮断する。Workerの実行とログのノイズが減る。アプリのコード・画面・APIの振る舞いは変えない。
 
@@ -23,6 +23,11 @@
   - `/xmlrpc.php`
 - アクションは `block`（403）。遮断した応答の中身は決めない（Cloudflareの既定）。
 - 画面・APIで使うパスと重ならない。アプリのパスは `/`、`/api/`、ビルド済みの静的ファイル（`/assets/` など）、`/sw.js`、`/manifest.webmanifest`、`/icon.svg` などで、`/wp-` と `/xmlrpc.php` で始まるものはない。
+- 設定ファイル系も同じルールの式に足す：`/.env`（`/.env.*`、`/api/.env` を含め、パスの中に `/.env` を含むもの）、`/.git`、`/.aws`、`/.vscode`、`/phpinfo.php`、`/phpmyadmin`。
+- 遮断しなかった場合の実害の確認（コードの調査、2026-11-23）：
+  - `wrangler.jsonc` の `not_found_handling` は `single-page-application` なので、`/.env` のような存在しないパスには `index.html`（200）が返る。中身は公開の画面のHTMLで、秘密は含まれない。スキャナーには「200」と見えるだけ。
+  - 配信する静的ファイルは `apps/web/dist` だけで、`apps/web/public` には `icon.svg`・`manifest.webmanifest`・`sw.js` しかない。秘密は `wrangler secret` で持ち、`wrangler.jsonc` の `vars` は秘密でない値だけ。`check-web-dist.mjs` が手元の `.env.local` の混入も検査する。
+  - 実際の応答（ステータス・サイズ）は、Cloudflare側のログで人が確かめる（確認事項）。
 - 将来 `/wp-` で始まるパスをアプリで使うときは、このルールを先に直す。
 - Terraformの記述は、Cloudflareプロバイダv5の公式ドキュメントでスキーマを確かめてから実装PRで書く。
 - `terraform apply` は人が行う。
@@ -47,9 +52,10 @@
 ## スコープ外
 - Bot対策（Bot Fight Mode など）、WAFのレート制限、IP・国・UAでの遮断
 - Worker側での `/wp-` の404返し（WAFで遮断するので不要）
-- 静的アセットにない任意のパスを404にする変更
+- 静的アセットにない任意のパスを404にする変更（SPAの深いリンクが動かなくなるため）
 
 ## 確認事項（合意前に解消する）
+- 過去24時間のスキャンされたパスの応答を、Cloudflare側のログで集計し、`/.env` などが200で返したのは `index.html`（HTML）だけだったことを確かめる。
 - 遮断のアクションは `block` でよいか。ログだけ残す `log` で様子を見てから `block` にする案もある。
 - 対象に `/wp-json` を入れてよいか。入れない場合は、ほかのパスだけにする。
 - 本番の apply 後の確認を、`docs/runbooks/` に足すか。
@@ -57,4 +63,5 @@
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
+| 2026-11-23 | 対象に設定ファイル系（`.env`・`.git` など）を足し、遮断しなかった場合の実害の調査を書いた | 過去24時間の全件（52件）の集計 |
 | 2026-11-23 | 下書きを作成 | 本番ログにWordPress系スキャンが多いため（Cloudflare Observability の調査） |
