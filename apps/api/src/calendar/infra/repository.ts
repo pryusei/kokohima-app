@@ -30,6 +30,18 @@ export async function findConnection(d1: D1Database, userId: string, provider: P
     .first<ConnectionRow>();
 }
 
+/** 退会していない人（T-16）の連携だけ。Google を呼ぶ読み取り（カレンダーの空き）で使う */
+export async function findConnectionOfActiveUser(d1: D1Database, userId: string, provider: Provider) {
+  return d1
+    .prepare(
+      `SELECT * FROM calendar_connections
+       WHERE user_id = ?1 AND provider = ?2
+         AND EXISTS (SELECT 1 FROM users u WHERE u.id = calendar_connections.user_id AND u.withdrawn_at IS NULL)`,
+    )
+    .bind(userId, provider)
+    .first<ConnectionRow>();
+}
+
 // ---- 連携の開始とコールバック ----
 
 /** 直近の行が limit 未満のときだけ足す。足せたら true（使った行も数える） */
@@ -127,7 +139,10 @@ export async function disconnect(d1: D1Database, userId: string, provider: Provi
   return row?.refresh_token_enc ?? null;
 }
 
-/** Google 側で失効していた（invalid_grant）。active のときだけ needs_reauth にし、CalendarReauthRequired を書く */
+/**
+ * Google 側で失効していた（invalid_grant）。active のときだけ needs_reauth にし、CalendarReauthRequired を書く。
+ * 退会した人（T-16）の連携は変えず、イベントも書かない（入口を止める段のあとに書かれた行は消されないため）
+ */
 export async function markNeedsReauth(
   d1: D1Database,
   userId: string,
@@ -142,7 +157,8 @@ export async function markNeedsReauth(
         `UPDATE calendar_connections
          SET status = 'needs_reauth', refresh_token_enc = NULL, busy_snapshot = NULL, snapshot_from = NULL,
            snapshot_to = NULL, sync_lease_until = NULL, sync_id = ?4, large_change_held = 0, updated_at = ?3
-         WHERE user_id = ?1 AND provider = ?2 AND status = 'active'`,
+         WHERE user_id = ?1 AND provider = ?2 AND status = 'active'
+           AND EXISTS (SELECT 1 FROM users u WHERE u.id = calendar_connections.user_id AND u.withdrawn_at IS NULL)`,
       )
       .bind(userId, provider, now, tid),
     d1
@@ -157,12 +173,16 @@ export async function markNeedsReauth(
 
 // ---- 「ここ暇」カレンダー ----
 
-/** まだなければ書く。書けたら true（同時に別の処理が書いていたら false） */
+/**
+ * まだなければ書く。書けたら true（同時に別の処理が書いていたら false）。退会した人（T-16）には書かない
+ * （書けなければ呼び出し側が作ったカレンダーを消すので、後始末のあとに Google 側に残らない）
+ */
 export async function setCalendarIdIfEmpty(d1: D1Database, userId: string, provider: Provider, calendarId: string) {
   const result = await d1
     .prepare(
       `UPDATE calendar_connections SET calendar_id = ?3
-       WHERE user_id = ?1 AND provider = ?2 AND calendar_id IS NULL AND status = 'active'`,
+       WHERE user_id = ?1 AND provider = ?2 AND calendar_id IS NULL AND status = 'active'
+         AND EXISTS (SELECT 1 FROM users u WHERE u.id = calendar_connections.user_id AND u.withdrawn_at IS NULL)`,
     )
     .bind(userId, provider, calendarId)
     .run();
@@ -211,13 +231,17 @@ export async function connectionsDueForSync(d1: D1Database, now: number, minAge:
   return results;
 }
 
-/** 確認の権利を取る。取れたら、その時点の行（lease の値を含む）。休眠中は取れない（T-17「8.」） */
+/**
+ * 確認の権利を取る。取れたら、その時点の行（lease の値を含む）。休眠中は取れない（T-17「8.」）。
+ * 退会した人（T-16）も取れない（退会より前に割り当てて Queue に残っていた確認で Google を呼ばない）
+ */
 export async function takeSyncLease(d1: D1Database, userId: string, provider: Provider, now: number, leaseMs: number) {
   return d1
     .prepare(
       `UPDATE calendar_connections SET sync_lease_until = ?3
        WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND dormant_since IS NULL
          AND (sync_lease_until IS NULL OR sync_lease_until < ?4)
+         AND EXISTS (SELECT 1 FROM users u WHERE u.id = calendar_connections.user_id AND u.withdrawn_at IS NULL)
        RETURNING *`,
     )
     .bind(userId, provider, now + leaseMs, now)
@@ -251,8 +275,8 @@ export async function holdLargeChange(d1: D1Database, userId: string, provider: 
 }
 
 /**
- * 記録を進める文。権利を持っていて休眠でないときだけ書き、sync_id に新しい値を入れる。同じ batch の後続の文は
- * syncGuard の条件（この sync_id の行がある）で書く
+ * 記録を進める文。権利を持っていて休眠でなく、退会していない（T-16。確認の途中で退会した）ときだけ書き、sync_id に
+ * 新しい値を入れる。同じ batch の後続の文は syncGuard の条件（この sync_id の行がある）で書く
  */
 export function advanceSnapshotStatement(
   d1: D1Database,
@@ -265,7 +289,8 @@ export function advanceSnapshotStatement(
       `UPDATE calendar_connections
        SET busy_snapshot = ?4, snapshot_from = ?5, snapshot_to = ?6, last_synced_at = ?7, large_change_held = 0,
          sync_id = ?8, sync_lease_until = NULL
-       WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND dormant_since IS NULL AND sync_lease_until = ?3`,
+       WHERE user_id = ?1 AND provider = ?2 AND status = 'active' AND dormant_since IS NULL AND sync_lease_until = ?3
+         AND EXISTS (SELECT 1 FROM users u WHERE u.id = calendar_connections.user_id AND u.withdrawn_at IS NULL)`,
     )
     .bind(row.userId, row.provider, row.lease, snapshot.busy, snapshot.from, snapshot.to, now, row.syncId);
 }

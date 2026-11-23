@@ -7,7 +7,10 @@ import { handleJob } from "../jobs/consumer";
 import { dispatchOutbox } from "../jobs/dispatch";
 import { runScheduled } from "../worker";
 import { viewersWhoCanSee } from "../availability/application/sharing";
+import { accessTokenFor } from "./application/connections";
 import { syncConnection } from "./application/sync";
+import { ReauthRequired } from "./domain/provider";
+import * as calendarRepo from "./infra/repository";
 
 // カレンダー連携（docs/specs/T-06-calendar.md）。時計は 2026-10-10T00:00:00Z（土曜、東京は 09:00）
 
@@ -1037,6 +1040,101 @@ describe("成立した予定の書き込み", () => {
     const live = h.google.liveEvents();
     expect(live).toHaveLength(1);
     expect((live[0]?.body as { id: string }).id).toBe(`kh${keep.replace(/-/g, "")}`);
+  });
+});
+
+describe("退会した人の連携（T-16「退会した人を扱わない処理」）", () => {
+  /** 入口を止める段だけを進める（後始末の UserWithdrew は流さない。連携の行と更新用トークンが残っている間） */
+  async function withdraw(who: User) {
+    // 直前のログイン（10分以内）を満たすよう、セッションの作成時刻を今にする
+    await env.DB.prepare("UPDATE sessions SET created_at = ?2 WHERE user_id = ?1").bind(who.id, h.clock.now).run();
+    const res = await u.call("POST", "/api/v1/me/withdrawal", {
+      token: who.token,
+      body: { confirm: "withdraw" },
+      cookie: `__Host-kh_rt=${who.refreshToken}`,
+    });
+    expect(res.status).toBe(204);
+    expect((await connectionRow(who))?.status).toBe("active");
+  }
+
+  it("退会より前に割り当てた確認が退会のあとに届いても、権利を取らず Google を呼ばない", async () => {
+    const a = await authenticated();
+    await u.advance(MIN, a);
+    await connect(a);
+    expect(await syncConnection(h.ctx, a.id, "google")).toBe("recorded");
+    const before = await connectionRow(a);
+    await tick(15 * MIN);
+    await withdraw(a);
+    const count = h.google.state.requests.length;
+    await handleJob(h.ctx, { kind: "calendar_sync", userId: a.id, provider: "google" });
+    expect(await syncConnection(h.ctx, a.id, "google")).toBe("skipped");
+    expect(h.google.state.requests.length).toBe(count);
+    const after = await env.DB.prepare("SELECT sync_lease_until, busy_snapshot FROM calendar_connections WHERE user_id = ?1")
+      .bind(a.id)
+      .first<{ sync_lease_until: number | null; busy_snapshot: string | null }>();
+    expect(after).toEqual({ sync_lease_until: null, busy_snapshot: before?.busy_snapshot ?? null });
+  });
+
+  it("確認の途中で退会したら、記録を進めず何も取り消さない", async () => {
+    const a = await authenticated();
+    await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { date: "2026-10-11", preset: "night" } });
+    await u.advance(MIN, a);
+    await connect(a);
+    expect(await syncConnection(h.ctx, a.id, "google")).toBe("recorded");
+    const before = await connectionRow(a);
+    await tick(15 * MIN);
+    h.google.state.busy = [busy(T("11:00", "11"), T("12:00", "11"))];
+    // freeBusy の応答の間に退会する（入口を止める段の users の更新だけを再現する）
+    h.google.state.freeBusyOverride = () => {
+      void env.DB.prepare("UPDATE users SET withdrawn_at = ?2 WHERE id = ?1").bind(a.id, h.clock.now).run();
+      return Response.json({ calendars: { primary: { busy: h.google.state.busy } } });
+    };
+    await syncConnection(h.ctx, a.id, "google");
+    expect((await connectionRow(a))?.busy_snapshot).toBe(before?.busy_snapshot);
+    expect(await outbox("AvailabilityCancelledByCalendar", a.id)).toHaveLength(0);
+  });
+
+  it("カレンダーの空きは、退会のあとはアクセストークンが残っていても none で、Google を呼ばない", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const count = h.google.state.requests.length;
+    await withdraw(a);
+    const res = await u.call("GET", `/api/v1/calendar/free-slots?from=${T("00:00")}&to=${T("00:00", "12")}`, { token: a.token });
+    expect(res.status).toBe(200);
+    expect(freeSlotsSchema.parse(await res.json())).toEqual({ status: "none", items: [], nextCursor: null });
+    expect(h.google.state.requests.length).toBe(count);
+  });
+
+  it("退会のあとに invalid_grant が返っても、needs_reauth にせず CalendarReauthRequired を書かない", async () => {
+    const a = await authenticated();
+    await connect(a);
+    const row = await calendarRepo.findConnection(env.DB, a.id, "google");
+    await withdraw(a);
+    for (let n = 0; n <= h.google.state.refreshCounter; n++) h.google.state.revoked.add(`refresh-${n}`);
+    // 退会の前に読んだ行で、トークンを取りに行った場合（同時に進んでいた処理）
+    await expect(accessTokenFor(h.ctx, row!)).rejects.toBeInstanceOf(ReauthRequired);
+    expect((await connectionRow(a))?.status).toBe("active");
+    expect(await outbox("CalendarReauthRequired", a.id)).toHaveLength(0);
+  });
+
+  it("退会した人の連携には「ここ暇」カレンダーの ID を書かない", async () => {
+    const a = await authenticated();
+    await connect(a);
+    await withdraw(a);
+    expect(await calendarRepo.setCalendarIdIfEmpty(env.DB, a.id, "google", "cal-after-withdrawal")).toBe(false);
+    expect((await connectionRow(a))?.calendar_id).toBeNull();
+  });
+
+  it("退会していない人は今までどおり（他人の退会に影響されない）", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    await connect(b);
+    await withdraw(b);
+    const res = await u.call("GET", `/api/v1/calendar/free-slots?from=${T("00:00")}&to=${T("00:00", "12")}`, { token: a.token });
+    expect(freeSlotsSchema.parse(await res.json()).status).toBe("ok");
+    expect(await syncConnection(h.ctx, a.id, "google")).toBe("recorded");
+    expect(await calendarRepo.setCalendarIdIfEmpty(env.DB, a.id, "google", "cal-a")).toBe(true);
   });
 });
 

@@ -71,7 +71,7 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 入口を止める段と同時に進んでいた要求や、あとで処理されるイベントが、抜け殻に本人のデータを作り直さないようにする。
 - **予定ができる遷移**：`acceptInvite`（行く）、`decideAccept`（この時間で決める）の条件に、送信者と受信者のどちらも `withdrawn_at IS NULL` を足す。退会したあとは 409 `invalid_state`（今の「状態が変わった」と同じ）。募集の `decide` は、参加者を `withdrawn_at IS NULL` の応じた人だけにし、それが0人なら今の「応じた人が0人」と同じ 409。
 - **ログイン**：`findOrCreateUser` のメールの更新、`saveLoginCode`、`createSessionRows` は `withdrawn_at IS NULL` の利用者だけ。`isSessionActive` と更新用トークンの確認は `users` を見て、退会した人なら無効。
-- **カレンダー**：`saveConnection` は `withdrawn_at IS NULL` の利用者だけに書く（進行中の連携の callback が、抜け殻に連携を作り直さない）。書けなかったら、callback はコードと交換して受け取った更新用トークンを revoke してから失敗（`?calendar=failed`）にする（Google 側に許可を残さない）。定期の確認の割り当て（`assignSyncs`）と予定の書き込み（`activeConnectionsOf`）は、退会した人の連携を扱わない。
+- **カレンダー**：`saveConnection` は `withdrawn_at IS NULL` の利用者だけに書く（進行中の連携の callback が、抜け殻に連携を作り直さない）。書けなかったら、callback はコードと交換して受け取った更新用トークンを revoke してから失敗（`?calendar=failed`）にする（Google 側に許可を残さない）。定期の確認の割り当て（`assignSyncs`）と確認の権利（`takeSyncLease`）・記録を進める文、予定の書き込み（`activeConnectionsOf`・「ここ暇」カレンダーの ID の保存）、失効の検知（`markNeedsReauth`。`CalendarReauthRequired` も書かない）、カレンダーの空き（候補）は、退会した人の連携を扱わない（退会より前に割り当てて Queue に残っていた確認でも、Google を呼ばない）。
 - **本人の表への書き込み**：`users` の表示名の更新、`presets`・`availabilities`・`recurrence_rules`・`notification_preferences`・`ics_tokens`・`idempotency_keys`・`push_subscriptions`・`invite_links`・`calendar_oauth_states` への書き込みは、`EXISTS (SELECT 1 FROM users WHERE id = ? AND withdrawn_at IS NULL)` の条件付き。`sharing_policies` と友達になる（`friendships`）は、両方の利用者が退会していないときだけ書く。
 - **お知らせ**：退会した人あてのお知らせは作らない（今の `INSERT ... WHERE EXISTS users` の条件に `withdrawn_at IS NULL` を足す）。
 - **リンクのプレビュー**：`insertRef` の条件に、誘い・募集の `url IS NOT NULL` を足す（書いた内容を消したあとに参照が作り直されないように）。
@@ -91,6 +91,7 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 | wish | `POST /wishes`、`PUT /wishes/:id/exclusions`、`DELETE /wishes/:id`（T-22） |
 - 読み取りは、トークンが切れるまでの最長10分、自分の誘い・募集・予定の履歴（相手の ID・時刻、相手が書いたひとこと）が読める。本人がすでに受け取っていた内容なので受け入れる。`GET /me` は404。
 - KV の埋まりのキャッシュ（`freebusy:v1:<userId>:...`）は、最長5分で切れるまで残る（受け入れる。T-10）。
+- `GET /calendar/free-slots` は、トークンが切れるまでの間も `status: "none"`（連携していない扱い）で、Google を呼ばない（T-06）。
 
 ### 相手の画面での表示
 - 公開プロフィールは、退会した人を `withdrawn: true` で返す。`withdrawn` が出るのは、履歴の DTO（誘い・募集・予定の相手・参加者・宛先、お知らせの `actor`）だけ。
@@ -128,6 +129,7 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 - [x] 後始末の再試行：1回で扱う件数の上限に当たると投げ（`withdrawal_completed_at` は入らない）、次の試行で終わりまで進んで入る（受けた誘いを上限より多く作って確かめる）。カレンダーの削除・revoke の失敗では投げずに終わる。毎分の掃除が、1時間を過ぎて終わっていない後始末を呼び直す。
 - [x] 予定ができない：退会のあと、相手の「行く」（受けていた誘い）・「この時間で決める」が409で、予定ができない。応じていたのが退会した人だけの募集の「決める」は409。ほかに応じた人がいれば、退会した人を除いて予定ができる。退会の前後で、募集者に返る応じた人数が変わらない。
 - [x] 同時の操作：退会のあとに、古い利用者で進んでいたログインの完了・カレンダーの連携の callback・表示名の更新・ここ暇の追加をしても、行が作り直されない。callback は失敗になり、受け取った更新用トークンを revoke する。
+- [x] カレンダー：退会より前に割り当てた確認が退会のあとに届いても、権利を取らず Google を呼ばない。確認の途中で退会したら記録を進めず何も取り消さない。カレンダーの空きは `none` で Google を呼ばない。退会のあとの `invalid_grant` で `needs_reauth` にせず `CalendarReauthRequired` を書かない。
 - [x] アクセストークン：退会のあと、同じアクセストークンで表の書き込みの経路がどれも401。更新用トークンでの更新も401。`GET /me` は404。
 - [x] ログインし直し：同じ Google の `sub` でログインすると、新しい利用者 ID になる。403 の本文の `reauthProvider` は、閲覧者のログインの方法（Apple なら `apple`）。
 - [x] 相手の表示：公開プロフィールが `withdrawn: true`（列に名前が残っていても null）。友達の一覧・「みんな」から消え、誘いは404。退会した人の ID を `actor_id` に持つお知らせは残り、`actor` が `withdrawn: true` で返る。
@@ -177,3 +179,4 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 | 2026-11-23 | 「残すもの」の誘い・募集・予定とお知らせも、終わってから・作ってから30日で消えることを書いた | T-17 実装PR（docs/specs/T-17-retention.md） |
 | 2026-11-23 | 入口を止める段で行きたい（`wishes`・`wish_exclusions`・`wish_posts`）を消す、wish の書き込みの経路を `requireActiveSession` の表に足す、確認画面の「消えるもの」に行きたい | T-22 実装PR（docs/specs/T-22-wishlist.md） |
 | 2026-11-23 | 入口を止める段で消す outbox の型に `ContactMessageSubmitted` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |
+| 2026-11-23 | 退会した人を扱わない処理のカレンダーに、確認の権利・記録を進める文・失効の検知・「ここ暇」カレンダーの ID の保存・カレンダーの空きを足した | pryusei/kokohima-app#114 |
