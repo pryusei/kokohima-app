@@ -19,6 +19,8 @@
 8. 誘い・募集の作成画面へは、行きたいの ID だけを渡す（`?wish=<id>`）。作成画面が API から中身を読む。
 9. `GET /friend-wishes` の回数の上限は、利用者ごとに60秒に20回（`friend-availabilities` と同じ `RL_USER`）。見せない相手は1つの行きたいで100人まで。
 10. 置いた回数の記録は、行きたいを消しても残す。外した相手は、友達でなくなって戻っても外したまま。作成画面で行きたいを読めなかったときは、空で開いてエラーを出さない。
+11. 外していた友達を戻すと、前に置かれた行きたいが急に見えるようになり、外されていたと気づかれうる。これは受け入れるリスクとし、見せる相手の画面で、戻すときに「戻すと、外していたことに気づかれることがあります」と出す。
+12. 「みんな」の友達の行きたいの、友達の並びは、友達の一覧（T-02）と同じ順（友達になった日時の新しい順、同じなら友達の `id` の降順）にする。置き直しや外す操作で順番が変わらず、もっと見るの間に崩れない。
 
 ## 前提
 
@@ -32,37 +34,40 @@
 
 ### コンテキストの分担
 - `apps/api/src/wish/{domain,application,infra}`。
-  - domain（純粋）：件数の上限・置く回数の上限の判定、見せない相手の一覧の正規化（重複を除く、自分を含めない）。
+  - domain（純粋）：件数の上限・置く回数の上限の判定、見せない相手の一覧の判定（重複はスキーマで400、自分と友達でない人は404。application が SQL の結果を渡して判定する）。
   - infra：D1（`wishes`・`wish_exclusions`・`wish_posts`）。
-  - application：置く・消す・見せない相手を変える・自分の一覧・友達の一覧・1件の取得。link-preview の `previewsFor` を呼んで `linkPreview` を足す。退会の後始末の文を返す関数（identity の退会から呼ぶ）。
+  - application：置く・消す・見せない相手を変える・自分の一覧・友達の一覧・1件の取得。link-preview の `previewsFor` を呼んで `linkPreview` を足す（見られる条件で絞った SQL から得た行きたいの ID でだけ呼ぶ。T-08 の invitation と同じ扱い）。consumer 用の、閲覧者で絞らない url の読み取り（`LinkAttached` の処理から呼ぶ。invitation の `calendarFacing.ts` と同じ扱い）。退会の後始末の文を返す関数（identity の退会から呼ぶ）。
 - 友達かどうかは、SQL の中で `friendships` の両方向の行を見て決める（T-04 と同じ条件）。social の表は読むだけで、書かない。
-- 入力のスキーマは `packages/shared/src/schemas/wish.ts`。ひとこと・エリア・リンクの検証は `schemas/invitation.ts` の `messageSchema`・`areaSchema`・`urlSchema` と同じ規則を使う（ひとことは必須にする）。
+- 入力のスキーマは `packages/shared/src/schemas/wish.ts`。ひとこと・エリア・リンクの検証は `schemas/invitation.ts` の `messageSchema`・`areaSchema`・`linkUrlSchema` を使う（ひとことは必須にする）。
 
 ## API
 `api-conventions` スキルに従う。
 
 | メソッド | パス | 認証 | 入力（Zodスキーマ名） | 出力 | 主なエラー |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/api/v1/wishes` | Bearer | JSON：`createWishRequestSchema`（下記）。`Idempotency-Key` を受け付ける | 201：`wishSchema`、`Location: /api/v1/wishes/{id}` | 400、404（見せない相手に友達でない人・自分が含まれる）、409 `invalid_state`（すでに10件）、429 `rate_limited`（直近24時間に20回） |
-| GET | `/api/v1/wishes` | Bearer | なし | 200：`{ items: wishSchema[], nextCursor: null }`（自分の行きたい。最大10件） | — |
+| POST | `/api/v1/wishes` | Bearer | JSON：`createWishRequestSchema`（下記）。`Idempotency-Key` を受け付ける | 201：`wishSchema`、`Location: /api/v1/wishes/{id}` | 400、404（見せない相手に友達でない人・自分が含まれる）、409 `invalid_state`（すでに10件）、429 `rate_limited`（直近24時間に20回。`Retry-After`） |
+| GET | `/api/v1/wishes` | Bearer | なし | 200：`{ items: wishSchema[], nextCursor: null }`（自分の行きたい。最大10件。`created_at` の降順、同じなら `id` の降順） | — |
 | GET | `/api/v1/wishes/{id}` | Bearer | なし | 200：`wishSchema` | 404（ない・見られない） |
 | PUT | `/api/v1/wishes/{id}/exclusions` | Bearer | JSON：`updateWishExclusionsRequestSchema` `{ userIds }` | 200：`wishSchema` | 400、404（自分の行きたいでない・見せない相手に友達でない人が含まれる） |
 | DELETE | `/api/v1/wishes/{id}` | Bearer | なし | 204 | 404（自分の行きたいでない） |
-| GET | `/api/v1/friend-wishes` | Bearer | query：`limit`（1〜50、既定20。友達の人数）、`cursor` | 200：`{ items: friendWishesSchema[], nextCursor }` | 400、429 `rate_limited` |
-| GET | `/api/v1/friends/{friendId}/wishes` | Bearer | なし | 200：`{ items: wishSchema[], nextCursor: null }`（最大10件） | 404（友達でない） |
+| GET | `/api/v1/friend-wishes` | Bearer | query：`limit`（1〜50、既定20。友達の人数）、`cursor` | 200：`{ items: friendWishGroupSchema[], nextCursor }` | 400、429 `rate_limited` |
+| GET | `/api/v1/friends/{friendId}/wishes` | Bearer | なし | 200：`{ items: wishSchema[], nextCursor: null }`（最大10件。`created_at` の降順、同じなら `id` の降順） | 404（友達でない。片方向の行しかない場合も） |
 
 - `createWishRequestSchema`：`{ message, area, url, excludedUserIds }`（strict）
-  - `message`：必須。`messageSchema` と同じ規則（100文字まで、改行5つまで、見えない文字・制御文字を拒否）で、null と空文字を許さない。
-  - `area`：`areaSchema`（30文字まで、null 可）。`url`：`urlSchema`（http/https、2048文字まで、null 可）。
+  - キーはすべて必須（省略できない。値がないときは `null` や空配列を明示して送る）。
+  - `message`：`messageSchema`（100文字まで、改行5つまで、見えない文字・制御文字を拒否。前後の空白を除いて空なら null）を通した結果が null なら400（`required`）。
+  - `area`：`areaSchema`（30文字まで、null 可）。`url`：`linkUrlSchema`（http/https、2048文字まで、認証情報入り・空白・制御文字を拒否、null 可）。
   - `excludedUserIds`：UUID の配列。0〜100人、重複なし。空配列なら友達全員に見せる。
-- `updateWishExclusionsRequestSchema`：`{ userIds }`（strict）。`excludedUserIds` と同じ規則。今の一覧をこの一覧で置き換える。
+- `updateWishExclusionsRequestSchema`：`{ userIds }`（strict）。`excludedUserIds` と同じ規則。今の友達の分の一覧を、この一覧で置き換える（足す・外すを別の経路にすると、画面のチェックの状態と食い違いやすいので、一覧ごと送る。前例は T-03 の `PUT /me/presets`）。
 - `wishSchema`（閲覧者が置いた人でも友達でも、項目は同じ。値がない項目は `null`）：
   - `id`、`owner`（公開プロフィール）、`message`、`area`、`url`、`linkPreview`（T-08 の `linkPreviewSchema`。リンクがなければ `null`）、`createdAt`
   - `excludedUsers`：置いた人には見せない相手の公開プロフィールの配列（友達でなくなった人・退会した人は含めない）。友達には `null`。
-- `friendWishesSchema`：`{ friend: 公開プロフィール, wishes: wishSchema[] }`。見られる行きたいが1件以上ある友達だけを返す。
-  - 並び順：友達ごとの、見られる行きたいのうち一番新しい `created_at` の降順。同じなら友達の `id` の降順。カーソルにはこの2つを入れる。
+- `friendWishGroupSchema`：`{ friend: 公開プロフィール, wishes: wishSchema[] }`。見られる行きたいが1件以上ある友達だけを返す（1ページの件数は、見られる行きたいのある友達で数える。SQL の中で絞り、取得したあとで絞り込まない）。
+  - 並び順：友達になった日時（閲覧者の側の `friendships.created_at`）の降順、同じなら友達の `id` の降順（決めたこと12。T-02 の友達の一覧と同じ）。カーソルにはこの2つを入れる。インデックスは `friendships` の既存のものを使う。
   - `wishes` は、その友達の見られる行きたいすべて（最大10件）を `created_at` の降順、同じなら `id` の降順で並べる。
 - `GET /friend-wishes` には、Rate Limiting の `RL_USER` を付ける（まとまりの名前 `friend_wishes`。利用者ごとに60秒に20回。決めたこと9）。T-10 の「回数の上限を付ける経路」の表に足す。
+- 置く回数の429の `Retry-After` は、直近24時間の `wish_posts` のうち、いちばん古い行が24時間を過ぎるまでの秒数（切り上げ。T-04 と同じ）。
+- 書き込みの経路（`POST /wishes`・`PUT /wishes/{id}/exclusions`・`DELETE /wishes/{id}`）は、`requireActiveSession` を通す（T-16。冪等キーの処理より前に置く）。
 
 ## データ（マイグレーション：その時点の次の空いている番号。今なら `0015_wish.sql`）
 
@@ -73,7 +78,9 @@
 | `wish_posts` | `user_id`（FK users、`ON DELETE CASCADE`）、`created_at`、`id`（TEXT PK。置いた行きたいの ID） | INDEX(`user_id`, `created_at`) |
 
 - `wish_posts` は置いた回数を数えるための記録。行きたいを消しても残す（置く→消すのくり返しを数えるため）。中身は持たない。
-- link-preview の参照の表（T-08 の `link_preview_refs`）の対象に `wish` を足す。行きたいを消したら参照も消す。
+- `link_preview_refs`（T-08）に `wish_id`（TEXT、FK wishes、`ON DELETE CASCADE`、UNIQUE、null 可）を足し、`CHECK` を「`direct_invite_id`・`broadcast_id`・`wish_id` のうち1つだけが null でない」に変える。SQLite は `CHECK` を変えられないので、同じマイグレーションで表を作り直す（行を写し、インデックスを作り直す）。行きたいを消したら、参照も CASCADE で消える。
+- 見せない相手の100人の上限は、`POST`・`PUT` の入力（スキーマの100人と「全員今の友達か」の判定）で守る。友達でなくなった人の残っている行は数えない（数え直しの SQL は書かない）。
+- 公開範囲の拡張：あとでグループ（Phase 2）を足すときは、「見せない相手」の方式のまま、見せる範囲の表（例：`wish_audiences`）を足す。今は作らない。
 
 ## 振る舞い
 
@@ -84,7 +91,7 @@
 3. V も O も退会していない（退会した人の行きたいは後始末で消えるが、後始末の前の間も返さない）。
 
 - ここ暇の SharingPolicy は見ない（決めたこと3）。
-- 置いた人本人は、自分の行きたいをいつでも見られる。
+- 置いた人本人は、退会していなければ、見せない相手の設定に関係なく自分の行きたいを見られる。
 
 ### 置く（`POST /wishes`）
 - 判定の順番：入力の検証（400）→ 見せない相手が全員友達か（404。どの人が友達でないかは返さない。自分を含めた場合も404にそろえる）→ 件数（409）→ 置く回数（429）。
@@ -93,11 +100,15 @@
   2. `INSERT INTO wish_exclusions SELECT ?id, j.value, ?now FROM json_each(?ex) j WHERE EXISTS (SELECT 1 FROM wishes WHERE id = ?id)`
   3. `INSERT INTO wish_posts ... WHERE EXISTS (SELECT 1 FROM wishes WHERE id = ?id)`
   4. `url` があれば outbox に `LinkAttached`（`subjectType: "wish"`。`WHERE EXISTS` の条件付き）
-- 行を書けなかったら、件数と回数をもう一度読んで409か429を返す（同時に置いたときも上限を超えない）。
+- 行を書けなかったら、件数と回数をもう一度読んで409か429を返す（同時に置いたときも上限を超えない）。読み直してもどちらにも当たらない（同時に消されたなど）ときは、同じ batch を1回だけやり直し、それでも書けなければ409 `invalid_state`（T-04 と同じ）。
+- `url` があるときの `LinkAttached` は、link-preview の consumer が受ける。参照の行の書き込みは `WHERE EXISTS (SELECT 1 FROM wishes WHERE id = ?)` の条件付きにする（処理の前に消された行きたいには参照を作らない）。
 - 置いても通知しない。outbox に通知のイベントは書かない。
 
 ### 見せない相手を変える（`PUT /wishes/{id}/exclusions`）
-- 自分の行きたいのときだけ。1つの batch で、今の行を消して新しい一覧を入れる。
+- 自分の行きたいのときだけ。1つの batch で、今の友達の分の行だけを消して、新しい一覧を入れる。友達でなくなった人の行は残す（決めたこと10。消すと、友達に戻ったときにまた見えてしまう）。
+  1. `DELETE FROM wish_exclusions WHERE wish_id = ?id AND wish_id IN (SELECT id FROM wishes WHERE owner_id = ?viewer) AND user_id IN (SELECT f.friend_id FROM friendships f JOIN friendships r ON r.user_id = f.friend_id AND r.friend_id = f.user_id WHERE f.user_id = ?viewer)`（両方向の行がある友達だけ。片方向の行しか残っていない人の行は消さない）
+  2. `INSERT INTO wish_exclusions SELECT ?id, j.value, ?now FROM json_each(?ex) j WHERE EXISTS (SELECT 1 FROM wishes WHERE id = ?id AND owner_id = ?viewer)`（同時に消されても外部キーで失敗しない）
+- 判定の順番：入力の検証（400）→ 自分の行きたいか（404）→ 一覧が全員今の友達か（404。何も変えない）。
 - 外された人からは、その行きたいは消したのと同じに見える（一覧から消え、`GET /wishes/{id}` は404）。戻された人には、また見える。
 - 置く回数には数えない。
 
@@ -108,7 +119,9 @@
 - 作成画面は `?wish=<id>` を受け取ったら `GET /wishes/{id}` を読み、ひとこと・エリア・リンクを入力欄に入れる。利用者は送る前に直せる。
   - 誘い（`/invites/new?wish=<id>`）：行きたいが友達のものなら、宛先にその友達を入れる。自分のものなら、宛先は自分で選ぶ。
   - 募集（`/broadcasts/new?wish=<id>`）：自分の行きたいのときだけ入れる。宛先は自分で選ぶ。
+  - 自分の行きたいかどうかは、応答の `owner.id` と自分の ID が同じかで決める（query の値では決めない）。友達の行きたいを `/broadcasts/new?wish=` で開いたときは何も入れない（置いた人が外した相手に、中身が送られないように）。誘いの宛先は応答の `owner` から入れる。
   - 読めなかった（404・通信の失敗）ときは、何も入れずに空の作成画面を出す。エラーは出さない（消された・外されたと区別させない）。
+  - 今のクエリとの関係：`/broadcasts/new` に `?from`（再募集）があれば `?wish` は使わない。`/invites/new` に `?friend` があっても、友達の行きたいなら持ち主を宛先にする。自分の行きたいなら `?friend` をそのまま使う（`?startsAt`・`?endsAt` はどちらもそのまま使う）。
 - 送られるのは普通の誘い・募集。行きたいとのつながりは保存しない。リンクの OGP は、誘い・募集の側で今までどおり取り直す（T-08）。
 
 ### 期限と保存期間
@@ -124,6 +137,7 @@
 - **ここ暇のタブ**：自分の枠の下に「行きたい」の欄。
   - 行きたいごとに、ひとこと・エリア・リンクのカード、「誘う」「募集する」「見せる相手」「消す」。
   - 「＋ 行きたいを置く」でシートを開く：ひとこと（必須）、リンク、エリア、見せる相手（既定は「友達全員」。「外す人を選ぶ」で友達の一覧から外す人を選ぶ）。
+  - 「見せる相手」で外していた人を戻すときは、「戻すと、外していたことに気づかれることがあります」と出す（決めたこと11）。
   - 10件あるときは「＋ 行きたいを置く」を押せなくし、「置けるのは10件までです。消すとまた置けます」と出す。
   - 「消す」は確認のダイアログを出す。
 - **みんなのタブ**：今日・明日のここ暇の下に「友達の行きたい」の欄。友達ごとにまとめ、行きたいごとに「ここで誘う」。もっと見るで続きを読む。1件もないときは欄を出さない（空の案内を出さない）。
@@ -141,7 +155,10 @@
   - 友達に返す `wishSchema` の `excludedUsers` は常に `null`。誰が外されているか、何人外されているかを返さない。
   - 置いた人に、誰が見たか・誰が「ここで誘う」を押したかは記録しない・返さない。
 - ここ暇の「見せない」を切り替えても、行きたいの応答は変わらない（決めたこと3）。
-- ログには行きたいの中身（ひとこと・エリア・リンク）を出さない。
+- ログには、行きたいの中身（ひとこと・エリア・リンク）、利用者の ID、見せない相手の ID の一覧、どの ID が友達でなかったかを出さない。429 のログは `{ event: "rate_limited", group }` だけにする（T-14 と同じ。`friend_wishes` と置く回数の両方）。
+- 受け入れるリスク：
+  - 外していた人を戻すと、前に置かれた行きたいが急に見え、外されていたと気づかれうる（決めたこと11。画面で注意を出す）。
+  - 前に見ていた人は、プレビュー画像の URL（`imageUrl`）を持っている。消された行きたいは参照がなくなり、30日後の掃除で画像も404になるが、外されただけなら画像は200のままなので、30日を過ぎると外されたか消されたかを区別できる。画像の経路は認証なし（T-08）で、防ぐには画像の配信の作りを変える必要があるので、受け入れる。
 
 ## テスト計画
 
@@ -153,12 +170,20 @@
 - [ ] 区別させない：外された友達と、何も置いていない友達の `friend-wishes`・`/friends/{id}/wishes` の応答が同じ。友達の応答の `excludedUsers` が `null`。
 - [ ] 切り離し：ここ暇を「見せない」にしても、行きたいは見える。
 - [ ] 見せない相手に友達でない人・自分を入れると404で、何も書かれない。
-- [ ] あとから友達になった人に見える。外したあとに友達を解除して戻っても、外したまま。
+- [ ] あとから友達になった人に見える。外したあとに友達を解除して戻っても、外したまま。外す → 友達を解除 → `PUT` で別の人を外す → 友達に戻る、でもまだ見えない。片方向の `friendships` の行しかない相手の行も、`PUT` で消えない。
+- [ ] 他人の行きたいの `PUT /exclusions`・`DELETE` のあと、表の行が変わっていない。友達でない人を入れた `PUT` は404で、何も変わらない。`PUT` は置く回数に数えない。
+- [ ] `/friends/{friendId}/wishes`：友達でない人と存在しない ID で、同じ404（本文も同じ）。片方向の `friendships` の行しかないときも404。`/friends/{id}`・`/friends/{id}/availabilities` の経路とぶつからない。
+- [ ] `friend-wishes`・`GET /wishes`：友達でない人・他人の行きたいが混じらない。外された新しい行きたいがあっても、その友達の順番が変わらない。1ページの件数は、見られる行きたいのある友達で数える。60秒に21回目が429（キーは利用者 ID）。
+- [ ] 置いた人の `excludedUsers` に、友達でない人と退会した人が出ない。
+- [ ] 11件目は置けず、1件消すとまた置ける。429 に `Retry-After` が付く。
+- [ ] `POST /wishes` の `Idempotency-Key`：同じキーで同じ答えが返る。409・429 は保存しない。
+- [ ] 退会した人のトークンでは、書き込みが401（`requireActiveSession`）、`GET /wishes/{id}` が404。
+- [ ] ログに、中身・見せない相手の ID が出ない。
 - [ ] 並び順とページング：`friend-wishes` の友達の順と行きたいの順、カーソルで重ならずに続きが読める。
 - [ ] リンク：リンクがあるときだけ `LinkAttached` が書かれ、`linkPreview` が返る。消すと参照も消える。
 - [ ] 退会：本人の行きたい・見せない相手の行・置いた記録が消える。退会した人の行きたいは後始末の前でも返らない。
 - [ ] 掃除：2日を過ぎた `wish_posts` が消え、行きたいは消えない。
-- [ ] 画面：`?wish=<id>` で作成画面に中身が入る。読めなかったときは空で、エラーを出さない。10件のときに置くボタンを押せない。
+- [ ] 画面：`?wish=<id>` で、誘い・募集の作成画面に中身が入る。誘いの宛先が持ち主になる。友達の行きたいを募集の作成画面で開くと空になる。読めなかったときは空で、エラーを出さない。`?from` があれば `?wish` を使わない。10件のときに置くボタンを押せない。リンク付きの行きたいに OGP のカード（取れなければドメインだけ）が出る。戻すときに注意が出る。
 
 ### E2Eテスト（対象にする利用者の流れ）
 - [ ] A が行きたいを置く（B を外さず、C を外す）→ B の「みんな」に出て、C には出ない → B が「ここで誘う」→ 宛先が A で、ひとこととリンクが入った誘いを送れる。
@@ -171,7 +196,12 @@
 - タスク票（T-22）：SharingPolicy を使う前提の項目（設定の文言を直す、T-02・T-03 を直す、「見せないにされている友達」の受け入れ条件）を、決めたこと1〜3に合わせて直す。
 - T-08（参照の対象に `wish`、`LinkAttached` の `subjectType`）、T-10（`friend_wishes` のレート制限）、T-16（後始末と確認画面の「消えるもの」）、T-17（保持期間の表に `wishes`「本人が消すまで」と `wish_posts`「2日」）、T-19 と `/privacy`（預かる情報・保存する期間・退会の説明）、`packages/shared/src/retention.ts`。
 - T-03・T-11 の画面の節（ここ暇・みんなのタブに行きたいの欄）、T-04・T-05 の作成画面（`?wish=`）。
-- invitation-domain スキルの用語表（行きたい・見せない相手）。
+- invitation-domain スキルの用語表（行きたい・見せない相手、「リンクのプレビュー」の「誘い・募集に添えた」）と、イベントの表の `LinkAttached`（行きたいも出す）。
+- 要求定義書の「OGP取得：ユーザーごとのレート制限」の行と、イベントの表の `LinkAttached` の発生元（Invitation だけでなく Wish も）。
+- T-08 の決定事項5と「量の上限」：取得のきっかけに行きたいが加わり、利用者ごとの取得の上限は、送信上限（24時間に20件）と置く回数（24時間に20回）の合わせて40回になる。「`previewsFor` は invitation からだけ呼ぶ」を wish にも広げる。
+- T-16 の「`requireActiveSession` を付ける経路」の表に wish の書き込みの経路を足す。
+- T-17 の保持期間の表に `wish_exclusions`（行きたいを消したとき・退会のとき。友達を解除しても残す）。`retention.ts` に `wish_posts` の2日の定数を足す。
+- CLAUDE.md の「アーキテクチャ」のコンテキストの一覧に `wish`。
 
 ## スコープ外
 - 「乗る」や反応、置いた人への知らせ、置いたときの友達への通知。
@@ -180,9 +210,10 @@
 - グループ単位の公開、アフィリエイトリンク、AI。
 
 ## 確認事項（合意前に解消する）
-- なし（「決めたこと」の9・10で解消した）
+- なし（「決めたこと」の9〜12で解消した）
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-23 | 下書き | 対話で決めた内容をまとめた |
+| 2026-11-23 | 見せない相手の置き換えで友達でなくなった人の行を残す、`link_preview_refs` の列と `CHECK`、`Retry-After`、やり直し、`requireActiveSession`、`?wish` の持ち主の判定と今のクエリとの関係、友達の並び順（決めたこと12）、戻したときのリスク（決めたこと11）と画像の URL のリスク、ログ、テストと実装PRで直すものを足した | security-reviewer・spec-reviewer のレビュー、利用者の回答 |
