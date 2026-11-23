@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GPS_MARKER, includesText, jpeg } from "../../../test/jpeg";
+import { GPS_MARKER, includesText, jpeg, THUMB_MARKER } from "../../../test/jpeg";
 import { images } from "../../../test/images";
 import { sanitizeAvatarJpeg } from "./avatarJpeg";
 import { avatarUrlExpiry, isAvatarExpiryAcceptable } from "./avatarUrl";
@@ -34,6 +34,22 @@ describe("sanitizeAvatarJpeg", () => {
     expect(includesText(out, "JFIF")).toBe(true);
     // メタデータのない同じ画像と、バイトまで一致する
     expect(out).toEqual(jpeg());
+  });
+
+  it("APP0 は JFIF の基本の部分だけを残す：JFXX・サムネイル・2つめの APP0 は除く", () => {
+    const jfxx = ok(jpeg({ app0: "jfxx" }));
+    expect(includesText(jfxx, "JFXX")).toBe(false);
+    expect(includesText(jfxx, THUMB_MARKER)).toBe(false);
+    expect(jfxx).toEqual(jpeg());
+    const thumb = ok(jpeg({ app0: "thumb" }));
+    expect(includesText(thumb, THUMB_MARKER)).toBe(false);
+    expect(thumb).toEqual(jpeg());
+    // JFIF でない APP0 しかなければ、APP0 なしで通る
+    const noJfif = jpeg();
+    noJfif.set(new TextEncoder().encode("JFXX"), 6);
+    const out = ok(noJfif);
+    expect(includesText(out, "JFXX")).toBe(false);
+    expect(out.length).toBe(jpeg().length - 18);
   });
 
   it("256 以外の縦横は invalid_size", () => {

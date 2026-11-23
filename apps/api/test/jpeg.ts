@@ -16,6 +16,8 @@ export type JpegOptions = {
   comment?: string;
   /** APP13（Photoshop の情報など）を入れる */
   app13?: boolean;
+  /** APP0 の中身（既定は JFIF・サムネイルなし）。"jfxx" は JFXX の拡張、"thumb" は 2×1 のサムネイルつきの JFIF */
+  app0?: "jfif" | "jfxx" | "thumb";
   /** EOI のあとに付けるバイト */
   trailing?: number[];
   /** 符号化されたデータの大きさ（大きな入力のテスト） */
@@ -24,12 +26,19 @@ export type JpegOptions = {
 
 /** 埋めておく位置情報の目印（除去されたかを確かめる） */
 export const GPS_MARKER = "GPS-35.6812N-139.7671E";
+/** 埋め込みのサムネイルの目印 */
+export const THUMB_MARKER = "THUMBx";
 
 export function jpeg(o: JpegOptions = {}): Uint8Array {
   const w = o.width ?? 256;
   const h = o.height ?? 256;
   const bytes: number[] = [0xff, 0xd8];
   bytes.push(...seg(0xe0, [...new TextEncoder().encode("JFIF\0"), 1, 1, 0, 0, 1, 0, 1, 0, 0]));
+  if (o.app0 === "jfxx") bytes.push(...seg(0xe0, [...new TextEncoder().encode(`JFXX\0\x13${THUMB_MARKER}`)]));
+  if (o.app0 === "thumb") {
+    // 先頭の APP0 をサムネイルつきの JFIF にする
+    bytes.splice(2, 18, ...seg(0xe0, [...new TextEncoder().encode("JFIF\0"), 1, 1, 0, 0, 1, 0, 1, 2, 1, ...new TextEncoder().encode(THUMB_MARKER.slice(0, 6))]));
+  }
   if (o.exif) bytes.push(...seg(0xe1, [...new TextEncoder().encode(`Exif\0\0${GPS_MARKER}`)]));
   if (o.app13) bytes.push(...seg(0xed, [...new TextEncoder().encode("Photoshop 3.0\0")]));
   if (o.comment) bytes.push(...seg(0xfe, [...new TextEncoder().encode(o.comment)]));

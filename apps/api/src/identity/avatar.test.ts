@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { directInviteSchema, friendPageSchema, friendSchema, inviteLookupResponseSchema, meResponseSchema } from "@kokohima/shared";
+import { broadcastSchema, directInviteSchema, friendPageSchema, friendSchema, inviteLookupResponseSchema, meetupSchema, meResponseSchema } from "@kokohima/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHarness, ORIGIN } from "../../test/identity-harness";
 import { GPS_MARKER, includesText, jpeg } from "../../test/jpeg";
@@ -189,6 +189,40 @@ describe("公開プロフィールの avatarUrl（見える範囲）", () => {
     expect(after.counterpart).toEqual({ id: a.id, displayName: "あき", avatarUrl: null, withdrawn: false });
   });
 
+  it("募集で成立した予定の参加者どうしで、友達でない相手（知らない人）には画像があっても null。友達には入る", async () => {
+    const owner = await u.user("おーなー");
+    const a = await u.user("あき");
+    const c = await u.user("しー");
+    await u.befriend(owner, a);
+    await u.befriend(owner, c);
+    await upload(a);
+    await upload(c);
+    const created = await u.call("POST", "/api/v1/broadcasts", {
+      token: owner.token,
+      body: { recipientIds: [a.id, c.id], startsAt: "2026-10-10T11:00:00.000Z", endsAt: "2026-10-10T13:00:00.000Z" },
+    });
+    expect(created.status).toBe(201);
+    const bc = broadcastSchema.parse(await created.json());
+    for (const who of [a, c]) expect((await u.call("POST", `/api/v1/broadcasts/${bc.id}/responses`, { token: who.token })).status).toBeLessThan(300);
+    const decided = broadcastSchema.parse(await (await u.call("POST", `/api/v1/broadcasts/${bc.id}/decide`, { token: owner.token })).json());
+    const meetupOf = async (who: User) =>
+      meetupSchema.parse(await (await u.call("GET", `/api/v1/meetups/${decided.meetupId}`, { token: who.token })).json());
+    // a と c は友達でない：おたがいの表示名は見えるが、アイコンは画像がない人と同じ形
+    expect((await meetupOf(c)).participants.find((p) => p.id === a.id)).toEqual({ id: a.id, displayName: "あき", avatarUrl: null, withdrawn: false });
+    expect((await meetupOf(a)).participants.find((p) => p.id === c.id)).toEqual({ id: c.id, displayName: "しー", avatarUrl: null, withdrawn: false });
+    // 募集した人は2人の友達なので入る
+    const seenByOwner = (await meetupOf(owner)).participants;
+    expect(seenByOwner.find((p) => p.id === a.id)?.avatarUrl).toMatch(/^\/api\/v1\/avatars\//);
+    expect(seenByOwner.find((p) => p.id === c.id)?.avatarUrl).toMatch(/^\/api\/v1\/avatars\//);
+  });
+
+  it("PATCH /me の応答にも自分の avatarUrl が入る", async () => {
+    const a = await u.user();
+    const url = await upload(a);
+    const res = await u.call("PATCH", "/api/v1/me", { token: a.token, body: { displayName: "かわった" } });
+    expect(meResponseSchema.parse(await res.json()).avatarUrl).toBe(url);
+  });
+
   it("招待リンクを開いた人には、友達でなくても発行者のアイコンが入る", async () => {
     const a = await u.user("あき");
     await upload(a);
@@ -282,6 +316,40 @@ describe("GET /avatars/{avatarId}", () => {
     const url = await upload(a);
     h.clock.now += 60 * 1000;
     expect((await me(a)).avatarUrl).toBe(url);
+  });
+});
+
+describe("ログ", () => {
+  it("置く・検証の失敗・配信・404 のログに、avatarId・署名・画像の中身が出ない", async () => {
+    const a = await u.user();
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const url = new URL(await upload(a, jpeg({ exif: true })), ORIGIN);
+    await put(a, jpeg({ width: 1 }));
+    await put(a, new TextEncoder().encode("<svg/>"));
+    await fetchImage(url.pathname + url.search);
+    await fetchImage(`${url.pathname}?e=${url.searchParams.get("e")}&s=AAAAAAAAAAAAAAAAAAAAAA`);
+    const all = [...log.mock.calls, ...warn.mock.calls, ...error.mock.calls].map((args) => args.map(String).join(" ")).join("\n");
+    log.mockRestore();
+    warn.mockRestore();
+    error.mockRestore();
+    expect(all).not.toContain(idOf(url.pathname));
+    expect(all).not.toContain(url.searchParams.get("s")!);
+    expect(all).not.toContain(GPS_MARKER);
+    expect(all).not.toContain("JFIF");
+  });
+});
+
+describe("マイグレーション", () => {
+  it("users に avatar_id があり avatar_url が残らず、台帳 avatar_images とインデックスがある", async () => {
+    const columns = (await env.DB.prepare("SELECT name FROM pragma_table_info('users')").all<{ name: string }>()).results.map((r) => r.name);
+    expect(columns).toContain("avatar_id");
+    expect(columns).not.toContain("avatar_url");
+    const ledger = (await env.DB.prepare("SELECT name FROM pragma_table_info('avatar_images')").all<{ name: string }>()).results.map((r) => r.name);
+    expect(ledger).toEqual(["id", "created_at"]);
+    const indexes = (await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('users_avatar_id', 'avatar_images_created')").all<{ name: string }>()).results.map((r) => r.name).sort();
+    expect(indexes).toEqual(["avatar_images_created", "users_avatar_id"]);
   });
 });
 

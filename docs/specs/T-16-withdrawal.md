@@ -82,7 +82,7 @@ D1 の batch は前の文の結果で後続を止められない（T-01）。ど
 - 書き込みの経路は、すべて `requireActiveSession` を通す（セッションがないので401）。冪等キーの処理より前に置く。availability・invitation・notification・wish の経路は、`requireAuth` のあとに GET・HEAD 以外で確かめる `requireActiveSessionForWrites` をまとめて付ける。今 `requireAuth` だけで通っていた書き込みの経路：
   | context | 経路 |
   | --- | --- |
-  | identity | `PATCH /me` |
+  | identity | `PATCH /me`、`PUT`・`DELETE /me/avatar`（T-27） |
   | social | `POST /invite-links/:id/revoke`、`DELETE /friends/:friendId`、`apps/api/src/social/routes.ts` のそのほかの POST |
   | availability | `PUT /me/presets`、`POST`・`DELETE /availabilities`、`POST`・`DELETE /recurrence-rules`、`POST`・`DELETE /recurrence-rules/:id/exceptions` |
   | invitation | `POST /direct-invites`、`POST /direct-invites/:id/responses`、`POST /direct-invites/:id/decide`、`POST /broadcasts`、`POST`・`DELETE /broadcasts/:id/responses(/me)`、`POST /broadcasts/:id/decide`、`POST /meetups/:id/cancel` |

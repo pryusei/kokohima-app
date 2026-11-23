@@ -220,6 +220,8 @@ describe("退会のあと", () => {
       ["PATCH", "/api/v1/me/notification-preferences", { invites: true }],
       ["DELETE", "/api/v1/push/subscriptions", { endpoint: "https://fcm.googleapis.com/fcm/send/x" }],
       ["POST", "/api/v1/calendar/google/authorizations"],
+      ["PUT", "/api/v1/me/avatar", {}],
+      ["DELETE", "/api/v1/me/avatar"],
     ];
     for (const [method, path, body] of writes) {
       expect((await u.call(method, path, { token: a.token, body })).status, `${method} ${path}`).toBe(401);

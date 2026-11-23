@@ -18,6 +18,9 @@ const SOF = new Set([0xc0, 0xc2]);
 const isApp = (m: number) => m >= APP0 && m <= 0xef;
 const isRst = (m: number) => m >= 0xd0 && m <= 0xd7;
 
+const JFIF = [0x4a, 0x46, 0x49, 0x46, 0x00];
+const isJfif = (input: Uint8Array, at: number) => JFIF.every((b, i) => input[at + i] === b);
+
 const fail = (error: AvatarJpegError): AvatarJpegResult => ({ ok: false, error });
 
 export function sanitizeAvatarJpeg(input: Uint8Array): AvatarJpegResult {
@@ -73,9 +76,17 @@ export function sanitizeAvatarJpeg(input: Uint8Array): AvatarJpegResult {
     }
 
     if (marker === APP0) {
-      // JFIF は1つだけ残す（2つめ以降は除く）
-      if (!sawApp0) parts.push(input.subarray(markerStart, segmentEnd));
-      sawApp0 = true;
+      // JFIF の基本の部分（長さ16）だけを、1つだけ残す。サムネイル（Xthumbnail 以降）は捨て、長さを16に直す。
+      // JFXX など JFIF でない APP0（埋め込みのサムネイルを持てる）と、2つめ以降の APP0 は除く
+      if (!sawApp0 && length >= 16 && isJfif(input, pos + 2)) {
+        const jfif = input.slice(markerStart, markerStart + 18);
+        jfif[2] = 0x00;
+        jfif[3] = 0x10;
+        jfif[16] = 0; // Xthumbnail
+        jfif[17] = 0; // Ythumbnail
+        parts.push(jfif);
+        sawApp0 = true;
+      }
     } else if (isApp(marker) || marker === COM) {
       // Exif・XMP・位置情報など（APP1〜APP15）とコメントは除く
     } else if (KEEP.has(marker)) {

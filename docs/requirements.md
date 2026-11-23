@@ -123,7 +123,7 @@ flowchart LR
   A -->|"状態と outbox を書く"| D1[("D1<br/>データ・outbox")]
   A --> KV[("KV<br/>キャッシュ")]
   A --> RL["Rate Limiting<br/>おおよその回数の上限"]
-  A -->|"画像を返す"| R2[("R2<br/>OGP画像")]
+  A -->|"画像を返す・アイコンを置く"| R2[("R2<br/>OGP画像・アイコン（T-27）")]
   A -->|"ログイン"| ID["Google・Apple<br/>（OIDC）"]
   A -->|"連携時のトークン交換"| G
   S -->|"毎分：outbox を読む"| D1

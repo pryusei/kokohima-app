@@ -24,7 +24,7 @@
 
 | メソッド | パス | 認証 | 入力（Zodスキーマ名） | 出力 | 主なエラー |
 | --- | --- | --- | --- | --- | --- |
-| PUT | `/api/v1/me/avatar` | Bearer＋Origin | 本文：画像そのもの（`Content-Type: image/jpeg`、200KiB まで） | 200：`meResponseSchema` | 400 `validation_failed`（`errors[].code`：`unsupported_type`・`too_large`・`invalid_image`・`invalid_size`）、401、429 `rate_limited`（大きすぎる本文も413ではなく400 `too_large`） |
+| PUT | `/api/v1/me/avatar` | Bearer＋Origin | 本文：画像そのもの（`Content-Type: image/jpeg`、200KiB まで） | 200：`meResponseSchema` | 400 `validation_failed`（`errors[].code`：`unsupported_type`・`too_large`・`invalid_image`・`invalid_size`）、401、404 `not_found`（置いている間に退会した。`requireActiveSession` のあとなので、ふつうは起きない）、429 `rate_limited`（大きすぎる本文も413ではなく400 `too_large`） |
 | DELETE | `/api/v1/me/avatar` | Bearer＋Origin | なし | 204 | 401 |
 | GET | `/api/v1/avatars/{avatarId}` | なし（署名つき URL。`<img>` で読むため） | path：`avatarId`（UUID）、query：`e`（期限の Unix 秒）・`s`（署名） | 200：画像（`image/jpeg`） | 404（ない・古い・壊れた ID、署名が違う、期限切れ。すべて同じ本文なしの404） |
 
@@ -39,7 +39,7 @@
 - `avatarUrl` が入るのは次のときだけ。それ以外は、画像があっても `null`（画像がない人と区別できない）。
   - `GET /me`・`PUT /me/avatar`・`PATCH /me` の自分
   - 閲覧者と友達である相手（`friendships` に `user_id = 閲覧者, friend_id = 相手` の行がある）
-  - `POST /invite-links/lookup` の `inviter`（有効な招待リンクを示した人。T-02）
+  - `POST /invite-links/lookup` の `inviter`（有効な招待リンクを示した人。T-02）と、`POST /invite-links/accept` の `friend`（受けた時点で友達になる）
 - 退会した人は今のとおり `null`（T-16）。
 - 対象の DTO：友達の一覧・友達の詳細・友達のここ暇（`friend`）・誘い（`counterpart`）・予定（`participants`）・募集（`owner`・`recipients`）・お知らせ（`actor`）・行きたい（`owner`・`excludedUsers`）・`meResponseSchema`・招待の受け口の `inviter`。
 
@@ -68,6 +68,7 @@
 - `Content-Type` が `image/jpeg` でなければ400 `unsupported_type`。
 - 先頭が `FF D8`（SOI）、マーカーを順に読む：
   - 残す：APP0（JFIF）、DQT、DHT、DRI、SOF0（ベースライン）・SOF2（プログレッシブ）、SOS とその後の符号化されたデータ、EOI。
+  - APP0 は、識別子が `JFIF\0` の最初の1つの、基本の部分（長さ16）だけを写す。サムネイル（Xthumbnail・Ythumbnail 以降）は捨てて長さと大きさを直す。JFXX など JFIF でない APP0 と2つめ以降の APP0 は除く（埋め込みのサムネイルに、元の画像や Exif を持てるため）。
   - 除く：APP1〜APP15（Exif・XMP・位置情報など）、COM。
   - そのほかのマーカー（ほかの SOF、知らないマーカー）、長さが足りない・はみ出すセグメント、EOI がない・EOI のあとにデータがあるものは400 `invalid_image`。
   - SOF の幅・高さがどちらも256でなければ400 `invalid_size`。成分の数は1か3だけ。
@@ -142,3 +143,4 @@
 | 2026-11-23 | 初版（下書き） | 利用者の要望（アイコン画像を設定したい）。T-15 の確認事項1 への回答 |
 | 2026-11-23 | 確認事項1〜4を推奨どおりに決め、決めたこと6〜9 に移した | 利用者の回答（実装PRの最初のコミット） |
 | 2026-11-23 | 実装に合わせた：署名の比べ方（`timingSafeEqual`）、`users_avatar_id` のインデックス、手順書の置き場所、プライバシー ポリシーを今の予告に含めること（決めたこと10） | 実装PR |
+| 2026-11-23 | レビューを反映：APP0 は JFIF の基本の部分だけを残す、`accept` の `friend` にも入る、`PUT` の404 | 実装PRのレビュー（security-reviewer・spec-reviewer） |
