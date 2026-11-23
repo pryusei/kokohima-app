@@ -261,10 +261,10 @@
         "producers": [{ "binding": "JOBS", "queue": "kokohima-prod-outbox" }],
         "consumers": [{ "queue": "kokohima-prod-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-prod-outbox-dlq" }]
       },
-      // TODO: terraform output の kv_namespace_id を転記する（infra/README.md の初回の手順6）
       // リンクのプレビューの画像（docs/specs/T-08-link-preview.md「R2」）。本体は infra/terraform の kokohima-<env>-ogp-images
       "r2_buckets": [{ "binding": "OGP_IMAGES", "bucket_name": "kokohima-prod-ogp-images" }],
-      "kv_namespaces": [{ "binding": "CACHE", "id": "00000000000000000000000000000000" }],
+      // KV の ID は terraform output の kv_namespace_id（2026-11-23 に prod を apply）
+      "kv_namespaces": [{ "binding": "CACHE", "id": "15794a8d567947cbb6660b89dee21024" }],
       "ratelimits": [
         { "name": "RL_PUBLIC", "namespace_id": "3001", "simple": { "limit": 30, "period": 60 } },
         { "name": "RL_USER", "namespace_id": "3002", "simple": { "limit": 20, "period": 60 } }
@@ -274,8 +274,8 @@
         {
           "binding": "DB",
           "database_name": "kokohima-prod",
-          // TODO: terraform output の D1 ID を転記する（infra/README.md の初回の手順6）
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          // terraform output の d1_database_id（2026-11-23 に prod を apply）
+          "database_id": "72a5b048-1c37-4862-9428-1bffbcb5f679",
           "migrations_dir": "migrations"
         }
       ]
