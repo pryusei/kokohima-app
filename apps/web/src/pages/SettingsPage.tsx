@@ -129,6 +129,7 @@ function WithdrawSection({ reopen, name }: { reopen: boolean; name: string | nul
               <li>カレンダーの連携</li>
               <li>お知らせ</li>
               <li>書いたひとこと・エリア・リンク</li>
+              <li>行きたい</li>
             </ul>
             <p>友達の誘い・募集・予定の履歴には「退会したユーザー」と残ります。</p>
             <p>これからの成立した予定は「やっぱり難しい」になり、相手に知らせます。</p>

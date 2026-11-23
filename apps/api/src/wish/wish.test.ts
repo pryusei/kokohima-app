@@ -229,6 +229,20 @@ describe("上限", () => {
   });
 });
 
+describe("冪等キーで保存しない応答", () => {
+  it("同じキーの409は保存しないので、1件消してから同じキーで送り直すと201になる", async () => {
+    const a = await u.user();
+    const ids: string[] = [];
+    for (let i = 0; i < 10; i++) ids.push((await placed(a)).id);
+    const key = crypto.randomUUID();
+    expect((await place(a, {}, { "Idempotency-Key": key })).status).toBe(409);
+    expect((await u.call("DELETE", `/api/v1/wishes/${ids[0]}`, { token: a.token })).status).toBe(204);
+    const retry = await place(a, {}, { "Idempotency-Key": key });
+    expect(retry.status).toBe(201);
+    expect(retry.headers.get("Idempotent-Replayed")).toBeNull();
+  });
+});
+
 describe("見せない相手", () => {
   it("外した人からは、置いていないのと同じに見える（一覧・友達の詳細・1件）。外していない人には見える", async () => {
     const { a, b, c } = await trio();

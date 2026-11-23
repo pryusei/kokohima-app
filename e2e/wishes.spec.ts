@@ -6,7 +6,7 @@ function tomorrow() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(Date.now() + 24 * 60 * 60 * 1000));
 }
 
-test("Aが行きたいを置く（Cを外す）→ Bの「みんな」に出てCには出ない → Bが「ここで誘う」→ 宛先がAで、ひとこと入りの誘いを送れる", async ({
+test("Aが行きたいを置く（Cを外す）→ Bの「みんな」に出てCには出ない → Bが「ここで誘う」→ 宛先がAで、ひとこととリンク入りの誘いを送れる", async ({
   browser,
 }) => {
   const a = await newUser(browser, "A");
@@ -20,6 +20,7 @@ test("Aが行きたいを置く（Cを外す）→ Bの「みんな」に出てC
   await a.page.getByRole("button", { name: "＋ 行きたいを置く" }).click();
   const add = sheet(a.page, "行きたいを置く");
   await add.getByLabel("ひとこと").fill(message);
+  await add.getByLabel("リンク（任意）").fill("https://ramen.example.com/shop");
   await add.getByRole("button", { name: "外す人を選ぶ" }).click();
   await add.getByRole("checkbox", { name: c.displayName }).uncheck();
   await add.getByRole("button", { name: "置く", exact: true }).click();
@@ -38,6 +39,7 @@ test("Aが行きたいを置く（Cを外す）→ Bの「みんな」に出てC
   await friendWishes.getByRole("link", { name: "ここで誘う" }).click();
 
   await expect(b.page.getByLabel("ひとこと（任意）")).toHaveValue(message);
+  await expect(b.page.getByLabel("リンク（任意）")).toHaveValue("https://ramen.example.com/shop");
   await expect(b.page.getByLabel("相手")).toHaveValue(/.+/);
   await expect(b.page.getByLabel("相手").locator("option:checked")).toHaveText(a.displayName);
   await b.page.getByLabel("日付").fill(tomorrow());

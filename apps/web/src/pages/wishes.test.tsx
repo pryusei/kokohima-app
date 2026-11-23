@@ -92,6 +92,31 @@ describe("自分の行きたい（ここ暇のタブ）", () => {
     expect(new Headers(post?.init.headers).get("Idempotency-Key")).toBeTruthy();
   });
 
+  it("リンク付きの行きたいに OGP のカードが出る。取れなければドメインだけ", async () => {
+    availabilityTab({
+      "/api/v1/wishes": json({
+        items: [
+          wish({
+            id: uuid(501),
+            message: "取れた",
+            url: "https://shop.example.com/a",
+            linkPreview: { status: "ok", title: "お店のページ", description: "説明", siteName: "サイト", imageUrl: null },
+          }),
+          wish({
+            id: uuid(502),
+            message: "取れなかった",
+            url: "https://other.example.com/b",
+            linkPreview: { status: "failed", title: null, description: null, siteName: null, imageUrl: null },
+          }),
+        ],
+        nextCursor: null,
+      }),
+    });
+    renderApp();
+    expect(await screen.findByText("お店のページ")).toBeVisible();
+    expect(screen.getByText("other.example.com")).toBeVisible();
+  });
+
   it("友達全員のままなら、外す人は空で送る", async () => {
     const { calls } = availabilityTab({
       "/api/v1/wishes": [json({ items: [], nextCursor: null }), json(wish(), 201), json({ items: [wish()], nextCursor: null })],
