@@ -8,3 +8,5 @@ export * from "./schemas/calendar";
 export * from "./schemas/notification";
 export * from "./retention";
 export * from "./schemas/wish";
+export * from "./schemas/contact";
+export * from "./contactStart";
