@@ -4,9 +4,9 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 // zod は名前空間で読む（`import { z }` は使わない言語のファイルまで Worker と画面に入る。docs/specs/T-49-perf-small-fixes.md「1.」）
-const ZOD_NAMESPACE = {
-  name: "zod",
-  importNames: ["z"],
+// （no-restricted-imports の importNames は `import * as z` も止めてしまうので、構文で `{ z }` だけを止める）
+const ZOD_NAMED_Z = {
+  selector: "ImportDeclaration[source.value='zod'] > ImportSpecifier[imported.name='z']",
   message: 'zod は `import * as z from "zod"` で読む（使わない言語のファイルを木の剪定で落とすため）',
 };
 
@@ -30,7 +30,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],
-    rules: { "no-restricted-imports": ["error", { paths: [ZOD_NAMESPACE] }] },
+    rules: { "no-restricted-syntax": ["error", ZOD_NAMED_Z] },
   },
   {
     files: ["apps/web/**/*.{ts,tsx}"],
@@ -50,10 +50,7 @@ export default tseslint.config(
     rules: {
       "no-restricted-imports": [
         "error",
-        {
-          paths: [ZOD_NAMESPACE],
-          patterns: [{ group: ["**/e2e", "**/e2e/**"], message: "E2E用のコードは src/e2e/entry.ts からだけ読み込む" }],
-        },
+        { patterns: [{ group: ["**/e2e", "**/e2e/**"], message: "E2E用のコードは src/e2e/entry.ts からだけ読み込む" }] },
       ],
     },
   },
