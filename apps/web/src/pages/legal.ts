@@ -10,9 +10,10 @@ export const EFFECTIVE_DATE_LINE = "制定日：2026年11月23日";
 
 /**
  * 改定日の行。初めて改定したときに「改定日：YYYY年M月D日」の1つの文字列にし、次からは日付を書き換える（行は1つだけ）。
- * まだ改定していないので null。入れたら、制定日と同じく deploy:prod で本物の日付かを検査する
+ * 入れたら、制定日と同じく deploy:prod で本物の日付かを検査する。
+ * 最初の改定は T-22（行きたい）を予告なしで足したもの（docs/specs/T-19-privacy-terms.md 決めたこと16）。日付はデプロイする日にする
  */
-export const REVISION_DATE_LINE: string | null = null;
+export const REVISION_DATE_LINE: string | null = "改定日：2026年11月23日";
 
 export const CONTACT_EMAIL = "ops@kokohima.app";
 

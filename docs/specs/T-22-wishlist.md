@@ -220,3 +220,4 @@
 | 2026-11-23 | 下書き | 対話で決めた内容をまとめた |
 | 2026-11-23 | 見せない相手の置き換えで友達でなくなった人の行を残す、`link_preview_refs` の列と `CHECK`、`Retry-After`、やり直し、`requireActiveSession`、`?wish` の持ち主の判定と今のクエリとの関係、友達の並び順（決めたこと12）、戻したときのリスク（決めたこと11）と画像の URL のリスク、ログ、テストと実装PRで直すものを足した | security-reviewer・spec-reviewer のレビュー、利用者の回答 |
 | 2026-11-23 | 実装した。退会の削除は後始末の段ではなく入口を止める段の batch で行う（友達関係と同じ batch で消え、すぐに見えなくなる）。`createWishRequestSchema` の `area`・`url` は省略すると `null`（誘い・募集の作成と同じ）。`retention.ts` の定数名は `wishPostsDays` | T-22 実装PR |
+| 2026-11-23 | 公開は予告なしで行った（プライバシー ポリシーの最初の改定。改定日 2026年11月23日。docs/specs/T-19-privacy-terms.md 決めたこと16） | 利用者の判断 |
