@@ -33,6 +33,7 @@ export const REVISION_NOTICE_LINE: string | null =
 export const PRIVACY_REVISION_CHANGES: readonly string[] | null = [
   "「5.」「6.」「7.」：外国の事業者に取り扱いを任せるときの書き方を直し、「7.」に、外国の名称、事業者がとる措置、その確かめ方などを書きました。",
   "「12.」：「7.」の情報の提供を求められることを書きました。",
+  "「2.」「3.」「5.」「7.」「8.」「12.」：アプリの中の問い合わせのフォームを足したことに合わせて、預かる情報（問い合わせの種類と内容）、使う目的、任せる事業者（Slack）、保存する期間、開示などの求め方を書きました。",
 ];
 export const TERMS_REVISION_CHANGES: readonly string[] | null = [
   "第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。",
