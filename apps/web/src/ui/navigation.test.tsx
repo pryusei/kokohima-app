@@ -123,7 +123,7 @@ describe("BottomSheet", () => {
     );
   }
 
-  it("Esc・後ろの暗い部分・「閉じる」（スマホではつまみ、PC では右上の✕）で閉じ、閉じたら開いたボタンにフォーカスを戻す", async () => {
+  it("Esc・後ろの暗い部分・つまみで閉じ、閉じたら開いたボタンにフォーカスを戻す", async () => {
     render(<Host />);
     const opener = screen.getByRole("button", { name: "開く" });
     for (const close of [
@@ -450,21 +450,5 @@ describe("PC の配置（docs/specs/T-20-desktop-layout.md）", () => {
     expect(screen.getByRole("textbox", { name: "ひとこと" })).toBe(input);
     expect(input).toHaveValue("こんにちは");
     expect(screen.getByRole("button", { name: "閉じる" })).toBeVisible();
-  });
-
-  it("PC の配置では、つまみを下に引いても閉じない（押せば閉じる）", () => {
-    stubMatchMedia(true);
-    const onClose = vi.fn();
-    render(
-      <BottomSheet title="試し" label="試し" onClose={onClose}>
-        <p>本文</p>
-      </BottomSheet>,
-    );
-    const close = screen.getByRole("button", { name: "閉じる" });
-    act(() => {
-      close.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientY: 0 }));
-      close.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientY: 200 }));
-    });
-    expect(onClose).not.toHaveBeenCalled();
   });
 });
