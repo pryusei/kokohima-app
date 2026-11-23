@@ -133,9 +133,10 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
         </Section>
       )}
       {friend.data && <FriendWishList friendId={friendId} />}
+      {/* 重なれば「あそぼ」、重ならなければ「ここどう？」になるので「誘う」とだけ書く（T-34） */}
       {friend.data && (
         <ButtonLink to={`/invites/new?friend=${encodeURIComponent(friendId)}`} variant="primary" block>
-          ここどう？と誘う
+          誘う
         </ButtonLink>
       )}
       {friend.data && <Settings friend={friend.data} />}

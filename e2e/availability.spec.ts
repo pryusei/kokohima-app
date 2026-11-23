@@ -20,6 +20,9 @@ async function addNight(page: Page, date: string) {
   await expect(page.getByRole("list", { name: "自分のここ暇" }).getByText(/夜 19:00〜23:00/)).toBeVisible();
 }
 
+/** 「みんな」のここ暇の一覧（上の「誰を誘う？」の顔の列とは分けて探す。T-34） */
+const everyoneSlots = (page: Page) => page.getByRole("region", { name: "みんなのここ暇" });
+
 async function openFriendDetail(page: Page, displayName: string) {
   await page.goto("/friends");
   await friendList(page).getByRole("link", { name: displayName }).click();
@@ -49,7 +52,7 @@ test("AがBに「見せない」にすると、Bの「みんな」と友達の�
   await addNight(a.page, tomorrow.date);
 
   await b.page.goto("/");
-  await expect(b.page.getByRole("link", { name: a.displayName })).toBeVisible();
+  await expect(everyoneSlots(b.page).getByRole("link", { name: a.displayName })).toBeVisible();
   await openFriendDetail(b.page, a.displayName);
   await expect(b.page.getByRole("list", { name: "友達のここ暇" })).toContainText("夜 19:00〜23:00");
 
@@ -62,7 +65,11 @@ test("AがBに「見せない」にすると、Bの「みんな」と友達の�
 
   await b.page.goto("/");
   await expect(b.page.getByText("まだ友達のここ暇はありません")).toBeVisible();
-  await expect(b.page.getByRole("link", { name: a.displayName })).toHaveCount(0);
+  await expect(everyoneSlots(b.page).getByRole("link", { name: a.displayName })).toHaveCount(0);
+  // 「誰を誘う？」の顔の列には、見せない相手 A も、ここ暇がない C も、同じ形で出る（T-34）
+  const faces = b.page.getByRole("region", { name: "誰を誘う？" });
+  await expect(faces.getByRole("link", { name: `${a.displayName}を誘う` })).toBeVisible();
+  await expect(faces.getByRole("link", { name: `${c.displayName}を誘う` })).toBeVisible();
 
   for (const friend of [a, c]) {
     await openFriendDetail(b.page, friend.displayName);
