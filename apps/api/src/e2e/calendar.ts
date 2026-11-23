@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import type { Context } from "hono";
-import { z } from "zod";
+import * as z from "zod";
 import { syncConnection } from "../calendar/application/sync";
 import type { AppEnv, GoogleEndpoints } from "../env";
 import { problem } from "../http/problem";

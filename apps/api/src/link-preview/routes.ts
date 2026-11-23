@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { z } from "zod";
+import * as z from "zod";
 import type { AppEnv } from "../env";
 import { problem } from "../http/problem";
 import { rateLimit } from "../http/rateLimit";

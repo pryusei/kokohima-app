@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 // 問い合わせ（docs/specs/T-24-contact.md「API」）。API・consumer・画面で同じ値を使う
 

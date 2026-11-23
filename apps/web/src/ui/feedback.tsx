@@ -30,14 +30,23 @@ export function Loading() {
 }
 
 /** 読み込めないとき。retry があれば「もう一度」を出す */
-export function LoadError({ text = "読み込めませんでした。もう一度お試しください", retry }: { text?: string; retry?: () => void }) {
+export function LoadError({
+  text = "読み込めませんでした。もう一度お試しください",
+  retry,
+  retrySize = "s",
+}: {
+  text?: string;
+  retry?: () => void;
+  /** 「もう一度」の大きさ。その画面の操作が「もう一度」だけのときは m（docs/specs/T-49-perf-small-fixes.md「4.」） */
+  retrySize?: "s" | "m";
+}) {
   return (
     <div className="flex items-center gap-3 rounded-m bg-surface-sunken px-4 py-3">
       <p role="status" className="min-w-0 flex-1">
         {text}
       </p>
       {retry && (
-        <Button size="s" onClick={retry}>
+        <Button size={retrySize} onClick={retry}>
           もう一度
         </Button>
       )}

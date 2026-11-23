@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 // 認証（identity）のリクエストとレスポンス。docs/specs/T-01-auth.md の「API」に対応する
 

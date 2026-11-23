@@ -23,6 +23,7 @@ description: フロントエンド（apps/web）でのデータ取得と更新�
 ## 取得の仕方
 - 独立したデータは並列に取る（useQueries、または画面の入り口でprefetch）。取得の連鎖（ウォーターフォール）を作らない
 - 受信した誘いはウィンドウに戻ったときに取り直す（refetchOnWindowFocus）。細かい即時性は通知に任せ、短い間隔のポーリングはしない
+- 既定（`apps/web/src/queryClient.ts`）：`staleTime` は30秒（30秒の間は、画面を移っても・ウィンドウに戻っても取り直さない。更新のあとは `invalidateQueries` で取り直す）。4xx（`ApiError` の400〜499）は再試行しない。通信できなかった・5xx は3回まで。クエリごとに `retry` を書くのは、429 を5xx と分けたいときなど既定と違うときだけ（docs/specs/T-49-perf-small-fixes.md）
 - クエリのキャッシュをlocalStorageなどに永続化しない（個人情報を含むため）
 
 ## テスト
