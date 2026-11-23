@@ -1,3 +1,4 @@
+import { RETENTION, RETENTION_UNIT_MS } from "@kokohima/shared";
 import { and, eq, exists, gt, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { outboxRow } from "../../shared/outbox/schema";
@@ -32,7 +33,7 @@ export async function deleteExpiredLoginRecords(db: Db, now: number) {
 }
 
 /** 失効・期限切れから掃除までの日数（docs/specs/T-01-auth.md「データ」） */
-export const DEAD_SESSION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const DEAD_SESSION_RETENTION_MS = RETENTION.deadSessionsDays * RETENTION_UNIT_MS.day;
 /** 1回の掃除で消す行の数の上限（毎分の Cron の処理を短く保つ） */
 export const SESSION_CLEANUP_LIMIT = 500;
 

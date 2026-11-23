@@ -32,6 +32,15 @@ describe("設定", () => {
     expect(screen.getByRole("link", { name: /時間帯プリセット/ })).toHaveAttribute("href", "/settings/presets");
     expect(screen.getByRole("link", { name: /通知の設定/ })).toHaveAttribute("href", "/settings/notifications");
     expect(screen.getByRole("link", { name: /^アカウント/ })).toHaveAttribute("href", "/settings/account");
+    expect(screen.getByRole("link", { name: /アプリとして使う/ })).toHaveAttribute("href", "/settings/install");
+  });
+
+  it("「アプリとして使う」：設定から開き、追加の案内を出す（T-25）", async () => {
+    window.history.replaceState(null, "", "/settings/install");
+    mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/notifications/unread-count": json({ count: 0 }) });
+    renderApp();
+    expect(await screen.findByRole("heading", { name: "アプリとして使う", level: 1 })).toBeVisible();
+    expect(screen.getByText(/ホーム画面に追加/)).toBeVisible();
   });
 
   it("時間帯プリセット：境界を変えて保存する（ここ暇タブから移した）", async () => {
@@ -70,5 +79,41 @@ describe("設定", () => {
     // 保存してもフォームは作り直されず、「保存しました」と入力した値が残る
     expect(await within(section).findByText("保存しました")).toBeVisible();
     expect(within(section).getByLabelText("表示名")).toHaveValue("ゆうき");
+  });
+
+  describe("アカウント：新しい端末のログインのお知らせから開いたとき（docs/specs/T-11-design.md「画面のつながり」）", () => {
+    const NOTICE = "新しい端末でのログインのお知らせから開きました。心当たりがなければ、「すべての端末からログアウト」を押してください。";
+    let scrolled: HTMLElement[] = [];
+    beforeEach(() => {
+      scrolled = [];
+      Element.prototype.scrollIntoView = vi.fn(function (this: HTMLElement) {
+        scrolled.push(this);
+      });
+    });
+    afterEach(() => {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    });
+    const open = (url: string) => {
+      window.history.replaceState(null, "", url);
+      mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/me": json(me("ゆう")) });
+      renderApp();
+    };
+
+    it("?from=new_login なら、ログアウトの節に説明を出し、その節へスクロールする。フォーカスは動かさない", async () => {
+      open("/settings/account?from=new_login");
+      const section = (await screen.findByRole("heading", { name: "ログアウト" })).closest("section") as HTMLElement;
+      expect(within(section).getByText(NOTICE)).toBeVisible();
+      await waitFor(() => expect(scrolled).toEqual([section]));
+      expect(section).not.toContainElement(document.activeElement as HTMLElement);
+      // 説明は静かな文で、警告の色を使わない
+      expect(within(section).getByText(NOTICE).className).not.toMatch(/red|rose|error|danger|warn/);
+    });
+
+    it.each(["/settings/account", "/settings/account?from=other"])("%s では説明を出さず、スクロールしない", async (url) => {
+      open(url);
+      await screen.findByRole("heading", { name: "ログアウト" });
+      expect(screen.queryByText(NOTICE)).toBeNull();
+      expect(scrolled).toEqual([]);
+    });
   });
 });

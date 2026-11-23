@@ -45,6 +45,14 @@ export const keys = {
     unread: () => ["notifications", "unread"] as const,
     preferences: () => ["notifications", "preferences"] as const,
   },
+  // 行きたい（docs/specs/T-22-wishlist.md）。置く・消す・見せる相手の変更で一覧が変わるので、まとめて無効にできるよう all を持つ
+  wishes: {
+    all: () => ["wishes"] as const,
+    mine: () => ["wishes", "mine"] as const,
+    detail: (id: string) => ["wishes", "detail", id] as const,
+    friends: () => ["wishes", "friends"] as const,
+    friend: (id: string) => ["wishes", "friend", id] as const,
+  },
   inviteLinks: {
     list: () => ["invite-links", "list"] as const,
   },
