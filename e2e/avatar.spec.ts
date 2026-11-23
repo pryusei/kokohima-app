@@ -42,14 +42,14 @@ test("設定で画像を選んでアイコンにし、友達の一覧にも出�
   // 自分のアイコンが画像になる（署名つき URL を読めている）
   const mine = section.locator('img[src^="/api/v1/avatars/"]');
   await expect(mine).toBeVisible();
-  await expect.poll(() => mine.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(256);
+  await expect.poll(() => mine.evaluate((img) => (img as unknown as { naturalWidth: number }).naturalWidth)).toBe(256);
 
   // 友達の一覧に、a のアイコンが画像で出る
   await b.page.goto("/friends");
   const row = friendList(b.page).getByRole("listitem").filter({ hasText: a.displayName });
   const theirs = row.locator('img[src^="/api/v1/avatars/"]');
   await expect(theirs).toBeVisible();
-  await expect.poll(() => theirs.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(256);
+  await expect.poll(() => theirs.evaluate((img) => (img as unknown as { naturalWidth: number }).naturalWidth)).toBe(256);
 
   // 外すと1文字めに戻る
   await section.getByRole("button", { name: "アイコンを外す" }).click();
