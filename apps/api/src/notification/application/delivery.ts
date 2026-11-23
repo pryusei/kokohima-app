@@ -1,3 +1,4 @@
+import { RETENTION, RETENTION_UNIT_MS } from "@kokohima/shared";
 import type { AppDeps, Bindings } from "../../env";
 import {
   activeSessionIds,
@@ -176,9 +177,9 @@ export async function deliver(ctx: Ctx, notificationId: string) {
   return done("email", await sendByEmail(ctx, n, limits, day, timezone));
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_MS = RETENTION_UNIT_MS.day;
 /** お知らせを残す期間（作ってから30日。ちょうど30日の行は残す。docs/specs/T-17-retention.md「3.」） */
-export const NOTIFICATION_RETENTION_MS = 30 * DAY_MS;
+export const NOTIFICATION_RETENTION_MS = RETENTION.notificationsDays * DAY_MS;
 /** 1回の掃除で消すお知らせの数の上限 */
 export const NOTIFICATION_CLEANUP_BATCH = 1000;
 

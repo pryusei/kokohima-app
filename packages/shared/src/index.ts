@@ -6,3 +6,4 @@ export * from "./schemas/availability";
 export * from "./schemas/invitation";
 export * from "./schemas/calendar";
 export * from "./schemas/notification";
+export * from "./retention";
