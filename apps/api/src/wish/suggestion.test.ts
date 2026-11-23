@@ -119,8 +119,8 @@ describe("domain", () => {
       },
       urls,
     );
-    // 長い理由は切って残し、URL は検索の結果の方（末尾の /・大文字のホスト）に差し替える
-    expect(out.map((c) => c.url)).toEqual(["https://a.example/1", "https://a.example/2/", "https://A.example/3"]);
+    // 長い理由は切って残し、URL は検索の結果の方（末尾の / つき）に差し替える。ホストは linkUrlSchema で小文字になる
+    expect(out.map((c) => c.url)).toEqual(["https://a.example/1", "https://a.example/2/", "https://a.example/3"]);
     expect(out[1]?.reason.endsWith("…")).toBe(true);
     expect(acceptCandidates({ candidates: [] }, urls)).toEqual([]);
     expect(acceptCandidates("nope", urls)).toEqual([]);
@@ -138,6 +138,16 @@ describe("domain", () => {
     );
     expect(r.accepted.map((c) => c.url)).toEqual(["https://www.shop.example/a?ref=search", "https://shop.example/b"]);
     expect(r.dropped.notInResults).toBe(0);
+  });
+
+  it("差し替えに使う検索の結果の URL も linkUrlSchema を通す（認証情報入り・制御文字入りの結果は使わない）", () => {
+    const bad = ["https://user:pass@shop.example/a", "https://shop.example/b\u0007", `https://shop.example/${"x".repeat(2100)}`];
+    const r = reviewCandidates(
+      { candidates: [candidate("https://shop.example/a"), candidate("https://shop.example/b"), candidate("https://shop.example/x")] },
+      bad,
+    );
+    expect(r.accepted).toEqual([]);
+    expect(r.dropped.notInResults).toBe(3);
   });
 
   it("ゆるいキーが検索の結果の2つ以上に当たるときは、どれか決められないので捨てる。ちょうど一致するならそのまま", () => {
