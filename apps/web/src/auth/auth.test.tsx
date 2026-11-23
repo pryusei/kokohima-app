@@ -1,4 +1,4 @@
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch, ApiError, setUnauthenticatedHandler } from "../api/client";
@@ -165,7 +165,9 @@ describe("ログアウトの失敗", () => {
     expect(screen.getByText("オフラインです。つながると最新の内容になります")).toBeVisible();
     onLine.mockReturnValue(true);
     act(() => window.dispatchEvent(new Event("online")));
-    expect(screen.getByRole("button", { name: "ログアウト" })).toBeEnabled();
+    // useSyncExternalStore の購読は描画のあとの effect で付くので、負荷が高いと online の通知が先に来ることがある。
+    // そのときは購読の時点で値を取り直して描画し直すので、押せるようになるまで待つ
+    await waitFor(() => expect(screen.getByRole("button", { name: "ログアウト" })).toBeEnabled());
     expect(screen.queryByText("オフラインの間はログアウトできません")).toBeNull();
     expect(calls.some((c) => c.url.startsWith("/api/v1/auth/logout"))).toBe(false);
     onLine.mockRestore();

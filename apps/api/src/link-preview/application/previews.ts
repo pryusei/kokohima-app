@@ -1,4 +1,4 @@
-import type { LinkPreview } from "@kokohima/shared";
+import { RETENTION, type LinkPreview } from "@kokohima/shared";
 import type { AppDeps, Bindings } from "../../env";
 import { IMAGE_TYPES, type ImageType } from "../domain/image";
 import * as repo from "../infra/repository";
@@ -55,9 +55,9 @@ export async function imageFor(ctx: Ctx, imageId: string): Promise<{ body: Reada
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
-export const PREVIEW_RETENTION_MS = 30 * DAY_MS;
+export const PREVIEW_RETENTION_MS = RETENTION.linkPreviewsDays * DAY_MS;
 export const FETCHING_ABANDONED_MS = HOUR_MS;
-export const IMAGE_GRACE_MS = HOUR_MS;
+export const IMAGE_GRACE_MS = RETENTION.linkPreviewImageGraceHours * HOUR_MS;
 export const CLEANUP_LIMIT = 100;
 
 /** 参照されない古い結果の行と、台帳から参照されない画像を消す（毎分。1回で扱う行の数は CLEANUP_LIMIT まで） */

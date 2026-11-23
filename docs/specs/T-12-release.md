@@ -1,11 +1,11 @@
 # T-12 仕様書：Web としての最初のリリースの準備
 
-- 状態：下書き
+- 状態：実装済み
 - タスク票：docs/tasks/T-12-release.md
 - 関係する要件：要求定義書「残りの論点」（XSS対策・Content-Security-Policy）、「AI時代の攻撃を前提にした運用」（使わないルートは閉じる）、F-01（ログイン）。issue pryusei/kokohima-app#42（アプリの中で行う部分）、#52
 
 ## 概要
-- 最初のリリースは、友達だけ（Google のテストユーザーに登録した100人まで）に向けた Web アプリ（PWA）にする。アプリストアには出さない（利用者と決めた）。
+- 最初のリリースは、友達だけに向けた Web アプリ（PWA）にする（Google の OAuth は審査を受けずに本番の公開ステータスにする。決定事項7）。アプリストアには出さない（利用者と決めた）。ホーム画面への追加の体験は docs/specs/T-25-installable-pwa.md で整える。
 - 画面（`apps/web` のビルド）を、API と同じ Worker の静的アセットとして `https://kokohima.app` から出す。`/api` と画面が同じオリジンになるので、今の `__Host-` の Cookie と Origin の検査がそのまま使える。
 - ログインは Google だけにする。Sign in with Apple は設定で止め、コードは残す（Apple Developer Program を使わない。利用者と決めた）。
 - 画面と API の応答に、ブラウザ向けのセキュリティのヘッダー（CSP・HSTS など）を付ける。
@@ -26,7 +26,7 @@
 - identity：Apple の経路の開け閉め（設定値で判断）。
 - `apps/web`：ログインの画面と招待の画面で、Apple のボタンを出すかを、ビルドのときの設定値で決める。
 
-### 実装PRで直すもの
+### 実装PRで直したもの
 - T-01 の仕様書：ログインの方法に「最初のリリースでは Apple は止める（T-12）」と、`APPLE_LOGIN_ENABLED` を足す。
 - 要求定義書：F-01 の行に「最初のリリースは Google だけ」、「残りの論点」の XSS対策 を済みに（CSP は T-12）。構成図に「Web は API と同じ Worker の静的アセット」。
 - infra/README.md：デプロイの手順（D1 のマイグレーション、`deploy:prod`）。
@@ -59,7 +59,7 @@
 ## 振る舞い
 
 ### 振り分け（`apps/api/src/worker.ts`）
-- wrangler の `assets` は prod の環境にだけ書く（ローカルの開発と E2E は、今までどおり vite が画面を出し、`/api` を wrangler dev へ中継する）。
+- wrangler の `assets` は prod の環境と、デプロイしないローカル専用の `assets` の環境（本番と同じ形の E2E 用）にだけ書く（ローカルの開発と E2E は、今までどおり vite が画面を出し、`/api` を wrangler dev へ中継する）。
   - `directory`：`../web/dist`、`binding`：`ASSETS`、`not_found_handling`：`single-page-application`、`run_worker_first`：`true`。
 - Worker の `fetch` は次のとおりに振り分ける。振り分けとヘッダーの選び方は、同じ関数（`isApiPath(pathname)`：`URL.pathname` がデコードせずに `/api/` で始まるか）で決める。
   - パスが `/api/` で始まる：今までどおり Hono のアプリ。Hono が404を返しても、画面の `index.html` には置き換えない。
@@ -83,13 +83,15 @@
 - 画面の側（`/api/` 以外）の応答には、`Content-Type` に関係なく（HTML・SVG・304 など）、次の CSP を付ける。
   - `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`
   - インラインの script・style は許さない。ビルドした `index.html` にインラインの script・style があれば、実装PRで外に出す（CSP を緩めない）。
+  - `eval`・`new Function` も許さない。Zod は最初の検証で `new Function` を試し、捕まえても CSP の違反が報告されるので、画面の入口（`apps/web/src/main.tsx` が最初に読む `zodConfig.ts`）で `config({ jitless: true })` にする（検証の結果は変わらない。本番と同じ形の E2E で見つけた）。
   - 画像は自分のオリジンだけ（OGP の画像は T-08 で自分のオリジンから出している。アバターの URL は今は外から読まない）。
 - API の応答（`/api/`）で、経路が CSP を付けていなければ `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` を付ける（JSON をブラウザで開いても何も読み込ませない）。
-- キャッシュ：画面の側の応答のうち、パスが `/sw.js` の応答と、`Content-Type` が `text/html` の応答（SPA の入口。304 で `Content-Type` がない応答は、パスが `/`・`.html` で終わる・拡張子がない（SPA の経路）なら HTML とみなす）には `Cache-Control: no-cache` を付ける（Service Worker と画面の入口が古いまま残らないように）。ほかの画面のファイルは、静的アセットの既定のまま。
+- `ASSETS` のバインディングがない環境（ローカル・E2E・単体テスト）では、Hono が返すすべての応答（`/__e2e__/*` も含む）を API の応答として扱い、API のヘッダーを付ける。
+- キャッシュ：画面の側の応答のうち、パスが `/sw.js` の応答と、`Content-Type` が `text/html` の応答（SPA の入口。`Content-Type` がない304は、パスが `/`・`.html` で終わる・拡張子がない（SPA の経路）なら HTML とみなす）には `Cache-Control: no-cache` を付ける（Service Worker と画面の入口が古いまま残らないように）。ほかの画面のファイルは、静的アセットの既定のまま。
 
 ### Apple のログインを止める
 - 変数 `APPLE_LOGIN_ENABLED`（秘密ではない）。`"1"` のときだけ Apple の経路が動く。ほかの値・未設定は止める（fail closed）。
-  - ローカル・e2e・単体テストは `"1"`（今の Apple のテストを残す）、staging・prod は `"0"`。置き場は wrangler.jsonc のトップレベルの `vars`、`env.e2e.vars`（e2e はトップレベルの vars を引き継がない）、`env.staging.vars`・`env.prod.vars`、`vitest.config.ts` の bindings。
+  - ローカル・e2e・assets・単体テストは `"1"`（今の Apple のテストを残す）、staging・prod は `"0"`。置き場は wrangler.jsonc のトップレベルの `vars`、`env.e2e.vars`・`env.assets.vars`（env の vars はトップレベルの vars を引き継がない）、`env.staging.vars`・`env.prod.vars`、`vitest.config.ts` の bindings。
   - `env.ts` の `Bindings` に `APPLE_LOGIN_ENABLED?: string` と `ASSETS?: Fetcher` を足す。
 - 止めたときの経路の振る舞いは上の「API」の表のとおり。Apple の秘密（`APPLE_PRIVATE_KEY` など）が未設定でも、止めた環境では読まない。
   - 判定は、経路（routes）と application（`startLogin`・`handleCallback`）の両方に置く。経路では、本文の解析（`parseBody`）・`startLogin`・結びつけ Cookie の発行より前に判定する（「何も読まず、何も書かない」を順番で保証する。新しい結びつけ Cookie は発行しない。`loginFailed` と同じく、結びつけ Cookie を消す `Set-Cookie` だけは出る）。
@@ -121,12 +123,14 @@
 - `pnpm --filter api build:prod`：`apps/web` をビルドしてから、`wrangler deploy --dry-run --env prod --outdir dist`。CI の本番のビルドの検査は、今の検査に加えて次を確かめる。
   - `apps/web/dist/index.html` があること。
   - `apps/web/dist` に E2E 用の名前（`__e2e__` など、今の検査と同じ一覧）がないこと。
-  - `apps/web/dist` に `Appleでログイン` と `auth/apple/start` がないこと（本番のビルドで Apple のボタンが出ない）。
+  - `apps/web/dist` に `Appleでログイン` と、Apple のボタンの目印 `data-provider="apple-login"` がないこと（本番のビルドで Apple のボタンが出ない。文言が変わっても目印で見つける。URL は実行時に組み立てるので、`auth/apple/start` の文字列では見つからない）。
   - `apps/web/dist` に `_headers`・`_redirects` がないこと（ヘッダーと振り分けはコードだけで決める）。
   - `apps/web/dist/index.html` にインラインの script・style（`style=` の属性を含む）がないこと。
-  - wrangler の設定：prod の `assets.run_worker_first` が `true`・`not_found_handling` が `single-page-application`、トップレベルと prod の `workers_dev`・`preview_urls` が `false`、e2e に `routes` がない（設定が変わってヘッダーが付かなくなるのを CI で気づくため）。
-- `pnpm --filter api deploy:prod`（新しく足す）：`apps/web` をビルドし、CI と同じ画面のビルドの検査（Apple のボタン・E2E の名前など）を通してから `wrangler deploy --env prod`。手元の `.env.local` などが本番のビルドに入り込んでも、ここで止まる。人だけが実行する（Claude は実行しない）。
-- `pnpm --filter api db:migrate:prod`（新しく足す）：`wrangler d1 migrations apply kokohima-prod --remote --env prod`。人だけが実行する。
+  - wrangler の設定：prod の `assets.run_worker_first` が `true`・`not_found_handling` が `single-page-application`・`binding` が `ASSETS`、トップレベルと prod の `workers_dev`・`preview_urls` が `false`、prod の `routes` が `kokohima.app`（`custom_domain`）だけ、prod の `APPLE_LOGIN_ENABLED` が `"0"` で `E2E_MODE` がない、トップレベルと prod の `main` が `src/index.ts`、どの環境も `workers_dev`・`preview_urls` を `true` にしない、prod 以外の環境とトップレベルに `routes` がない（設定が変わってヘッダーが付かなくなるのを CI で気づくため）。
+- `pnpm --filter api deploy:prod`（新しく足す）：`apps/web` をビルドし、CI と同じ検査（画面のビルド・wrangler の設定・`--dry-run` で作った API のビルドに E2E 用の経路がないこと。`apps/api/scripts/check-*.mjs`）を通してから `wrangler deploy --env prod`。手元の `.env.local` などが本番のビルドに入り込んでも、ここで止まる。人だけが実行する（Claude は実行しない）。
+  - `deploy:prod` だけ、転記を忘れた値も検査する（`check-wrangler-config.mjs --deploy`）：prod の `vars.GOOGLE_CLIENT_ID`・`vars.VAPID_PUBLIC_KEY` が空、または prod の D1 の `database_id`・KV の `id` がすべて0の仮の値なら止まる。CI の `build:prod` は TODO のままの設定でビルドするので、この検査を付けない。
+  - `deploy:prod` だけ、プライバシー ポリシーと利用規約の制定日が決まっているかも検査する（`check-web-dist.mjs --deploy`。「制定日：YYYY年M月D日」でなければ止まる。T-19「5.」）。「制定日：」が `dist` にちょうど1回あることは、CI の `build:prod` でも毎回確かめる。
+- `pnpm --filter api db:migrate:prod`（新しく足す）：`wrangler d1 migrations apply DB --remote --env prod`（prod の `DB` のバインディング＝`kokohima-prod`）。人だけが実行する。
 
 ### 人が行う作業（デプロイの前。#52 に載せる）
 1. Cloudflare：`kokohima.app` の登録（済み）。Workers の有料プラン（Queues に要る。NF-09）。API トークンは用途ごとに分ける（要求定義書「APIトークンは用途ごとに分ける」）：
@@ -139,11 +143,18 @@
    - `kokohima.app` に既存の A・AAAA・CNAME の記録があれば消す（カスタムドメインを付けられないため）
    - メール転送で `ops@kokohima.app` を人のアドレスへ転送する（`VAPID_SUBJECT`）
 2. Terraform（infra/README.md の初回の手順を prod で）：状態ファイル用の R2 バケット `kokohima-tfstate` を作る → `infra/terraform/envs/prod` で `terraform init -backend-config=...` → `plan -var account_id=...` → `apply`（D1・KV・R2・Queues）。出力の D1・KV の ID を wrangler の prod に転記する PR を出す（Claude に頼んでよい）。
-3. Google Cloud：プロジェクトで Google Calendar API を有効にする。同意画面（ユーザーの種類は「外部」、公開ステータスは「テスト」）と、本番の OAuth クライアント（ウェブ アプリケーション）。
+3. Google Cloud：プロジェクトで Google Calendar API を有効にする。同意画面（ユーザーの種類は「外部」、公開ステータスは「本番」。審査は受けない。決定事項7）と、本番の OAuth クライアント（ウェブ アプリケーション）。
    - 承認済みのリダイレクト URI：`https://kokohima.app/api/v1/auth/google/callback` と `https://kokohima.app/api/v1/calendar/google/callback`
-   - 同意画面のスコープ：`openid`・`email`・`profile` と、カレンダーの `calendar.freebusy`・`calendar.app.created`（T-06 決定事項1）
-   - 友達の Google アカウントをテストユーザーに足す。クライアント ID を wrangler に転記。
-   - 既知の制約：公開ステータスが「テスト」の間は、Google の更新用トークンが7日で失効するので、カレンダーの連携が毎週切れて `needs_reauth` になり、「つなぎ直し」のお知らせ（T-06・T-07 の `CalendarReauthRequired`）が届く（決定事項7。一般公開のときに審査を受けて解消する）。
+   - 同意画面のスコープ：`openid`・`email` と、カレンダーの `calendar.freebusy`・`calendar.app.created`（T-06 決定事項1）。`profile` は入れない（ログインの要求は `openid email` だけ。T-01。docs/specs/T-19-privacy-terms.md 決めたこと8）。すでに入れていれば、同意画面の「データアクセス」で `profile` を消す。
+   - 同意画面の「ブランディング」：アプリのホームページ `https://kokohima.app`、プライバシー ポリシー `https://kokohima.app/privacy`、利用規約 `https://kokohima.app/terms`、承認済みのドメイン `kokohima.app`、サポートのメール `ops@kokohima.app`。ロゴは入れない（決定事項7）。
+   - クライアント ID を wrangler に転記。
+   - プライバシー ポリシーと利用規約（T-19）をデプロイしてから（制定日を決めないと `deploy:prod` が止まる）、同意画面の「対象」で「アプリを公開」を押し、公開ステータスを「本番」にする（テストユーザーの登録は要らない）。押したときの画面の説明（審査の要否・人数の上限）を確かめ、下の「本番にしたときの扱い」と違えば、この仕様書を直す。
+   - 本番にしたときの扱い（決定事項7。公式の資料はこの作業環境から読めなかったため、公開の画面の説明で確かめる）：
+     - ログイン（`openid`・`email`。審査の要らないスコープ）は、Google アカウントがあれば誰でもでき、確認されていないアプリの警告は出ない。
+     - カレンダーの連携（`calendar.freebusy`・`calendar.app.created`。審査の対象のスコープ）では、「Google はこのアプリを確認していません」の画面が出る。利用者は「詳細」から進む。審査を受けるまで、連携できる人数に上限（許可した人の累計で100人）がある。
+     - ログインできる人数には上限がない。
+     - 「テスト」のときの、更新用トークンが7日で失効する制約はなくなる（毎週の `needs_reauth` と「つなぎ直し」のお知らせは起きない）。
+   - 誰でも Google でログインしてアカウントを作れるようになるが、ここ暇・誘い・募集が見えるのは招待リンクで友達になった相手だけ（T-02・T-03）なので、知らない人に友達の暇は見えない。
 4. Resend：`kokohima.app` を送信ドメインに足し、表示された記録（SPF・DKIM と、送信用のサブドメインの MX）に DMARC を加えて、Terraform の `cloudflare_dns_record` で足す PR を出す（infra/README.md「管理画面で手動変更しない」。値を受け取れば Claude が PR を書く）。
 5. 鍵と秘密（prod）：
    - VAPID の鍵の組を作る（秘密鍵は P-256 の PKCS#8 の PEM、公開鍵は base64url の非圧縮の点。T-07）。公開鍵を wrangler に転記する。
@@ -162,6 +173,7 @@
    - `GET /api/v1/health` に共通のヘッダーと `default-src 'none'` の CSP が付く。画面の応答に画面用の CSP が付く。
    - `GET /api/v1/auth/apple/start` が `/login?error=login_failed` への303で、新しい結びつけ Cookie が付かない（消す `Set-Cookie` だけ）。`POST /api/v1/auth/apple/callback` が404。
    - `POST /` と `POST /__e2e__/login` が405。
+   - `curl -I https://kokohima.app//example.com/index.html` などの `//` で始まるパスが、ほかのサイトへのリダイレクト（`Location` が `//example.com/...` や `https://example.com/...`）にならない（画面の `index.html` か、`kokohima.app` の中への応答）。
    - `wrangler secret list --env prod` に Apple の秘密と `E2E_MODE` がなく、vars にも `E2E_MODE` がない。
    - ブラウザのコンソールに CSP の違反が0件であることを、次の流れで確かめる：Google でログイン、招待を開いて友達になる、通知の購読、カレンダーの連携、リンクのプレビューの画像、Service Worker の登録。
    - 問題があれば `wrangler rollback --env prod` で戻す。
@@ -177,18 +189,18 @@
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 他人のIDでは取得・更新できない：対象外（新しい経路・データの取得を足さない。既存の経路のテストはそのまま通る）。
-- [ ] 振り分け：`/api/` は Hono のアプリ、それ以外の `GET`・`HEAD` は `ASSETS`（偽物）、`POST`・`OPTIONS` などは405と `Allow`（`POST /__e2e__/login` も405）。`ASSETS` がないときは今までどおり Hono のアプリ。`/api`・`/apix`・`//api/v1/me`・`/%61pi/v1/me`・`/API/v1/me` は画面の側に回る。`/api/` の下で Hono が404を返したとき、`index.html` に置き換わらない。
-- [ ] ヘッダー：画面の側の応答（HTML・SVG・304）に画面用の CSP と共通のヘッダー。偽の `ASSETS` が弱い CSP や `Cache-Control` を付けて返しても、コードの値で上書きされる（偽物はヘッダーを変えられない応答を返し、作り直しを確かめる）。API の応答に共通のヘッダーと `default-src 'none'` の CSP。API の経路が付けたヘッダー（T-08 の画像の CSP・`Cache-Control`）は上書きしない。`/sw.js` と HTML は `Cache-Control: no-cache`（偽の `ASSETS` が `Cache-Control: public, max-age=...` を返しても）。HEAD と405の応答にも共通のヘッダー。identity の callback が付けた `Referrer-Policy` を上書きしない。E2E のエントリ（`createWorker` を共有）の API の応答にもヘッダーが付く。
-- [ ] Apple を止める：`APPLE_LOGIN_ENABLED` が `"0"`・未設定・ほかの値なら、`start` は `/login?error=login_failed` への303で、`oauth_transactions` を書かず、新しい結びつけ Cookie を発行しない（`loginFailed` と同じく、消す `Set-Cookie` だけが出る）。`callback` は本文を読まずに problem+json の404。回数の上限（`auth_start`）は Apple を止めても先に効く（既存の rateLimit のテストが通る）。application の `startLogin`・`handleCallback` も Apple なら失敗を返す。`"1"` なら今までどおり（既存のテストが通る）。
-- [ ] Web：`VITE_APPLE_LOGIN_ENABLED` がないとき、ログインの画面と招待の画面に「Appleでログイン」が出ない。`"1"` なら出る。
+- [x] 他人のIDでは取得・更新できない：対象外（新しい経路・データの取得を足さない。既存の経路のテストはそのまま通る）。
+- [x] 振り分け：`/api/` は Hono のアプリ、それ以外の `GET`・`HEAD` は `ASSETS`（偽物）、`POST`・`OPTIONS` などは405と `Allow`（`POST /__e2e__/login` も405）。`ASSETS` がないときは今までどおり Hono のアプリ。`/api`・`/apix`・`//api/v1/me`・`/%61pi/v1/me`・`/API/v1/me` は画面の側に回る。`/api/` の下で Hono が404を返したとき、`index.html` に置き換わらない。
+- [x] ヘッダー：画面の側の応答（HTML・SVG・304）に画面用の CSP と共通のヘッダー。偽の `ASSETS` が弱い CSP や `Cache-Control` を付けて返しても、コードの値で上書きされる（偽物はヘッダーを変えられない応答を返し、作り直しを確かめる）。API の応答に共通のヘッダーと `default-src 'none'` の CSP。API の経路が付けたヘッダー（T-08 の画像の CSP・`Cache-Control`）は上書きしない。`/sw.js` と HTML は `Cache-Control: no-cache`（偽の `ASSETS` が `Cache-Control: public, max-age=...` を返しても）。HEAD と405の応答にも共通のヘッダー。identity の callback が付けた `Referrer-Policy` を上書きしない。E2E のエントリ（`createWorker` を共有）の API の応答にもヘッダーが付く。
+- [x] Apple を止める：`APPLE_LOGIN_ENABLED` が `"0"`・未設定・ほかの値なら、`start` は `/login?error=login_failed` への303で、`oauth_transactions` を書かず、新しい結びつけ Cookie を発行しない（`loginFailed` と同じく、消す `Set-Cookie` だけが出る）。`callback` は本文を読まずに problem+json の404。回数の上限（`auth_start`）は Apple を止めても先に効く（既存の rateLimit のテストが通る）。application の `startLogin`・`handleCallback` も Apple なら失敗を返す。`"1"` なら今までどおり（既存のテストが通る）。
+- [x] Web：`VITE_APPLE_LOGIN_ENABLED` がないとき、ログインの画面と招待の画面に「Appleでログイン」が出ない。`"1"` なら出る。
 ### CI の検査（実装PRで足す）
-- [ ] ビルドと設定：`build:prod` のあと、`apps/web/dist/index.html` があり、インラインの script・style・E2E 用の名前・`Appleでログイン`・`_headers`・`_redirects` がない。wrangler の設定の項目（`run_worker_first`・`not_found_handling`・`workers_dev`・`preview_urls`・e2e の `routes`）が仕様のとおり。
+- [x] ビルドと設定：`build:prod` のあと、`apps/web/dist/index.html` があり、インラインの script・style・E2E 用の名前・`Appleでログイン`・`_headers`・`_redirects` がない。wrangler の設定の項目（上の「ビルドとデプロイのコマンド」の一覧）が仕様のとおり。
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 既存の E2E がすべて通る（ローカルの開発と E2E は `VITE_APPLE_LOGIN_ENABLED=1`・`APPLE_LOGIN_ENABLED=1` で、今の流れのまま）。
-- [ ] 本番と同じ形（ビルドした画面を静的アセットとして同じ Worker から出す）で、ログインの画面と SPA の経路（`/invites/xxx`）を開くと、画面が出て、CSP の違反が0件で、画面用の CSP と共通のヘッダーが付く。
-  - wrangler に、ローカルでだけ使う環境 `assets`（`main` は本番と同じ `src/index.ts`、`assets` は prod と同じ設定、vars は e2e と同じ形）を足し、Playwright の別の project（`release`）で `wrangler dev --env assets` に向けて開く。ログインはしない（テスト用ログインの経路を本番のエントリに入れないため）。
+- [x] 既存の E2E がすべて通る（ローカルの開発と E2E は `VITE_APPLE_LOGIN_ENABLED=1`・`APPLE_LOGIN_ENABLED=1` で、今の流れのまま）。
+- [x] 本番と同じ形（ビルドした画面を静的アセットとして同じ Worker から出す）で、ログインの画面と SPA の経路（`/invites/xxx`）と招待リンクの受け口（`/invite`。未ログインでも `InvitePage` を描画する）を開くと、画面が出て、CSP の違反が0件で、画面用の CSP と共通のヘッダーが付く。
+  - wrangler に、ローカルでだけ使う環境 `assets`（`main` は本番と同じ `src/index.ts`、`assets` は prod と同じ設定、vars は e2e と同じ形）を足し、Playwright の別の project（`release`）で `wrangler dev --env assets` に向けて開く。ローカルの D1 は `database_id` ごとに分かれるので、assets の `database_id` は e2e と別の仮の値にする（同時に起動する E2E とデータを共有しない）。秘密は `scripts/write-e2e-dev-vars.mjs .dev.vars.assets` で別のファイルに生成する。ログインはしない（テスト用ログインの経路を本番のエントリに入れないため）。
   - CSP の違反は `securitypolicyviolation` のイベントとコンソールで数える。
 - カスタムドメインと `workers.dev` を閉じたことは本番でしか確かめられないので、「人が行う作業」の9で確かめる。
 
@@ -197,20 +209,25 @@
 - アプリストアへの公開、Apple のログイン、Apple カレンダー（T-09）。
 - WAF・ボット対策・エッジのレート制限（#42 の残り）。
 - 退会（#37）、古いデータの掃除（#38）、初回設定（#43）、画面のデザイン（T-11）。
-- Google の審査（一般公開のときに行う）。
+- Google の審査（一般公開のとき、または連携を許可した人の累計が100人に近づいたときに行う）。
 
-## 決定事項（仕様書PRのレビューで合意する）
+## 決定事項（仕様書PR pryusei/kokohima-app#83 のマージで合意）
 1. 最初のリリースは、友達だけに向けた Web アプリ。ログインは Google だけ（利用者と決めた）。
-2. ドメインは `kokohima.app`（利用者が取得済み）。画面と API を同じ Worker・同じオリジンから出す（提案）。
-3. セキュリティのヘッダーは `_headers` ファイルでなく、Worker のコードで付ける（公式の資料で確かめられなかったことに頼らず、テストで確かめられる形にする）。そのため `run_worker_first: true` にする。（提案）
-4. Apple は設定値で止め、コードは残す（あとで戻せるように）。（提案）
+2. ドメインは `kokohima.app`（利用者が取得済み）。画面と API を同じ Worker・同じオリジンから出す。
+3. セキュリティのヘッダーは `_headers` ファイルでなく、Worker のコードで付ける（公式の資料で確かめられなかったことに頼らず、テストで確かめられる形にする）。そのため `run_worker_first: true` にする。
+4. Apple は設定値で止め、コードは残す（あとで戻せるように）。
 5. 最初のリリースは prod だけにし、staging は作らない（利用者と決めた）。
-6. カスタムドメインの DNS の記録は、Workers（`custom_domain: true`）が作り、管理する。Terraform の DNS の管理（infra/README.md）の例外として README に書く。Resend の記録などほかの DNS の記録は Terraform で持つ。（提案）
-7. Google の OAuth の公開ステータスは「テスト」のままにし、カレンダーの連携が7日ごとに切れることを受け入れる（友達だけの間。一般公開の前に審査を受ける）。（提案）
+6. カスタムドメインの DNS の記録は、Workers（`custom_domain: true`）が作り、管理する。Terraform の DNS の管理（infra/README.md）の例外として README に書く。Resend の記録などほかの DNS の記録は Terraform で持つ。
+7. Google の OAuth の公開ステータスは、審査を受けずに「本番」にする（友達をテストユーザーに1人ずつ足す手間と、カレンダーの連携が7日ごとに切れることをなくす。利用者と決めた）。カレンダーの連携で出る確認されていないアプリの警告と、連携できる人数の上限（100人）は受け入れる。一般公開の前に審査を受ける（この決定事項は、仕様書PR「Google の OAuth を本番に」のマージで合意する）。
+   - 受け入れるリスク（利用者と決めた）：テストユーザーの登録という門がなくなり、招待リンク（推測できない乱数・期限7日・10人まで・無効化）が唯一の門になる。リンクが転送・流出すると、知らない人も「友達になる」を1回押すだけで友達になり、初期の「見せる」で暇とエリアが見える。友達追加の通知から「この人に見せない」にできる（要求定義書「受容したリスク」）。
+   - 受け入れるリスク（利用者と決めた）：連携の上限は、許可した人の累計で数えられ（連携を解除しても戻らないとみる）、知らない人も枠を使える。連携の開始は絞らない。Google Cloud の同意画面に出る人数を、ときどき確かめ、上限に近づいたら審査を前倒しする。上限に届いたあとは、新しい人の連携が Google の画面で止まる（ここ暇の側は連携が終わらないだけで、今の連携の失敗と同じ扱い）。
+   - 本番にする前に、同意画面に入れるプライバシー ポリシーと利用規約のページ（T-19）をデプロイしておく。ロゴは同意画面に入れない（ブランドの確認が要り、本番にするのが遅れるため）。
 
-## 確認事項（合意前に解消する）
-- 決定事項2〜4・6・7でよいか。
-- 送信のメールアドレス `notify@kokohima.app` でよいか。
+## 確認事項（解消済み）
+- 決定事項2〜4・6と、送信のメールアドレス `notify@kokohima.app` は、仕様書PR pryusei/kokohima-app#83 のマージで合意した。決定事項7（2026-11-23 に変えた）は、その変更の仕様書PRのマージで合意する。
+
+## 確認事項（未解消）
+- 決定事項7の「本番にしたときの扱い」（ログインで警告が出ない・連携は累計100人まで・7日の失効がなくなる）は、公式の資料をこの作業環境から読めず確かめていない。公開ステータスを本番にするときの画面の説明で確かめ、違えばこの仕様書を直す。
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
@@ -219,3 +236,9 @@
 | 2026-11-21 | staging を作らないことにした。セキュリティのレビューを反映：画面の応答のヘッダーは常に上書き、CSP は画面の側の全応答に、振り分けの端の場合、wrangler の設定の CI の検査、トップレベルの `workers_dev: false`、Apple の判定の位置、`VITE_APPLE_LOGIN_ENABLED` の置き場、`VAPID_SUBJECT`、ゾーンの設定・鍵・Google の「テスト」の制約・デプロイのあとの確認と戻し方 | 利用者の回答、仕様書PRのレビュー（セキュリティ） |
 | 2026-11-21 | 仕様のレビューを反映：Apple を止めた `start`・`callback` の応答の形と順番、設定値の置き場（vars・vitest・`.env.development`）、`NOTIFICATION_START_AT` は `"1"`、転記の PR の順番、API トークンの分け方・有料プラン・Terraform の初回・Google Calendar API・Resend の DNS を Terraform で、本番と同じ形の画面の CSP の E2E、`db:migrate:prod`、実装PRで直す文書の追加、決定事項6・7 | 仕様書PRのレビュー（仕様） |
 | 2026-11-21 | Apple を止めた `start` は消す `Set-Cookie` だけを出す（`loginFailed` と同じ）、止めていることは隠さない、画面の `Cache-Control` は `/sw.js` と HTML だけ上書き、`.gitignore` の例外 | 仕様書PRのレビュー（pryusei/kokohima-app#83） |
+| 2026-11-21 | 実装した。Zod の `jitless`（CSP の `eval` の違反を出さない）を足し、決定事項と確認事項を合意済みにした | 実装PR |
+| 2026-11-21 | 実装PRのレビューを反映：`assets` を書く環境、`Content-Type` のない応答は304だけ HTML とみなす、wrangler の設定の検査の項目、`db:migrate:prod` のコマンド | 実装PRのレビュー（仕様） |
+| 2026-11-21 | 実装PRのセキュリティのレビューを反映：deploy:prod でも API のビルドの E2E の名前と `main` を検査、どの環境も workers.dev を開けない検査、Apple のボタンは目印 `data-provider="apple-login"` で検査 | 実装PRのレビュー（セキュリティ） |
+| 2026-11-22 | 実装PRのレビューを反映：deploy:prod だけで転記を忘れた値を検査（`--deploy`）、`ASSETS` がないときの API のヘッダーの扱い、デプロイのあとの `//` のパスの確認、本番と同じ形の E2E に `/invite`、assets の環境のローカルの D1 を e2e と分ける | 実装PRのレビュー |
+| 2026-11-23 | 決定事項7を変えた：Google の OAuth を審査なしで「本番」の公開ステータスにする（テストユーザーの登録と7日の失効をなくす）。人が行う作業3と概要を合わせた。受け入れるリスク（招待リンクが唯一の門・連携の枠を知らない人も使う）と、プライバシー ポリシー・利用規約（T-19）を先にデプロイすること、未確認の事項を足した | 利用者の回答（最初のリリースのあと）、仕様書PRの前のレビュー |
+| 2026-11-23 | 人が行う作業3から `profile` のスコープを外し、同意画面のブランディング（ホームページ・プライバシー ポリシー・利用規約・承認済みのドメイン・サポートのメール）と、T-19 をデプロイしてから本番にすることを足した。`deploy:prod` の制定日の検査を足した | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |

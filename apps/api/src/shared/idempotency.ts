@@ -1,7 +1,8 @@
 // Idempotency-Key の D1 アクセス（docs/specs/T-10-idempotency-cache-ratelimit.md「振る舞い」）
 // 行は必ず user_id（閲覧者）で読み書きする。書き戻しと削除は reservation_id で自分の予約に限る
+import { RETENTION, RETENTION_UNIT_MS } from "@kokohima/shared";
 
-export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+export const IDEMPOTENCY_TTL_MS = RETENTION.idempotencyKeysHours * RETENTION_UNIT_MS.hour;
 /** 処理中のまま、これより古い行は引き継げる（外部の呼び出しは5秒で打ち切るため、十分に長い） */
 export const IN_PROGRESS_STALE_MS = 5 * 60 * 1000;
 /** 保存する本文の上限（バイト） */

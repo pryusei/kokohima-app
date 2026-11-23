@@ -5,7 +5,12 @@
   "scripts": {
     "dev": "wrangler dev",
     "dev:e2e": "node scripts/write-e2e-dev-vars.mjs && wrangler d1 migrations apply DB --local --env e2e && wrangler dev --env e2e",
-    "build:prod": "wrangler deploy --dry-run --env prod --outdir dist",
+    "dev:e2e:https": "node scripts/write-e2e-dev-vars.mjs .dev.vars.https && wrangler d1 migrations apply DB --local --env e2e --persist-to .wrangler/state-https && wrangler dev --env e2e --port 8789 --persist-to .wrangler/state-https --env-file .dev.vars.https --var APP_ORIGIN:https://localhost:5174",
+    "dev:assets": "pnpm --filter web build && node scripts/write-e2e-dev-vars.mjs .dev.vars.assets && wrangler d1 migrations apply DB --local --env assets && wrangler dev --env assets --port 8788",
+    "check:release": "node scripts/check-wrangler-config.mjs && node scripts/check-web-dist.mjs",
+    "build:prod": "pnpm --filter web build && pnpm run check:release && wrangler deploy --dry-run --env prod --outdir dist && node scripts/check-api-dist.mjs",
+    "deploy:prod": "pnpm --filter web build && pnpm run check:release && node scripts/check-wrangler-config.mjs --deploy && node scripts/check-web-dist.mjs --deploy && wrangler deploy --dry-run --env prod --outdir dist && node scripts/check-api-dist.mjs && wrangler deploy --env prod",
+    "db:migrate:prod": "wrangler d1 migrations apply DB --remote --env prod",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",

@@ -6,6 +6,7 @@ import { apiSend } from "../api/client";
 import { keys } from "../api/keys";
 import { SendButton } from "../ui/Button";
 import { Note } from "../ui/feedback";
+import { Link } from "../ui/Link";
 import { Section, SubScreen } from "../ui/Navigation";
 import { Switch } from "../ui/Switch";
 import { disablePush, enablePush, pushEnabled, pushSupported } from "../notifications/push";
@@ -55,7 +56,14 @@ function PushSection() {
   return (
     <Section title="この端末のプッシュ通知">
       <div className="flex flex-col gap-3 rounded-l bg-surface p-4 shadow-card">
-        {!supported && <Note>ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます</Note>}
+        {!supported && (
+          <>
+            <Note>ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます</Note>
+            <Link to="/settings/install" className="text-s text-action underline">
+              追加の方法
+            </Link>
+          </>
+        )}
         {supported && enabled === false && (
           <SendButton variant="primary" block disabled={toggle.isPending} onClick={() => toggle.mutate(true)}>
             この端末でプッシュ通知を受け取る

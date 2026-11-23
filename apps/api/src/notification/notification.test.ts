@@ -326,6 +326,9 @@ describe("新しい端末でのログイン", () => {
     const [mail] = mailsTo(who);
     expect(mail?.subject).toBe("ここ暇：新しい端末でログインがありました");
     expect(mail?.text).toContain("2026/10/10 9:05");
+    // T-23：HTML とテキストの両方を Resend に送る
+    expect(mail?.html).toContain("<!DOCTYPE html>");
+    expect(mail?.html).toContain("2026/10/10 9:05");
     expect(h.delivery.state.pushes).toHaveLength(0);
     expect((await list(who))[0]).toMatchObject({ kind: "new_login", actor: null });
   });

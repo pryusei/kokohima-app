@@ -68,7 +68,7 @@
     - お知らせを作らない。dispatch は通知だけの型を流さず、処理済みにもしない（有効にしたあと、その時刻より後の行から流れる）。
     - 未設定の間は、毎分の掃除で、通知だけの型で未処理の、作ってから30日を過ぎた行を消す（ちょうど30日の行は残る。1回に1000行。インデックス `outbox_unprocessed`。処理済みの行の掃除（T-12）では消えず、誰が誰の誘いを断ったかなどが残り続けるため。docs/specs/T-17-retention.md「4.」）。
     - T-06 の型は今までどおり流す（カレンダーの処理と自動の断りは行い、お知らせだけ作らない）。
-    - staging・prod は空にしておき、T-07 を有効にするときにその時刻を入れる（人が行う）。
+    - staging は空にしておき、T-07 を有効にするときにその時刻を入れる（人が行う）。prod は `"1"`（prod の D1 は新しく作り、古い outbox の行がないため。T-12）。
   - 経過日数（例：作成から7日）で決めると、デプロイ直前の行（この1週間の `SessionStarted` による「新しい端末でのログイン」のメールなど）がまとめて届き、逆にデプロイ後に処理が止まったときは正当なお知らせを捨ててしまうため。
   - デプロイの後に outbox の処理が長く止まっても、T-07 を有効にした後の行は捨てない（遅れて届く）。
 - T-06 の型の行（`MeetupConfirmed`・`MeetupCancelled`・`MeetupLeft`・`CalendarConnected`・`AvailabilityCancelledByCalendar`）は、今までどおり常に流す。
@@ -327,11 +327,11 @@
   - キャッシュをしない（このタスクではオフライン対応をしない）。
 - iOS
   - ホーム画面に追加した PWA でだけ、Webプッシュを受け取れる。そのため `manifest.webmanifest`（名前・アイコン・`display: standalone`）を足す。
-  - 追加していない人には、設定画面で「ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます」と出す。
+  - 追加していない人には、設定画面で「ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます」と出し、追加の案内（`/settings/install`）へのリンク「追加の方法」を添える。`manifest.webmanifest` のアイコン・`id`・`scope` と案内の画面は docs/specs/T-25-installable-pwa.md。
 
 ### メールの中身
-- 差出人は vars の `MAIL_FROM`（例：`ここ暇 <notify@example.invalid>`）。宛先は `getNotificationAddress`。
-- テキストだけで、HTML は送らない。
+- 差出人は vars の `MAIL_FROM`（prod は `ここ暇 <notify@kokohima.app>`。T-12）。宛先は `getNotificationAddress`。
+- HTML とテキストの両方を送る（見た目・色・互換性・エスケープは docs/specs/T-23-rich-mail.md）。
 - 相手の名前・ひとこと・エリア・予定の時刻を入れない（決定事項6）。
 - ログイン用のリンク（トークンつきの URL）を入れない。アプリのトップ（`APP_ORIGIN`）の URL だけを書く。
 - お知らせのメール
@@ -356,7 +356,7 @@
   - 友達：`/friends/{id}`
   - 自動取り消し：ここ暇タブ
   - 連携の失効：`/settings/calendar`
-  - 新端末のログイン：設定のアカウント（`/settings/account`。T-11 で友達タブから移した）
+  - 新端末のログイン：設定のアカウント（`/settings/account?from=new_login`。T-11 で友達タブから移した）。移った先で、なぜその画面に来たかと、心当たりがないときの操作を出す（T-11「画面のつながり」）
 - 文言（仮）
   - 誘い：「〇〇さんから誘いが届きました」「〇〇さんは今回は難しいみたい」「〇〇さんから別の時間の提案があります」「今回は見送りになりました」
   - 募集・予定：「〇〇さんが募集しています」「〇〇さんの募集が決まりました」「〇〇さんと予定が成立しました」「予定がなくなりました」「予定から1人抜けました」
@@ -385,9 +385,9 @@
 | `NOTIFICATION_KEYS` | secret | 購読の endpoint の暗号化の鍵（kid → 32バイトの base64 の JSON。T-06 の鍵とは別） |
 | `NOTIFICATION_CURRENT_KID` | vars | 暗号化に使う鍵ID |
 | `VAPID_PUBLIC_KEY` | vars | VAPID の公開鍵（base64url、非圧縮の点） |
-| `VAPID_SUBJECT` | vars | `mailto:` の連絡先 |
+| `VAPID_SUBJECT` | vars | `mailto:` の連絡先（prod は `mailto:ops@kokohima.app`。T-12） |
 | `MAIL_FROM` | vars | 差出人 |
-| `NOTIFICATION_START_AT` | vars | T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない（「古い outbox の行」）。未設定・正の整数でなければ、お知らせを作らない。staging・prod は有効にするときに人が入れる（ローカル・E2E・単体テストは `1`） |
+| `NOTIFICATION_START_AT` | vars | T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない（「古い outbox の行」）。未設定・正の整数でなければ、お知らせを作らない。prod は `1`（新しい D1 で古い行がないため。T-12）、staging は有効にするときに人が入れる（ローカル・E2E・単体テストは `1`） |
 | `MAIL_DAILY_LIMIT` | vars | サービス全体の1日のメール数の上限（決定事項8）。正の整数でなければ90（Resend の無料枠の1日100通より少し下）として扱う。E2E は偽の配信なので実質なしにする |
 
 - ローカルと E2E の鍵は、`scripts/write-e2e-dev-vars.mjs` で作る（T-06 と同じ）。
@@ -578,5 +578,7 @@
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-21 | `notification_daily_counts` の掃除のためのインデックス `(day)` を書いた | T-12 の実装PR（docs/specs/T-12-data-growth.md） |
 | 2026-11-21 | 全体のメール数の上限で送らなかったときのログ `notification_mail_global_limit` を書いた | T-13 の実装PR（docs/specs/T-13-monitoring.md） |
+| 2026-11-23 | メールを HTML とテキストの両方にした（「テキストだけ」をやめた）。送る内容・条件・上限は変えない | T-23 実装PR（docs/specs/T-23-rich-mail.md） |
 | 2026-11-23 | お知らせの保持を30日にし掃除に上限を付けた。`NOTIFICATION_START_AT` が未設定の間の通知だけの型の行の掃除と、使えないセッションの購読の15分ごとの掃除を足した | T-17 実装PR（docs/specs/T-17-retention.md） |
+| 2026-11-23 | 新端末のログインのお知らせの行き先に `?from=new_login` を付け、移った先で説明を出すことにした（詳しくは T-11） | 利用者の報告（お知らせを押すと、理由がわからないままアカウントの設定に移る） |
 | 2026-11-23 | 設定の部分更新を、パッチにある項目だけを1つの文で書くと明記した。設定画面の PATCH を順に送り、失敗時はその項目だけを戻すと書いた | pryusei/kokohima-app#116（同時の部分更新で変更が失われる） |

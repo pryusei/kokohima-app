@@ -54,6 +54,13 @@ export function SettingsPage() {
         <Row to="/settings/notifications" label="通知の設定" />
         <Row to="/settings/account" label="アカウント" />
       </ul>
+      <Section title="このアプリについて">
+        <ul className="rounded-l bg-surface px-4 shadow-card">
+          <Row to="/settings/install" label="アプリとして使う" />
+          <Row to="/privacy" label="プライバシー ポリシー" />
+          <Row to="/terms" label="利用規約" />
+        </ul>
+      </Section>
     </SubScreen>
   );
 }
