@@ -62,6 +62,7 @@
 | 行きたい（`wishes`）と、リンクの参照 | 本人が消すまで・退会のとき | T-22 |
 | 行きたいの見せない相手（`wish_exclusions`） | 行きたいを消したとき・退会のとき（友達を解除しても残す） | T-22 |
 | 行きたいを置いた記録（`wish_posts`） | 作ってから2日（`RETENTION.wishPostsDays`） | T-22 |
+| 行きたいのAI提案の回数の記録（`wish_suggestion_attempts`。いつ・結果の種類だけ） | 日付が UTC の今日の3日前より前（`RETENTION.wishSuggestionAttemptsDaysBefore`）・退会のとき | T-29 |
 | 処理済みの outbox | 処理から7日 | T-12 データの増加 |
 | 問い合わせの outbox の payload の種類・内容（`ContactMessageSubmitted`） | Slack に届けたとき（届かなかった行は、処理から7日で行ごと消える） | T-24 |
 | 問い合わせの outbox の行（`userId`・`occurredAt`・`delivered` だけ） | 処理から7日（`RETENTION.processedOutboxDays`） | T-24 |
@@ -265,3 +266,4 @@
 | 2026-11-23 | 保持期間の表に行きたい（`wishes`・`wish_exclusions`・`wish_posts`）を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |
 | 2026-11-23 | 保持期間の一覧に問い合わせの outbox と Slack のメッセージを足した | T-24 実装PR（docs/specs/T-24-contact.md） |
 | 2026-11-23 | 表にアイコンの画像（`avatarImageGraceHours`）を足した | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |
+| 2026-11-23 | 表に行きたいのAI提案の回数の記録（`wishSuggestionAttemptsDaysBefore`）を足した | T-29 実装PR（docs/specs/T-29-wish-suggestion.md） |
