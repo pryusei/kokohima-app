@@ -2,11 +2,18 @@ import type { AppDeps, Bindings } from "../env";
 import { deleteExpiredIcsTokens, deleteExpiredOauthStates } from "../calendar/infra/repository";
 import { db as identityDb, deleteDeadSessions, deleteExpiredLoginRecords } from "../identity/infra/repository";
 import { OAUTH_STATE_TTL_MS } from "../calendar/application/connections";
-import { cleanupNotifications, notificationStartAt } from "../notification/application/delivery";
+import {
+  cleanupNotifications,
+  NOTIFICATION_CLEANUP_BATCH,
+  notificationStartAt,
+} from "../notification/application/delivery";
 import { NOTIFICATION_ONLY_TYPES } from "../notification/domain/events";
 import { deleteExpiredIdempotencyKeys } from "../shared/idempotency";
 import { cleanupLinkPreviews } from "../link-preview/application/previews";
-import { deleteManualStartedBefore } from "../availability/infra/repository";
+import { deleteExceptionsBefore, deleteManualStartedBefore } from "../availability/infra/repository";
+import { deleteInvitesEndedBefore } from "../invitation/infra/repository";
+import { deleteBroadcastsEndedBefore } from "../invitation/infra/broadcastRepository";
+import { deleteInviteLinksExpiredBefore } from "../social/infra/repository";
 import { MAX_LENGTH_MS } from "../availability/domain/validation";
 import { retryIncompleteWithdrawals } from "../identity/application/withdrawal";
 
@@ -106,7 +113,8 @@ async function dispatchOnce(ctx: Ctx) {
 
 /**
  * 期限を過ぎた連携の state・.ics のトークン・ログイン開始の記録とログインコード・冪等キー、失効・期限切れから30日を過ぎたセッションと更新用トークン、古いお知らせと日ごとの数、
- * 参照されないリンクのプレビューと画像を消す
+ * 参照されないリンクのプレビューと画像、終わってから30日を過ぎた誘い・募集（予定ごと）、期限から30日を過ぎた招待リンク、過去のくり返しの例外、
+ * 流れないままの通知の記録を消す（保持期間の一覧は docs/specs/T-17-retention.md「1.」）
  */
 export async function cleanupExpired(ctx: Ctx) {
   const now = ctx.deps.now();
@@ -117,17 +125,60 @@ export async function cleanupExpired(ctx: Ctx) {
   await runStep("cleanup_login_records", () => deleteExpiredLoginRecords(identityDb(d1), now));
   await runStep("cleanup_sessions", () => deleteDeadSessions(d1, now));
   await runStep("cleanup_idempotency_keys", () => deleteExpiredIdempotencyKeys(d1, now));
-  await runStep("cleanup_notifications", () => cleanupNotifications(ctx));
+  await runCappedStep("cleanup_notifications", NOTIFICATION_CLEANUP_BATCH, () => cleanupNotifications(ctx));
   await runStep("cleanup_link_previews", () => cleanupLinkPreviews(ctx));
   await runStep("cleanup_outbox", () => deleteProcessedOutbox(d1, now - OUTBOX_RETENTION_MS, CLEANUP_BATCH));
   await runStep("cleanup_availabilities", () =>
     deleteManualStartedBefore(d1, now - AVAILABILITY_RETENTION_MS, CLEANUP_BATCH),
   );
+  // 保持期間（docs/specs/T-17-retention.md「2.」〜「6.」）
+  const cutoff = now - RETENTION_MS;
+  await runCappedStep("cleanup_invitations", CLEANUP_BATCH, () => deleteInvitesEndedBefore(d1, cutoff, CLEANUP_BATCH));
+  await runCappedStep("cleanup_broadcasts", BROADCAST_CLEANUP_BATCH, () =>
+    deleteBroadcastsEndedBefore(d1, cutoff, BROADCAST_CLEANUP_BATCH),
+  );
+  await runCappedStep("cleanup_invite_links", CLEANUP_BATCH, () => deleteInviteLinksExpiredBefore(d1, cutoff, CLEANUP_BATCH));
+  await runCappedStep("cleanup_recurrence_exceptions", CLEANUP_BATCH, () =>
+    deleteExceptionsBefore(d1, exceptionCutoffDate(now), CLEANUP_BATCH),
+  );
+  if (notificationStartAt(ctx.env) === null) {
+    await runCappedStep("cleanup_stale_notification_outbox", CLEANUP_BATCH, () =>
+      deleteStaleNotificationOutbox(d1, cutoff, CLEANUP_BATCH),
+    );
+  }
   // 退会の後始末の取りこぼし（docs/specs/T-16-withdrawal.md）
   await runStep("retry_withdrawals", () => retryIncompleteWithdrawals(ctx));
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * 誘い・募集（時間の終わりから）、招待リンク（期限から）、流れないままの通知の記録（作ってから）を残す期間。
+ * ちょうど30日の行は残す（docs/specs/T-17-retention.md「1.」）
+ */
+export const RETENTION_MS = 30 * DAY_MS;
+/** 1回に消す募集の数の上限（宛先が最大100人いて、CASCADE で消える行が多いため） */
+export const BROADCAST_CLEANUP_BATCH = 100;
+
+/** くり返しの例外は、日付が UTC の今日の2日前の日付より前なら消す（タイムゾーンの差は最大1日なので、どこでも過去の日付） */
+export const exceptionCutoffDate = (now: number) => new Date(now - 2 * DAY_MS).toISOString().slice(0, 10);
+
+/**
+ * NOTIFICATION_START_AT が未設定の間だけ呼ぶ：通知だけの型で、未処理で、作ったのが createdBefore より前の outbox の行を消す
+ * （上限つき。インデックス outbox_unprocessed）。未設定の間は流れず処理済みにもならないので、処理済みの掃除では消えない。消した数
+ */
+export async function deleteStaleNotificationOutbox(d1: D1Database, createdBefore: number, limit: number) {
+  const r = await d1
+    .prepare(
+      `DELETE FROM outbox WHERE id IN (
+         SELECT id FROM outbox
+         WHERE processed_at IS NULL AND created_at < ?1 AND type IN (SELECT value FROM json_each(?2))
+         LIMIT ?3
+       )`,
+    )
+    .bind(createdBefore, JSON.stringify(NOTIFICATION_ONLY_TYPES), limit)
+    .run();
+  return r.meta.changes;
+}
 /** 処理済みの outbox の行を残す期間（退避キューの既定の保持期間4日より長く） */
 export const OUTBOX_RETENTION_MS = 7 * DAY_MS;
 /** 始まりがこれより前の手動の枠を消す。長さは最大24時間なので、どれも終わってから1日以上たっている */
@@ -155,6 +206,17 @@ export async function runStep(step: string, fn: () => Promise<unknown>) {
     // warn で出す（Monitors が数える。Workers Issues と二重にしない。docs/specs/T-13-monitoring.md「3.」）
     console.warn(JSON.stringify({ event: "cron_step_failed", step, name: e instanceof Error ? e.name : "unknown" }));
   }
+}
+
+/**
+ * 上限つきの掃除を runStep で走らせ、上限いっぱいまで処理した（残っている見込み）ときは件数だけのログを出す
+ * （docs/specs/T-17-retention.md「9.」。ID は出さない）
+ */
+export async function runCappedStep(step: string, limit: number, fn: () => Promise<number>) {
+  await runStep(step, async () => {
+    const count = await fn();
+    if (count >= limit) console.log(JSON.stringify({ event: "cleanup_capped", step, count }));
+  });
 }
 
 export type CronName = "minutely" | "calendar_sync";

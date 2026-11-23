@@ -154,8 +154,34 @@ export async function deleteOldCounts(d1: D1Database, beforeDay: string) {
   await d1.prepare("DELETE FROM notification_daily_counts WHERE day < ?1").bind(beforeDay).run();
 }
 
-export async function deleteOldNotifications(d1: D1Database, before: number) {
-  await d1.prepare("DELETE FROM notifications WHERE inserted_at < ?1").bind(before).run();
+/** 作ったのが before より前のお知らせを消す（上限つき。インデックス notifications_inserted）。消した数 */
+export async function deleteOldNotifications(d1: D1Database, before: number, limit: number) {
+  const r = await d1
+    .prepare("DELETE FROM notifications WHERE id IN (SELECT id FROM notifications WHERE inserted_at < ?1 LIMIT ?2)")
+    .bind(before, limit)
+    .run();
+  return r.meta.changes;
+}
+
+/**
+ * 失効か期限切れのセッションの購読を消す（上限つき。docs/specs/T-17-retention.md「9.」）。
+ * セッションの掃除は利用者ごとに最初のセッションの行を残すので、その行の購読も CASCADE では消えない。消した数。
+ * CROSS JOIN は内部結合と同じ結果で、sessions を外側に固定する（sessions_revoked_at・sessions_expires_at の MULTI-INDEX OR で絞り、
+ * 購読は push_subscriptions_session で引く。JOIN のままだと、統計のない表では購読の表全体を読む計画になる）。
+ * 失効は `revoked_at <= now`（失効の時刻は書いた時点の今なので IS NOT NULL と同じ行。IS NOT NULL は OR の中でインデックスを使えない）
+ */
+export async function deleteSubscriptionsOfDeadSessions(d1: D1Database, now: number, limit: number) {
+  const r = await d1
+    .prepare(
+      `DELETE FROM push_subscriptions WHERE id IN (
+         SELECT p.id FROM sessions s CROSS JOIN push_subscriptions p ON p.session_id = s.id
+         WHERE s.revoked_at <= ?1 OR s.expires_at <= ?1
+         LIMIT ?2
+       )`,
+    )
+    .bind(now, limit)
+    .run();
+  return r.meta.changes;
 }
 
 // ---- 一覧・既読 ----

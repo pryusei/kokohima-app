@@ -307,6 +307,19 @@ export async function deleteManualStartedBefore(d1: D1Database, startedBefore: n
   return r.meta.changes;
 }
 
+/** くり返しの例外の掃除（docs/specs/T-17-retention.md「6.」）：日付が beforeDate（YYYY-MM-DD）より前の例外を消す（上限つき）。消した数 */
+export async function deleteExceptionsBefore(d1: D1Database, beforeDate: string, limit: number) {
+  const r = await d1
+    .prepare(
+      `DELETE FROM recurrence_exceptions WHERE rowid IN (
+         SELECT rowid FROM recurrence_exceptions WHERE local_date < ?1 LIMIT ?2
+       )`,
+    )
+    .bind(beforeDate, limit)
+    .run();
+  return r.meta.changes;
+}
+
 /** 退会（T-16 入口を止める段）：本人の時間帯・ここ暇・くり返し（例外は CASCADE）を消す文 */
 export function withdrawalPurgeStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
   return [

@@ -43,5 +43,13 @@ export async function deleteSubscriptionsOf(ctx: Ctx, userId: string) {
   await repo.deleteSubscriptionsOfUser(ctx.env.DB, userId);
 }
 
+/** 1回の掃除で消す購読の数の上限 */
+export const PUSH_SUBSCRIPTION_CLEANUP_BATCH = 1000;
+
+/** 15分ごと：失効か期限切れのセッションの購読を消す（docs/specs/T-17-retention.md「9.」）。消した数 */
+export async function cleanupDeadSessionSubscriptions(ctx: Ctx) {
+  return repo.deleteSubscriptionsOfDeadSessions(ctx.env.DB, ctx.deps.now(), PUSH_SUBSCRIPTION_CLEANUP_BATCH);
+}
+
 /** 退会（T-16）：本人の通知の行を消す文。identity の退会の batch に入れる */
 export const withdrawalPurgeStatements = (d1: D1Database, userId: string) => repo.withdrawalPurgeStatements(d1, userId);
