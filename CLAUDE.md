@@ -13,7 +13,7 @@
 - `pnpm --filter api build:prod`：本番のビルド（`wrangler deploy --dry-run`。デプロイはしない）
 
 ## アーキテクチャ
-- `apps/api/src/<context>/{domain,application,infra}`。contextは invitation / availability / social / calendar / notification / link-preview / identity
+- `apps/api/src/<context>/{domain,application,infra}`。contextは invitation / availability / social / wish / calendar / notification / link-preview / identity
 - IMPORTANT: `domain/` はCloudflare・D1・Hono・fetchをimportしない。純粋なTypeScriptに保つ
 - 状態遷移は集約のメソッド経由のみ。D1の更新は `WHERE status = ?` の条件付きUPDATEにする
 - 外部連携（通知・OGP・カレンダー書き込み）はoutboxテーブル経由でQueuesへ。APIハンドラから直接呼ばない

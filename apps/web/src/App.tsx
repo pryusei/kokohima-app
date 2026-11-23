@@ -4,6 +4,7 @@ import { AuthCompletePage } from "./pages/AuthCompletePage";
 import { AvailabilityPage } from "./pages/AvailabilityPage";
 import { CalendarSettingsPage } from "./pages/CalendarSettingsPage";
 import { EveryonePage } from "./pages/EveryonePage";
+import { InstallPage } from "./pages/InstallPage";
 import { FriendDetailPage } from "./pages/FriendDetailPage";
 import { BroadcastDetailPage } from "./pages/BroadcastDetailPage";
 import { BroadcastNewPage } from "./pages/BroadcastNewPage";
@@ -16,6 +17,8 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { MeetupDetailPage } from "./pages/MeetupDetailPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
+import { TermsPage } from "./pages/TermsPage";
 import { AccountSettingsPage, PresetSettingsPage, SettingsPage } from "./pages/SettingsPage";
 import { behindTab, navigate, useLocation } from "./router";
 import { Button } from "./ui/Button";
@@ -85,6 +88,9 @@ export function App() {
   if (pathname === "/auth/complete") return <AuthCompletePage />;
   // 招待リンクの受け口は未ログインでも描画する（振り分けると、フラグメントのトークンを失う）
   if (pathname === "/invite") return <InvitePage />;
+  // プライバシー ポリシーと利用規約は、ログインの状態によらず出す（docs/specs/T-19-privacy-terms.md「1.」）
+  if (pathname === "/privacy") return <PrivacyPage />;
+  if (pathname === "/terms") return <TermsPage />;
 
   if (status === "checking") {
     return (
@@ -118,6 +124,7 @@ export function App() {
   if (pathname === "/settings/calendar") return <CalendarSettingsPage search={search} />;
   if (pathname === "/settings/presets") return <PresetSettingsPage />;
   if (pathname === "/settings/notifications") return <NotificationSettingsPage />;
+  if (pathname === "/settings/install") return <InstallPage />;
   if (pathname === "/settings/account") return <AccountSettingsPage search={search} />;
 
   const sheet = sheetOf(pathname, search);

@@ -46,6 +46,7 @@
 
 ### 1. 保持期間の一覧
 この表を、保持期間の正とする。期間を変えるときは、この表と、該当の仕様書を同じPRで直す。
+この表を変えたら、`packages/shared/src/retention.ts`（API の掃除とプライバシー ポリシーが読む数）と、`/privacy` の「8.」も同じPRで直す（docs/specs/T-19-privacy-terms.md「9.」）。
 
 | データ | 消す時点 | 決めた仕様書 |
 | --- | --- | --- |
@@ -58,6 +59,9 @@
 | 公開設定の「見せる」の行（`sharing_policies`、`visible = 1`） | 友達でなくなったとき・退会のとき | この仕様書、T-16 |
 | 公開設定の「見せない」の行（`sharing_policies`、`visible = 0`） | 退会のとき（友達を解除しても残す） | T-02 決定事項5、T-16 |
 | ここ暇の手動の枠（`availabilities`） | 始まりから1日＋24時間 | T-12 データの増加 |
+| 行きたい（`wishes`）と、リンクの参照 | 本人が消すまで・退会のとき | T-22 |
+| 行きたいの見せない相手（`wish_exclusions`） | 行きたいを消したとき・退会のとき（友達を解除しても残す） | T-22 |
+| 行きたいを置いた記録（`wish_posts`） | 作ってから2日（`RETENTION.wishPostsDays`） | T-22 |
 | 処理済みの outbox | 処理から7日 | T-12 データの増加 |
 | 流れないままの通知だけの型の outbox（`NOTIFICATION_START_AT` が未設定の間） | 作ってから30日 | この仕様書 |
 | 退避キュー（Queue `kokohima-*-outbox-dlq`） | Queues の保持期間（既定4日） | T-13 の手順書 |
@@ -253,3 +257,5 @@
 | 2026-11-22 | 公開設定は解除で「見せる」の行だけを消し「見せない」は退会まで残す（マイグレーションも。文は availability が持ち social の batch に入れる）、休眠の判定に最後に使った時刻（30日）を足す、休眠にするときに確認の権利と `sync_id` を変え、確認の文に `dormant_since IS NULL` を足す、ログインの batch で戻す・15分ごとに取りこぼしを戻す・退会した人を外す、休眠の処理を15分ごとの Cron に移して100行に、お知らせの掃除に上限、`cleanup_capped` を `count` にそろえる、使えないセッションの購読の掃除、保持期間の表（購読・連携の行）を直す、割り当てのインデックスを T-16 の条件に合わせて書き直す、境界のテストに「ちょうど30日は残る」、確認事項を決めたこと1に入れる | 仕様書PRのレビュー（pryusei/kokohima-app#108） |
 | 2026-11-23 | 実装済みに。マイグレーションの番号（0014）、`wakeConnectionsStatement` に `now` を足す、購読の掃除の SQL を `CROSS JOIN` と `revoked_at <= ?now` に（インデックスを使う計画にするため）、`cleanup_capped` を出す step と T-13 の閾値を書いた | 実装PR |
 | 2026-11-23 | `cleanup_capped` のモニターを毎分の step（1時間に30件以上）と15分ごとの step（1時間に3件以上）の2つに分けた | 実装PRのレビュー |
+| 2026-11-23 | 表を変えたら `retention.ts` と `/privacy` も直すことを足した。API の掃除の定数を `packages/shared` の `RETENTION` から作るようにした（値は変えない） | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
+| 2026-11-23 | 保持期間の表に行きたい（`wishes`・`wish_exclusions`・`wish_posts`）を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |

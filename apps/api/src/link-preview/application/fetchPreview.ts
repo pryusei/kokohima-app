@@ -1,5 +1,6 @@
 import type { AppDeps, Bindings } from "../../env";
 import { linkOfSubject } from "../../invitation/application/calendarFacing";
+import { linkOfWish } from "../../wish/application/wishes";
 import { sha256 } from "../../shared/crypto";
 import { acceptImage, IMAGE_MAX_BYTES } from "../domain/image";
 import { charsetOfContentType, headOf, mediaTypeOf, metaCharset, parseOgp, stripIgnored } from "../domain/parse";
@@ -84,8 +85,8 @@ async function fetchPage(ctx: Ctx, url: string, policy: FetchPolicy): Promise<Pa
 export async function handleLinkAttached(ctx: Ctx, subject: repo.Subject, last: boolean): Promise<void> {
   const d1 = ctx.env.DB;
   if (await repo.hasRef(d1, subject)) return;
-  const link = await linkOfSubject(ctx, subject);
-  // 誘い・募集がない（消えた）・リンクがない
+  const link = subject.type === "wish" ? await linkOfWish(ctx, subject.id) : await linkOfSubject(ctx, { type: subject.type, id: subject.id });
+  // 誘い・募集・行きたいがない（消えた）・リンクがない
   if (link === null) return;
   const normalized = withoutFragment(link);
   if (normalized === null) return;
