@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 // 入力欄（デザインシステムの入力欄・SlotChips）。押せる部品は44px以上
 
-export const inputClass = "min-h-11 w-full rounded-s border border-line-strong bg-surface-sunken px-3 text-m font-normal text-ink";
+// min-w-0 と max-w-full：日付・時刻の入力欄がシートの幅をはみ出さないように抑える（iPhone の Safari の分は index.css）
+export const inputClass = "min-h-11 w-full min-w-0 max-w-full rounded-s border border-line-strong bg-surface-sunken px-3 text-m font-normal text-ink";
 
 /** ラベルの見た目（入力欄を中に入れる） */
 export const labelClass = "flex min-w-0 flex-1 flex-col gap-1 text-xs font-bold text-ink-muted";

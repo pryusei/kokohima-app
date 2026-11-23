@@ -16,6 +16,8 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { MeetupDetailPage } from "./pages/MeetupDetailPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
+import { TermsPage } from "./pages/TermsPage";
 import { AccountSettingsPage, PresetSettingsPage, SettingsPage } from "./pages/SettingsPage";
 import { behindTab, navigate, useLocation } from "./router";
 import { Button } from "./ui/Button";
@@ -85,6 +87,9 @@ export function App() {
   if (pathname === "/auth/complete") return <AuthCompletePage />;
   // 招待リンクの受け口は未ログインでも描画する（振り分けると、フラグメントのトークンを失う）
   if (pathname === "/invite") return <InvitePage />;
+  // プライバシー ポリシーと利用規約は、ログインの状態によらず出す（docs/specs/T-19-privacy-terms.md「1.」）
+  if (pathname === "/privacy") return <PrivacyPage />;
+  if (pathname === "/terms") return <TermsPage />;
 
   if (status === "checking") {
     return (

@@ -24,11 +24,14 @@ async function watchViolations(page: Page) {
   return async () => [...messages, ...(await page.evaluate(() => (globalThis as unknown as PageGlobal).__cspViolations))];
 }
 
-// /invite は未ログインでも InvitePage を描画する（トークンがないので「使えません」）。ほかは未ログインなのでログインの画面
+// /invite は未ログインでも InvitePage を描画する（トークンがないので「使えません」）。/privacy・/terms は本文。ほかは未ログインなのでログインの画面
 const pages: { path: string; rendered: (page: Page) => ReturnType<Page["getByRole"]> }[] = [
   { path: "/login", rendered: (page) => page.getByRole("link", { name: "Googleでログイン" }) },
   { path: "/invites/00000000-0000-4000-8000-000000000000", rendered: (page) => page.getByRole("link", { name: "Googleでログイン" }) },
   { path: "/invite", rendered: (page) => page.getByRole("status").filter({ hasText: "このリンクは使えません" }) },
+  // プライバシー ポリシーと利用規約はログインしなくても出る（docs/specs/T-19-privacy-terms.md）
+  { path: "/privacy", rendered: (page) => page.getByRole("heading", { name: "プライバシー ポリシー", level: 1 }) },
+  { path: "/terms", rendered: (page) => page.getByRole("heading", { name: "利用規約", level: 1 }) },
 ];
 
 for (const { path, rendered } of pages) {
