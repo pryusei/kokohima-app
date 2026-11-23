@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 // APIのエラー形式（RFC 9457 Problem Details）。api-conventions スキルの「エラー」に対応する
 export const errorCodeSchema = z.enum([

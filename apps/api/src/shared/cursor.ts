@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 // 一覧のカーソル（api-conventions「ページング」）。並び順のキーと id を base64url の JSON にした不透明な文字列
 

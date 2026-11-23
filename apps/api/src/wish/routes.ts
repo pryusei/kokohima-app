@@ -6,7 +6,7 @@ import {
 } from "@kokohima/shared";
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { z } from "zod";
+import * as z from "zod";
 import type { AppEnv } from "../env";
 import { idempotent } from "../http/idempotency";
 import { problem } from "../http/problem";

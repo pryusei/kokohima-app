@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { Suspense, useEffect, type ReactNode } from "react";
 import { NameGate } from "./account/NameGate";
 import { useAuth } from "./auth/AuthProvider";
 import { AuthCompletePage } from "./pages/AuthCompletePage";
@@ -20,14 +20,26 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { MeetupDetailPage } from "./pages/MeetupDetailPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
-import { PrivacyPage } from "./pages/PrivacyPage";
-import { TermsPage } from "./pages/TermsPage";
 import { WelcomePage } from "./pages/WelcomePage";
 import { AccountSettingsPage, PresetSettingsPage, SettingsPage } from "./pages/SettingsPage";
 import { behindTab, navigate, useLocation } from "./router";
 import { Button } from "./ui/Button";
 import { Loading } from "./ui/feedback";
 import type { TabPath } from "./ui/Navigation";
+import { lazyPage } from "./ui/lazyPage";
+
+// プライバシー ポリシーと利用規約は本文が長く、開く人が少ないので、別のチャンクにする（docs/specs/T-49-perf-small-fixes.md「4.」）
+const PrivacyPage = lazyPage(() => import("./pages/PrivacyPage"), (m) => m.PrivacyPage);
+const TermsPage = lazyPage(() => import("./pages/TermsPage"), (m) => m.TermsPage);
+
+/** 遅延読み込みのページを読んでいる間（ログインの確認中と同じ形） */
+function PageLoading() {
+  return (
+    <main className="mx-auto max-w-md p-6">
+      <Loading />
+    </main>
+  );
+}
 
 function Redirect({ to }: { to: string }) {
   useEffect(() => navigate(to, { replace: true }), [to]);
@@ -93,16 +105,11 @@ export function App() {
   // 招待リンクの受け口は未ログインでも描画する（振り分けると、フラグメントのトークンを失う）
   if (pathname === "/invite") return <InvitePage />;
   // プライバシー ポリシーと利用規約は、ログインの状態によらず出す（docs/specs/T-19-privacy-terms.md「1.」）
-  if (pathname === "/privacy") return <PrivacyPage />;
-  if (pathname === "/terms") return <TermsPage />;
-
-  if (status === "checking") {
-    return (
-      <main className="mx-auto max-w-md p-6">
-        <Loading />
-      </main>
-    );
+  if (pathname === "/privacy" || pathname === "/terms") {
+    return <Suspense fallback={<PageLoading />}>{pathname === "/privacy" ? <PrivacyPage /> : <TermsPage />}</Suspense>;
   }
+
+  if (status === "checking") return <PageLoading />;
 
   if (status === "error") {
     return (

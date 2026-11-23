@@ -7,7 +7,7 @@ import {
   respondDirectInviteRequestSchema,
 } from "@kokohima/shared";
 import { Hono, type Context } from "hono";
-import { z } from "zod";
+import * as z from "zod";
 import type { AppEnv } from "../env";
 import { problem } from "../http/problem";
 import { idempotent } from "../http/idempotency";

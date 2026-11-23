@@ -1,6 +1,6 @@
 import type { CreateWishRequest, LinkPreview, PublicProfile, Wish } from "@kokohima/shared";
 import { createWishRequestSchema } from "@kokohima/shared";
-import type { z } from "zod";
+import type * as z from "zod";
 import type { AppDeps, Bindings } from "../../env";
 import { getPublicProfiles } from "../../identity/application/auth";
 import { previewsFor } from "../../link-preview/application/previews";

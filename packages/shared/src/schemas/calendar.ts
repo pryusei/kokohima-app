@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { presetNameSchema } from "./availability";
 
 // カレンダー連携（docs/specs/T-06-calendar.md「API」）

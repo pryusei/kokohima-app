@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { publicProfileSchema } from "./social";
 
 // ここ暇（docs/specs/T-03-availability.md「API」）

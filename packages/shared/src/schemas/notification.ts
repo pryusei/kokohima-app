@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { historyProfileSchema } from "./social";
 
 // 通知（docs/specs/T-07-notification.md「API」）

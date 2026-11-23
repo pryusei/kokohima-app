@@ -21,7 +21,7 @@
   - 定期処理の各処理を独立させ、失敗と上限での打ち切りをログに出す（pryusei/kokohima-app#86）
 - やらないこと（スコープ外）：
   - queue の consumer の並列化、お知らせの配信の D1 往復の削減
-  - フロントエンド（`React.lazy`・`staleTime`）
+  - フロントエンド（`React.lazy`・`staleTime`。T-49 で扱った）
   - 回数の上限（Rate Limiting）の付け足し、リンクのプレビューの DNS の検査
   - くり返しの例外の日付の掃除
 
