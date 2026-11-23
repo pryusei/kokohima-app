@@ -53,7 +53,7 @@
 | `cleanup_capped_minutely` | `"event":"cleanup_capped"` かつ `"step":"cleanup_notifications"`／`"step":"cleanup_invitations"`／`"step":"cleanup_broadcasts"`／`"step":"cleanup_invite_links"`／`"step":"cleanup_recurrence_exceptions"`／`"step":"cleanup_stale_notification_outbox"` | 1時間に30件以上 |
 | `cleanup_capped_15min` | `"event":"cleanup_capped"` かつ `"step":"mark_dormant_connections"`／`"step":"wake_dormant_connections"`／`"step":"cleanup_push_subscriptions"` | 1時間に3件以上 |
 
-- 閾値は、友達だけ（100人まで）の運用を前提にした最初の値。変えたら、この表と仕様書の「アラートの一覧」を一緒に直す。
+- 閾値は、友達だけ（100人程度）の運用を前提にした最初の値。変えたら、この表と仕様書の「アラートの一覧」を一緒に直す。
 - Monitors が数えるログは warn 以下で出している。error で出すと Workers Issues からも届き、二重になる（仕様書「3.」）。
 
 ### 1-4. Workers Issues と自動の通知
