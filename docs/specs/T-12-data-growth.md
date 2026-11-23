@@ -123,7 +123,7 @@
 
 ## スコープ外
 - queue の consumer の並列化（いまは1件ずつ順に処理する）、お知らせの配信の D1 往復の削減。
-- フロントエンドのページの遅延読み込み（`React.lazy`）と TanStack Query の `staleTime`。
+- フロントエンドのページの遅延読み込み（`React.lazy`）と TanStack Query の `staleTime`（T-49 で扱った。docs/specs/T-49-perf-small-fixes.md）。
 - 回数の上限（Rate Limiting）を付ける経路の追加、リンクのプレビューの DNS の確認と接続先のずれ。
 - くり返しの例外（`recurrence_exceptions`）の過去の日付の掃除（T-17 で対応。docs/specs/T-17-retention.md「6.」）。
 - 流す型がまだない outbox の未処理の行の扱い。
