@@ -7,6 +7,7 @@ import { DEAD_SESSION_RETENTION_MS } from "../identity/infra/repository";
 import { IMAGE_GRACE_MS, PREVIEW_RETENTION_MS } from "../link-preview/application/previews";
 import { countsCutoffDay, NOTIFICATION_RETENTION_MS } from "../notification/application/delivery";
 import { IDEMPOTENCY_TTL_MS } from "../shared/idempotency";
+import { WISH_POSTS_RETENTION_MS } from "../wish/application/wishes";
 import { AVAILABILITY_RETENTION_MS, exceptionCutoffDate, OUTBOX_RETENTION_MS, RETENTION_MS } from "./dispatch";
 
 // API の掃除の定数が、packages/shared の RETENTION（プライバシー ポリシーの「8.」と同じ数）から作られ、
@@ -45,6 +46,11 @@ describe("保存期間の定数（T-19「9.」）", () => {
     expect(countsCutoffDay(Date.parse("2026-11-23T10:00:00Z"))).toBe("2026-11-20");
     expect(IMAGE_GRACE_MS).toBe(RETENTION.linkPreviewImageGraceHours * 60 * 60 * 1000);
     expect(IMAGE_GRACE_MS).toBe(60 * 60 * 1000);
+  });
+
+  it("行きたいを置いた記録は2日（T-22）", () => {
+    expect(WISH_POSTS_RETENTION_MS).toBe(RETENTION.wishPostsDays * DAY);
+    expect(WISH_POSTS_RETENTION_MS).toBe(2 * DAY);
   });
 
   it("くり返しの例外は UTC の今日の2日前の日付より前", () => {

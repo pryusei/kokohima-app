@@ -1,0 +1,138 @@
+# T-27 仕様書：アイコン画像のアップロード
+
+- 状態：下書き
+- タスク票：docs/tasks/T-27-avatar-upload.md
+- 関係する要件：F-08、F-17、NF-01、未決事項「表示名・アイコン・プロフィール項目、居住エリアの持ち方」（#43。T-15）
+
+## 概要
+利用者が自分のアイコンに画像を設定できるようにする。画像は端末の中で 256×256 の JPEG にしてから送り、サーバーは形を確かめてメタデータを除いてから R2 に置く。画像を見られるのは本人・友達・招待リンクを開いた人だけで、それ以外には画像があるかどうかも見せない。
+
+## 決めたこと
+1. アイコンは**アップロードした画像か、なし**（なしなら今の `Avatar` のとおり表示名の1文字め）。T-15 のプリセット（`a01`〜`a12`）は作らない。T-15 の確認事項1 はこれで閉じる（利用者の回答）。
+2. 画像を見られる範囲は**本人・友達・招待リンクを開いた人（発行者のアイコン）だけ**（利用者の回答）。友達でなくなった人・履歴の相手（誘い・募集・予定・お知らせで、今は友達でない人）には出さない。
+3. 不適切な画像への対応は、**問い合わせ（`ops@kokohima.app`・T-24 のフォーム）で削除の求めを受け、運営が手で消す**（利用者の回答）。通報ボタン・自動の検査・運営用の画面は作らない。
+4. 画像の URL は、**有効期限つきの署名つき URL** にする。アクセストークンはメモリにだけあり `<img>` では送れないため、閲覧者の条件は「URL を誰に渡すか」（公開プロフィールを作る SQL）で決め、配信の経路は署名と期限だけを確かめる。友達でなくなった人が手元に残した URL は、最長2時間で使えなくなる（受け入れるリスク）。
+5. 画像は端末で作り直し、サーバーは**作り直さずに検証とメタデータの除去だけ**を行う（Workers で画像を描き直す仕組みを持たないため）。受け付けるのは 256×256 の JPEG だけ。
+
+## API
+`api-conventions` に従う。例外は下の注のとおり。
+
+| メソッド | パス | 認証 | 入力（Zodスキーマ名） | 出力 | 主なエラー |
+| --- | --- | --- | --- | --- | --- |
+| PUT | `/api/v1/me/avatar` | Bearer＋Origin | 本文：画像そのもの（`Content-Type: image/jpeg`、200KiB まで） | 200：`meResponseSchema` | 400 `validation_failed`（`errors[].code`：`unsupported_type`・`too_large`・`invalid_image`・`invalid_size`）、401、429 `rate_limited`（大きすぎる本文も413ではなく400 `too_large`） |
+| DELETE | `/api/v1/me/avatar` | Bearer＋Origin | なし | 204 | 401 |
+| GET | `/api/v1/avatars/{avatarId}` | なし（署名つき URL。`<img>` で読むため） | path：`avatarId`（UUID）、query：`e`（期限の Unix 秒）・`s`（署名） | 200：画像（`image/jpeg`） | 404（ない・古い・壊れた ID、署名が違う、期限切れ。すべて同じ本文なしの404） |
+
+- `PUT` にするのは、自分のアイコンという1つしかないものを置き換えるため（作成の `POST` と `Location` にしない）。同じ画像を二度送っても最後の画像が残るだけなので、`Idempotency-Key` は受け付けない（冪等キーの middleware は本文を文字列として読むため、画像の本文にも使わない）。
+- 本文の上限は 200KiB（204,800 バイト）。`Content-Length` がなければ読みながら数え、超えたらそこで止めて400 `too_large`。
+- `PUT` には `RL_USER` のまとまり `avatar_upload`（60秒に20回）を付ける。T-10 の「回数の上限を付ける経路」の表に足す。
+- `GET /avatars/{avatarId}` には回数の上限を付けない。友達の一覧で一度に多くの画像を読むため、`RL_PUBLIC`（60秒に30回）では足りない。署名を確かめるまで D1・R2 を読まないので、でたらめな要求は安い（確認事項1）。
+- 応答のヘッダー（`GET /avatars/{avatarId}`）：`Content-Type: image/jpeg`、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'; sandbox`、`Cache-Control: private, max-age=3600`、`Cross-Origin-Resource-Policy: same-origin`、`Content-Disposition: inline`、`Referrer-Policy: no-referrer`。404 は本文なしで `Cache-Control: no-store`（`<img>` が読む経路のため。T-08 の画像の経路と同じ）。
+
+### 公開プロフィールの `avatarUrl`
+- `publicProfileSchema` の `avatarUrl`（`string | null`）の形は変えない。中身を、署名つきの相対パス `/api/v1/avatars/<avatarId>?e=<期限>&s=<署名>` にする。
+- `avatarUrl` が入るのは次のときだけ。それ以外は、画像があっても `null`（画像がない人と区別できない）。
+  - `GET /me`・`PUT /me/avatar`・`PATCH /me` の自分
+  - 閲覧者と友達である相手（`friendships` に `user_id = 閲覧者, friend_id = 相手` の行がある）
+  - `POST /invite-links/lookup` の `inviter`（有効な招待リンクを示した人。T-02）
+- 退会した人は今のとおり `null`（T-16）。
+- 対象の DTO：友達の一覧・友達の詳細・友達のここ暇（`friend`）・誘い（`counterpart`）・予定（`participants`）・募集（`owner`・`recipients`）・お知らせ（`actor`）・行きたい（`owner`・`excludedUsers`）・`meResponseSchema`・招待の受け口の `inviter`。
+
+### 署名
+- 署名する文字列：`avatar:v1:<avatarId>:<e>`。HMAC-SHA256（鍵は `AVATAR_URL_KEY`、32バイトのランダム値を base64url で表したもの。wrangler secret）の先頭16バイトを base64url で表したものが `s`。
+- 期限 `e` は「今の時刻を1時間単位で切り上げた時刻＋1時間」（有効なのは1〜2時間）。同じ1時間の中では同じ URL になり、端末のキャッシュが効く。
+- 確かめる順：`avatarId` が UUID、`e` が整数で `今 < e ≤ 今＋2時間＋60秒`、`s` が一致（`crypto.subtle.verify` で時間を一定に）→ D1 で `users.avatar_id = ? AND withdrawn_at IS NULL` の行がある → R2 から読む。どこで外れても同じ404。
+- 鍵を変えると、出した URL は次に公開プロフィールを取り直すまで404になる（画面は1文字めに戻るだけ）。鍵の版（kid）は持たない。
+
+## データ
+マイグレーション `0016_avatar.sql`（番号は実装のときの次の番号）。
+- `users.avatar_url` を `avatar_id`（TEXT、null可）に置き換える。今は常に `null` なので、データの移行はない（T-15 で予定していた列の置き換えを、このタスクで行う）。
+- 台帳 `avatar_images`：`id`（TEXT、主キー、UUID）、`created_at`（INTEGER、Unix ミリ秒）。インデックス `avatar_images_created (created_at)`。利用者 ID は持たない（どの画像が誰のものかは `users.avatar_id` だけが持つ）。
+- R2：新しいバケット `kokohima-<env>-avatars`（Terraform の `infra/terraform/modules/kokohima`。リンクのプレビューの画像とは分ける）。バインディング名 `AVATARS`（wrangler の全環境）。キーは `avatars/v1/<avatar_id>`、`httpMetadata.contentType = "image/jpeg"`。
+
+## 振る舞い
+
+### 端末での作り直し（Web）
+- `<input type="file" accept="image/*">` で選ぶ。20MB を超えるファイルは読まずに「この画像は使えません」。
+- `createImageBitmap`（画像の向きは画像のとおり）で読み、短い辺に合わせて中央を正方形に切り抜き、`canvas` で 256×256 に縮めて `toBlob("image/jpeg", 0.85)`。読めない画像（ブラウザが扱えない形式など）は「この画像は使えません」。
+- 切り抜いた結果を丸く表示し、「この画像にする」「やめる」を出す。「この画像にする」で `PUT` する。
+- 作り直した画像はメモリにだけ置く（`localStorage` などに保存しない）。
+
+### サーバーでの検証とメタデータの除去（domain の純粋な関数）
+- `Content-Type` が `image/jpeg` でなければ400 `unsupported_type`。
+- 先頭が `FF D8`（SOI）、マーカーを順に読む：
+  - 残す：APP0（JFIF）、DQT、DHT、DRI、SOF0（ベースライン）・SOF2（プログレッシブ）、SOS とその後の符号化されたデータ、EOI。
+  - 除く：APP1〜APP15（Exif・XMP・位置情報など）、COM。
+  - そのほかのマーカー（ほかの SOF、知らないマーカー）、長さが足りない・はみ出すセグメント、EOI がない・EOI のあとにデータがあるものは400 `invalid_image`。
+  - SOF の幅・高さがどちらも256でなければ400 `invalid_size`。成分の数は1か3だけ。
+- 読むのは1回の走査で、かかる時間は大きさに比例する。デコードはしない（壊れた符号化データは端末の表示で崩れるだけで、ほかの人の端末に害はない）。
+
+### 置く・外す
+- `PUT`：新しい `avatar_id`（UUID）を作る → 台帳に行を書く → R2 に除去したあとのバイトを置く → `UPDATE users SET avatar_id = ? WHERE id = ? AND withdrawn_at IS NULL`。前の画像は消さない（掃除が消す）。R2 に置けなかったら500で、台帳の行は掃除が消す。
+- `DELETE`：`UPDATE users SET avatar_id = NULL WHERE id = ?`。もともとなくても204。
+- 退会（T-16）：今のとおり `users` のアイコンの列（`avatar_id`）を NULL にする。画像は掃除が消す。
+
+### 掃除（毎分のジョブ。T-08 の画像の掃除と同じ形）
+- `avatar_images` のうち、`created_at` から1時間を過ぎ、どの `users.avatar_id` からも参照されていないものについて、R2 の `avatars/v1/<id>` を消してから台帳の行を消す。R2 の削除に失敗したら台帳の行を残し、次の回でやり直す。1回に消すのは100件まで。
+- 画像を消す道はこの1つだけ。削除の求め（決めたこと3）への手での対応も、`users.avatar_id` を NULL にして掃除に任せる。
+- 端末には、出した URL の期限（最長2時間）までキャッシュが残ることがある。
+
+### 画面
+- `apps/web/src/ui/Avatar.tsx` に `src`（`avatarUrl`）を足す。`src` があれば `<img alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` を丸く出し、読めなければ（404・期限切れ）1文字めに戻す。色の決まり（surface-sunken）と大きさは今のまま。
+- 設定画面の「アカウント」に、今のアイコンと「画像を選ぶ」「アイコンを外す」（画像があるときだけ）を出す。送っている間は押せない。失敗は静かな文で出す（エラー色を使わない）。
+- T-15 の初回設定（`/welcome`）の1. は、同じ部品で「画像を選ぶ」（任意）にする。
+- `avatarUrl` は TanStack Query の各一覧のデータに入って届く。画像を別のクエリにしない。自分のアイコンを変えたら `me` と、自分が出る一覧（予定の参加者など）を無効にする。
+
+## 認可と秘匿
+- 閲覧者IDの使い方：
+  - `PUT`・`DELETE /me/avatar` はアクセストークンの `sub` の行だけを書く。パス・本文に利用者 ID を取らない。
+  - 公開プロフィールを作る `identity` の `getPublicProfiles` に閲覧者 ID を足し（`getPublicProfiles(viewerId, ids)`）、`avatarUrl` を作るかどうかの条件（本人・`friendships` の行）を SQL に入れる。招待の受け口は、招待リンクを確かめたあとの発行者 ID だけを渡す専用の関数にする。
+- 他人のデータに届かないことの保証：
+  - 署名には `avatarId` と期限が入るので、ほかの `avatarId` に使い回せない。`avatarId` はアイコンを変えるたびに新しくなり、前の URL は404になる。
+  - `avatarId` は推測できない UUID で、署名つきの URL の中でだけ外に出る。
+- 区別させない応答：
+  - 友達でない相手・退会した相手・画像がない相手は、どれも `avatarUrl: null`。配信の404は、ない・古い・署名違い・期限切れで同じ本文とヘッダー。
+  - 見せない設定（F-07）はここ暇の公開範囲で、アイコンには関係しない。見せない相手にもアイコンは出る（今の表示名と同じ）。
+- ログ：`avatarId`・署名・画像のバイト・大きさを出さない。検証の失敗は `errors[].code` だけ。
+
+## 文書（実装PRで直すもの）
+- プライバシー ポリシー（`/privacy`）：預かる情報に「アイコンの画像（設定した場合。位置情報などのメタデータは除きます）」、見える相手（自分の友達と、招待リンクを開いた人）、保存する期間（アイコンを変える・外す・退会してから1時間ほどで消す）、置き場所（Cloudflare の R2。T-19 の相当措置の記述の範囲）。T-19 の決めたこと9 を書き換える。T-19 の決まりのとおり、効力の前に知らせる。
+- 利用規約：第5条に、アイコンの画像の削除の求めを `ops@kokohima.app` で受けることと、他人の写真や権利のある画像を本人の同意なくアイコンにしないことを足す。
+- `packages/shared/src/retention.ts` と T-17 の保持期間の表、T-16 の消えるもの、T-10 の回数の上限の表、T-02・api-conventions の「公開プロフィール」の説明（`avatarUrl` は署名つきで、友達などにだけ入る）。
+- 手順書：`AVATAR_URL_KEY` の作り方（`wrangler secret`）と、削除の求めへの手での対応（`users.avatar_id` を NULL にする）。
+
+## テスト計画
+
+### 単体テスト（実装PRで必須）
+- [ ] domain の検証：正しい 256×256 のベースライン・プログレッシブは通り、APP1（Exif の GPS）・APP13・COM が除かれ、APP0・画像のデータは残る。PNG・WebP・SVG を JPEG と偽ったもの、256 以外の縦横、知らないマーカー、長さのはみ出し、EOI なし・EOI のあとのデータは400の各 `code`。大きな入力でも1回の走査で終わる
+- [ ] `PUT /me/avatar`：200で `avatarUrl` が入る。R2 に除去後のバイトが `avatars/v1/<id>` で置かれ、台帳に行がある。`image/jpeg` 以外・200KiB 超（`Content-Length` なしを含む）は400。Origin が違えば拒否。`avatar_upload` の上限で429
+- [ ] `DELETE /me/avatar`：204で `avatar_id` が NULL。画像がなくても204
+- [ ] 他人のIDでは取得・更新できない：`PUT`・`DELETE` は自分の行だけが変わる。友達でない相手（解除した相手・履歴だけの相手・知らない人）の公開プロフィールの `avatarUrl` は、画像があっても `null`。友達には入る
+- [ ] 招待の受け口：有効なリンクの `inviter.avatarUrl` が入る。無効なリンクは今のとおり404
+- [ ] 配信：正しい URL は画像とヘッダー一式。署名違い・別の `avatarId` に付け替えた署名・期限切れ・期限が遠すぎる・変える前の古い `avatarId`・退会した人・UUID でない ID は、どれも同じ404。署名が違うときは D1・R2 を読まない
+- [ ] 署名：期限が1時間単位で揃い、同じ1時間の中では同じ URL
+- [ ] 掃除：1時間を過ぎて参照されない画像は R2 と台帳から消える。参照されている画像・1時間以内の画像は消さない。R2 の削除に失敗したら台帳の行を残す。退会・外す・変えるのあとに消える
+- [ ] マイグレーション：`avatar_id` と `avatar_images` があり、`avatar_url` が残らない
+- [ ] ログに `avatarId`・署名・画像の中身が出ない
+- [ ] フロント：選んだ画像が 256×256 の JPEG になって送られる。読めない画像・20MB 超は送らずに静かな文。「アイコンを外す」。`Avatar` は `src` が読めなければ1文字めに戻る
+
+### E2Eテスト（対象にする利用者の流れ）
+- [ ] 設定画面で画像を選ぶ → 「この画像にする」→ 自分のアイコンが画像になる → 「アイコンを外す」で1文字めに戻る
+- [ ] 友達のアイコンが友達の一覧に画像で出る（2人のテスト用ログイン。T-02 の友達になる流れのあと）
+
+## スコープ外
+- アイコンのプリセット、Google・Apple のプロフィール画像の取り込み
+- 切り抜く位置・拡大の調整、GIF・動画
+- 通報ボタン、自動の画像の検査、運営用の管理画面
+- 友達でない人（履歴の相手）へのアイコンの表示
+
+## 確認事項（合意前に解消する）
+1. 配信の経路に回数の上限を付けない、でよいか（付けるなら、新しい Rate Limiting のバインディングが要る。T-10）
+2. 友達でなくなった人が、最長2時間は手元の URL で画像を見られることを受け入れてよいか（短くするほど端末のキャッシュが効かなくなる）
+3. 200KiB・256×256・JPEG の品質 0.85 でよいか（256×256 の写真なら、ふつう 20〜40KB）
+4. アップロードの回数は 60秒に20回だけでよいか（1日の上限は持たない。クローズドの運用の間）
+
+## 変更履歴
+| 日付 | 変更内容 | 理由 |
+| --- | --- | --- |
+| 2026-11-23 | 初版（下書き） | 利用者の要望（アイコン画像を設定したい）。T-15 の確認事項1 への回答 |

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { presetsQuery } from "../availability/queries";
 import { useAuth } from "../auth/AuthProvider";
 import { BottomSheet } from "../ui/BottomSheet";
@@ -13,6 +13,7 @@ import { useOnline } from "../ui/online";
 import { PresetForm } from "../availability/PresetForm";
 import { DisplayNameForm } from "../account/DisplayNameForm";
 import { displayNameOf, meQuery } from "../account/me";
+import { isContactOpenNow } from "../contact/open";
 
 // 設定（docs/specs/T-11-design.md「画面のつながり」、キャンバス「19 設定」「21 時間帯プリセット」「23 アカウント」）
 // 友達タブの「アカウント」の節から開く。初回設定・ログインの方法の連携は、それぞれのタスクで作る（#43・#45）。退会は T-16
@@ -56,6 +57,9 @@ export function SettingsPage() {
       </ul>
       <Section title="このアプリについて">
         <ul className="rounded-l bg-surface px-4 shadow-card">
+          {/* 問い合わせ（T-24）は公開の日から出す */}
+          {isContactOpenNow() && <Row to="/settings/contact" label="問い合わせ" />}
+          <Row to="/settings/install" label="アプリとして使う" />
           <Row to="/privacy" label="プライバシー ポリシー" />
           <Row to="/terms" label="利用規約" />
         </ul>
@@ -81,6 +85,9 @@ export function PresetSettingsPage() {
 }
 
 /** ログインし直したあとに戻ってくる先（確認の画面をもう一度出す） */
+/** 新しい端末のログインのお知らせから開いたことを表す `?from=` の値（notifications/text.ts の linkOf と揃える） */
+export const NEW_LOGIN_FROM = "new_login";
+
 export const WITHDRAW_RETURN_TO = "/settings/account?withdraw=1";
 
 /** ログインの開始へ移る（テストで差し替える） */
@@ -128,6 +135,7 @@ function WithdrawSection({ reopen, name }: { reopen: boolean; name: string | nul
               <li>カレンダーの連携</li>
               <li>お知らせ</li>
               <li>書いたひとこと・エリア・リンク</li>
+              <li>行きたい</li>
             </ul>
             <p>友達の誘い・募集・予定の履歴には「退会したユーザー」と残ります。</p>
             <p>これからの成立した予定は「やっぱり難しい」になり、相手に知らせます。</p>
@@ -161,6 +169,15 @@ export function AccountSettingsPage({ search = "" }: { search?: string }) {
     setFailed(false);
     if (!(await action())) setFailed(true);
   };
+  // 新しい端末のログインのお知らせから開いたときだけ、理由と心当たりがないときの操作を出し、ログアウトの節へスクロールする
+  // （docs/specs/T-11-design.md「画面のつながり」）。フォーカスは動かさない
+  const fromNewLogin = new URLSearchParams(search).get("from") === NEW_LOGIN_FROM;
+  const logoutSection = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!fromNewLogin) return;
+    const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    logoutSection.current?.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+  }, [fromNewLogin]);
   return (
     <SubScreen title="アカウント" back="/settings">
       <Section title="表示名">
@@ -168,8 +185,11 @@ export function AccountSettingsPage({ search = "" }: { search?: string }) {
           {me.data && <DisplayNameForm initial={me.data.displayName ?? ""} />}
         </div>
       </Section>
-      <Section title="ログアウト">
+      <Section title="ログアウト" ref={logoutSection}>
         <div className="flex flex-col gap-2 rounded-l bg-surface p-4 shadow-card">
+          {fromNewLogin && (
+            <Note>新しい端末でのログインのお知らせから開きました。心当たりがなければ、「すべての端末からログアウト」を押してください。</Note>
+          )}
           {failed && (
             <p role="status" className="text-ink-muted">
               ログアウトできませんでした。通信状態を確認して、もう一度お試しください。

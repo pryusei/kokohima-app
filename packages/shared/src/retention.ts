@@ -32,6 +32,8 @@ export const RETENTION = {
   linkPreviewsDays: 30,
   /** リンクのプレビューの画像（R2・台帳）：参照する結果がなくなり、置いてから */
   linkPreviewImageGraceHours: 1,
+  /** 行きたいを置いた回数の記録（置く回数の上限を数える。中身は持たない）：作ってから。行きたい自体は本人が消すまで・退会まで（T-22） */
+  wishPostsDays: 2,
   /** 冪等キー */
   idempotencyKeysHours: 24,
   /** カレンダーの埋まりのキャッシュ（KV） */
@@ -49,6 +51,8 @@ export const PLATFORM_RETENTION = {
   deadLetterQueueDays: 4,
   /** D1 の復元（Time Travel。#89） */
   databaseRestoreDays: 30,
+  /** 問い合わせの Slack のメッセージ（#kokohima-contact）：投稿から。Slack の保持の設定で、人が設定する（docs/specs/T-24-contact.md「6.」） */
+  contactSlackDays: 90,
 } as const;
 
 /** 保存期間の数をミリ秒にする単位 */

@@ -1,10 +1,11 @@
 import { Clause, Internal, LegalDocument, Mail, Numbered } from "./LegalDocument";
+import { TERMS_REVISION_CHANGES } from "./legal";
 
 // 利用規約（docs/specs/T-19-privacy-terms.md「7.」の文案のとおり）
 
 export function TermsPage() {
   return (
-    <LegalDocument title="利用規約">
+    <LegalDocument title="利用規約" changes={TERMS_REVISION_CHANGES}>
       <p>
         この利用規約（以下「この規約」）は、ここ暇 運営（以下「運営」）が提供する Web アプリ「ここ暇」（以下「このサービス」）を使うときの決まりです。
       </p>
@@ -48,6 +49,10 @@ export function TermsPage() {
           <li>表示名・ひとこと・エリア・リンクなど、あなたが入力した内容の責任は、あなたにあります。</li>
           <li>
             入力した内容の権利は、あなたに残ります。運営は、このサービスを提供するのに必要な範囲（相手への表示、通知、カレンダーへの書き込み、リンクのプレビュー）でだけ使います。
+          </li>
+          <li>
+            誘い・募集に付けたリンクのプレビューの画像は、運営がリンク先のページから写して、相手に配ります。写した画像の権利を持つ人などが削除を求めるときは、
+            <Mail /> に知らせてください。内容を確かめ、必要と判断したときは、その画像を配るのをやめて消します。消したあとも、すでに表示した端末には、しばらく残ることがあります。
           </li>
         </Numbered>
       </Clause>

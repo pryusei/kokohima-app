@@ -13,25 +13,35 @@ const FAILED: LinkPreview = { ...PENDING, status: "failed" };
 
 export const imageUrlOf = (imageId: string) => `/api/v1/link-previews/images/${imageId}`;
 
-export type SubjectLink = { directInviteId: string | null; broadcastId: string | null; url: string | null };
+export type SubjectLink = { directInviteId: string | null; broadcastId: string | null; wishId?: string | null; url: string | null };
 
 /**
- * 誘い・募集・予定のプレビュー。呼び出し側（invitation）が閲覧者で絞って読んだ行だけを渡す。
+ * 誘い・募集・予定・行きたいのプレビュー。呼び出し側（invitation・wish）が閲覧者で絞って読んだ行だけを渡す。
  * 返す配列は渡した順。リンクがなければ null、参照の行がなければ pending
  */
 export async function previewsFor(d1: D1Database, subjects: SubjectLink[]): Promise<(LinkPreview | null)[]> {
   const withLink = subjects.filter((s) => s.url !== null);
   const inviteIds = [...new Set(withLink.map((s) => s.directInviteId).filter((v): v is string => v !== null))];
   const broadcastIds = [...new Set(withLink.filter((s) => s.directInviteId === null).map((s) => s.broadcastId).filter((v): v is string => v !== null))];
-  const [invites, broadcasts] = await Promise.all([
+  const wishIds = [...new Set(withLink.map((s) => s.wishId ?? null).filter((v): v is string => v !== null))];
+  const [invites, broadcasts, wishes] = await Promise.all([
     repo.previewsOf(d1, "direct_invite_id", inviteIds),
     repo.previewsOf(d1, "broadcast_id", broadcastIds),
+    repo.previewsOf(d1, "wish_id", wishIds),
   ]);
   const byInvite = new Map(invites.map((r) => [r.subject_id, r]));
   const byBroadcast = new Map(broadcasts.map((r) => [r.subject_id, r]));
+  const byWish = new Map(wishes.map((r) => [r.subject_id, r]));
   return subjects.map((s) => {
     if (s.url === null) return null;
-    const row = s.directInviteId !== null ? byInvite.get(s.directInviteId) : s.broadcastId !== null ? byBroadcast.get(s.broadcastId) : undefined;
+    const row =
+      s.directInviteId !== null
+        ? byInvite.get(s.directInviteId)
+        : s.broadcastId !== null
+          ? byBroadcast.get(s.broadcastId)
+          : s.wishId
+            ? byWish.get(s.wishId)
+            : undefined;
     if (!row || row.status === "fetching") return PENDING;
     if (row.status === "failed") return FAILED;
     return {

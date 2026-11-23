@@ -3,7 +3,10 @@ import { useAuth } from "./auth/AuthProvider";
 import { AuthCompletePage } from "./pages/AuthCompletePage";
 import { AvailabilityPage } from "./pages/AvailabilityPage";
 import { CalendarSettingsPage } from "./pages/CalendarSettingsPage";
+import { ContactPage } from "./pages/ContactPage";
+import { isContactOpenNow } from "./contact/open";
 import { EveryonePage } from "./pages/EveryonePage";
+import { InstallPage } from "./pages/InstallPage";
 import { FriendDetailPage } from "./pages/FriendDetailPage";
 import { BroadcastDetailPage } from "./pages/BroadcastDetailPage";
 import { BroadcastNewPage } from "./pages/BroadcastNewPage";
@@ -123,7 +126,10 @@ export function App() {
   if (pathname === "/settings/calendar") return <CalendarSettingsPage search={search} />;
   if (pathname === "/settings/presets") return <PresetSettingsPage />;
   if (pathname === "/settings/notifications") return <NotificationSettingsPage />;
+  if (pathname === "/settings/install") return <InstallPage />;
   if (pathname === "/settings/account") return <AccountSettingsPage search={search} />;
+  // 問い合わせ（T-24）。公開の日より前は、知らない経路と同じ扱い（みんなのタブ）
+  if (pathname === "/settings/contact" && isContactOpenNow()) return <ContactPage />;
 
   const sheet = sheetOf(pathname, search);
   if (sheet) {

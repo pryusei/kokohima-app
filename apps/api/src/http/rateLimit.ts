@@ -6,7 +6,7 @@ import { problem } from "./problem";
 // 回数の上限（レート制限。docs/specs/T-10-idempotency-cache-ratelimit.md「回数の上限」）
 // キーは「まとまりの名前:IP か利用者ID」。ログには IP と利用者 ID を出さない
 
-export type RateLimitGroup = "auth_start" | "invite_lookup" | "ics" | "free_slots" | "link_image" | "friend_availabilities" | "health_ready";
+export type RateLimitGroup = "auth_start" | "invite_lookup" | "ics" | "free_slots" | "link_image" | "friend_availabilities" | "friend_wishes" | "health_ready";
 
 const RETRY_AFTER_SECONDS = "60";
 

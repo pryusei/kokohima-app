@@ -1,6 +1,8 @@
 import { acceptInviteResponseSchema, inviteLookupResponseSchema, type InviteLookupResponse } from "@kokohima/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch } from "../api/client";
+import { keys } from "../api/keys";
 import { useAuth } from "../auth/AuthProvider";
 import { navigate } from "../router";
 
@@ -62,11 +64,15 @@ export function InvitePage() {
     })();
   }, []);
 
+  const queryClient = useQueryClient();
   const accept = async (linkId: string) => {
     setSending(true);
     try {
       const res = await apiFetch("/api/v1/invite-links/accept", { method: "POST", body: JSON.stringify({ linkId }) });
       acceptInviteResponseSchema.parse(await res.json());
+      // 新しい友達の一覧・行きたいを読み直す（T-22）
+      void queryClient.invalidateQueries({ queryKey: keys.friends.all() });
+      void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
       navigate("/friends", { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setState({ kind: "own" });

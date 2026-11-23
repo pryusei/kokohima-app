@@ -72,7 +72,7 @@ description: APIの全体共通ルール（パス、メソッド、ID、日時�
 - IMPORTANT: 権限がない場合に403を返さない。存在の有無を漏らさないため、すべて404の `not_found` にする
 
 ## 成功時のステータス
-- 作成は201と `Location` ヘッダー、更新・取得は200、本文のない削除・取り消しは204
+- 作成は201と `Location` ヘッダー、更新・取得は200、本文のない削除・取り消しは204。作ったものを読む経路がない作成（問い合わせ・画面のエラーの報告）も204
 
 ## 冪等性
 - 作成と状態遷移の `POST` のうち、二重に実行すると結果が変わるものは `Idempotency-Key` ヘッダー（UUID）を受け付ける。同じキーの再送は、最初の結果をそのまま返す（D1に24時間保存。共通の middleware `apps/api/src/http/idempotency.ts` を、経路ごとに認証の後に付ける。docs/specs/T-10-idempotency-cache-ratelimit.md）

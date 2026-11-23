@@ -1,13 +1,13 @@
 import { expect, test } from "./fixtures";
 
-test("ログイン済みでアプリを開くとホーム（みんな）になり、再読み込みしても続く", async ({ loggedInPage: page }) => {
+test("ログイン済みでアプリを開くとホーム（みんな）になり、再読み込みしても続く", { tag: "@iphone" }, async ({ loggedInPage: page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "みんな" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "みんな" })).toBeVisible();
 });
 
-test("ログイン中、localStorage・sessionStorage にアクセストークンがない", async ({ loggedInPage: page }) => {
+test("ログイン中、localStorage・sessionStorage にアクセストークンがない", { tag: "@iphone" }, async ({ loggedInPage: page }) => {
   const tokens: string[] = [];
   page.on("response", async (res) => {
     if (res.url().endsWith("/api/v1/auth/refresh") && res.ok()) {

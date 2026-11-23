@@ -30,6 +30,7 @@ import { Button, SendButton } from "../ui/Button";
 import { EmptyState, LoadError, Loading, Note } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { Section, TabScreen } from "../ui/Navigation";
+import { MyWishes } from "../wish/MyWishes";
 
 // ここ暇タブ（docs/specs/T-03-availability.md「画面」、キャンバス「5 ここ暇」「8 ここ暇の追加」「9 くり返しの追加」）
 // ここ暇の追加とくり返しの追加は、URL を持たないシートで開く（docs/specs/T-11-design.md「画面のつながり」）
@@ -344,6 +345,7 @@ export function AvailabilityPage() {
       <CalendarCandidates />
       <MyAvailabilities />
       <Recurrence />
+      <MyWishes />
       {adding && <AddAvailabilitySheet presets={presets.data} onClose={() => setAdding(false)} />}
     </TabScreen>
   );

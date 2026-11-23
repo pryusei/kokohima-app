@@ -10,6 +10,13 @@ Playwright公式のベストプラクティス（playwright.dev/docs/best-practi
 - 仕様書のテスト計画で「E2E」にした利用者の流れだけを書く。細かい分岐や境界値は単体テストで確かめる
 - 利用者に見える振る舞いを確かめる。関数名やCSSクラスなどの実装の詳細に依存しない
 
+## ブラウザとプロジェクト（docs/specs/T-21-webkit-e2e.md）
+- `mobile`（Chromium・幅390px）・`desktop`（Chromium・PC の幅）・`release`（本番と同じ形）に加えて、`iphone`（WebKit・`devices["iPhone 13"]`）がある
+- `iphone` は `@iphone` の印（`test("…", { tag: "@iphone" }, async …)`）を付けたテストだけを回す。新しいテストを WebKit でも回すかは、そのテストの仕様書で決める。印を付けたら `e2e/playwright-config.unit.ts` の表にも足す
+- WebKit は `http://localhost` では `__Host-` の `Secure` の Cookie を保存しないので、`iphone` は HTTPS の画面（`https://localhost:5174`、自己署名の証明書）と、その Origin に合わせた別の API（`:8789`、ローカルの保存先は `.wrangler/state-https`）で回す。アプリの Cookie の設定や Origin の確認を E2E のために弱めない
+- ローカルでは最初に `pnpm exec playwright install webkit`（Linux では `--with-deps`）を実行する。Chromium だけで回すときは `pnpm e2e --project mobile`
+- Linux の WebKit は iPhone の Safari そのものではない。iPhone の Safari だけで起きる見た目の不具合（日付の入力欄のはみ出しなど）は再現しないことがあるので、そのときは単体テストで CSS の指定を確かめる
+
 ## 認証
 - 本物のGoogle／Appleにはログインしない（自分たちが管理していない外部サービスはテストしない）
 - E2E環境でのみ有効なテスト用ログイン（`POST /__e2e__/login`）で、テスト用ユーザーの更新用トークンCookieを発行する
@@ -26,7 +33,7 @@ Playwright公式のベストプラクティス（playwright.dev/docs/best-practi
 - CIで本番のビルド成果物に `__e2e__` とテスト用ログインの関数名（`e2eLogin`）が含まれていないことを確認する。本番のコードに `__e2e__` という文字列を書かない
 
 ## 外部サービス
-- Google Calendar、iCloud CalDAV、メール配信、Webプッシュ、OGP取得先は、E2E環境では偽の実装に差し替える（calendarなどのinfra層のアダプターを入れ替える）
+- Google Calendar、iCloud CalDAV、メール配信、Webプッシュ、OGP取得先、Slack（問い合わせ。`slack.e2e.invalid`）は、E2E環境では偽の実装に差し替える（calendarなどのinfra層のアダプターを入れ替える）
 - 偽の実装は、テストから状態を設定・確認できるようにする（例：「この時間に予定を入れる」「送られたメールを取得する」）
 - 本物の外部サービスとの接続は、単体テスト（署名検証など）と手動確認で担保する
 

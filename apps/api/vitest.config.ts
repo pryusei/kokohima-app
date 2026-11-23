@@ -1,9 +1,16 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { defineProject } from "vitest/config";
 
 // 単体テストは Workers のランタイム（Miniflare）上で動かす。D1にはマイグレーションを適用してから使う
 export default defineProject({
+  // メールの色が web のトークンと一致することを確かめる（notification/domain/mail.test.ts）。Workers には fs がないので、ここで読む
+  define: {
+    __WEB_INDEX_CSS__: JSON.stringify(readFileSync(path.join(import.meta.dirname, "../web/src/index.css"), "utf8")),
+    // WAF のルールの遮断するパスの一覧を確かめる（http/waf-rule.test.ts、docs/specs/T-26-wp-scan-block.md）
+    __WAF_TF__: JSON.stringify(readFileSync(path.join(import.meta.dirname, "../../infra/terraform/envs/prod/waf.tf"), "utf8")),
+  },
   plugins: [
     cloudflareTest(async () => ({
       wrangler: { configPath: "./wrangler.jsonc" },
@@ -42,6 +49,8 @@ export default defineProject({
           LINK_PREVIEW_OWN_DOMAINS: "app.test",
           // Sign in with Apple（T-12）。単体テストでは動かす（止めたときは各テストで差し替える）
           APPLE_LOGIN_ENABLED: "1",
+          // 問い合わせ（T-24）。偽の値（本物の Slack には送らない。fetch はテストで差し替える）
+          CONTACT_SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/TEST/TEST/test",
         },
       },
     })),

@@ -1,7 +1,7 @@
 // 通知のテスト用の偽の Resend・偽のプッシュのサービス（本番のコードからは読み込まない）
 // 受けたリクエストを記録し、テストから「何を外に渡したか」を確かめられるようにする
 
-export type SentMail = { to: string[]; from: string; subject: string; text: string; idempotencyKey: string | null; authorization: string | null };
+export type SentMail = { to: string[]; from: string; subject: string; text: string; html?: string; idempotencyKey: string | null; authorization: string | null };
 export type SentPush = { url: string; headers: Record<string, string>; bodyLength: number; redirect: string | undefined };
 
 export function createFakeDelivery() {
@@ -23,7 +23,7 @@ export function createFakeDelivery() {
     if (isResend(url)) {
       const next = state.mailNext.shift();
       if (next === "throw") throw new DOMException("The operation timed out.", "TimeoutError");
-      const body = JSON.parse(String(init?.body ?? "{}")) as { to: string[]; from: string; subject: string; text: string };
+      const body = JSON.parse(String(init?.body ?? "{}")) as { to: string[]; from: string; subject: string; text: string; html?: string };
       if (typeof next === "number") return Response.json({ name: "error" }, { status: next });
       if (next && typeof next === "object") return Response.json(next.body, { status: next.status });
       state.mails.push({

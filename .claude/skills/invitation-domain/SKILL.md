@@ -20,8 +20,12 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 | 成立 | Meetup | 会うことが決まった予定 |
 | やっぱり難しい | MeetupCancel ／ MeetupLeave | 成立後の定型キャンセル。募集の予定では押した人だけが抜ける（MeetupLeave） |
 | お知らせ | Notification | アプリの中で読む通知の1件（notification コンテキスト。docs/specs/T-07-notification.md）。プッシュとメールは「お知らせがある」ことだけを伝える |
-| リンクのプレビュー | LinkPreview | 誘い・募集に添えたリンクの OGP のカード（link-preview コンテキスト。docs/specs/T-08-link-preview.md）。取れるまでと取れなかったときはドメインだけ |
+| リンクのプレビュー | LinkPreview | 誘い・募集・行きたいに添えたリンクの OGP のカード（link-preview コンテキスト。docs/specs/T-08-link-preview.md）。取れるまでと取れなかったときはドメインだけ |
 | 見せる／見せない | SharingPolicy | 自分のここ暇を友達ごとに見せるか（初期値：見せる） |
+| 行きたい | Wish | 行きたい店やしたいことを、日時を決めずに置いておくもの（wish コンテキスト。docs/specs/T-22-wishlist.md）。状態の遷移はない |
+| 見せない相手（行きたいの） | WishExclusion | その行きたいを見せない友達。行きたいごとに選ぶ。SharingPolicy とは別 |
+| 問い合わせ | ContactMessage | 設定から運営に送る問い合わせ（contact コンテキスト。docs/specs/T-24-contact.md）。Slack の非公開のチャンネルに届く |
+| 受付番号 | receiptId | 問い合わせの outbox の id。T-13 の問い合わせ番号（requestId）とは別 |
 | 退会したユーザー | （プロフィールの withdrawn） | 履歴の相手が退会した人。「名前未設定の友達」と区別し、「さん」を付けない（docs/specs/T-16-withdrawal.md） |
 
 ## DirectInvite の状態
@@ -67,9 +71,10 @@ open →（募集者が退会：退会による打ち切りで期限を今にす
 | AvailabilityCancelledByCalendar | 取り消しの前に作られた pending の誘いのうち、送信者が受信者のここ暇を取り消しの時点からずっと見られたものだけを、手で断ったときと同じ遷移で declined にする（T-06 決定事項15。判定は availability の `viewersWhoCanSee`）。本人に通知（T-07） |
 | MeetupConfirmed | カレンダーへ書き込み（T-06）。直接の誘いの成立は、成立させた人でない方に通知（T-07。募集の成立は BroadcastDecided で通知する） |
 | BroadcastSent | 宛先ごとに通知（T-07） |
-| LinkAttached | リンク付きの誘い・募集を作ったときに、作成と同じ batch で書く。link-preview がページを取得して保存する（T-08。payload は ID だけ。送信が拒否されたら書かない） |
+| LinkAttached | リンク付きの誘い・募集・行きたい（T-22）を作ったときに、作成と同じ batch で書く。link-preview がページを取得して保存する（T-08。payload は ID だけ。送信が拒否されたら書かない） |
 | BroadcastDecided | Meetup作成、募集者を除く参加者に名前を開示して通知（T-07。同時に MeetupConfirmed も書く） |
 | （期限切れ） | 保存せず読むときに決める。通知しないのでイベントは作らない |
 | MeetupLeft | 募集の予定から1人が抜けた。抜けた人のカレンダーから消し、残りの人のタイトルを直す（T-06）。残った参加者に通知（T-07） |
 | MeetupCancelled | カレンダーから削除（T-06）、押した人を除く参加者に定型文で通知（T-07） |
 | UserWithdrew | 退会の後始末（T-16）。これからの予定は本人の「やっぱり難しい」、受けた pending は「今回は難しい」、送った pending と open の募集は退会による打ち切り、送った counter_proposed は skipped、書いた内容を消す。相手への知らせは MeetupCancelled・MeetupLeft・DirectInviteDeclined で行う |
+| ContactMessageSubmitted | 問い合わせを受け付けた。Slack の問い合わせのチャンネルに届ける（T-24。Queue のメッセージは受付番号だけ） |

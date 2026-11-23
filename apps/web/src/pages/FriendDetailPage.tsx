@@ -14,6 +14,7 @@ import { LoadError, Loading, Note } from "../ui/feedback";
 import { Section } from "../ui/Navigation";
 import { Switch } from "../ui/Switch";
 import { displayNameOf } from "../account/me";
+import { FriendWishList } from "../wish/FriendWishes";
 
 // 友達の詳細（docs/specs/T-03-availability.md「画面」、キャンバス「16 友達の詳細」）
 // 後ろに友達タブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
@@ -50,6 +51,8 @@ function Settings({ friend }: { friend: Friend }) {
       queryClient.removeQueries({ queryKey: keys.friends.detail(friend.id) });
       void queryClient.invalidateQueries({ queryKey: keys.friends.all() });
       void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
+      // 解除した友達の行きたいが「みんな」に残らないように（T-22）
+      void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
     },
     onError: () => setFailed(true),
   });
@@ -129,6 +132,7 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
           </ul>
         </Section>
       )}
+      {friend.data && <FriendWishList friendId={friendId} />}
       {friend.data && (
         <ButtonLink to={`/invites/new?friend=${encodeURIComponent(friendId)}`} variant="primary" block>
           ここどう？と誘う
