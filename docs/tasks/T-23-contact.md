@@ -1,10 +1,10 @@
-# T-21 問い合わせのフォーム
+# T-23 問い合わせのフォーム
 
 ## 目的
 ログインしている利用者が、設定から運営に不具合・ご意見・個人情報の開示や削除の請求を送れるようにする。送った内容は、運営者だけが入る Slack の非公開のチャンネルに届き、運営者は登録のメールアドレスに返事をする。
 
 ## 関係する要件
-- 要求定義書「機能要件」：F-18 問い合わせ（実装PRで足す）
+- 要求定義書「機能要件」：F-22 問い合わせ（実装PRで足す）
 - 要求定義書「AI時代の攻撃を前提にした運用」（保存するデータを減らす）：内容は届けるまでの間だけ D1 に持ち、届けたら消す
 - T-19（プライバシー ポリシーの「3.」8 問い合わせに答える、「12.」開示・削除の求め）。ログインできない人は今までどおり `ops@kokohima.app`
 - 関連：T-10（冪等キー・回数の上限）、T-13（監視・退避キュー）、T-16（退会）、T-17（保持期間）、T-11・T-20（画面）
@@ -39,11 +39,10 @@
 - [ ] typecheck・lint・関係するテストが通る
 
 ## 仕様書
-- docs/specs/T-21-contact.md（仕様書PRとして先に追加し、マージ後に実装PRを作る）
+- docs/specs/T-23-contact.md（仕様書PRとして先に追加し、マージ後に実装PRを作る）
 
 ## 参考
 - 画面：docs/design/（キャンバスに問い合わせの画面はない。トークンと `apps/web/src/ui/` の部品で作る）
 - 関係するスキル：api-conventions、new-api-endpoint、data-fetching、e2e-testing、invitation-domain（用語表）、vercel-react-best-practices、vercel-composition-patterns
 - docs/specs/T-19-privacy-terms.md と、その改定の仕様書PR（ブランチ `spec/T-19-art28`。外国にある第三者への提供を相当措置に）
 - docs/specs/T-13-monitoring.md・docs/runbooks/monitoring.md（Slack のチャンネル、退避キュー）
-- 番号：T-21 は docs/tasks/T-21-webkit-e2e.md と重なる（仕様書の「確認事項」）
