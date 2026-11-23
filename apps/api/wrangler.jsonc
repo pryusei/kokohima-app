@@ -12,6 +12,9 @@
   // issues：捕まえていない例外・5xx・error のログを Workers Issues にまとめ、自動の通知で Slack に送る（docs/specs/T-13-monitoring.md）。
   // 設定に書かないと次のデプロイで無効に戻る
   "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
+  // workers.dev とプレビューの URL を閉じる。各環境に継承される（docs/specs/T-12-release.md）。e2e の環境を誤ってデプロイしても公開されないように
+  "workers_dev": false,
+  "preview_urls": false,
 
   // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS、
   // RESEND_API_KEY、VAPID_PRIVATE_KEY、NOTIFICATION_KEYS）は
@@ -22,6 +25,8 @@
     "APPLE_CLIENT_ID": "",
     "APPLE_TEAM_ID": "",
     "APPLE_KEY_ID": "",
+    // Sign in with Apple を動かすか（"1" のときだけ）。最初のリリースは Google だけ（T-12）
+    "APPLE_LOGIN_ENABLED": "1",
     "JWT_CURRENT_KID": "local-1",
     "CALENDAR_TOKEN_CURRENT_KID": "local-1",
     "NOTIFICATION_CURRENT_KID": "local-1",
@@ -75,6 +80,8 @@
         "APPLE_CLIENT_ID": "e2e-unused",
         "APPLE_TEAM_ID": "e2e-unused",
         "APPLE_KEY_ID": "e2e-unused",
+        // Sign in with Apple を動かすか（"1" のときだけ）。最初のリリースは Google だけ（T-12）
+        "APPLE_LOGIN_ENABLED": "1",
         "JWT_CURRENT_KID": "e2e-1",
         "CALENDAR_TOKEN_CURRENT_KID": "e2e-1",
         "NOTIFICATION_CURRENT_KID": "e2e-1",
@@ -110,14 +117,71 @@
         }
       ]
     },
+    // 本番と同じ形（ビルドした画面を静的アセットとして同じ Worker から出す）をローカルで確かめる環境（docs/specs/T-12-release.md「E2Eテスト」）。
+    // デプロイしない。main は本番と同じ src/index.ts（テスト用ログインの経路を含まない）。
+    // 秘密は dev:assets が scripts/write-e2e-dev-vars.mjs .dev.vars.assets で生成する（e2e の .dev.vars.e2e とは別のファイル）
+    "assets": {
+      "main": "src/index.ts",
+      "assets": {
+        "directory": "../web/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true
+      },
+      "vars": {
+        "APP_ORIGIN": "http://localhost:8788",
+        "GOOGLE_CLIENT_ID": "e2e-unused",
+        "APPLE_CLIENT_ID": "e2e-unused",
+        "APPLE_TEAM_ID": "e2e-unused",
+        "APPLE_KEY_ID": "e2e-unused",
+        // Sign in with Apple を動かすか（"1" のときだけ）。最初のリリースは Google だけ（T-12）
+        "APPLE_LOGIN_ENABLED": "1",
+        "JWT_CURRENT_KID": "e2e-1",
+        "CALENDAR_TOKEN_CURRENT_KID": "e2e-1",
+        "NOTIFICATION_CURRENT_KID": "e2e-1",
+        // VAPID の公開鍵（秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）。TODO: 環境ごとの鍵の公開鍵に置き換える
+        "VAPID_PUBLIC_KEY": "",
+        "VAPID_SUBJECT": "mailto:ops@example.invalid",
+        "MAIL_FROM": "ここ暇 <notify@example.invalid>",
+        // T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない
+        "NOTIFICATION_START_AT": "1",
+        // サービス全体の1日のメール数の上限（E2E は偽の配信で、同じ日に何度も流すので実質なしにする）
+        "MAIL_DAILY_LIMIT": "1000000",
+        // アプリ自身の登録ドメイン（カンマ区切り）。このドメインとサブドメインはリンクのプレビューで取りに行かない
+        "LINK_PREVIEW_OWN_DOMAINS": "localhost"
+      },
+      "queues": {
+        "producers": [{ "binding": "JOBS", "queue": "kokohima-assets-outbox" }],
+        "consumers": [{ "queue": "kokohima-assets-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-assets-outbox-dlq" }]
+      },
+      // リンクのプレビューの画像（docs/specs/T-08-link-preview.md「R2」）。本体は infra/terraform の kokohima-<env>-ogp-images
+      "r2_buckets": [{ "binding": "OGP_IMAGES", "bucket_name": "kokohima-assets-ogp-images" }],
+      "kv_namespaces": [{ "binding": "CACHE", "id": "assets-cache" }],
+      "ratelimits": [
+        { "name": "RL_PUBLIC", "namespace_id": "1201", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RL_USER", "namespace_id": "1202", "simple": { "limit": 20, "period": 60 } }
+      ],
+      "triggers": { "crons": ["* * * * *", "*/15 * * * *"] },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "kokohima-assets",
+          // ローカルの D1 は database_id ごとに分かれる。e2e（すべて0）と別の値にして、同時に起動する E2E とデータを共有しない
+          "database_id": "00000000-0000-0000-0000-000000000a55",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
     "staging": {
-      // TODO: 本番の値に置き換える（ドメイン、Google／AppleのクライアントID）
+      // 最初のリリースではデプロイしない（docs/specs/T-12-release.md 決定事項5）。作るときに prod と同じ形にそろえる
       "vars": {
         "APP_ORIGIN": "https://staging.example.invalid",
         "GOOGLE_CLIENT_ID": "",
         "APPLE_CLIENT_ID": "",
         "APPLE_TEAM_ID": "",
         "APPLE_KEY_ID": "",
+        // Sign in with Apple を動かすか（"1" のときだけ）。最初のリリースは Google だけ（T-12）
+        "APPLE_LOGIN_ENABLED": "0",
         "JWT_CURRENT_KID": "staging-1",
         "CALENDAR_TOKEN_CURRENT_KID": "staging-1",
         "NOTIFICATION_CURRENT_KID": "staging-1",
@@ -156,37 +220,51 @@
       ]
     },
     "prod": {
-      // TODO: 本番の値に置き換える（ドメイン、Google／AppleのクライアントID）
+      // 本番（https://kokohima.app）。画面と API を同じ Worker から出す（docs/specs/T-12-release.md）
+      // カスタムドメインの DNS の記録は Workers が作り、管理する（Terraform の DNS の管理の例外。決定事項6）
+      "routes": [{ "pattern": "kokohima.app", "custom_domain": true }],
+      "workers_dev": false,
+      "preview_urls": false,
+      // 画面（apps/web のビルド）。すべての要求をまず Worker のコードに通し、`/api/` 以外を ASSETS で返してヘッダーを付ける
+      "assets": {
+        "directory": "../web/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true
+      },
       // 本番でも Workers Issues を有効にする（docs/specs/T-13-monitoring.md）。invocation_logs は T-06 のとおり出さない
       "observability": { "enabled": true, "logs": { "invocation_logs": false }, "issues": { "enabled": true } },
       "vars": {
-        "APP_ORIGIN": "https://prod.example.invalid",
-        "GOOGLE_CLIENT_ID": "",
+        "APP_ORIGIN": "https://kokohima.app",
+        // 本番の OAuth クライアント ID（Google Cloud のプロジェクト kokohima の kokohima-prod。秘密ではない）
+        "GOOGLE_CLIENT_ID": "220837211336-2pelj3laks6rvgoi61eeba4upluvpp98.apps.googleusercontent.com",
         "APPLE_CLIENT_ID": "",
         "APPLE_TEAM_ID": "",
         "APPLE_KEY_ID": "",
+        // Sign in with Apple を動かすか（"1" のときだけ）。最初のリリースは Google だけ（T-12）
+        "APPLE_LOGIN_ENABLED": "0",
         "JWT_CURRENT_KID": "prod-1",
         "CALENDAR_TOKEN_CURRENT_KID": "prod-1",
         "NOTIFICATION_CURRENT_KID": "prod-1",
-        // VAPID の公開鍵（秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）。TODO: 環境ごとの鍵の公開鍵に置き換える
-        "VAPID_PUBLIC_KEY": "",
-        "VAPID_SUBJECT": "mailto:ops@example.invalid",
-        "MAIL_FROM": "ここ暇 <notify@prod.example.invalid>",
-        // T-07 を有効にした時刻（Unixミリ秒）。これより前の通知だけの型の outbox の行は送らない。未設定（空）の間はお知らせを作らない。TODO: 有効にするときに、その時刻を入れる
-        "NOTIFICATION_START_AT": "",
+        // VAPID の公開鍵（prod 用に作った鍵の組。秘密鍵 VAPID_PRIVATE_KEY は wrangler secret）
+        "VAPID_PUBLIC_KEY": "BJe_MldfzmiyTEcmOTpIc7NH9aeg1fXlQOyNHLlS0dSjDO_XVI9YNPlk4E2rz0uWGlgnWob_pto9DycIRAv3KZs",
+        "VAPID_SUBJECT": "mailto:ops@kokohima.app",
+        "MAIL_FROM": "ここ暇 <notify@kokohima.app>",
+        // T-07 を有効にした時刻（Unixミリ秒）。prod の D1 は新しく作り、古い outbox の行がないので "1"（T-12）
+        "NOTIFICATION_START_AT": "1",
         // サービス全体の1日のメール数の上限
         "MAIL_DAILY_LIMIT": "90",
-        // アプリ自身の登録ドメイン（カンマ区切り）。このドメインとサブドメインはリンクのプレビューで取りに行かない TODO: 本番のドメインが決まったら置き換える
-        "LINK_PREVIEW_OWN_DOMAINS": "example.invalid"
+        // アプリ自身の登録ドメイン（カンマ区切り）。このドメインとサブドメインはリンクのプレビューで取りに行かない
+        "LINK_PREVIEW_OWN_DOMAINS": "kokohima.app"
       },
       "queues": {
         "producers": [{ "binding": "JOBS", "queue": "kokohima-prod-outbox" }],
         "consumers": [{ "queue": "kokohima-prod-outbox", "max_batch_size": 10, "max_retries": 5, "dead_letter_queue": "kokohima-prod-outbox-dlq" }]
       },
-      // TODO: terraform output の kv_namespace_id を転記する（infra/README.md の初回の手順6）
       // リンクのプレビューの画像（docs/specs/T-08-link-preview.md「R2」）。本体は infra/terraform の kokohima-<env>-ogp-images
       "r2_buckets": [{ "binding": "OGP_IMAGES", "bucket_name": "kokohima-prod-ogp-images" }],
-      "kv_namespaces": [{ "binding": "CACHE", "id": "00000000000000000000000000000000" }],
+      // KV の ID は terraform output の kv_namespace_id（2026-11-23 に prod を apply）
+      "kv_namespaces": [{ "binding": "CACHE", "id": "15794a8d567947cbb6660b89dee21024" }],
       "ratelimits": [
         { "name": "RL_PUBLIC", "namespace_id": "3001", "simple": { "limit": 30, "period": 60 } },
         { "name": "RL_USER", "namespace_id": "3002", "simple": { "limit": 20, "period": 60 } }
@@ -196,8 +274,8 @@
         {
           "binding": "DB",
           "database_name": "kokohima-prod",
-          // TODO: terraform output の D1 ID を転記する（infra/README.md の初回の手順6）
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          // terraform output の d1_database_id（2026-11-23 に prod を apply）
+          "database_id": "72a5b048-1c37-4862-9428-1bffbcb5f679",
           "migrations_dir": "migrations"
         }
       ]
