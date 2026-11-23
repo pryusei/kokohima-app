@@ -131,7 +131,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
             <Avatar name={d.counterpart.displayName} src={d.counterpart.avatarUrl} />
             <div className="flex min-w-0 flex-1 flex-col">
               <h2 className="truncate text-l font-bold">{d.direction === "received" ? name : `${named}へ`}</h2>
-              <span className="text-s text-ink-muted">{KIND_LABELS[d.kind]}</span>
+              <span className="truncate text-s text-ink-muted">{KIND_LABELS[d.kind]}</span>
             </div>
             <Badge tone={statusTone(d.status)}>{statusText(d)}</Badge>
           </div>

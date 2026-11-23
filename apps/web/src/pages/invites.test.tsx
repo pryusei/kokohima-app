@@ -304,6 +304,8 @@ describe("誘いの詳細と返答", () => {
     expect(screen.getByText("10/10（土） 20:00〜23:00")).toBeVisible();
     expect(screen.getByText("最初の時間 19:00〜23:00")).toBeVisible();
     expect(screen.getByRole("button", { name: "20:00〜で決める" })).toBeVisible();
+    // 見出しの2行め（種類）も1行で切り詰める（T-46）
+    expect(screen.getByText("あそぼ")).toHaveClass("truncate");
     expect(screen.getByRole("button", { name: "見送る" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "行く" })).toBeNull();
   });
