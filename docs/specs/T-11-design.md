@@ -16,7 +16,7 @@
 - 灯りの黄色（`lamp`）は、自分と重なるここ暇の枠・ここ暇を作るボタン・未読の印にだけ使う。成立は緑（`meet`）だけ。
 - 断り・期限切れ・見送り・締め切り・やっぱり難しい・失敗は、`quiet-bg`・`quiet-ink` の静かな表示にする。赤やエラー色、警告の印、取り消し線を使わない。
 - 書体は端末の標準の書体（system-ui、ヒラギノ角ゴ、Noto Sans JP）。Web フォントは読み込まない。
-- 押せる部品は44px以上。フォーカスは `surface` の2pxの隙間の外に `focus` の2pxの輪。`prefers-reduced-motion` では動きを止める。
+- 押せる部品は44px以上。フォーカスは2pxの隙間（`outline-offset: 2px`）の外に `focus` の2pxの輪（`outline: 2px solid`）。影のクラスに上書きされず、強制カラーのモードでも出るよう、`box-shadow` ではなく `outline` で描く（T-46。docs/specs/T-46-countered-card-focus-ring.md）。`prefers-reduced-motion` では動きを止める。
 
 ### コンテキストの分担
 - `apps/web` だけを変える。`apps/api`・`packages/shared` は変えない。
@@ -56,7 +56,7 @@
 - 誘いの状態 → バッジの対応は、`apps/web/src/invitations/format.ts` に関数を1つだけ置く（`statusTone`）：
   - `confirmed`（成立）→ `meet`
   - `pending`（返事待ち）→ `pending`
-  - `counter_proposed`（この時間なら）→ `lamp`
+  - `counter_proposed`（この時間なら）→ `lamp`。送信者のバッジの文言は「この時間なら」だけにし、代わりの時間はカードと詳細の本文に大きく出す（T-46）
   - `declined`・`expired`・`skipped`・`cancelled` → `quiet`
 - 募集も同じ：`decided` → `meet`、`open` → `pending`（宛先の人が応じたあとは `lamp`）、`expired`・`closed` → `quiet`。
 - 今の `statusClass`・`broadcastStatusClass` は、この関数に置き換える。
@@ -168,6 +168,7 @@
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
+- [x] フォーカスの輪：`:focus-visible` が `outline` で描かれ、ソースに輪を消す指定がない（T-46。`ui/focus.test.ts`）。
 - [x] `statusTone`：誘いの7つの状態と募集の状態が、上の表のとおりのバッジになる。`declined`・`expired`・`skipped`・`cancelled`・`closed` はすべて `quiet` で、互いに同じ見た目になる。
 - [x] 色の直書きがない・赤を使わない：`apps/web/src` のソースに、Tailwind の既定の色の名前（「トークンとテーマ」の一覧。`text-slate-600`・`bg-red-50` など）を使った指定がない。`index.css` のトークンに、赤の色相の値（色相0〜20度・340〜360度で彩度が高いもの）がない。
 - [x] `TabBar`：タブは4つ。今の URL のタブにだけ `aria-current="page"`。
@@ -230,6 +231,7 @@
 | 2026-11-23 | つまみを引いて閉じると、引いたあとに届く `click` で閉じる処理が2回走り、`history.back()` が2回になっていた（前からの不具合）のを直した。オフラインの帯を上に残る行に入れた。iPhone のはみ出しは E2E の Chromium では再現しないことをテスト計画に書いた | 実装PRのレビュー（pryusei/kokohima-app#139） |
 | 2026-11-23 | 画面のつながりに `/privacy`・`/terms` と、設定の「このアプリについて」を足した | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
 | 2026-11-23 | PC の配置（左のナビ・中央のダイアログ）への参照を足した | T-20 |
+| 2026-11-23 | フォーカスの輪を `box-shadow` から `outline`（2px・隙間2px）に変えた（影のクラスに上書きされ、強制カラーでは消えていた）。「この時間なら」の送信者のバッジを短い語だけにした | T-46（docs/specs/T-46-countered-card-focus-ring.md。pryusei/kokohima-app#194） |
 | 2026-11-23 | iPhone のはみ出しは、Linux の WebKit（T-21）でも再現しないことを確かめ、テスト計画に書いた | T-21 の実装PR |
 | 2026-11-23 | 新しい端末のログインのお知らせから開いたアカウントの設定に、理由と心当たりがないときの操作の説明を出し、ログアウトの節へスクロールすることにした | 利用者の報告（お知らせを押すと、理由がわからないままアカウントの設定に移る） |
 | 2026-11-23 | 新しい端末のログインのお知らせから開いたアカウントの設定の説明とスクロールを実装した（`Section` に `ref` を渡せるようにした） | 実装PR |
