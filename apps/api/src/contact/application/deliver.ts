@@ -1,5 +1,5 @@
 import { CONTACT_CATEGORIES } from "@kokohima/shared";
-import { z } from "zod";
+import * as z from "zod";
 import type { AppDeps, Bindings } from "../../env";
 import { getContactSender } from "../../identity/application/auth";
 import { buildSlackMessage } from "../domain/slackMessage";

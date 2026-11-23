@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { areaSchema, freeText, linkUrlSchema, messageSchema } from "./invitation";
 
 // 行きたいのAI提案（docs/specs/T-29-wish-suggestion.md「API」）

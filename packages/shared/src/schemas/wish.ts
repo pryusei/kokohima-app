@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { areaSchema, linkPreviewSchema, linkUrlSchema, messageSchema } from "./invitation";
 import { pageSchema } from "./pagination";
 import { publicProfileSchema } from "./social";

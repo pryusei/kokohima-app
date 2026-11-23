@@ -3,6 +3,13 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+// zod は名前空間で読む（`import { z }` は使わない言語のファイルまで Worker と画面に入る。docs/specs/T-49-perf-small-fixes.md「1.」）
+const ZOD_NAMESPACE = {
+  name: "zod",
+  importNames: ["z"],
+  message: 'zod は `import * as z from "zod"` で読む（使わない言語のファイルを木の剪定で落とすため）',
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -22,6 +29,10 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ["**/*.{ts,tsx}"],
+    rules: { "no-restricted-imports": ["error", { paths: [ZOD_NAMESPACE] }] },
+  },
+  {
     files: ["apps/web/**/*.{ts,tsx}"],
     languageOptions: { globals: globals.browser },
     plugins: { "react-hooks": reactHooks },
@@ -39,7 +50,10 @@ export default tseslint.config(
     rules: {
       "no-restricted-imports": [
         "error",
-        { patterns: [{ group: ["**/e2e", "**/e2e/**"], message: "E2E用のコードは src/e2e/entry.ts からだけ読み込む" }] },
+        {
+          paths: [ZOD_NAMESPACE],
+          patterns: [{ group: ["**/e2e", "**/e2e/**"], message: "E2E用のコードは src/e2e/entry.ts からだけ読み込む" }],
+        },
       ],
     },
   },

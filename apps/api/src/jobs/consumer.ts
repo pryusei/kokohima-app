@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import type { AppDeps, Bindings, JobMessage } from "../env";
 import { syncConnection } from "../calendar/application/sync";
 import { reconcileMeetup, reconcileUpcomingOf } from "../calendar/application/writes";

@@ -1,7 +1,7 @@
 import { rangeQuerySchema } from "@kokohima/shared";
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { z } from "zod";
+import * as z from "zod";
 import type { AppEnv } from "../env";
 import { problem } from "../http/problem";
 import { rateLimit, rateLimitedProblem } from "../http/rateLimit";
