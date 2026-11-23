@@ -75,7 +75,11 @@ export function stripIgnored(text: string): string {
   }
 }
 
-/** <meta ...> のタグを左から順に。閉じの > がなければそこで終える（ページの大きさに比例する時間） */
+/**
+ * <meta ...> のタグを左から順に。" と ' の中にいるかを追い、引用符の外の > でだけタグを終える
+ * （content="A > B" を途中で切らない）。閉じの > や閉じの引用符がなければそこで終える。
+ * どの文字も1回しか見ないので、ページの大きさに比例する時間で終わる
+ */
 export function* metaTags(text: string): Generator<string> {
   const lower = asciiLower(text);
   let i = 0;
@@ -87,11 +91,27 @@ export function* metaTags(text: string): Generator<string> {
       i = start + 5;
       continue;
     }
-    const end = lower.indexOf(">", start);
+    const end = tagEnd(text, start + 5);
     if (end === -1) return;
     yield text.slice(start, end + 1);
     i = end + 1;
   }
+}
+
+/** from から右へ読み、引用符の外にある最初の > の位置。閉じの > か閉じの引用符がなければ -1 */
+function tagEnd(text: string, from: number): number {
+  let quote: string | null = null;
+  for (let j = from; j < text.length; j++) {
+    const c = text[j];
+    if (quote !== null) {
+      if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === ">") {
+      return j;
+    }
+  }
+  return -1;
 }
 
 /** 最初の <title> の中身。閉じがなければ null */
