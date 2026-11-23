@@ -130,7 +130,7 @@
 - `pnpm --filter api deploy:prod`（新しく足す）：`apps/web` をビルドし、CI と同じ検査（画面のビルド・wrangler の設定・`--dry-run` で作った API のビルドに E2E 用の経路がないこと。`apps/api/scripts/check-*.mjs`）を通してから `wrangler deploy --env prod`。手元の `.env.local` などが本番のビルドに入り込んでも、ここで止まる。人だけが実行する（Claude は実行しない）。
   - `deploy:prod` だけ、転記を忘れた値も検査する（`check-wrangler-config.mjs --deploy`）：prod の `vars.GOOGLE_CLIENT_ID`・`vars.VAPID_PUBLIC_KEY` が空、または prod の D1 の `database_id`・KV の `id` がすべて0の仮の値なら止まる。CI の `build:prod` は TODO のままの設定でビルドするので、この検査を付けない。
   - `deploy:prod` だけ、プライバシー ポリシーと利用規約の制定日が決まっているかも検査する（`check-web-dist.mjs --deploy`。「制定日：YYYY年M月D日」でなければ止まる。T-19「5.」）。「制定日：」が `dist` にちょうど1回あることは、CI の `build:prod` でも毎回確かめる。
-  - 改定日（効力が生じる日）と公表日（予告）の行も同じ検査に入る（T-19「5.」「8.」）。CI の `build:prod` では数と形だけ（どちらも1回まで、前の形の「改定日：」がない）、`deploy:prod` では日本時間の今日と大小を比べる：公表日の行があれば「公表日 ≦ 今日 ≦ 改定日」かつ「改定日 − 公表日」が7〜30日、なければ「改定日 ≦ 今日」。外れたら止まるので、デプロイの日がずれたら `apps/web/src/pages/legal.ts` の日付を直してからデプロイする。
+  - 改定日（効力が生じる日）と公表日（予告）の行も同じ検査に入る（T-19「5.」「8.」）。CI の `build:prod` では数と形だけ（どちらも1回まで、前の形の「改定日：」がない）、`deploy:prod` では日本時間の今日と大小を比べる：公表日の行があれば「公表日 ≦ 今日 ≦ 改定日」かつ「改定日 − 公表日」が7〜30日、なければ「改定日 ≦ 今日」。初めて予告を出すデプロイ（本番の画面の JS にまだその予告の行がない）では「公表日 ＝ 今日」を求め、本番の画面を読めなければ止まる。外れたら止まるので、デプロイの日がずれたら `apps/web/src/pages/legal.ts` の日付を直してからデプロイする。
 - `pnpm --filter api db:migrate:prod`（新しく足す）：`wrangler d1 migrations apply DB --remote --env prod`（prod の `DB` のバインディング＝`kokohima-prod`）。人だけが実行する。
 
 ### 人が行う作業（デプロイの前。#52 に載せる）
