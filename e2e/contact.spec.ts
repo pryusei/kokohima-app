@@ -31,8 +31,8 @@ test("友達タブ → 設定 → 問い合わせで、不具合を送ると「�
   await page.getByLabel("内容").fill(`<!channel> & テスト ${marker}\n2行目`);
   await expect(page.getByText(/^\d+ \/ 1000$/)).toBeVisible();
   // 入力欄が画面の幅をはみ出さない
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(0);
+  const box = await page.getByLabel("内容").evaluate((el) => ({ scroll: el.ownerDocument.documentElement.scrollWidth, client: el.ownerDocument.documentElement.clientWidth }));
+  expect(box.scroll).toBeLessThanOrEqual(box.client);
   await page.getByRole("button", { name: "送る" }).click();
   await expect(page.getByRole("heading", { name: "送りました" })).toBeVisible();
   await expect(page.getByLabel("内容")).toHaveCount(0);

@@ -46,7 +46,7 @@ export const CALENDAR_TYPES = [
  */
 export const ID_ONLY_TYPES: readonly string[] = ["ContactMessageSubmitted"];
 
-/** outbox の行から Queue のメッセージを作る（dispatchOnce と E2E の /__e2e__/outbox/drain の両方が使う） */
+/** outbox の行から Queue のメッセージを作る（dispatchOnce と、E2E の outbox を流す経路の両方が使う） */
 export function toJobMessage(row: { id: string; type: string; payload: string; created_at: number }): Extract<JobMessage, { kind: "outbox" }> {
   return {
     kind: "outbox",
