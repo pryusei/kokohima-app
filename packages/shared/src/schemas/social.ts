@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { pageSchema } from "./pagination";
 
 // 友達と招待リンク（docs/specs/T-02-friends.md「API」）

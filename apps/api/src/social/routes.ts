@@ -6,7 +6,7 @@ import {
   updateFriendRequestSchema,
 } from "@kokohima/shared";
 import { Hono, type Context } from "hono";
-import { z } from "zod";
+import * as z from "zod";
 import type { AppEnv } from "../env";
 import { requireActiveSession, requireAuth, requireSameOrigin } from "../identity/middleware";
 import { clearInviteCookie, getInviteCookie, setInviteCookie } from "../http/inviteCookie";

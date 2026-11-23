@@ -54,6 +54,20 @@ for (const { path, rendered } of pages) {
   });
 }
 
+test("本番と同じ形では、ハッシュ付きの /assets/ は1年の immutable、/sw.js は no-cache（docs/specs/T-49-perf-small-fixes.md）", async ({ page, request }) => {
+  const assets: { url: string; cacheControl: string | undefined }[] = [];
+  page.on("response", (r) => {
+    if (new URL(r.url()).pathname.startsWith("/assets/")) assets.push({ url: r.url(), cacheControl: r.headers()["cache-control"] });
+  });
+  // /privacy は遅延読み込みのチャンクも読む
+  await page.goto("/privacy");
+  await expect(page.getByRole("heading", { name: "プライバシー ポリシー", level: 1 })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  expect(assets.length).toBeGreaterThan(0);
+  for (const a of assets) expect(a.cacheControl, a.url).toBe("public, max-age=31536000, immutable");
+  expect((await request.get("/sw.js")).headers()["cache-control"]).toBe("no-cache");
+});
+
 test("本番と同じ形では、画面の側の POST は405で、テスト用ログインの経路はない", async ({ request }) => {
   const post = await request.post("/__e2e__/login", { data: {} });
   expect(post.status()).toBe(405);

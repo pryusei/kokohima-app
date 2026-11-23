@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 // 一覧のページング（api-conventions「ページング」）。limit は1〜50（既定20）、cursor は不透明な文字列
 export const listQuerySchema = z.object({

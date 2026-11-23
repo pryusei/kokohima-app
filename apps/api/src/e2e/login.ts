@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import type { Context } from "hono";
 import { createSession } from "../identity/application/auth";
 import { setRefreshCookie } from "../identity/cookies";

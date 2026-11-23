@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { z } from "zod";
+import type * as z from "zod";
 import type { AppEnv } from "../env";
 import { problem } from "./problem";
 

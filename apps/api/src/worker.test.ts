@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import type { AppEnv, Bindings } from "./env";
-import { API_CSP, COMMON_HEADERS, PAGE_CSP } from "./http/securityHeaders";
+import { API_CSP, COMMON_HEADERS, IMMUTABLE_ASSET_CACHE, PAGE_CSP } from "./http/securityHeaders";
 import { createWorker, routeRequest } from "./worker";
 
 // 振り分けとセキュリティのヘッダー（docs/specs/T-12-release.md「振り分け」「セキュリティのヘッダー」）
@@ -41,8 +41,15 @@ function fakeAssets() {
       seen.push({ method: req.method, path });
       if (path === "/moved") return Response.redirect("https://kokohima.app/", 307);
       if (path === "/icon.svg") return new Response("<svg/>", { headers: { "Content-Type": "image/svg+xml" } });
+      // 静的アセットの既定（再検証させる値）。Worker が immutable に上書きする
+      if (path === "/assets/app.js" && req.headers.get("If-None-Match"))
+        return new Response(null, { status: 304, headers: { ETag: '"b"', "Content-Type": "text/javascript" } });
+      if (path === "/assets/bare.js" && req.headers.get("If-None-Match")) return new Response(null, { status: 304, headers: { ETag: '"c"' } });
       if (path === "/assets/app.js")
-        return new Response("1", { headers: { "Content-Type": "text/javascript", "Cache-Control": "public, max-age=31536000, immutable" } });
+        return new Response("1", { headers: { "Content-Type": "text/javascript", "Cache-Control": "public, max-age=0, must-revalidate" } });
+      if (path === "/assets/style.css")
+        return new Response("a{}", { headers: { "Content-Type": "text/css", "Cache-Control": "public, max-age=0, must-revalidate" } });
+      if (path === "/assets/moved.js") return Response.redirect("https://kokohima.app/", 307);
       if (path === "/sw.js")
         return new Response("self", { headers: { "Content-Type": "text/javascript", "Cache-Control": "public, max-age=3600" } });
       if (req.headers.get("If-None-Match")) return new Response(null, { status: 304, headers: { ETag: '"a"' } });
@@ -170,7 +177,30 @@ describe("セキュリティのヘッダー", () => {
     expect((await call("/", { method: "POST" })).headers.get("Cache-Control")).toBeNull();
     expect((await call("/moved")).headers.get("Cache-Control")).toBeNull();
     expect((await call("/sw.js")).headers.get("Cache-Control")).toBe("no-cache");
-    expect((await call("/assets/app.js")).headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  it("/assets/ の下の200と Content-Type のある304は1年の immutable。Content-Type のない304・HTML（見つからない資産の SPA の入口）・405・リダイレクト・ほかのパスは除く", async () => {
+    const { call } = setup();
+    expect((await call("/assets/app.js")).headers.get("Cache-Control")).toBe(IMMUTABLE_ASSET_CACHE);
+    expect(IMMUTABLE_ASSET_CACHE).toBe("public, max-age=31536000, immutable");
+    expect((await call("/assets/style.css")).headers.get("Cache-Control")).toBe(IMMUTABLE_ASSET_CACHE);
+    const notModified = await call("/assets/app.js", { headers: { "If-None-Match": '"b"' } });
+    expect(notModified.status).toBe(304);
+    expect(notModified.headers.get("Cache-Control")).toBe(IMMUTABLE_ASSET_CACHE);
+    // 見つからない資産は SPA の index.html が返る。HTML なので no-cache のまま（長く持たせない）
+    expect((await call("/assets/missing-abc.js")).headers.get("Cache-Control")).toBe("no-cache");
+    // その再検証の304（Content-Type なし。SPA の入口かもしれない）には immutable を付けない
+    const bare = await call("/assets/missing-abc.js", { headers: { "If-None-Match": '"a"' } });
+    expect(bare.status).toBe(304);
+    expect(bare.headers.get("Cache-Control")).toBeNull();
+    const bareAsset = await call("/assets/bare.js", { headers: { "If-None-Match": '"c"' } });
+    expect(bareAsset.status).toBe(304);
+    expect(bareAsset.headers.get("Cache-Control")).toBeNull();
+    expect((await call("/assets/app.js", { method: "POST" })).headers.get("Cache-Control")).toBeNull();
+    expect((await call("/assets/moved.js")).headers.get("Cache-Control")).toBeNull();
+    // 先頭が /assets/ でないもの（ハッシュの付かない public のファイル）は既定のまま
+    expect((await call("/icon.svg")).headers.get("Cache-Control")).toBeNull();
+    expect((await call("/%61ssets/app.js")).headers.get("Cache-Control")).toBe("no-cache");
   });
 
   it("API の応答：共通のヘッダーと default-src 'none' の CSP。経路が付けたヘッダーは上書きしない", async () => {

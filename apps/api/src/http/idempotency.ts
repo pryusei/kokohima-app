@@ -1,5 +1,5 @@
 import { createMiddleware } from "hono/factory";
-import { z } from "zod";
+import * as z from "zod";
 import type { AppEnv } from "../env";
 import { sha256 } from "../shared/crypto";
 import * as store from "../shared/idempotency";
