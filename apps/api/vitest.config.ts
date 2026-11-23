@@ -49,6 +49,8 @@ export default defineProject({
           LINK_PREVIEW_OWN_DOMAINS: "app.test",
           // Sign in with Apple（T-12）。単体テストでは動かす（止めたときは各テストで差し替える）
           APPLE_LOGIN_ENABLED: "1",
+          // 問い合わせ（T-24）。偽の値（本物の Slack には送らない。fetch はテストで差し替える）
+          CONTACT_SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/TEST/TEST/test",
         },
       },
     })),

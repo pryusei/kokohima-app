@@ -1,5 +1,5 @@
 import { RETENTION, RETENTION_UNIT_MS } from "@kokohima/shared";
-import type { AppDeps, Bindings } from "../env";
+import type { AppDeps, Bindings, JobMessage } from "../env";
 import { deleteExpiredIcsTokens, deleteExpiredOauthStates } from "../calendar/infra/repository";
 import { db as identityDb, deleteDeadSessions, deleteExpiredLoginRecords } from "../identity/infra/repository";
 import { OAUTH_STATE_TTL_MS } from "../calendar/application/connections";
@@ -36,7 +36,26 @@ export const CALENDAR_TYPES = [
   "AvailabilityCancelledByCalendar",
   "LinkAttached",
   "UserWithdrew",
+  // 問い合わせを Slack に届ける（docs/specs/T-24-contact.md「振る舞い 2.」）
+  "ContactMessageSubmitted",
 ] as const;
+
+/**
+ * Queue のメッセージに payload を載せない型（docs/specs/T-24-contact.md「振る舞い 2.」）。
+ * Queue のメッセージは再試行の間と退避キューに残り、退会で D1 の行を消しても残るため。consumer は受付番号で D1 の行を読む
+ */
+export const ID_ONLY_TYPES: readonly string[] = ["ContactMessageSubmitted"];
+
+/** outbox の行から Queue のメッセージを作る（dispatchOnce と E2E の /__e2e__/outbox/drain の両方が使う） */
+export function toJobMessage(row: { id: string; type: string; payload: string; created_at: number }): JobMessage {
+  return {
+    kind: "outbox",
+    id: row.id,
+    type: row.type,
+    payload: ID_ONLY_TYPES.includes(row.type) ? "{}" : row.payload,
+    createdAt: row.created_at,
+  };
+}
 
 /** 取り出す型（T-06 の型と、T-07 の通知だけの型） */
 export const DISPATCHED_TYPES = [...CALENDAR_TYPES, ...NOTIFICATION_ONLY_TYPES] as const;
@@ -101,9 +120,7 @@ async function dispatchOnce(ctx: Ctx) {
     .all<{ id: string; type: string; payload: string; created_at: number }>();
   if (results.length === 0) return 0;
   await ctx.env.JOBS.sendBatch(
-    results.map((r) => ({
-      body: { kind: "outbox" as const, id: r.id, type: r.type, payload: r.payload, createdAt: r.created_at },
-    })),
+    results.map((r) => ({ body: toJobMessage(r) })),
   );
   await ctx.env.DB.prepare(
     "UPDATE outbox SET processed_at = ?1 WHERE processed_at IS NULL AND id IN (SELECT value FROM json_each(?2))",

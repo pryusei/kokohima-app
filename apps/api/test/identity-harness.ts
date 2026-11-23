@@ -4,6 +4,7 @@ import { createApp, defaultDeps } from "../src/app";
 import type { AppDeps, Bindings, JobMessage } from "../src/env";
 import { createFakeDelivery } from "./fake-delivery";
 import { createFakeGoogle } from "./fake-google";
+import { createFakeSlack } from "./fake-slack";
 import { createFakeWeb } from "./fake-web";
 
 // identity のテスト用の道具。本番のコードからは読み込まない（*.test.ts からだけ使う）
@@ -11,7 +12,8 @@ import { createFakeWeb } from "./fake-web";
 export const ORIGIN = "https://app.test";
 type ProviderName = "google" | "apple";
 
-export async function createHarness() {
+/** overrides：AppDeps の一部を差し替える（問い合わせの公開の日など） */
+export async function createHarness(overrides: Partial<AppDeps> = {}) {
   const clock = { now: Date.parse("2026-10-10T00:00:00Z") };
   const providerKeys = {
     google: await generateKeyPair("RS256", { extractable: true }),
@@ -41,6 +43,7 @@ export async function createHarness() {
   const google = createFakeGoogle();
   const delivery = createFakeDelivery();
   const web = createFakeWeb();
+  const slack = createFakeSlack();
 
   /** 次にトークンエンドポイントが返すIDトークンの作り方。テストごとに差し替える */
   let tokenResponder: (req: { provider: ProviderName; body: URLSearchParams }) => Promise<Response> = async () =>
@@ -52,6 +55,7 @@ export async function createHarness() {
     if (google.handles(new URL(url), init)) return google.handle(new URL(url), init);
     if (delivery.handles(new URL(url))) return delivery.handle(new URL(url), init);
     if (web.handles(new URL(url))) return web.handle(new URL(url), init);
+    if (slack.handles(new URL(url))) return slack.handle(new URL(url), init);
     const provider: ProviderName | null = url.startsWith("https://oauth2.googleapis.com/token")
       ? "google"
       : url.startsWith("https://appleid.apple.com/auth/token")
@@ -83,6 +87,7 @@ export async function createHarness() {
     now: () => clock.now,
     // テストではタイムアウトを短くする（タイムアウトのテストを速くするため）
     linkPreview: { ...base.linkPreview, timeouts: { fetchMs: 300, totalMs: 600, dnsMs: 300 } },
+    ...overrides,
   };
   const app = createApp(deps);
 
@@ -174,6 +179,7 @@ export async function createHarness() {
     google,
     delivery,
     web,
+    slack,
     jobs,
     deps,
     limiter,

@@ -17,7 +17,7 @@
   "preview_urls": false,
 
   // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS、
-  // RESEND_API_KEY、VAPID_PRIVATE_KEY、NOTIFICATION_KEYS）は
+  // RESEND_API_KEY、VAPID_PRIVATE_KEY、NOTIFICATION_KEYS、CONTACT_SLACK_WEBHOOK_URL（問い合わせの Slack。T-24））は
   // wrangler secret で設定する（ローカルは .dev.vars、E2Eは scripts/write-e2e-dev-vars.mjs が生成）
   "vars": {
     "APP_ORIGIN": "http://localhost:5173",

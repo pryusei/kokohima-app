@@ -260,6 +260,21 @@ export async function getNotificationAddress(env: Bindings, userId: string) {
   return repo.findEmail(repo.db(env.DB), userId);
 }
 
+/**
+ * 他のコンテキスト向け：その利用者が退会していないことを、呼び出し側の1つの文の中で確かめる SQL の部品
+ * （`EXISTS (SELECT 1 FROM users WHERE id = <param> AND withdrawn_at IS NULL)`）。param はバインドの名前（`?1` など）だけを渡す。
+ * 同じ文で確かめないと、退会と同時の書き込みで行ができる（docs/specs/T-16-withdrawal.md「退会した人を扱わない処理」、T-24）
+ */
+export function activeUserExistsSql(param: string): string {
+  if (!/^\?\d+$/.test(param)) throw new Error("activeUserExistsSql expects a bind parameter such as ?1");
+  return `EXISTS (SELECT 1 FROM users WHERE id = ${param} AND withdrawn_at IS NULL)`;
+}
+
+/** 問い合わせ向け（T-24）：退会していないかと、返信先のメールアドレス。行がなければ退会と同じ扱い */
+export async function getContactSender(env: Bindings, userId: string): Promise<{ active: boolean; email: string | null }> {
+  return (await repo.findContactSender(repo.db(env.DB), userId)) ?? { active: false, email: null };
+}
+
 /** 通知向け：このセッションより前に作られたセッションがあるか（新しい端末でのログインの判定） */
 export async function hasEarlierSession(env: Bindings, userId: string, sessionId: string) {
   return repo.hasEarlierSession(repo.db(env.DB), userId, sessionId);
