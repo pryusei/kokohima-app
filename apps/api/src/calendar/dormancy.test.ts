@@ -173,6 +173,20 @@ describe("休眠にする", () => {
 });
 
 describe("休眠にした後に届いた確認", () => {
+  const busyResponse = () => Response.json({ calendars: { primary: { busy: h.google.state.busy } } });
+  const markDormant = () => repo.markDormantConnections(env.DB, h.clock.now, h.clock.now - DORMANT_AFTER_MS, DORMANCY_BATCH);
+  /** 権利（sync_lease_until・sync_id）は変えず、休眠の印だけを立てる（dormant_since IS NULL の条件そのものを確かめる） */
+  const flagOnly = (who: { id: string }) =>
+    env.DB.prepare("UPDATE calendar_connections SET dormant_since = ?1 WHERE user_id = ?2").bind(h.clock.now, who.id).run();
+
+  /** 取り消しが20を超える準備：21日分のここ暇と、それをすべて覆う埋まり */
+  async function manyNights(who: User) {
+    for (let d = 11; d <= 31; d++) {
+      const date = `2026-10-${String(d).padStart(2, "0")}`;
+      expect((await u.call("POST", "/api/v1/availabilities", { token: who.token, body: { date, preset: "night" } })).status).toBe(201);
+    }
+  }
+
   it("休眠にする前に権利を取っていた確認は、記録を書かず取り消しもしない", async () => {
     const a = await person();
     await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { date: "2026-10-11", preset: "night" } });
@@ -181,9 +195,9 @@ describe("休眠にした後に届いた確認", () => {
     await abandon(a, h.clock.now - DORMANT_AFTER_MS - 1);
     h.google.state.busy = [busy(T("11:00", "11"), T("12:00", "11"))];
     // freeBusy の応答の間に休眠になる
-    h.google.state.freeBusyOverride = () => {
-      void repo.markDormantConnections(env.DB, h.clock.now, h.clock.now - DORMANT_AFTER_MS, DORMANCY_BATCH);
-      return Response.json({ calendars: { primary: { busy: h.google.state.busy } } });
+    h.google.state.freeBusyOverride = async () => {
+      expect(await markDormant()).toBe(1);
+      return busyResponse();
     };
     await syncConnection(h.ctx, a.id, "google");
     h.google.state.freeBusyOverride = null;
@@ -191,6 +205,32 @@ describe("休眠にした後に届いた確認", () => {
     expect(after?.dormant_since).toBe(h.clock.now);
     expect(after?.busy_snapshot).toBeNull();
     expect(after?.last_synced_at).toBeNull();
+    expect(await manualCount(a)).toBe(1);
+    expect(await cancelEvents(a)).toBe(0);
+  });
+
+  it("権利はそのままでも、休眠の印だけで記録を進めず取り消さない（advanceSnapshotStatement の dormant_since IS NULL）", async () => {
+    const a = await person();
+    await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { date: "2026-10-11", preset: "night" } });
+    await synced(a);
+    await u.advance(15 * MIN, a);
+    const before = await row(a);
+    h.google.state.busy = [busy(T("11:00", "11"), T("12:00", "11"))];
+    let during: repo.ConnectionRow | null = null;
+    h.google.state.freeBusyOverride = async () => {
+      await flagOnly(a);
+      during = await row(a);
+      return busyResponse();
+    };
+    await syncConnection(h.ctx, a.id, "google");
+    h.google.state.freeBusyOverride = null;
+    const after = await row(a);
+    // 割り込みは権利を変えていない
+    expect(during!.sync_lease_until).not.toBeNull();
+    expect(during!.sync_id).toBe(before?.sync_id);
+    expect(after?.busy_snapshot).toBe(before?.busy_snapshot);
+    expect(after?.last_synced_at).toBe(before?.last_synced_at);
+    expect(after?.sync_id).toBe(before?.sync_id);
     expect(await manualCount(a)).toBe(1);
     expect(await cancelEvents(a)).toBe(0);
   });
@@ -206,25 +246,46 @@ describe("休眠にした後に届いた確認", () => {
     expect(await row(a)).toEqual(dormant);
   });
 
-  it("保留の1回目（取り消しが多すぎる）も、休眠にした後は書かない", async () => {
+  it("保留の1回目（取り消しが多すぎる）も、休眠にした後は書かない。sync_id は休眠にしたときの値のまま", async () => {
     const a = await person();
-    for (let d = 11; d <= 31; d++) {
-      const date = `2026-10-${String(d).padStart(2, "0")}`;
-      expect((await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { date, preset: "night" } })).status).toBe(201);
-    }
+    await manyNights(a);
     await synced(a);
     await u.advance(15 * MIN, a);
     await abandon(a, h.clock.now - DORMANT_AFTER_MS - 1);
     h.google.state.busy = [busy(T("00:00", "11"), "2026-11-01T00:00:00.000Z")];
-    h.google.state.freeBusyOverride = () => {
-      void repo.markDormantConnections(env.DB, h.clock.now, h.clock.now - DORMANT_AFTER_MS, DORMANCY_BATCH);
-      return Response.json({ calendars: { primary: { busy: h.google.state.busy } } });
+    let marked: repo.ConnectionRow | null = null;
+    h.google.state.freeBusyOverride = async () => {
+      expect(await markDormant()).toBe(1);
+      marked = await row(a);
+      return busyResponse();
     };
     await syncConnection(h.ctx, a.id, "google");
     h.google.state.freeBusyOverride = null;
     const after = await row(a);
     expect(after?.dormant_since).not.toBeNull();
     expect(after?.large_change_held).toBe(0);
+    expect(after?.sync_id).toBe(marked!.sync_id);
+    expect(await manualCount(a)).toBe(21);
+    expect(await cancelEvents(a)).toBe(0);
+  });
+
+  it("権利はそのままでも、休眠の印だけで保留を書かない（holdLargeChange の dormant_since IS NULL）", async () => {
+    const a = await person();
+    await manyNights(a);
+    await synced(a);
+    await u.advance(15 * MIN, a);
+    const before = await row(a);
+    h.google.state.busy = [busy(T("00:00", "11"), "2026-11-01T00:00:00.000Z")];
+    h.google.state.freeBusyOverride = async () => {
+      await flagOnly(a);
+      return busyResponse();
+    };
+    await syncConnection(h.ctx, a.id, "google");
+    h.google.state.freeBusyOverride = null;
+    const after = await row(a);
+    expect(after?.large_change_held).toBe(0);
+    expect(after?.sync_id).toBe(before?.sync_id);
+    expect(after?.busy_snapshot).toBe(before?.busy_snapshot);
     expect(await manualCount(a)).toBe(21);
     expect(await cancelEvents(a)).toBe(0);
   });

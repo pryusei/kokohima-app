@@ -18,7 +18,8 @@ export function createFakeGoogle() {
     refreshCounter: 0,
     busy: [] as Busy[],
     /** freeBusy の応答を差し替える（エラー付きの200など） */
-    freeBusyOverride: null as null | (() => Response),
+    /** 応答を差し替える。Promise を返せば、応答の前に割り込みの処理を待てる */
+    freeBusyOverride: null as null | (() => Response | Promise<Response>),
     calendars: new Map<string, { summary: string; timeZone: string }>(),
     events: new Map<string, StoredEvent>(),
     calendarCounter: 0,
