@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { effectiveDateProblems, jstToday, revisionNoticeLine } from "./lib/effective-date.mjs";
+import { contactStartProblems, effectiveDateProblems, jstToday, revisionNoticeLine } from "./lib/effective-date.mjs";
 import { isNoticePublished, PRODUCTION_ORIGIN } from "./lib/published-notice.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
@@ -32,8 +32,8 @@ for (const name of ["_headers", "_redirects"]) {
 // E2E 用の名前と Apple のログインのボタンが入っていないこと
 const forbidden = [
   /__e2e__/,
-  /e2eLogin|e2eExpireBroadcast|e2eCalendar|e2eOutbox|e2eFetch|e2eNotification|e2eDeliverPending|e2eOgpFetch|E2E_LINK_PREVIEW/,
-  /google\.e2e\.invalid|resend\.e2e\.invalid|push\.e2e\.invalid|ogp\.e2e\.invalid/,
+  /e2eLogin|e2eExpireBroadcast|e2eCalendar|e2eOutbox|e2eFetch|e2eNotification|e2eDeliverPending|e2eOgpFetch|E2E_LINK_PREVIEW|e2eContact|E2E_CONTACT/,
+  /google\.e2e\.invalid|resend\.e2e\.invalid|push\.e2e\.invalid|ogp\.e2e\.invalid|slack\.e2e\.invalid/,
   /Appleでログイン/,
   // 文言が変わっても見つかるように、Apple のボタンには data-provider="apple-login" の目印を付けている
   /apple-login/,
@@ -67,6 +67,10 @@ if (notice) {
   }
 }
 errors.push(...effectiveDateProblems(texts, { deploy, today, noticeAlreadyPublished }));
+// 問い合わせの公開の日は、改定日（効力が生じる日）と同じ日（docs/specs/T-24-contact.md「振る舞い 11.」）
+const contactStartPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "shared", "src", "contactStart.json");
+const { startDate } = JSON.parse(readFileSync(contactStartPath, "utf8"));
+errors.push(...contactStartProblems(texts, { startDate, deploy, today }));
 
 if (errors.length > 0) {
   for (const e of errors) console.error(`::error::${e}`);

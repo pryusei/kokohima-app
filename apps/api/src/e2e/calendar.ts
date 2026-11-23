@@ -5,10 +5,11 @@ import { syncConnection } from "../calendar/application/sync";
 import type { AppEnv, GoogleEndpoints } from "../env";
 import { problem } from "../http/problem";
 import { handleJob } from "../jobs/consumer";
-import { dispatchedTypes } from "../jobs/dispatch";
+import { dispatchedTypes, toJobMessage } from "../jobs/dispatch";
 import { sha256 } from "../shared/crypto";
 import { TransientError } from "../link-preview/domain/url";
 import { e2eOgpFetch } from "./linkPreview";
+import { e2eContactFetch } from "./contact";
 import { e2eDeliverPending, e2eNotificationFetch } from "./notifications";
 
 // E2E用の偽の Google（docs/specs/T-06-calendar.md「E2E用の偽のGoogle」）。src/e2e/entry.ts からだけ読み込む
@@ -74,6 +75,8 @@ export const e2eFetch: typeof fetch = async (input, init) => {
   if (delivery) return delivery;
   const ogp = e2eOgpFetch(url);
   if (ogp) return ogp;
+  const contact = await e2eContactFetch(url, init);
+  if (contact) return contact;
   return fetch(input, init);
 };
 
@@ -145,7 +148,7 @@ export async function e2eOutboxDrain(c: Context<AppEnv>) {
     failed = 0;
     for (const r of results) {
       try {
-        await handleJob(ctx, { kind: "outbox", id: r.id, type: r.type, payload: r.payload, createdAt: r.created_at });
+        await handleJob(ctx, toJobMessage(r));
       } catch (e) {
         // 一時的な失敗（同じ行を同時に処理した）だけを残して再び試す。ほかの失敗はそのまま返す
         if (!(e instanceof TransientError)) throw e;

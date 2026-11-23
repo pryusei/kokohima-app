@@ -25,7 +25,7 @@ describe("保存期間の数（T-19「9.」）", () => {
   });
 
   it("プラットフォームの値（表示にだけ使う）", () => {
-    expect(PLATFORM_RETENTION).toEqual({ workersLogsDays: 7, deadLetterQueueDays: 4, databaseRestoreDays: 30 });
+    expect(PLATFORM_RETENTION).toEqual({ workersLogsDays: 7, deadLetterQueueDays: 4, databaseRestoreDays: 30, contactSlackDays: 90 });
   });
 
   it("単位", () => {

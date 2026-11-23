@@ -159,7 +159,7 @@
 4. Resend：`kokohima.app` を送信ドメインに足し、表示された記録（SPF・DKIM と、送信用のサブドメインの MX）に DMARC を加えて、Terraform の `cloudflare_dns_record` で足す PR を出す（infra/README.md「管理画面で手動変更しない」。値を受け取れば Claude が PR を書く）。
 5. 鍵と秘密（prod）：
    - VAPID の鍵の組を作る（秘密鍵は P-256 の PKCS#8 の PEM、公開鍵は base64url の非圧縮の点。T-07）。公開鍵を wrangler に転記する。
-   - `wrangler secret put --env prod` で `GOOGLE_CLIENT_SECRET`・`JWT_SIGNING_KEYS`・`CALENDAR_TOKEN_KEYS`・`RESEND_API_KEY`・`VAPID_PRIVATE_KEY`・`NOTIFICATION_KEYS`。Apple の秘密は要らない。
+   - `wrangler secret put --env prod` で `GOOGLE_CLIENT_SECRET`・`JWT_SIGNING_KEYS`・`CALENDAR_TOKEN_KEYS`・`RESEND_API_KEY`・`VAPID_PRIVATE_KEY`・`NOTIFICATION_KEYS`・`CONTACT_SLACK_WEBHOOK_URL`（問い合わせの `#kokohima-contact` の Incoming Webhook。T-24）。Apple の秘密は要らない。
    - `JWT_SIGNING_KEYS`・`CALENDAR_TOKEN_KEYS`・`NOTIFICATION_KEYS` は `{"prod-1":"<base64url の32バイト>"}` の形で、3つとも別の値（作り方は `apps/api/dev-vars.example`）。鍵の JSON の kid は、vars の `JWT_CURRENT_KID`・`CALENDAR_TOKEN_CURRENT_KID`・`NOTIFICATION_CURRENT_KID`（`prod-1`）とそろえる。
    - ローカル・E2E の鍵（`.dev.vars`・`scripts/write-e2e-dev-vars.mjs`）を使い回さず、新しく作る。
    - `CALENDAR_TOKEN_KEYS`・`NOTIFICATION_KEYS` を失うと保存した値を復号できなくなるので、パスワードマネージャーなどに控えを残す。
@@ -244,3 +244,4 @@
 | 2026-11-23 | 決定事項7を変えた：Google の OAuth を審査なしで「本番」の公開ステータスにする（テストユーザーの登録と7日の失効をなくす）。人が行う作業3と概要を合わせた。受け入れるリスク（招待リンクが唯一の門・連携の枠を知らない人も使う）と、プライバシー ポリシー・利用規約（T-19）を先にデプロイすること、未確認の事項を足した | 利用者の回答（最初のリリースのあと）、仕様書PRの前のレビュー |
 | 2026-11-23 | 人が行う作業3から `profile` のスコープを外し、同意画面のブランディング（ホームページ・プライバシー ポリシー・利用規約・承認済みのドメイン・サポートのメール）と、T-19 をデプロイしてから本番にすることを足した。`deploy:prod` の制定日の検査を足した | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
 | 2026-11-23 | `deploy:prod` の検査に、T-19 の改定日（効力が生じる日）・公表日の行と、日本時間の今日との大小を足した | T-19 改定の実装PR（docs/specs/T-19-privacy-terms.md） |
+| 2026-11-23 | 本番の秘密の一覧に `CONTACT_SLACK_WEBHOOK_URL` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |

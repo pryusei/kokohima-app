@@ -11,6 +11,8 @@ export default defineConfig({
   // E2E_HTTPS=1 のときだけ、自己署名の証明書の HTTPS で出す。WebKit は http://localhost では
   // __Host- の Secure の Cookie を保存しないので、iphone（WebKit）の E2E はこちらで回す（docs/specs/T-21-webkit-e2e.md）
   plugins: [react(), tailwindcss(), ...(https ? [basicSsl()] : [])],
+  // 問い合わせの公開の日（docs/specs/T-24-contact.md「振る舞い 11.」）。E2E の画面だけは開いた扱い。本番のビルドと Vitest では false
+  define: { __CONTACT_FORCE_OPEN__: JSON.stringify(process.env.E2E === "1") },
   server: {
     port: 5173,
     strictPort: true,

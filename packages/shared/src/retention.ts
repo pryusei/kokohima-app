@@ -51,6 +51,8 @@ export const PLATFORM_RETENTION = {
   deadLetterQueueDays: 4,
   /** D1 の復元（Time Travel。#89） */
   databaseRestoreDays: 30,
+  /** 問い合わせの Slack のメッセージ（#kokohima-contact）：投稿から。Slack の保持の設定で、人が設定する（docs/specs/T-24-contact.md「6.」） */
+  contactSlackDays: 90,
 } as const;
 
 /** 保存期間の数をミリ秒にする単位 */

@@ -53,6 +53,7 @@ const IPHONE_TESTS: Record<string, string[]> = {
   ],
   "invites.spec.ts": ["AがBの見えている枠から誘う（あそぼ）→ Bが「行く」→ 双方の「成立」に予定が出る"],
   "broadcasts.spec.ts": ["AがB・C・Dに募集 → BとCが応じる → Aには人数だけ → 決める → A・B・Cに予定、Dは募集中のまま"],
+  "contact.spec.ts": ["友達タブ → 設定 → 問い合わせで、不具合を送ると「送りました」が出て、偽の Slack にエスケープされて1通届く"],
 };
 
 describe("@iphone の印", () => {

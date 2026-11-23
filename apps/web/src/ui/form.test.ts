@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { inputClass } from "./form";
+import { inputClass, textareaClass } from "./form";
 
 // 入力欄がシートの幅をはみ出さない（docs/specs/T-11-design.md「画面のつながり」、テスト計画）
 
@@ -12,6 +12,11 @@ describe("入力欄の幅", () => {
   it("入力欄は親の幅より広がらない（min-w-0 と max-w-full）", () => {
     const classes = inputClass.split(" ");
     expect(classes).toEqual(expect.arrayContaining(["w-full", "min-w-0", "max-w-full"]));
+  });
+
+  it("複数行の入力欄も、幅の指定（min-w-0・max-w-full）を含み、縦にだけ伸ばせる（T-24）", () => {
+    const classes = textareaClass.split(" ");
+    expect(classes).toEqual(expect.arrayContaining(["w-full", "min-w-0", "max-w-full", "resize-y", "min-h-40"]));
   });
 
   it("日付・時刻の入力欄は、iPhone の Safari の標準の見た目を外して、中身の幅で広がらないようにする", () => {
