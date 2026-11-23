@@ -1,6 +1,6 @@
 # T-22 仕様書：行きたいリスト
 
-- 状態：下書き
+- 状態：実装済み
 - タスク票：docs/tasks/T-22-wishlist.md
 - 関係する要件：F-18〜F-21、F-10、F-11、F-15、F-17、NF-03、NF-05
 
@@ -36,7 +36,7 @@
 - `apps/api/src/wish/{domain,application,infra}`。
   - domain（純粋）：件数の上限・置く回数の上限の判定、見せない相手の一覧の判定（重複はスキーマで400、自分と友達でない人は404。application が SQL の結果を渡して判定する）。
   - infra：D1（`wishes`・`wish_exclusions`・`wish_posts`）。
-  - application：置く・消す・見せない相手を変える・自分の一覧・友達の一覧・1件の取得。link-preview の `previewsFor` を呼んで `linkPreview` を足す（見られる条件で絞った SQL から得た行きたいの ID でだけ呼ぶ。T-08 の invitation と同じ扱い）。consumer 用の、閲覧者で絞らない url の読み取り（`LinkAttached` の処理から呼ぶ。invitation の `calendarFacing.ts` と同じ扱い）。退会の後始末の文を返す関数（identity の退会から呼ぶ）。
+  - application：置く・消す・見せない相手を変える・自分の一覧・友達の一覧・1件の取得。link-preview の `previewsFor` を呼んで `linkPreview` を足す（見られる条件で絞った SQL から得た行きたいの ID でだけ呼ぶ。T-08 の invitation と同じ扱い）。consumer 用の、閲覧者で絞らない url の読み取り（`LinkAttached` の処理から呼ぶ。invitation の `calendarFacing.ts` と同じ扱い）。退会で消す文を返す関数（identity の退会の入口の batch から呼ぶ）。
 - 友達かどうかは、SQL の中で `friendships` の両方向の行を見て決める（T-04 と同じ条件）。social の表は読むだけで、書かない。
 - 入力のスキーマは `packages/shared/src/schemas/wish.ts`。ひとこと・エリア・リンクの検証は `schemas/invitation.ts` の `messageSchema`・`areaSchema`・`linkUrlSchema` を使う（ひとことは必須にする）。
 
@@ -54,7 +54,7 @@
 | GET | `/api/v1/friends/{friendId}/wishes` | Bearer | なし | 200：`{ items: wishSchema[], nextCursor: null }`（最大10件。`created_at` の降順、同じなら `id` の降順） | 404（友達でない。片方向の行しかない場合も） |
 
 - `createWishRequestSchema`：`{ message, area, url, excludedUserIds }`（strict）
-  - キーはすべて必須（省略できない。値がないときは `null` や空配列を明示して送る）。
+  - `message` と `excludedUserIds` は必須。`area`・`url` は省略すると `null`（誘い・募集の作成と同じ）。
   - `message`：`messageSchema`（100文字まで、改行5つまで、見えない文字・制御文字を拒否。前後の空白を除いて空なら null）を通した結果が null なら400（`required`）。
   - `area`：`areaSchema`（30文字まで、null 可）。`url`：`linkUrlSchema`（http/https、2048文字まで、認証情報入り・空白・制御文字を拒否、null 可）。
   - `excludedUserIds`：UUID の配列。0〜100人、重複なし。空配列なら友達全員に見せる。
@@ -88,7 +88,7 @@
 閲覧者 V が、O の置いた行きたい W を見られるのは、次のすべてを満たすとき。
 1. V と O の間に、両方向の `friendships` の行がある。
 2. `wish_exclusions` に (W, V) の行がない。
-3. V も O も退会していない（退会した人の行きたいは後始末で消えるが、後始末の前の間も返さない）。
+3. V も O も退会していない。SQL には退会の条件を書かず、退会の入口を止める段の1つの batch で、友達の行（1の条件が外れる）と本人の行きたい・見せない相手の行を消すことで守る（後始末を待たずに、退会した直後から見えない）。
 
 - ここ暇の SharingPolicy は見ない（決めたこと3）。
 - 置いた人本人は、退会していなければ、見せない相手の設定に関係なく自分の行きたいを見られる。
@@ -130,8 +130,8 @@
 - `wish_posts` は作ってから2日で消す（毎分の掃除。T-17 の保持期間の表に足す）。
 
 ### 退会（T-16）
-- 入口を止める段：退会した人の行きたいは、見られる条件3で返さなくなる。
-- 後始末の段（`UserWithdrew`）：本人の `wishes`（CASCADE で `wish_exclusions` と参照も）、本人が見せない相手になっている `wish_exclusions`、本人の `wish_posts` を消す。
+- 入口を止める段（`POST /me/withdrawal` の batch）：本人の `wishes`（CASCADE で `wish_exclusions` と参照も）、本人が見せない相手になっている `wish_exclusions`、本人の `wish_posts` を消す。友達関係も同じ batch で消えるので、相手からはすぐに見えなくなり、後始末の段を待たない。
+- 後始末の段（`UserWithdrew`）では、行きたいについて何もしない。
 
 ### 画面
 - **ここ暇のタブ**：自分の枠の下に「行きたい」の欄。
@@ -181,7 +181,7 @@
 - [ ] ログに、中身・見せない相手の ID が出ない。
 - [ ] 並び順とページング：`friend-wishes` の友達の順と行きたいの順、カーソルで重ならずに続きが読める。
 - [ ] リンク：リンクがあるときだけ `LinkAttached` が書かれ、`linkPreview` が返る。消すと参照も消える。
-- [ ] 退会：本人の行きたい・見せない相手の行・置いた記録が消える。退会した人の行きたいは後始末の前でも返らない。
+- [ ] 退会：本人の行きたい・見せない相手の行・置いた記録が消える。退会と同時に（入口の batch で）消え、どこにも返らない。
 - [ ] 掃除：2日を過ぎた `wish_posts` が消え、行きたいは消えない。
 - [ ] 画面：`?wish=<id>` で、誘い・募集の作成画面に中身が入る。誘いの宛先が持ち主になる。友達の行きたいを募集の作成画面で開くと空になる。読めなかったときは空で、エラーを出さない。`?from` があれば `?wish` を使わない。10件のときに置くボタンを押せない。リンク付きの行きたいに OGP のカード（取れなければドメインだけ）が出る。戻すときに注意が出る。
 
@@ -194,13 +194,13 @@
   - F-15（添付先に行きたい、取得は置いたとき）・F-17（退会で消すもの）・用語表（見せない相手 → WishExclusion）。F-18〜F-21 の「未実装」の印を外す。
   - DDD のコンテキストの表に Wish（支援）を足す。
 - タスク票（T-22）：SharingPolicy を使う前提の項目（設定の文言を直す、T-02・T-03 を直す、「見せないにされている友達」の受け入れ条件）を、決めたこと1〜3に合わせて直す。
-- T-08（参照の対象に `wish`、`LinkAttached` の `subjectType`）、T-10（`friend_wishes` のレート制限）、T-16（後始末と確認画面の「消えるもの」）、T-17（保持期間の表に `wishes`「本人が消すまで」と `wish_posts`「2日」）、T-19 と `/privacy`（預かる情報・保存する期間・退会の説明）、`packages/shared/src/retention.ts`。
+- T-08（参照の対象に `wish`、`LinkAttached` の `subjectType`）、T-10（`friend_wishes` のレート制限）、T-16（入口の段の削除と確認画面の「消えるもの」）、T-17（保持期間の表に `wishes`「本人が消すまで」と `wish_posts`「2日」）、T-19 と `/privacy`（預かる情報・保存する期間・退会の説明）、`packages/shared/src/retention.ts`。
 - T-03・T-11 の画面の節（ここ暇・みんなのタブに行きたいの欄）、T-04・T-05 の作成画面（`?wish=`）。
 - invitation-domain スキルの用語表（行きたい・見せない相手、「リンクのプレビュー」の「誘い・募集に添えた」）と、イベントの表の `LinkAttached`（行きたいも出す）。
 - 要求定義書の「OGP取得：ユーザーごとのレート制限」の行と、イベントの表の `LinkAttached` の発生元（Invitation だけでなく Wish も）。
 - T-08 の決定事項5と「量の上限」：取得のきっかけに行きたいが加わり、利用者ごとの取得の上限は、送信上限（24時間に20件）と置く回数（24時間に20回）の合わせて40回になる。「`previewsFor` は invitation からだけ呼ぶ」を wish にも広げる。
 - T-16 の「`requireActiveSession` を付ける経路」の表に wish の書き込みの経路を足す。
-- T-17 の保持期間の表に `wish_exclusions`（行きたいを消したとき・退会のとき。友達を解除しても残す）。`retention.ts` に `wish_posts` の2日の定数を足す。
+- T-17 の保持期間の表に `wish_exclusions`（行きたいを消したとき・退会のとき。友達を解除しても残す）。`retention.ts` に `wish_posts` の2日の定数（`wishPostsDays: 2`）を足す。
 - CLAUDE.md の「アーキテクチャ」のコンテキストの一覧に `wish`。
 
 ## スコープ外
@@ -217,3 +217,4 @@
 | --- | --- | --- |
 | 2026-11-23 | 下書き | 対話で決めた内容をまとめた |
 | 2026-11-23 | 見せない相手の置き換えで友達でなくなった人の行を残す、`link_preview_refs` の列と `CHECK`、`Retry-After`、やり直し、`requireActiveSession`、`?wish` の持ち主の判定と今のクエリとの関係、友達の並び順（決めたこと12）、戻したときのリスク（決めたこと11）と画像の URL のリスク、ログ、テストと実装PRで直すものを足した | security-reviewer・spec-reviewer のレビュー、利用者の回答 |
+| 2026-11-23 | 実装した。退会の削除は後始末の段ではなく入口を止める段の batch で行う（友達関係と同じ batch で消え、すぐに見えなくなる）。`createWishRequestSchema` の `area`・`url` は省略すると `null`（誘い・募集の作成と同じ）。`retention.ts` の定数名は `wishPostsDays` | T-22 実装PR |
