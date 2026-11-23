@@ -27,7 +27,8 @@
 - 遮断しなかった場合の実害の確認（コードの調査、2026-11-23）：
   - `wrangler.jsonc` の `not_found_handling` は `single-page-application` なので、`/.env` のような存在しないパスには `index.html`（200）が返る。中身は公開の画面のHTMLで、秘密は含まれない。スキャナーには「200」と見えるだけ。
   - 配信する静的ファイルは `apps/web/dist` だけで、`apps/web/public` には `icon.svg`・`manifest.webmanifest`・`sw.js` しかない。秘密は `wrangler secret` で持ち、`wrangler.jsonc` の `vars` は秘密でない値だけ。`check-web-dist.mjs` が手元の `.env.local` の混入も検査する。
-  - 実際の応答（ステータス・サイズ）は、Cloudflare側のログで人が確かめる（確認事項）。
+  - 本番での実測（2026-11-23、`curl` 11パス）：`/.env`・`/.git/config`・`/.git/HEAD`・`/.vscode/sftp.json`・`/config.php`・`/.env.save`・`/stripe/.env`・`/wp-login.php`・`/wp-admin/install.php`・存在しない `/nonexistent-xyz` は、すべて `/` と同じ `200 text/html`・513バイト・同じハッシュ。実ファイルの露出はなく、秘密のローテーションは不要。
+  - Cloudflare側のログにあった `/.git/HEAD` の403と `/wp-login.php` の301は、この実測では再現しなかった（スキャナーのUA・リクエストの違いか、エッジ側の挙動）。遮断の判断には影響しない。
 - 将来 `/wp-` で始まるパスをアプリで使うときは、このルールを先に直す。
 - Terraformの記述は、Cloudflareプロバイダv5の公式ドキュメントでスキーマを確かめてから実装PRで書く。
 - `terraform apply` は人が行う。
@@ -55,7 +56,6 @@
 - 静的アセットにない任意のパスを404にする変更（SPAの深いリンクが動かなくなるため）
 
 ## 確認事項（合意前に解消する）
-- 過去24時間のスキャンされたパスの応答を、Cloudflare側のログで集計し、`/.env` などが200で返したのは `index.html`（HTML）だけだったことを確かめる。
 - 遮断のアクションは `block` でよいか。ログだけ残す `log` で様子を見てから `block` にする案もある。
 - 対象に `/wp-json` を入れてよいか。入れない場合は、ほかのパスだけにする。
 - 本番の apply 後の確認を、`docs/runbooks/` に足すか。
