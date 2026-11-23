@@ -106,11 +106,13 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - 本文の制定日の行は、文字列の定数1つ（`apps/web/src/pages/legal.ts` の `EFFECTIVE_DATE_LINE = "制定日：2026年◯月◯日"`）を2つのページで使う。「制定日：」と日付を分けた文字列にしない（分けると、ビルドした JS の中で別々の文字列になり、下の検査で並びを見られない）。定数は1つの module にあるので、ビルドした JS に「制定日：」は1回だけ入る（ページごとではない）。
 - 検査は「◯」を探すのでなく、本物の日付の形を確かめる。純粋な関数を `apps/api/scripts/lib/effective-date.mjs` に置く（`node:fs` などを使わず、文字列だけを受け取る）。
   - `countEffectiveDateLines(text)`：「制定日：」の数を返す。
-  - `countRealEffectiveDates(text)`：`/制定日：\d{4}年\d{1,2}月\d{1,2}日/g` に当たる数を返す。
+  - `countRealEffectiveDates(text)`：`/制定日：(\d{4})年(\d{1,2})月(\d{1,2})日/g` に当たり、かつ暦にある日付（`Date.UTC` で作り直して年月日が同じ。`2026年13月40日`・`2026年2月30日` は数えない）の数を返す。
+  - 改定日も同じ形：`countRevisionDateLines(text)`（「改定日：」の数）と `countRealRevisionDates(text)`。改定日の行は `legal.ts` の `REVISION_DATE_LINE`（`string | null`。初めて改定するまで `null`。「8.」）。
   - 型は隣の `effective-date.d.mts` に書く（TS のテストから読むため）。
 - `check-web-dist.mjs`（`dist` の `.js` のファイルを読み、上の関数に渡す）：
   - いつも（CI の `build:prod` の `check:release` でも）：「制定日：」が `dist` の全体で、ちょうど1回（`EXPECTED_EFFECTIVE_DATE_LINES = 1`）。0回（文言を変えた・ページが入っていない）や2回以上（分けて書いた）なら止める。これで、毎回の本物のビルドの出力で形を確かめる。
-  - `--deploy` のときだけ（`deploy:prod` は `check-web-dist.mjs --deploy` を呼ぶ）：さらに、本物の日付の形の数が、ちょうど1回。仮の値（「◯」）や、形の違う日付なら止める。
+  - いつも：「改定日：」は0回か1回（`MAX_REVISION_DATE_LINES = 1`）。2回以上なら止める。
+  - `--deploy` のときだけ（`deploy:prod` は `check-web-dist.mjs --deploy` を呼ぶ）：さらに、制定日が本物の日付でちょうど1回。改定日があれば、それも本物の日付。仮の値（「◯」）、形の違う日付、暦にない日付なら止める。
   - 今の検査（インラインの script・style、E2E の名前、Apple のボタン）は変えない。
 - テストの置き場：CI の `pnpm test` はルートの `vitest run`（`projects: ["apps/*", "packages/*"]`）で、`apps/api` は Workers の project（`apps/api/vitest.config.ts`。`include` の指定がないので、`apps/api` の下の `*.test.ts` をすべて読む）。新しい project は足さず、この Workers の project でテストする。関数は `node:fs` を使わない純粋な関数なので、Workers のランタイムでも動く。
   - テストは `apps/api/test/effective-date.test.ts`（`apps/api/tsconfig.json` の `include` の `test` に入る。`scripts/` は `include` に入っていないが、テストが読む `.mjs` の型は隣の `.d.mts` で解決する）。`scripts/` の下にはテストを置かない（`.mjs` の検査のスクリプトと同じ場所に TS のテストを混ぜない）。
@@ -293,7 +295,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 ## 14. このポリシーの変更
 - 法令やサービスの変更に合わせて、このポリシーを変えることがあります。
 - 大事な変更は、効力が生じる日より前に、アプリの画面かメールでお知らせします。
-- 変えたときは、このページの改定日を更新します。
+- 変えたときは、このページの制定日の下に改定日を書きます（2回めからは、改定日を書き換えます）。
 ```
 
 ### 7. 利用規約の本文（文案）
@@ -374,7 +376,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 
 ### 8. 改定のしかた
 - 本文を変えるときは、仕様書PRで「6.」「7.」を直してから、実装PRで画面を直す（CLAUDE.md の流れのまま）。
-- 本文の最初に「改定日：YYYY年M月D日」を足す（制定日は残す）。変更履歴は、この仕様書の「変更履歴」に残す（ページには載せない）。
+- 初めて改定するとき、`apps/web/src/pages/legal.ts` の `REVISION_DATE_LINE`（今は `null`）を「改定日：YYYY年M月D日」の1つの文字列にし、制定日の下に出す（制定日は残す）。2回めからは日付だけを書き換える（行は1つだけ）。検査は「5.」のとおり。変更履歴は、この仕様書の「変更履歴」に残す（ページには載せない）。
 - 大事な変更（集める情報・使う目的・委託先・保存期間が増える、利用者に不利になる）は、効力が生じる日より前に、アプリの画面かメールで知らせる。知らせる仕組みはまだない（「確認事項」）。
 
 ### 9. 本文とアプリをそろえ続ける
@@ -397,16 +399,16 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 
 ### 単体テスト（実装PRで必須）
 - [x] 正常系：ログインの確認中（`checking`）、API に届かない（`error`）、ログインしていない（`anonymous`）、ログインしている（`authenticated`）のどれでも、`/privacy` と `/terms` が本文を描画し、別の画面に移らない（`apps/web/src/pages/legal.test.tsx`。今の `login.test.tsx` の書き方）
-- [x] 本文：見出し（`h1` は1つ、各節の `h2`）、連絡先 `ops@kokohima.app` の `mailto:` リンク、制定日、13歳以上・保護者の同意の文が出る。ページを開いても、`AuthProvider` の `/api/v1/auth/refresh` のほかに API の呼び出し（`fetch`）が起きない
+- [x] 本文：見出し（`h1` は `SubScreen` の題の1つだけ、両方のページのすべての節の `h2`）。`/terms` にも `mailto:` の連絡先（第6条・第12条）と年齢・保護者の同意の文（第2条）、連絡先 `ops@kokohima.app` の `mailto:` リンク、制定日、13歳以上・保護者の同意の文が出る。ページを開いても、`AuthProvider` の `/api/v1/auth/refresh` のほかに API の呼び出し（`fetch`）が起きない
 - [x] オフライン：オフラインの帯が出ていても、本文が出る
 - [x] 保存期間（画面。`apps/web/src/pages/legal.test.tsx`）：`/privacy` の「8.」に、`RETENTION` の数がそのまま出る（テストは `RETENTION` を読み、期待する文を数から作る。ここ暇の枠は「終わってから1日（始まってから最長2日）」の2つの数とも）
 - [x] 保存期間（値。`packages/shared/src/retention.test.ts`）：`RETENTION` の値が T-17 の表と同じ（誘い・募集・予定・お知らせ・招待リンク・ログインの記録・休眠30日、処理の記録7日、ここ暇の枠は終わってから1日と長さの上限1日、冪等キー24時間、埋まりのキャッシュ5分など）。値を変えたら、このテストと T-17 の表を同じPRで直す
 - [x] 保存期間（API。`apps/api/src/jobs/retention-constants.test.ts`）：API の掃除の定数（`RETENTION_MS`・`NOTIFICATION_RETENTION_MS`・`DEAD_SESSION_RETENTION_MS`・`OUTBOX_RETENTION_MS`・`AVAILABILITY_RETENTION_MS`・`IDEMPOTENCY_TTL_MS` など）が `RETENTION` から作った値と等しい。`MAX_LENGTH_MS` が `RETENTION` の枠の長さの上限と等しく、`AVAILABILITY_RETENTION_MS` が「終わってから」＋「長さの上限」と等しい。既存の掃除のテストも通る
 - [x] タブの題：開くと「プライバシー ポリシー｜ここ暇」「利用規約｜ここ暇」、ページを離れると「ここ暇」
-- [x] リンク：ログインの画面に、2つのページへのリンクと同意の1行「続けると利用規約とプライバシー ポリシーに同意したことになります」がある（チェックボックスはなく、同意の API も呼ばない）。招待リンクの受け口は、`lookup` が終わったあとにリンクが出て、読み込み中は出ない。設定に「このアプリについて」の節と2つの行がある
+- [x] リンク：ログインの画面に、2つのページへのリンクと同意の1行「続けると利用規約とプライバシー ポリシーに同意したことになります」がある（チェックボックスはなく、`/api/v1/auth/refresh` のほかに API を呼ばない）。招待リンクの受け口は、`lookup` が終わったあとにリンクが出て、読み込み中は出ない。設定に「このアプリについて」の節と2つの行がある
 - [x] 移動：リンクを押すとアプリの中で移り（`navigate`）、「戻る」で前の画面に戻る。外から直接開いた「戻る」は `/` に移る。招待リンクの受け口から開いて戻ると、招待 Cookie で `lookup` し直して続けられる
 - [x] 外へのリンクに `target="_blank"` と `rel="noopener noreferrer"` が付く
-- [x] 制定日の検査（`apps/api/test/effective-date.test.ts`。今の Workers の project。fixture `apps/api/test/fixtures/web-dist-legal.js`）：仮の値の fixture は「制定日：」が1回・本物の日付が0回、`制定日：2026年12月1日` に置き換えたものは両方1回、2回入れたもの・「制定日：」を消したものは数がずれる。形の違う日付（`2026年12月`・`2026/12/1`）は本物に数えない
+- [x] 制定日の検査（`apps/api/test/effective-date.test.ts`。今の Workers の project。fixture `apps/api/test/fixtures/web-dist-legal.js`）：仮の値の fixture は「制定日：」が1回・本物の日付が0回、`制定日：2026年12月1日` に置き換えたものは両方1回、2回入れたもの・「制定日：」を消したものは数がずれる。形の違う日付（`2026年12月`・`2026/12/1`）と暦にない日付（`2026年13月40日`・`2027年2月29日`）は本物に数えない（`2028年2月29日` は数える）。改定日は、なければ通り、1つなら本物の日付を求め、2つ以上で止まる
 - [x] 本物のビルドの出力：CI の `build:prod`（`check:release`）で `check-web-dist.mjs` が、「制定日：」がちょうど1回であることを確かめて通る（仮の値のまま）。`--deploy` は人が `deploy:prod` で走らせる
 - 入力検証：対象なし（入力を受け取る画面・API がない）
 - 境界値・期限：対象なし（期限のある状態を持たない。保存期間の値の一致は上の「保存期間」で確かめる）
@@ -467,3 +469,4 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 | 2026-11-23 | T-12 決定事項7 をマージ済み（#128）として参照。退会で残るもの（相手の履歴・相手あてのお知らせ・処理の記録・キャッシュ）と、後始末の段で消えるものを分けた。端末の要約の置き場（お知らせ・処理の記録）を直した。保存期間に処理の記録・退避キュー・冪等キー・埋まりのキャッシュ・くり返しの例外・タイムゾーン・カレンダーの許可を足し、誘いの数え方を代わりの時間の遅い方に。メールアドレスの使い道をそろえた。募集の見え方（決めるまで人数だけ、決めたら参加者どうしは友達でなくても見える）。多要素認証の記述を外し確認事項に。`__Host-kh_cal` を足した。限定使用の文を「3.」の3と4に。規約の第4条2を「今回は難しい」は伝わる形に。監視のサービス。文案を囲みの中に移した。テスト：ログインしている状態・オフライン・refresh のほかに API を呼ばない・保存期間の数を `packages/shared` に集める・制定日の検査を node の環境で・入力検証と境界値は対象なし。確認事項に28条・ホームページ・Cloudflare のセキュリティの記録・監視の通知を足した。実装PRで直すものに #52・infra/README.md・`profile` を足した | 仕様書PRの前のレビュー（2件） |
 | 2026-11-23 | 制定日の検査を、「制定日：」が1回・本物の日付の形が1回で確かめる形に（「◯」を探さない。`EFFECTIVE_DATE_LINE` を1つの文字列に）、テストを今の Workers の project（`apps/api/test/`）と fixture に、CI の `build:prod` で本物の出力の形を確かめる。保存期間に、連携の記録と「ここ暇」カレンダーの識別子（解除しても残り、退会で消える）。端末に置くものに Service Worker とプッシュの購読。ここ暇の枠を「終わってから1日（始まってから最長2日）」にし、`RETENTION` と `MAX_LENGTH_MS` の関係を決めた。保存期間のテストを画面・shared・API の3つに分けた。確認事項をマージの前に決めること（a）と、デプロイの前に人が確かめること（b）に分けた。利用者の回答（同意は1行で記録しない、`profile` を外す、アイコンは表示名の1文字め、ホームページは今は変えない）を決めたこと7〜10に移し、本文・テスト・実装PRで直すものを合わせた | 仕様書PRのレビュー（pryusei/kokohima-app#129） |
 | 2026-11-23 | 実装済みに。共通の部品を `LegalDocument.tsx` に置いた。テスト計画のチェックを付けた（単体：`legal.test.tsx`・`retention.test.ts`・`retention-constants.test.ts`・`effective-date.test.ts`、E2E：`release.spec.ts`・`auth.spec.ts`）。issue #52・#89・#90・#91 の本文とコメントは、PR を開くときに人（コーディネーター）が直す | T-19 実装PR |
+| 2026-11-23 | 実装PRのレビューを反映：日付は暦にあるかも確かめる、改定日の行（`REVISION_DATE_LINE`。初めて改定するまで `null`、1つまで、あれば同じく検査）と本文の「14.」の文を決めた、テストの見出し・連絡先・同意の画面の API の確かめ方を足した。ログインを続ける Cookie の30日は、`packages/shared` に定数がない（API の `REFRESH_TOKEN_TTL_MS` は identity の domain）ので、本文に直書きのまま | 実装PRのレビュー |

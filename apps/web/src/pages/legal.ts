@@ -8,6 +8,12 @@ import { useEffect } from "react";
  */
 export const EFFECTIVE_DATE_LINE = "制定日：2026年◯月◯日";
 
+/**
+ * 改定日の行。初めて改定したときに「改定日：YYYY年M月D日」の1つの文字列にし、次からは日付を書き換える（行は1つだけ）。
+ * まだ改定していないので null。入れたら、制定日と同じく deploy:prod で本物の日付かを検査する
+ */
+export const REVISION_DATE_LINE: string | null = null;
+
 export const CONTACT_EMAIL = "ops@kokohima.app";
 
 const APP_TITLE = "ここ暇";

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   countEffectiveDateLines,
   countRealEffectiveDates,
+  countRevisionDateLines,
   effectiveDateProblems,
   EXPECTED_EFFECTIVE_DATE_LINES,
 } from "../scripts/lib/effective-date.mjs";
@@ -32,7 +33,7 @@ describe("制定日の検査", () => {
   });
 
   it("形の違う日付は本物に数えない", () => {
-    for (const date of ["2026年12月", "2026/12/1", "26年12月1日", "2026年◯月1日"]) {
+    for (const date of ["2026年12月", "2026/12/1", "26年12月1日", "2026年◯月1日", "2026年13月40日", "2026年2月30日", "2026年0月1日"]) {
       expect(countRealEffectiveDates(withDate(date))).toBe(0);
       expect(effectiveDateProblems([withDate(date)], { deploy: true })).toHaveLength(1);
     }
@@ -42,5 +43,23 @@ describe("制定日の検査", () => {
     expect(effectiveDateProblems([chunk.replace(PLACEHOLDER, "2026年12月1日")], { deploy: false })).toHaveLength(1);
     expect(effectiveDateProblems([chunk, withDate("2026年12月1日")], { deploy: false })).toHaveLength(1);
     expect(effectiveDateProblems([`${chunk}"制定日："+d`], { deploy: false })).toHaveLength(1);
+  });
+
+  it("暦にある日付だけを本物に数える（うるう年も）", () => {
+    expect(countRealEffectiveDates(withDate("2028年2月29日"))).toBe(1);
+    expect(countRealEffectiveDates(withDate("2027年2月29日"))).toBe(0);
+    expect(countRealEffectiveDates(withDate("2026年13月40日"))).toBe(0);
+  });
+
+  it("改定日：まだなければ通る。1つなら本物の日付を求め、2つ以上は止まる", () => {
+    const dated = withDate("2026年12月1日");
+    expect(countRevisionDateLines(dated)).toBe(0);
+    expect(effectiveDateProblems([dated], { deploy: true })).toEqual([]);
+    const revised = `${dated}const V="改定日：2027年4月1日";`;
+    expect(effectiveDateProblems([revised], { deploy: true })).toEqual([]);
+    expect(effectiveDateProblems([`${dated}const V="改定日：2027年◯月◯日";`], { deploy: false })).toEqual([]);
+    expect(effectiveDateProblems([`${dated}const V="改定日：2027年◯月◯日";`], { deploy: true })).toHaveLength(1);
+    expect(effectiveDateProblems([`${dated}const V="改定日：2027年13月40日";`], { deploy: true })).toHaveLength(1);
+    expect(effectiveDateProblems([revised, `const W="改定日：2027年5月1日";`], { deploy: false })).toHaveLength(1);
   });
 });

@@ -25,9 +25,40 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+const PRIVACY_SECTIONS = [
+  "1. 運営者と連絡先",
+  "2. 預かる情報",
+  "3. 使う目的",
+  "4. ほかの利用者に見えるもの",
+  "5. 外部の事業者に任せること（委託）",
+  "6. 第三者への提供",
+  "7. 外国での取り扱い",
+  "8. 保存する期間",
+  "9. 安全のための取り組み",
+  "10. Cookie と、端末に置くもの",
+  "11. Google から受け取った情報の扱い",
+  "12. 開示・訂正・削除などの求め",
+  "13. 子どもの利用",
+  "14. このポリシーの変更",
+];
+const TERMS_SECTIONS = [
+  "第1条（同意）",
+  "第2条（使える人）",
+  "第3条（アカウント）",
+  "第4条（このサービスでできること）",
+  "第5条（あなたが入力する内容）",
+  "第6条（してはいけないこと）",
+  "第7条（利用の停止）",
+  "第8条（サービスの変更・中断・終了）",
+  "第9条（退会）",
+  "第10条（運営の責任）",
+  "第11条（この規約の変更）",
+  "第12条（連絡）",
+  "第13条（準拠法と裁判所）",
+];
 const pages = [
-  { path: "/privacy", title: "プライバシー ポリシー", section: "1. 運営者と連絡先" },
-  { path: "/terms", title: "利用規約", section: "第1条（同意）" },
+  { path: "/privacy", title: "プライバシー ポリシー", section: "1. 運営者と連絡先", sections: PRIVACY_SECTIONS },
+  { path: "/terms", title: "利用規約", section: "第1条（同意）", sections: TERMS_SECTIONS },
 ] as const;
 
 // 確認中：テストの間は refresh を返さず、終わったら返す（refresh は同時に1つだけなので、返さないと次のテストが待ち続ける）
@@ -44,7 +75,26 @@ const refreshStates: [string, Route][] = [
   ["ログインしている（authenticated）", json(tokenBody())],
 ];
 
-describe.each(pages)("$path", ({ path, title, section }) => {
+describe.each(pages)("$path", ({ path, title, section, sections }) => {
+  it("見出し：h1 は SubScreen の題の1つだけ、h2 は文案のすべての節（順も同じ）", async () => {
+    window.history.replaceState(null, "", path);
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    expect(await screen.findByRole("heading", { name: title, level: 1 })).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([title]);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(sections);
+  });
+
+  it("連絡先は mailto: のリンク", async () => {
+    window.history.replaceState(null, "", path);
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: title, level: 1 });
+    const links = screen.getAllByRole("link", { name: "ops@kokohima.app" });
+    expect(links.length).toBeGreaterThanOrEqual(2);
+    for (const link of links) expect(link).toHaveAttribute("href", "mailto:ops@kokohima.app");
+  });
+
   it.each(refreshStates)("%s でも本文を出し、別の画面に移らない", async (_, refresh) => {
     window.history.replaceState(null, "", path);
     const { calls } = mockFetch({ "/api/v1/auth/refresh": refresh });
@@ -140,12 +190,28 @@ describe("プライバシー ポリシーの本文", () => {
 describe("リンクの置き場所", () => {
   it("ログインの画面：同意の1行と2つのリンク。チェックボックスはない", async () => {
     window.history.replaceState(null, "", "/login");
-    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    const { calls } = mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
     renderApp();
     const line = await screen.findByText((_, el) => el?.tagName === "P" && el.textContent === CONSENT);
     expect(within(line).getByRole("link", { name: "利用規約" })).toHaveAttribute("href", "/terms");
     expect(within(line).getByRole("link", { name: "プライバシー ポリシー" })).toHaveAttribute("href", "/privacy");
     expect(screen.queryByRole("checkbox")).toBeNull();
+    // 同意の記録を送らない：ログインの画面の通信は refresh だけ
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.map((c) => c.url)).toEqual(["/api/v1/auth/refresh"]);
+  });
+
+  it("利用規約：第6条・第12条の連絡先と、第2条の年齢・保護者の同意", async () => {
+    window.history.replaceState(null, "", "/terms");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    const article = (name: string) => screen.getByRole("heading", { name, level: 2 }).closest("section") as HTMLElement;
+    await screen.findByRole("heading", { name: "利用規約", level: 1 });
+    for (const name of ["第6条（してはいけないこと）", "第12条（連絡）"]) {
+      expect(within(article(name)).getByRole("link", { name: "ops@kokohima.app" })).toHaveAttribute("href", "mailto:ops@kokohima.app");
+    }
+    expect(within(article("第2条（使える人）")).getByText("このサービスは、13歳以上の人が使えます。")).toBeVisible();
+    expect(within(article("第2条（使える人）")).getByText("18歳未満の人は、保護者の同意を得てから使ってください。")).toBeVisible();
   });
 
   it("招待リンクの受け口：lookup が終わってからリンクを出し、開いて戻っても招待を続けられる", async () => {
