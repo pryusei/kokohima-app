@@ -8,11 +8,35 @@ import { useEffect } from "react";
  */
 export const EFFECTIVE_DATE_LINE = "制定日：2026年11月23日";
 
+// 改定の日付（docs/specs/T-19-privacy-terms.md「8.」）。公表日＝本番にデプロイする日、改定日（効力が生じる日）＝その7日後。
+// デプロイの日がずれたら、デプロイの前に、この2つの文字列の日付だけを同じだけずらす（ほかの場所に日付を書かない）。
+// deploy:prod（check-web-dist.mjs --deploy）は、公表日が日本時間の今日より後、予告が7日より短いか30日より長い、
+// 改定日を過ぎても公表日の行が残っている、のどれでも止まる
+
 /**
- * 改定日の行。初めて改定したときに「改定日：YYYY年M月D日」の1つの文字列にし、次からは日付を書き換える（行は1つだけ）。
- * まだ改定していないので null。入れたら、制定日と同じく deploy:prod で本物の日付かを検査する
+ * 改定日の行。「改定日（効力が生じる日）：YYYY年M月D日」の1つの文字列（行は1つだけ。2回めからは日付を書き換える）。
+ * 改定していなければ null。入れたら、制定日と同じく deploy:prod で本物の日付かを検査する
  */
-export const REVISION_DATE_LINE: string | null = null;
+export const REVISION_DATE_LINE: string | null = "改定日（効力が生じる日）：2026年12月2日";
+
+/**
+ * 予告の行。予告の間（公表日から改定日まで）だけ入れ、ほかのときは null（決めたこと14）。
+ * 改定日を過ぎたら、PRIVACY_REVISION_CHANGES・TERMS_REVISION_CHANGES とともに null に戻す（「8.」の5）
+ */
+export const REVISION_NOTICE_LINE: string | null =
+  "公表日：2026年11月25日（この版は改定日から適用します。それまでは、前の版を適用します）";
+
+/**
+ * 「この改定で変わるところ」の箇条書き（決めたこと15）。予告の行があるときだけ出す。
+ * 文に「制定日：」「改定日（効力が生じる日）：」「公表日：」を入れない（ビルドの検査の数がずれるため）
+ */
+export const PRIVACY_REVISION_CHANGES: readonly string[] | null = [
+  "「5.」「6.」「7.」：外国の事業者に取り扱いを任せるときの書き方を直し、「7.」に、外国の名称、事業者がとる措置、その確かめ方などを書きました。",
+  "「12.」：「7.」の情報の提供を求められることを書きました。",
+];
+export const TERMS_REVISION_CHANGES: readonly string[] | null = [
+  "第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。",
+];
 
 export const CONTACT_EMAIL = "ops@kokohima.app";
 

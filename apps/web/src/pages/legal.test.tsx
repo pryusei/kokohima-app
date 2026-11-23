@@ -4,7 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
 import { json, mockFetch, renderApp, tokenBody, type Route } from "../test/helpers";
-import { EFFECTIVE_DATE_LINE } from "./legal";
+import {
+  EFFECTIVE_DATE_LINE,
+  PRIVACY_REVISION_CHANGES,
+  REVISION_DATE_LINE,
+  REVISION_NOTICE_LINE,
+  TERMS_REVISION_CHANGES,
+} from "./legal";
 
 // プライバシー ポリシーと利用規約（docs/specs/T-19-privacy-terms.md「テスト計画」）
 
@@ -25,14 +31,16 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+const CHANGES = "この改定で変わるところ";
 const PRIVACY_SECTIONS = [
+  CHANGES,
   "1. 運営者と連絡先",
   "2. 預かる情報",
   "3. 使う目的",
   "4. ほかの利用者に見えるもの",
   "5. 外部の事業者に任せること（委託）",
   "6. 第三者への提供",
-  "7. 外国での取り扱い",
+  "7. 外国の事業者に任せるとき",
   "8. 保存する期間",
   "9. 安全のための取り組み",
   "10. Cookie と、端末に置くもの",
@@ -42,6 +50,7 @@ const PRIVACY_SECTIONS = [
   "14. このポリシーの変更",
 ];
 const TERMS_SECTIONS = [
+  CHANGES,
   "第1条（同意）",
   "第2条（使える人）",
   "第3条（アカウント）",
@@ -56,10 +65,20 @@ const TERMS_SECTIONS = [
   "第12条（連絡）",
   "第13条（準拠法と裁判所）",
 ];
+// 「この改定で変わるところ」の箇条書き（仕様書の6節・7節の文案）
+const PRIVACY_CHANGES = [
+  "「5.」「6.」「7.」：外国の事業者に取り扱いを任せるときの書き方を直し、「7.」に、外国の名称、事業者がとる措置、その確かめ方などを書きました。",
+  "「12.」：「7.」の情報の提供を求められることを書きました。",
+];
+const TERMS_CHANGES = ["第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。"];
 const pages = [
-  { path: "/privacy", title: "プライバシー ポリシー", section: "1. 運営者と連絡先", sections: PRIVACY_SECTIONS },
-  { path: "/terms", title: "利用規約", section: "第1条（同意）", sections: TERMS_SECTIONS },
+  { path: "/privacy", title: "プライバシー ポリシー", section: "1. 運営者と連絡先", sections: PRIVACY_SECTIONS, changes: PRIVACY_CHANGES },
+  { path: "/terms", title: "利用規約", section: "第1条（同意）", sections: TERMS_SECTIONS, changes: TERMS_CHANGES },
 ] as const;
+
+/** 本文の節（h2 の section） */
+const clause = (name: string) => screen.getByRole("heading", { name, level: 2 }).closest("section") as HTMLElement;
+const DATE_LINE = /^(改定日（効力が生じる日）|公表日)：\d{4}年\d{1,2}月\d{1,2}日/;
 
 // 確認中：テストの間は refresh を返さず、終わったら返す（refresh は同時に1つだけなので、返さないと次のテストが待ち続ける）
 let releaseChecking: () => void = () => {};
@@ -75,7 +94,7 @@ const refreshStates: [string, Route][] = [
   ["ログインしている（authenticated）", json(tokenBody())],
 ];
 
-describe.each(pages)("$path", ({ path, title, section, sections }) => {
+describe.each(pages)("$path", ({ path, title, section, sections, changes }) => {
   it("見出し：h1 は SubScreen の題の1つだけ、h2 は文案のすべての節（順も同じ）", async () => {
     window.history.replaceState(null, "", path);
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
@@ -83,6 +102,35 @@ describe.each(pages)("$path", ({ path, title, section, sections }) => {
     expect(await screen.findByRole("heading", { name: title, level: 1 })).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([title]);
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(sections);
+  });
+
+  it("制定日の下に、改定日の行と予告の行がこの順で1つずつ出る", async () => {
+    window.history.replaceState(null, "", path);
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: title, level: 1 });
+    expect(REVISION_DATE_LINE).toMatch(DATE_LINE);
+    expect(REVISION_NOTICE_LINE).toMatch(DATE_LINE);
+    expect(REVISION_NOTICE_LINE).toMatch(/（この版は改定日から適用します。それまでは、前の版を適用します）$/);
+    const dates = screen.getByText(EFFECTIVE_DATE_LINE).parentElement as HTMLElement;
+    expect(Array.from(dates.children).map((p) => p.textContent)).toEqual([EFFECTIVE_DATE_LINE, REVISION_DATE_LINE, REVISION_NOTICE_LINE]);
+    expect(screen.getAllByText(/^改定日（効力が生じる日）：/)).toHaveLength(1);
+    expect(screen.getAllByText(/^公表日：/)).toHaveLength(1);
+  });
+
+  it("予告の行があるとき、日付の行と本文の間に「この改定で変わるところ」と、そのページの箇条書きを出す", async () => {
+    window.history.replaceState(null, "", path);
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: title, level: 1 });
+    const notice = clause(CHANGES);
+    expect(within(notice).getAllByRole("listitem").map((li) => li.textContent)).toEqual(changes);
+    // 日付の行の次、本文の最初の節より前
+    const dates = screen.getByText(EFFECTIVE_DATE_LINE).parentElement as HTMLElement;
+    expect(dates.nextElementSibling).toBe(notice);
+    expect(notice.compareDocumentPosition(clause(section)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 箇条書きに日付の見出しの文字を入れない（ビルドの検査の数がずれないように）
+    for (const c of changes) expect(c).not.toMatch(/制定日：|改定日（効力が生じる日）：|公表日：|改定日：/);
   });
 
   it("連絡先は mailto: のリンク", async () => {
@@ -141,6 +189,36 @@ describe.each(pages)("$path", ({ path, title, section, sections }) => {
   });
 });
 
+describe("legal.ts の箇条書き", () => {
+  it("仕様書の6節・7節の「この改定で変わるところ」と同じ", () => {
+    expect(PRIVACY_REVISION_CHANGES).toEqual(PRIVACY_CHANGES);
+    expect(TERMS_REVISION_CHANGES).toEqual(TERMS_CHANGES);
+  });
+});
+
+describe("予告の行がないとき（改定日のあと）", () => {
+  afterEach(() => {
+    vi.doUnmock("./legal");
+    vi.resetModules();
+  });
+
+  it.each(pages)("$path：箇条書きがあっても「この改定で変わるところ」を出さず、改定日の行は残す", async ({ path, title }) => {
+    vi.resetModules();
+    vi.doMock("./legal", async (importOriginal) => ({ ...(await importOriginal<typeof import("./legal")>()), REVISION_NOTICE_LINE: null }));
+    const helpers = await import("../test/helpers");
+    const legal = await import("./legal");
+    expect(legal.REVISION_NOTICE_LINE).toBeNull();
+    expect(legal.PRIVACY_REVISION_CHANGES).not.toBeNull();
+    window.history.replaceState(null, "", path);
+    helpers.mockFetch({ "/api/v1/auth/refresh": helpers.json({}, 401) });
+    helpers.renderApp();
+    await screen.findByRole("heading", { name: title, level: 1 });
+    expect(screen.queryByRole("heading", { name: CHANGES })).toBeNull();
+    expect(screen.queryByText(/^公表日：/)).toBeNull();
+    expect(screen.getByText(legal.REVISION_DATE_LINE as string)).toBeVisible();
+  });
+});
+
 describe("プライバシー ポリシーの本文", () => {
   it("連絡先・年齢・外へのリンクを出す", async () => {
     window.history.replaceState(null, "", "/privacy");
@@ -155,6 +233,114 @@ describe("プライバシー ポリシーの本文", () => {
     const google = screen.getByRole("link", { name: "Google API サービスのユーザーデータに関するポリシー" });
     expect(google).toHaveAttribute("target", "_blank");
     expect(google).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("「5.」「6.」：外国の事業者は「7.」へ送り、監視は Slack の要約と Better Stack の2つの文", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    const five = clause("5. 外部の事業者に任せること（委託）");
+    expect(
+      within(five).getByText("このサービスは、次の事業者に、必要な範囲で情報の取り扱いを任せています。外国の事業者に任せるときの扱いは「7.」のとおりです。"),
+    ).toBeVisible();
+    expect(screen.queryByText(/どの事業者も米国の事業者です|「5.」の事業者は米国の事業者です/)).toBeNull();
+    const monitoring = within(five).getByRole("heading", { name: "監視のためのサービス", level: 3 }).closest("section") as HTMLElement;
+    expect(within(monitoring).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "障害の知らせ（Slack）には、件数と監視の名前と、起きた障害（エラー）の要約を送ります。要約に利用者の情報が入らないことを確かめてから送り、入るおそれがあるときは、要約の知らせは送らず、件数と監視の名前だけにします。",
+      "外からの動作の確認（Better Stack）は、このサービスの URL を開くだけです。利用者の情報は渡しません。",
+    ]);
+    const six = within(clause("6. 第三者への提供")).getAllByRole("listitem").map((li) => li.textContent);
+    expect(six).toHaveLength(2);
+    expect(six[0]).toContain("次の委託の場合は除きます。");
+    expect(six[1]).toContain("外国の事業者に任せるときは、「7.」のとおり、個人情報保護法の基準に適合する体制を整えている事業者にだけ任せます。");
+    expect(screen.queryByText(/外国にある第三者への提供として扱い/)).toBeNull();
+  });
+
+  it("「7.」：外国の名称・確かめ方・措置・確かめ続けること・外国の制度・連絡先", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    const seven = clause("7. 外国の事業者に任せるとき");
+    const sub = (name: string) => within(seven).getByRole("heading", { name, level: 3 }).closest("section") as HTMLElement;
+    expect(within(seven).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "外国の名称",
+      "体制を整えていることの確かめ方",
+      "事業者がとる措置",
+      "確かめ続けること",
+      "外国の個人情報の保護の制度",
+      "もっと詳しく知りたいとき",
+    ]);
+    const names = within(sub("外国の名称")).getAllByRole("listitem").map((li) => li.textContent);
+    expect(names[0]).toBe("米国：Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者");
+    expect(names.slice(1).map((t) => t?.split("：")[0])).toEqual([
+      "Cloudflare での通信の処理",
+      "Cloudflare での保管（データベース・ファイル・処理の待ち行列・一時的な記録・ログ）",
+    ]);
+    const providers = within(sub("体制を整えていることの確かめ方"))
+      .getAllByRole("listitem")
+      .map((li) => li.textContent?.split("：")[0]);
+    expect(providers).toEqual(["Cloudflare", "Google", "Resend", "ブラウザのプッシュ通知の事業者"]);
+    const how = sub("体制を整えていることの確かめ方").textContent ?? "";
+    expect(how).not.toMatch(/Slack|Better Stack|Google API の利用規約|ユーザーデータに関するポリシー/);
+    expect(sub("事業者がとる措置").textContent).toContain("任された目的の範囲でだけ情報を扱うこと");
+    expect(sub("確かめ続けること").textContent).toContain("年に1回と、事業者が契約・条件を変えたと知ったとき");
+    expect(sub("外国の個人情報の保護の制度").textContent).toContain("個人情報保護委員会の「外国における個人情報の保護に関する制度等の調査」");
+    expect(within(sub("もっと詳しく知りたいとき")).getByRole("link", { name: "ops@kokohima.app" })).toHaveAttribute("href", "mailto:ops@kokohima.app");
+    expect(seven.textContent).not.toMatch(/確かめています|支障は見つかっていません/);
+    // 仕様書の6節の文案と全文で同じ（箇条書きは、入れ子を除いたその項目の文）
+    const own = (li: HTMLElement) => {
+      const c = li.cloneNode(true) as HTMLElement;
+      c.querySelectorAll("ul,ol").forEach((n) => n.remove());
+      return c.textContent?.trim();
+    };
+    const items = (name: string) => Array.from(sub(name).querySelectorAll("li")).map(own);
+    expect(Array.from(seven.querySelectorAll(":scope > p")).map((p) => p.textContent)).toEqual([
+      "「5.」の事業者のうち、Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者は、外国の事業者です。運営は、個人情報保護法の基準に適合する体制（日本の法律の定めに沿った措置を続けてとるための体制）を整えている事業者にだけ、個人データの取り扱いを任せます。本人の同意によらずに任せるため、外国にある第三者に個人データを渡すときに本人の求めに応じて知らせることになっている事項を、求めを待たずにここに書きます。",
+      "障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません。",
+    ]);
+    expect(items("外国の名称")).toEqual([
+      "米国：Cloudflare・Google・Resend・ブラウザのプッシュ通知の事業者",
+      "Cloudflare での通信の処理：世界各地の拠点（データセンター）で処理します。どの国の拠点で処理されるかは、アクセスする場所などによって変わるため、前もって特定できません。",
+      "Cloudflare での保管（データベース・ファイル・処理の待ち行列・一時的な記録・ログ）：保管する場所の国を指定していないため、Cloudflare が選びます。前もって特定できません。",
+    ]);
+    expect(sub("体制を整えていることの確かめ方").querySelector("p")?.textContent).toBe(
+      "運営は、次の契約・条件に、下の「事業者がとる措置」が定められていることを確かめます。",
+    );
+    expect(items("体制を整えていることの確かめ方")).toEqual([
+      "Cloudflare：Cloudflare のデータ処理に関する契約（DPA）",
+      "Google：Google が、ログインとカレンダーの連携で預かるデータの処理について定める条件",
+      "Resend：Resend のデータ処理に関する契約（DPA）",
+      "ブラウザのプッシュ通知の事業者：それぞれの事業者が、プッシュ通知の配信について定める条件。渡すのは、その事業者が発行した宛先と、中身のない合図だけです。",
+    ]);
+    expect(items("事業者がとる措置")).toEqual([
+      "確かめるのは、事業者が、任された目的の範囲でだけ情報を扱うこと、安全管理の措置をとること、従業者とほかの委託先を監督すること、漏えいなどがあれば運営に知らせること、ほかの人に渡さないこと、契約が終わったときに情報を消すか返すこと、などです。",
+    ]);
+    expect(items("確かめ続けること")).toEqual([
+      "運営は、年に1回と、事業者が契約・条件を変えたと知ったときに、事業者の措置と、それに影響するおそれのある外国の制度を確かめます。",
+      "措置に支障が出たときは、必要な対応をとり、続けるのが難しいときは、その事業者に任せるのをやめます。",
+      "措置の実施に支障が見つかったときは、そのことと、とった対応を、ここに書きます。",
+    ]);
+    expect(items("外国の個人情報の保護の制度")).toEqual([
+      "個人情報保護委員会の「外国における個人情報の保護に関する制度等の調査」によると、米国の概要は次のとおりです。",
+      "国全体の、個人情報の保護についての包括的な法律はありません。連邦取引委員会（FTC）が、不公正・欺瞞的な行為を禁じる法律（連邦取引委員会法第5条）にもとづいて取り締まるほか、分野ごとの法律（医療・金融・子どもの情報など）と、州の法律があります。",
+      "安全保障などのために、政府が事業者に情報の提供を求めることができる制度があります。",
+      "詳しくは、個人情報保護委員会の調査をご覧ください。",
+    ]);
+    expect(items("もっと詳しく知りたいとき")).toEqual([
+      "体制の整え方、事業者がとる措置、確かめる頻度と方法、外国の制度、支障の有無とその対応について、もっと詳しく知りたいときは、ops@kokohima.app に求めてください（「12.」）。遅滞なくお知らせします。",
+    ]);
+  });
+
+  it("「12.」：「7.」の情報の提供を求められる", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    expect(clause("12. 開示・訂正・削除などの求め").textContent).toContain(
+      "第三者への提供の停止、外国の事業者に任せることについての情報（「7.」）の提供を求められます。",
+    );
   });
 
   it("「8.」の保存期間は RETENTION の数をそのまま出す", async () => {
@@ -216,6 +402,20 @@ describe("リンクの置き場所", () => {
     }
     expect(within(article("第2条（使える人）")).getByText("このサービスは、13歳以上の人が使えます。")).toBeVisible();
     expect(within(article("第2条（使える人）")).getByText("18歳未満の人は、保護者の同意を得てから使ってください。")).toBeVisible();
+  });
+
+  it("利用規約：第5条3に、リンクのプレビューの画像の削除の求めと連絡先", async () => {
+    window.history.replaceState(null, "", "/terms");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "利用規約", level: 1 });
+    const items = within(clause("第5条（あなたが入力する内容）")).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    const third = items[2] as HTMLElement;
+    expect(third.textContent).toBe(
+      "誘い・募集に付けたリンクのプレビューの画像は、運営がリンク先のページから写して、相手に配ります。写した画像の権利を持つ人などが削除を求めるときは、ops@kokohima.app に知らせてください。内容を確かめ、必要と判断したときは、その画像を配るのをやめて消します。消したあとも、すでに表示した端末には、しばらく残ることがあります。",
+    );
+    expect(within(third).getByRole("link", { name: "ops@kokohima.app" })).toHaveAttribute("href", "mailto:ops@kokohima.app");
   });
 
   it("招待リンクの受け口：lookup が終わってからリンクを出し、開いて戻っても招待を続けられる", async () => {
