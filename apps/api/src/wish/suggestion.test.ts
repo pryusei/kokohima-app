@@ -13,8 +13,11 @@ import {
   readSuggestConfig,
   remaining,
   retryAfterSeconds,
+  reviewCandidates,
   SUGGEST_DEFAULTS,
+  SYSTEM_PROMPT,
 } from "./domain/suggestion";
+import { webSearchTool } from "./infra/claude";
 
 // 行きたいのAI提案（docs/specs/T-29-wish-suggestion.md「テスト計画」）。時計は 2026-10-10T00:00:00Z（日本時間の 09:00）
 
@@ -121,6 +124,42 @@ describe("domain", () => {
     expect(acceptCandidates({ candidates: [candidate("https://a.example/1")] }, [])).toEqual([]);
   });
 
+  it("捨てた候補を理由ごとに数える（検索の結果にない・形が違う・重複・4件め以降）", () => {
+    const urls = ["https://a.example/1", "https://a.example/2", "https://a.example/3", "https://a.example/4"];
+    const r = reviewCandidates(
+      {
+        candidates: [
+          candidate("https://a.example/1"),
+          candidate("https://made-up.example/"),
+          candidate("https://made-up.example/2"),
+          candidate("https://a.example/2", { reason: "" }),
+          candidate("https://a.example/1"),
+          candidate("https://a.example/2"),
+          candidate("https://a.example/3"),
+          candidate("https://a.example/4"),
+        ],
+      },
+      urls,
+    );
+    expect(r.accepted).toHaveLength(3);
+    expect(r.dropped).toEqual({ notInResults: 2, invalid: 1, duplicate: 1, overLimit: 1 });
+    expect(reviewCandidates(null, urls).dropped).toEqual({ notInResults: 0, invalid: 0, duplicate: 0, overLimit: 0 });
+  });
+
+  it("Web検索のツールは、Haiku なら古い版、それ以外は新しい版（絞り込みつき）", () => {
+    expect(webSearchTool("claude-haiku-5-5")).toMatchObject({ type: "web_search_20250305", name: "web_search", max_uses: 3 });
+    expect(webSearchTool("claude-sonnet-5-5")).toMatchObject({ type: "web_search_20260209", name: "web_search", max_uses: 3 });
+    expect(webSearchTool("claude-opus-5-5").type).toBe("web_search_20260209");
+  });
+
+  it("system は URL の書き写し・ひとことの長さと例・理由を別の情報にすることを頼む（動く値を入れない）", () => {
+    expect(SYSTEM_PROMPT).toContain("一字一句そのまま書き写して");
+    expect(SYSTEM_PROMPT).toContain("20文字以内");
+    expect(SYSTEM_PROMPT).toContain("代官山の鉄板焼き花行きたい");
+    expect(SYSTEM_PROMPT).toContain("message とは違う情報");
+    expect(SYSTEM_PROMPT).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+  });
+
   it("日本時間の今日の始まりと次の日、Retry-After", () => {
     const now = Date.parse("2026-10-10T00:00:00Z");
     expect(localDayBounds(now, "Asia/Tokyo")).toEqual({
@@ -195,6 +234,9 @@ describe("探す（POST /wish-suggestions）", () => {
     const a = await u.user();
     await resultOf(await suggest(a));
     expect(h.claude.state.requests[0]?.json.model).toBe("claude-sonnet-5-5");
+    expect(h.claude.state.requests[0]?.json.tools).toEqual([
+      { type: "web_search_20260209", name: "web_search", max_uses: 3, user_location: { type: "approximate", country: "JP" } },
+    ]);
   });
 
   it("入力が不正なら400（ストリームにならない）。数えない", async () => {
@@ -276,6 +318,15 @@ describe("探す（POST /wish-suggestions）", () => {
     await resultOf(await suggest(a, { area: "下北沢", query: "古着とカレー" }));
     const all = lines.join("\n");
     expect(all).toContain("wish_suggest_call");
+    // 捨てた数（既定の答えは、検索の結果にない URL が1件）とモデルとキャッシュのトークン数は出す
+    const call = JSON.parse(lines.find((l) => l.includes("wish_suggest_call")) ?? "{}") as Record<string, unknown>;
+    expect(call).toMatchObject({
+      model: "claude-haiku-5-5",
+      candidates: 3,
+      dropped: { notInResults: 1, invalid: 0, duplicate: 0, overLimit: 0 },
+    });
+    expect(call).toHaveProperty("cacheReadTokens");
+    expect(call).toHaveProperty("cacheWriteTokens");
     for (const secret of ["下北沢", "古着とカレー", "shop.example", "こもれび", "sk-ant-test"]) expect(all).not.toContain(secret);
   });
 });
