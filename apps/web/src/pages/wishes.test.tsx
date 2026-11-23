@@ -223,6 +223,7 @@ const everyoneTab = (over: Routes = {}) => {
   return mockFetch({
     "/api/v1/auth/refresh": json(tokenBody()),
     "/api/v1/friend-availabilities": empty,
+    "/api/v1/friends": json({ items: [friend(1, "あき")], nextCursor: null }),
     ...over,
   });
 };

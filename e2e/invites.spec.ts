@@ -22,7 +22,7 @@ async function openReceived(page: Page, from: E2EUser) {
 async function sendFromFriendDetail(page: Page, to: E2EUser) {
   await page.goto("/friends");
   await friendList(page).getByRole("link", { name: to.displayName }).click();
-  await page.getByRole("link", { name: "ここどう？と誘う" }).click();
+  await sheet(page).getByRole("link", { name: "誘う", exact: true }).click();
   await expect(page.getByLabel("相手")).toHaveValue(/.+/);
   await page.getByLabel("日付").fill(tomorrow());
   await page.getByLabel("開始", { exact: true }).fill("10:00");
@@ -36,6 +36,29 @@ async function meetupsOf(page: Page) {
   await page.goto("/invites?tab=meetups");
   return page.getByRole("list", { name: "成立した予定" });
 }
+
+test("Aが「みんな」の「誰を誘う？」から、ここ暇のないBの顔を押すと、Bを入れた誘いの作成が「ここどう？」で開き、送れる", async ({ browser }) => {
+  // docs/specs/T-34-kokodou-entry.md「E2Eテスト」
+  const a = await newUser(browser, "A");
+  const b = await newUser(browser, "B");
+  await befriend(a, b);
+
+  await a.page.goto("/");
+  await expect(a.page.getByText("まだ友達のここ暇はありません")).toBeVisible();
+  await expect(a.page.getByRole("link", { name: "暇な人いる？と募る" })).toBeVisible();
+  await a.page.getByRole("region", { name: "誰を誘う？" }).getByRole("link", { name: `${b.displayName}を誘う` }).click();
+  const create = sheet(a.page, "誘う");
+  await expect(create.getByLabel("相手").locator("option:checked")).toHaveText(b.displayName);
+  await expect(create.getByText("ここどう？", { exact: true })).toBeVisible();
+  await create.getByLabel("日付").fill(tomorrow());
+  await create.getByLabel("開始", { exact: true }).fill("10:00");
+  await create.getByLabel("終了", { exact: true }).fill("12:00");
+  await create.getByRole("button", { name: "誘う", exact: true }).click();
+  await expect(sheet(a.page).getByText("返事待ち")).toBeVisible();
+
+  await openReceived(b.page, a);
+  await expect(sheet(b.page).getByText("ここどう？", { exact: true })).toBeVisible();
+});
 
 test("AがBの見えている枠から誘う（あそぼ）→ Bが「行く」→ 双方の「成立」に予定が出る", { tag: "@iphone" }, async ({ browser }) => {
   const a = await newUser(browser, "A");

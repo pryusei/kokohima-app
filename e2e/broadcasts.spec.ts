@@ -96,8 +96,8 @@ test("誰も応じないまま期限が過ぎる → Aには「期限が過ぎ�
   await a.page.goto(`/broadcasts/${id}`);
   await expect(sheet(a.page).getByText("期限が過ぎました")).toBeVisible();
   await a.page.getByRole("link", { name: "もう一度募集する" }).click();
-  await expect(a.page.getByLabel(b.displayName)).toBeChecked();
-  await expect(a.page.getByLabel(c.displayName)).toBeChecked();
+  await expect(a.page.getByRole("checkbox", { name: b.displayName, exact: true })).toBeChecked();
+  await expect(a.page.getByRole("checkbox", { name: c.displayName, exact: true })).toBeChecked();
   await expect(a.page.getByLabel("エリア（任意）")).toHaveValue("渋谷");
 
   for (const f of [b, c]) {
