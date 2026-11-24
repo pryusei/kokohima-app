@@ -24,7 +24,8 @@ const item = (n: number, kind: string, over: Record<string, unknown> = {}) => ({
 });
 const page = (items: unknown[]) => json({ items, nextCursor: null });
 const noContent = () => new Response(null, { status: 204 });
-const prefs = { invites: true, broadcasts: true, meetups: true, friends: true, calendar: true };
+const prefs = { invites: true, broadcasts: true, meetups: true, friends: true, calendar: true, lockScreen: "hidden" };
+const KEYS = { p256dh: "BP".padEnd(87, "A"), auth: "au".padEnd(22, "A") };
 
 beforeEach(() => {
   tokenStore.clear();
@@ -39,8 +40,9 @@ afterEach(() => {
 function stubPush(opts: { permission?: NotificationPermission; endpoint?: string | null } = {}) {
   const endpoint = opts.endpoint === undefined ? "https://fcm.googleapis.com/fcm/send/abc" : opts.endpoint;
   const unsubscribe = vi.fn(async () => true);
-  let current = endpoint ? { endpoint, unsubscribe } : null;
-  const subscribe = vi.fn(async () => (current = { endpoint: "https://fcm.googleapis.com/fcm/send/new", unsubscribe }));
+  const sub = (url: string) => ({ endpoint: url, unsubscribe, toJSON: () => ({ endpoint: url, keys: KEYS }) });
+  let current = endpoint ? sub(endpoint) : null;
+  const subscribe = vi.fn(async () => (current = sub("https://fcm.googleapis.com/fcm/send/new")));
   const registration = { pushManager: { getSubscription: async () => current, subscribe } };
   const requestPermission = vi.fn(async () => "granted" as NotificationPermission);
   vi.stubGlobal("PushManager", function PushManager() {});
@@ -209,6 +211,33 @@ describe("通知の設定", () => {
     expect(screen.getByRole("switch", { name: "募集" })).toBeChecked();
   });
 
+  it("ロック画面の見本を2つ並べて、いつでも変えられる。今の設定に印が付き、選ぶとその項目だけを PATCH する（T-35）", async () => {
+    window.history.replaceState(null, "", "/settings/notifications");
+    let saved: Record<string, unknown> = { ...prefs, lockScreen: "detailed" };
+    const { calls } = mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/me/notification-preferences": ({ init }) => {
+        if (init.method === "PATCH") saved = { ...saved, ...(JSON.parse(String(init.body)) as object) };
+        return json(saved)();
+      },
+    });
+    renderApp();
+    const group = await screen.findByRole("group", { name: "ロック画面に出す中身" });
+    const hidden = within(group).getByRole("radio", { name: "出さない" });
+    await waitFor(() => expect(within(group).getByRole("radio", { name: "名前と日時を出す" })).toBeChecked());
+    expect(hidden).toHaveAccessibleDescription("見本：誘いが届きました");
+    expect(within(group).getByText("どちらでも、ひとこと・場所・リンクは出ません")).toBeVisible();
+    expect(screen.getByText("断り・見送り・取り消しと、夜22時〜朝7時は鳴らさず、お知らせ一覧にだけ残します")).toBeVisible();
+    await userEvent.click(hidden);
+    await waitFor(() => expect(hidden).toBeChecked());
+    const patch = calls.find((c) => c.init.method === "PATCH");
+    expect(JSON.parse(String(patch?.init.body))).toEqual({ lockScreen: "hidden" });
+    // 選んだ枠は lamp の輪。赤やエラーの色を使わない
+    expect(hidden.closest("label")?.className).toMatch(/border-lamp-line/);
+    expect(group.innerHTML).not.toMatch(/red|rose|error/);
+  });
+
   it("プッシュが使えない端末では、ホーム画面への追加とメールの案内を出す", async () => {
     window.history.replaceState(null, "", "/settings/notifications");
     mockFetch({
@@ -222,7 +251,7 @@ describe("通知の設定", () => {
     expect(screen.getByRole("link", { name: "追加の方法" })).toHaveAttribute("href", "/settings/install");
   });
 
-  it("「この端末でプッシュ通知を受け取る」：許可を取り、公開鍵で購読し、endpoint だけを送る。やめると DELETE する", async () => {
+  it("「この端末でプッシュ通知を受け取る」：許可を取り、公開鍵で購読し、endpoint と暗号化の鍵を送る。やめると endpoint だけで DELETE する", async () => {
     window.history.replaceState(null, "", "/settings/notifications");
     const push = stubPush({ permission: "default", endpoint: null });
     const { calls } = mockFetch({
@@ -238,7 +267,7 @@ describe("通知の設定", () => {
     expect(push.requestPermission).toHaveBeenCalled();
     expect(push.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
     const post = calls.find((c) => c.url === "/api/v1/push/subscriptions" && c.init.method === "POST");
-    expect(JSON.parse(String(post?.init.body))).toEqual({ endpoint: "https://fcm.googleapis.com/fcm/send/new" });
+    expect(JSON.parse(String(post?.init.body))).toEqual({ endpoint: "https://fcm.googleapis.com/fcm/send/new", keys: KEYS });
 
     vi.stubGlobal("Notification", { permission: "granted", requestPermission: push.requestPermission });
     await userEvent.click(screen.getByRole("button", { name: "この端末でのプッシュ通知をやめる" }));
@@ -259,7 +288,7 @@ describe("購読の送り直しとログアウト", () => {
     "/api/v1/push/subscriptions": noContent,
   };
 
-  it("アプリを開くと（ログイン中・許可済み）、いまの endpoint を送り直す", async () => {
+  it("アプリを開くと（ログイン中・許可済み）、いまの endpoint と鍵を送り直す", async () => {
     window.history.replaceState(null, "", "/friends");
     stubPush();
     const { calls } = mockFetch(home);
@@ -267,7 +296,7 @@ describe("購読の送り直しとログアウト", () => {
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/push/subscriptions")).toBe(true));
     const post = calls.find((c) => c.url === "/api/v1/push/subscriptions");
     expect(post?.init.method).toBe("POST");
-    expect(JSON.parse(String(post?.init.body))).toEqual({ endpoint: "https://fcm.googleapis.com/fcm/send/abc" });
+    expect(JSON.parse(String(post?.init.body))).toEqual({ endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys: KEYS });
   });
 
   it("通知を許可していなければ、送り直さない", async () => {
@@ -304,12 +333,34 @@ describe("Service Worker", () => {
     return { listeners, self };
   }
 
-  it("push：決まった文言を waitUntil で出す（中身を読まない）", () => {
+  const pushWith = (data: unknown) => {
     const { listeners, self } = load();
     const waitUntil = vi.fn();
-    listeners.get("push")?.({ waitUntil, data: { text: () => "ひみつ" } });
-    expect(self.registration.showNotification).toHaveBeenCalledWith("ここ暇", { body: "新しいお知らせがあります", tag: "kokohima" });
+    listeners.get("push")?.({ waitUntil, data });
     expect(waitUntil).toHaveBeenCalledWith(expect.any(Promise));
+    return self.registration.showNotification;
+  };
+
+  it("push：中身の本文（種類に応じた文）を waitUntil で出す。同じお知らせは同じ tag（T-35）", () => {
+    const show = pushWith({ json: () => ({ v: 1, id: ID(1), body: "誘いが届きました" }) });
+    expect(show).toHaveBeenCalledWith("ここ暇", { body: "誘いが届きました", tag: `kokohima-${ID(1)}` });
+  });
+
+  it("push：中身がない・読めない・形が違うときは、決まった文言を出す", () => {
+    for (const data of [
+      null,
+      { json: () => { throw new SyntaxError("bad"); } },
+      { json: () => ({ v: 2, body: "未来の形" }) },
+      { json: () => ({ v: 1, body: "" }) },
+      { json: () => ({ v: 1, body: 1 }) },
+    ]) {
+      expect(pushWith(data)).toHaveBeenCalledWith("ここ暇", { body: "新しいお知らせがあります", tag: "kokohima" });
+    }
+  });
+
+  it("push：長すぎる本文は200字で切る", () => {
+    const show = pushWith({ json: () => ({ v: 1, id: ID(2), body: "あ".repeat(500) }) });
+    expect(show).toHaveBeenCalledWith("ここ暇", { body: "あ".repeat(200), tag: `kokohima-${ID(2)}` });
   });
 
   it("notificationclick：お知らせ一覧を開く。API を呼ばず、キャッシュもしない", () => {

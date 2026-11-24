@@ -1,20 +1,20 @@
 import type { NotificationPreferences } from "@kokohima/shared";
-import { notificationPreferencesSchema } from "@kokohima/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { apiSend } from "../api/client";
-import { keys } from "../api/keys";
 import { SendButton } from "../ui/Button";
 import { Note } from "../ui/feedback";
 import { Link } from "../ui/Link";
 import { Section, SubScreen } from "../ui/Navigation";
 import { Switch } from "../ui/Switch";
+import { LockScreenPicker } from "../notifications/LockScreenPicker";
+import { useUpdatePreferences } from "../notifications/preferences";
 import { disablePush, enablePush, pushEnabled, pushSupported } from "../notifications/push";
 import { preferencesQuery } from "../notifications/queries";
 
 // 通知の設定（docs/specs/T-07-notification.md「お知らせ一覧」の「設定」、キャンバス「22 通知の設定」）
+// ロック画面の見え方は docs/specs/T-35-notification-visibility.md「画面」
 
-const CATEGORIES: { key: keyof NotificationPreferences; label: string }[] = [
+const CATEGORIES: { key: Exclude<keyof NotificationPreferences, "lockScreen">; label: string }[] = [
   { key: "invites", label: "誘い" },
   { key: "broadcasts", label: "募集" },
   { key: "meetups", label: "予定" },
@@ -85,26 +85,9 @@ function PushSection() {
 }
 
 export function NotificationSettingsPage() {
-  const queryClient = useQueryClient();
   const preferences = useQuery(preferencesQuery());
   const [failed, setFailed] = useState(false);
-
-  const update = useMutation({
-    mutationFn: (patch: Partial<NotificationPreferences>) =>
-      apiSend("PATCH", "/api/v1/me/notification-preferences", patch, notificationPreferencesSchema),
-    onMutate: async (patch) => {
-      setFailed(false);
-      await queryClient.cancelQueries({ queryKey: keys.notifications.preferences() });
-      const previous = queryClient.getQueryData<NotificationPreferences>(keys.notifications.preferences());
-      queryClient.setQueryData<NotificationPreferences>(keys.notifications.preferences(), (p) => p && { ...p, ...patch });
-      return { previous };
-    },
-    onError: (_err, _patch, context) => {
-      setFailed(true);
-      if (context?.previous) queryClient.setQueryData(keys.notifications.preferences(), context.previous);
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: keys.notifications.preferences() }),
-  });
+  const update = useUpdatePreferences(() => setFailed(true));
 
   return (
     <SubScreen title="通知の設定" back="/settings">
@@ -114,7 +97,13 @@ export function NotificationSettingsPage() {
           <div className="rounded-l bg-surface px-4 shadow-card">
             {CATEGORIES.map((c) => (
               <div key={c.key} className="border-b border-line last:border-b-0">
-                <Switch checked={preferences.data[c.key]} onChange={(v) => update.mutate({ [c.key]: v })}>
+                <Switch
+                  checked={preferences.data[c.key]}
+                  onChange={(v) => {
+                    setFailed(false);
+                    update.mutate({ [c.key]: v });
+                  }}
+                >
                   {c.label}
                 </Switch>
               </div>
@@ -129,6 +118,12 @@ export function NotificationSettingsPage() {
         <Note>新しい端末でのログインのお知らせは止められません</Note>
       </Section>
       <PushSection />
+      <Section title="ロック画面">
+        <div className="rounded-l bg-surface p-4 shadow-card">
+          <LockScreenPicker />
+        </div>
+        <Note>断り・見送り・取り消しと、夜22時〜朝7時は鳴らさず、お知らせ一覧にだけ残します</Note>
+      </Section>
     </SubScreen>
   );
 }
