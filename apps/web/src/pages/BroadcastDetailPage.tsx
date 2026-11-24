@@ -5,7 +5,9 @@ import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { broadcastStatusText, broadcastStatusTone, formatRange } from "../invitations/format";
+import { MeetMoment, useMeetMoment } from "../invitations/MeetMoment";
 import { broadcastQuery } from "../invitations/queries";
+import { IcsButton } from "../calendar/IcsButton";
 import { honorificOf, nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
@@ -104,6 +106,8 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
   const broadcast = useQuery(broadcastQuery(broadcastId));
   // 届いた募集の「…」（相手への操作。docs/specs/T-33-block-report.md「振る舞い 1.」）
   const { acting, open: openActions, close: closeActions, moreRef } = usePersonActionsToggle();
+  // 決めたあと、または決まったことを知って最初に開いた1回だけ、成立の演出を出す（docs/specs/T-43-meet-moment.md）
+  const moment = useMeetMoment(broadcast.data?.status === "decided" ? broadcast.data.meetupId : null);
 
   if (broadcast.error instanceof ApiError && broadcast.error.status === 404) {
     return (
@@ -156,10 +160,16 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
           <p className="text-ink-muted">
             {b.direction === "received" ? <>募集した人：{owner}</> : <>宛先：{b.recipients?.length ?? 0}人</>}
           </p>
-          <div className="flex flex-col gap-1">
-            <p className="text-xl font-bold tabular-nums">{formatRange(b)}</p>
-            {b.area && <p className="text-ink-muted">エリア：{b.area}</p>}
-          </div>
+          {moment ? (
+            <MeetMoment meetup={moment}>
+              <IcsButton meetupId={moment.id} />
+            </MeetMoment>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <p className="text-xl font-bold tabular-nums">{formatRange(b)}</p>
+              {b.area && <p className="text-ink-muted">エリア：{b.area}</p>}
+            </div>
+          )}
           {b.message && <p className="whitespace-pre-wrap">{b.message}</p>}
           <LinkCard url={b.url} preview={b.linkPreview} />
           <Actions b={b} />
