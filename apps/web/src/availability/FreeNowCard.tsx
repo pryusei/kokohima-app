@@ -162,7 +162,7 @@ export function FreeNowCard() {
             <p className="font-bold tabular-nums">今ひま 〜{formatUntil(now, active.endsAt)}まで</p>
             <p className="text-s text-ink-muted">見せている友達に、時刻だけ出ています。通知はしていません</p>
           </div>
-          <SendButton size="s" disabled={stop.isPending} onClick={() => stop.mutate(active)}>
+          <SendButton size="s" pending={stop.isPending} onClick={() => stop.mutate(active)}>
             やめる
           </SendButton>
         </div>
@@ -186,7 +186,7 @@ export function FreeNowCard() {
           <SendButton
             variant="ghost"
             size="s"
-            disabled={stop.isPending || restore.isPending}
+            pending={stop.isPending || restore.isPending}
             onClick={() => restore.mutate(notice.startsAt)}
           >
             元に戻す

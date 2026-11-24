@@ -203,7 +203,7 @@ function Menu({
         <div className="flex flex-col gap-2 border-t border-line pt-4">
           {confirming === "unfriend" ? (
             <>
-              <SendButton block onClick={() => unfriend.mutate()} disabled={unfriend.isPending}>
+              <SendButton block onClick={() => unfriend.mutate()} pending={unfriend.isPending}>
                 {person.name}さんとの友達を解除する
               </SendButton>
               <Button variant="ghost" block onClick={() => setConfirming(null)}>
@@ -221,7 +221,7 @@ function Menu({
         <div className="flex flex-col gap-2 border-t border-line pt-4">
           {confirming === "block" ? (
             <>
-              <SendButton block onClick={() => block.mutate()} disabled={block.isPending}>
+              <SendButton block onClick={() => block.mutate()} pending={block.isPending}>
                 {person.name}さんをブロックする
               </SendButton>
               <Button variant="ghost" block onClick={() => setConfirming(null)}>

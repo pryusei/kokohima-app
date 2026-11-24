@@ -60,7 +60,8 @@ function OneAvailability() {
           <SendButton
             key={preset}
             variant="lamp"
-            disabled={create.isPending || create.isSuccess || day.ended(preset)}
+            disabled={create.isSuccess || day.ended(preset)}
+            pending={create.isPending}
             className="min-h-16 flex-col gap-0"
             onClick={() => create.mutate({ date: day.date, preset })}
           >
@@ -130,7 +131,7 @@ function ReceiveNotifications() {
         <>
           {/* 許可を取る前に、ロック画面の見え方を見本で選ぶ（T-35） */}
           <LockScreenPicker hint={false} />
-          <SendButton variant="primary" block disabled={enable.isPending} onClick={() => enable.mutate()}>
+          <SendButton variant="primary" block pending={enable.isPending} onClick={() => enable.mutate()}>
             お知らせを受け取る
           </SendButton>
         </>

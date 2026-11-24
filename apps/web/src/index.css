@@ -107,7 +107,7 @@
 
 /* 入る動き（animation）のトークン。animate-kh-pop のように使う（T-55 の週の帯。docs/specs/T-56-motion.md「0-1. の5」・M-09） */
 @theme {
-  --animate-kh-pop: kh-pop var(--duration-sheet) var(--ease-out) backwards;
+  --animate-kh-pop: kh-pop var(--duration-sheet) var(--ease-spring) backwards;
   --animate-kh-rise: kh-rise var(--duration-base) var(--ease-out) backwards;
   /* 自分の操作で成立したバッジの「ぽん」（M-04）・重なる枠が一回だけ灯る（M-12。500ms は仕様書のとおり）・中身のフェード（M-03） */
   --animate-kh-badge-pop: kh-badge-pop var(--duration-sheet) var(--ease-spring) backwards;
@@ -275,9 +275,12 @@
     grid-template-rows: 1fr;
     transition: grid-template-rows var(--duration-base) var(--ease-out);
   }
+  /* 中身の端のボタンのフォーカスの輪（外側に約4px）が overflow で切れないよう、切る箱を4pxずつ広げる（レイアウトは負の margin で打ち消す） */
   .kh-collapse > * {
     min-height: 0;
     overflow: hidden;
+    margin: -0.25rem;
+    padding: 0.25rem;
     transition: opacity var(--duration-base) var(--ease-out);
   }
   .kh-collapse[data-closed] {
@@ -299,15 +302,22 @@
 }
 
 /* 送る操作のボタン（docs/specs/T-56-motion.md「M-14」「M-03」）。押した縮みは press、送信中の薄さと「✓ 送りました」への色の切り替えは fast。
-   Button の transition-transform（utilities）より強くするため、レイヤーの外に書く（動きを止める設定の !important には負ける） */
+   Button の transition-transform（utilities）より強くするため、レイヤーの外に書く（動きを止める設定の !important には負ける）。
+   Tailwind v4 の active:scale-* が動かすのは transform ではなく scale なので、scale も書く（transition-transform の translate・rotate も残す） */
 .kh-send-motion {
   transition:
     transform var(--duration-press) var(--ease-out),
+    translate var(--duration-press) var(--ease-out),
+    scale var(--duration-press) var(--ease-out),
+    rotate var(--duration-press) var(--ease-out),
     opacity var(--duration-fast) var(--ease-out);
 }
 .kh-send-motion.kh-submit-motion {
   transition:
     transform var(--duration-press) var(--ease-out),
+    translate var(--duration-press) var(--ease-out),
+    scale var(--duration-press) var(--ease-out),
+    rotate var(--duration-press) var(--ease-out),
     opacity var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out),
