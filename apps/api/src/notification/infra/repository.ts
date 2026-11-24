@@ -1,4 +1,5 @@
 import type { Category, Draft, NotificationKind } from "../domain/kinds";
+import type { LockScreen } from "../domain/push-message";
 
 // notification のD1アクセス（docs/specs/T-07-notification.md「データ」）
 // お知らせ・設定・購読は、必ず user_id で絞る
@@ -23,7 +24,11 @@ export type NotificationRow = {
 };
 
 export type Channel = "push" | "email";
-export type Outcome = "sent" | "muted" | "limited" | "no_address" | "failed";
+/**
+ * silent：どちらの見え方でも送らない種類（断り・見送り・取り消し・抜けた。T-35）。
+ * night：夜（日本時間の22時〜7時）でプッシュを鳴らさなかった（T-35）
+ */
+export type Outcome = "sent" | "muted" | "limited" | "no_address" | "failed" | "silent" | "night";
 
 // ---- お知らせを作る ----
 
@@ -237,24 +242,31 @@ export async function markReadUpTo(d1: D1Database, viewerId: string, upTo: strin
 
 // ---- 設定 ----
 
-export type PreferenceRow = Record<Category, number>;
+export type PreferenceRow = Record<Category, number> & { lock_screen: LockScreen };
 
 export async function getPreferences(d1: D1Database, userId: string) {
   return d1
-    .prepare("SELECT invites, broadcasts, meetups, friends, calendar FROM notification_preferences WHERE user_id = ?1")
+    .prepare(
+      "SELECT invites, broadcasts, meetups, friends, calendar, lock_screen FROM notification_preferences WHERE user_id = ?1",
+    )
     .bind(userId)
     .first<PreferenceRow>();
 }
 
-export async function putPreferences(d1: D1Database, userId: string, p: Record<Category, boolean>, now: number) {
+export async function putPreferences(
+  d1: D1Database,
+  userId: string,
+  p: Record<Category, boolean> & { lockScreen: LockScreen },
+  now: number,
+) {
   await d1
     .prepare(
-      `INSERT INTO notification_preferences (user_id, invites, broadcasts, meetups, friends, calendar, updated_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
+      `INSERT INTO notification_preferences (user_id, invites, broadcasts, meetups, friends, calendar, lock_screen, updated_at)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?8, ?7 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
        ON CONFLICT (user_id) DO UPDATE SET invites = ?2, broadcasts = ?3, meetups = ?4, friends = ?5, calendar = ?6,
-         updated_at = ?7`,
+         lock_screen = ?8, updated_at = ?7`,
     )
-    .bind(userId, +p.invites, +p.broadcasts, +p.meetups, +p.friends, +p.calendar, now)
+    .bind(userId, +p.invites, +p.broadcasts, +p.meetups, +p.friends, +p.calendar, now, p.lockScreen)
     .run();
 }
 
@@ -262,7 +274,14 @@ export async function putPreferences(d1: D1Database, userId: string, p: Record<C
 
 export const MAX_SUBSCRIPTIONS = 10;
 
-export type SubscriptionRow = { id: string; user_id: string; session_id: string; endpoint_enc: string };
+export type SubscriptionRow = {
+  id: string;
+  user_id: string;
+  session_id: string;
+  endpoint_enc: string;
+  /** 暗号化の鍵（T-35）。T-35 より前に登録した購読は null */
+  keys_enc: string | null;
+};
 
 /**
  * 購読を登録する。同じ endpoint があれば（別の人の行でも）閲覧者とセッションに付け替え、登録の時刻を今にする。
@@ -270,16 +289,17 @@ export type SubscriptionRow = { id: string; user_id: string; session_id: string;
  */
 export async function upsertSubscription(
   d1: D1Database,
-  row: { userId: string; sessionId: string; endpointHash: string; endpointEnc: string; now: number },
+  row: { userId: string; sessionId: string; endpointHash: string; endpointEnc: string; keysEnc: string | null; now: number },
 ) {
   await d1.batch([
     d1
       .prepare(
-        `INSERT INTO push_subscriptions (id, user_id, session_id, endpoint_hash, endpoint_enc, created_at)
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)
-         ON CONFLICT (endpoint_hash) DO UPDATE SET user_id = ?2, session_id = ?3, endpoint_enc = ?5, created_at = ?6`,
+        `INSERT INTO push_subscriptions (id, user_id, session_id, endpoint_hash, endpoint_enc, keys_enc, created_at)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?7, ?6 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NULL)
+         ON CONFLICT (endpoint_hash) DO UPDATE SET user_id = ?2, session_id = ?3, endpoint_enc = ?5, keys_enc = ?7,
+           created_at = ?6`,
       )
-      .bind(crypto.randomUUID(), row.userId, row.sessionId, row.endpointHash, row.endpointEnc, row.now),
+      .bind(crypto.randomUUID(), row.userId, row.sessionId, row.endpointHash, row.endpointEnc, row.now, row.keysEnc),
     d1
       .prepare(
         `DELETE FROM push_subscriptions WHERE user_id = ?1 AND id NOT IN (
@@ -309,7 +329,9 @@ export async function deleteSubscriptionsOfUser(d1: D1Database, userId: string) 
 /** その人の購読（古い順） */
 export async function subscriptionsOf(d1: D1Database, userId: string) {
   const { results } = await d1
-    .prepare("SELECT id, user_id, session_id, endpoint_enc FROM push_subscriptions WHERE user_id = ?1 ORDER BY created_at, id")
+    .prepare(
+      "SELECT id, user_id, session_id, endpoint_enc, keys_enc FROM push_subscriptions WHERE user_id = ?1 ORDER BY created_at, id",
+    )
     .bind(userId)
     .all<SubscriptionRow>();
   return results;

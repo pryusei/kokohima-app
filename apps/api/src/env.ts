@@ -86,6 +86,11 @@ export type AppDeps = {
     resendUrl: string;
     /** プッシュの endpoint として追加で許可するホスト（E2E の偽のホストだけ。本番は空） */
     extraPushHosts: readonly string[];
+    /**
+     * 夜（日本時間の22時〜7時）にプッシュを鳴らさないか（T-35）。本番は true。
+     * E2E だけ false にする（CI がいつ走っても、プッシュの流れを確かめられるように）
+     */
+    quietHours: boolean;
   };
   /** 回数の上限の判定（T-10）。E2E では上限を実質なしにする */
   rateLimit: (env: Bindings, limiter: RateLimiterName, key: string) => Promise<boolean>;

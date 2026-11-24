@@ -1,6 +1,6 @@
 // 乱数・ハッシュ・定数時間比較（WebCrypto）。暗号処理は自作せず、この薄いラッパーだけを使う
 
-function toBase64Url(bytes: Uint8Array): string {
+export function toBase64Url(bytes: Uint8Array): string {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -30,7 +30,7 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return crypto.subtle.timingSafeEqual(ea, eb);
 }
 
-function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
+export function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const b64 = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);

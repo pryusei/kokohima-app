@@ -31,7 +31,7 @@ export function defaultDeps(): AppDeps {
     },
     now: () => Date.now(),
     google: { endpoints: GOOGLE_ENDPOINTS },
-    notification: { resendUrl: "https://api.resend.com/emails", extraPushHosts: [] },
+    notification: { resendUrl: "https://api.resend.com/emails", extraPushHosts: [], quietHours: true },
     // バインディングがない（設定の漏れ）・判定に失敗したときは、記録を残して通す。おおよその上限なので、止めるより通す側に倒す
     // 記録にはキー（IP・利用者 ID）を入れない
     rateLimit: async (env, limiter, key) => {

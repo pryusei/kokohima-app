@@ -731,12 +731,12 @@ describe("API", () => {
     const b = await person("べに");
     const get = async (who: User) =>
       notificationPreferencesSchema.parse(await (await u.call("GET", "/api/v1/me/notification-preferences", { token: who.token })).json());
-    expect(await get(a)).toEqual({ invites: true, broadcasts: true, meetups: true, friends: true, calendar: true });
+    expect(await get(a)).toEqual({ invites: true, broadcasts: true, meetups: true, friends: true, calendar: true, lockScreen: "hidden" });
     const res = await u.call("PATCH", "/api/v1/me/notification-preferences", { token: a.token, body: { broadcasts: false } });
     expect(notificationPreferencesSchema.parse(await res.json()).broadcasts).toBe(false);
     expect((await get(a)).invites).toBe(true);
     expect((await get(b)).broadcasts).toBe(true);
-    for (const body of [{}, { invites: "no" }, { invites: false, extra: 1 }]) {
+    for (const body of [{}, { invites: "no" }, { invites: false, extra: 1 }, { lockScreen: "full" }, { lockScreen: null }]) {
       expect((await u.call("PATCH", "/api/v1/me/notification-preferences", { token: a.token, body })).status).toBe(400);
     }
     expect((await u.call("GET", "/api/v1/me/notification-preferences")).status).toBe(401);
@@ -924,14 +924,11 @@ describe("上限の組（決定事項8）", () => {
     expect((await rowsOf(a)).find((r) => r.kind === "meetup_confirmed")).toMatchObject({ outcome: "sent" });
 
     await setCount("", "email", 90);
-    const meetupId = (
-      await env.DB.prepare("SELECT subject_id FROM notifications WHERE user_id = ?1 AND kind = 'meetup_confirmed'")
-        .bind(a.id)
-        .first<{ subject_id: string }>()
-    )?.subject_id;
-    await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
-    await flush(meetupId ?? "");
-    expect((await rowsOf(b)).find((r) => r.kind === "meetup_cancelled")).toMatchObject({ outcome: "limited" });
+    // 予定の取り消しはメールにしない（T-35）ので、2つめの成立で確かめる
+    const second = await invite(a, b, T("06:00"), T("07:00"));
+    await respond(b, second, { response: "accept" });
+    await flush(second);
+    expect((await rowsOf(a)).filter((r) => r.kind === "meetup_confirmed").at(-1)).toMatchObject({ outcome: "limited" });
 
     await secondLogin(b);
     expect((await rowsOf(b)).find((r) => r.kind === "new_login")).toMatchObject({ outcome: "sent" });

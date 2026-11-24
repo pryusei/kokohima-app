@@ -42,7 +42,14 @@ export const unreadCountSchema = z.object({ count: z.number().int().min(0).max(9
 
 export const markReadRequestSchema = z.object({ upTo: z.uuid() }).strict();
 
-/** 種別（設定の単位）ごとのオン／オフ */
+/**
+ * ロック画面に出す中身（docs/specs/T-35-notification-visibility.md）。
+ * hidden：種類だけ（初期値）。detailed：相手の名前と日時も（ひとこと・エリア・リンクはどちらでも出さない）
+ */
+export const lockScreenSchema = z.enum(["hidden", "detailed"]);
+export type LockScreen = z.infer<typeof lockScreenSchema>;
+
+/** 種別（設定の単位）ごとのオン／オフと、ロック画面の見え方（T-35） */
 export const notificationPreferencesSchema = z
   .object({
     invites: z.boolean(),
@@ -50,6 +57,7 @@ export const notificationPreferencesSchema = z
     meetups: z.boolean(),
     friends: z.boolean(),
     calendar: z.boolean(),
+    lockScreen: lockScreenSchema,
   })
   .strict();
 export type NotificationPreferences = z.infer<typeof notificationPreferencesSchema>;
@@ -60,5 +68,21 @@ export const notificationPreferencesPatchSchema = notificationPreferencesSchema
 
 export const vapidKeySchema = z.object({ publicKey: z.string().min(1) });
 
-/** プッシュの購読。受け取るのは endpoint だけ（中身を送らないので、暗号化の鍵は受け取らない） */
-export const pushSubscriptionRequestSchema = z.object({ endpoint: z.string().min(1).max(2048) }).strict();
+const base64url = (bytes: number) =>
+  z.string().regex(new RegExp(`^[A-Za-z0-9_-]{${Math.ceil((bytes * 4) / 3)}}={0,2}$`));
+
+/**
+ * プッシュの購読の登録。endpoint と、中身の暗号化（RFC 8291）に使う鍵（T-35）。
+ * p256dh は非圧縮の P-256 の点（65バイト）、auth は16バイト（どちらも base64url）。
+ * 鍵がない登録（T-35 より前の画面）も受け付け、その購読には本文のないプッシュを送る
+ */
+export const pushSubscriptionRequestSchema = z
+  .object({
+    endpoint: z.string().min(1).max(2048),
+    keys: z.object({ p256dh: base64url(65), auth: base64url(16) }).strict().optional(),
+  })
+  .strict();
+export type PushSubscriptionRequest = z.infer<typeof pushSubscriptionRequestSchema>;
+
+/** プッシュの購読の解除。endpoint だけ（鍵は受け取らない） */
+export const pushUnsubscribeRequestSchema = z.object({ endpoint: z.string().min(1).max(2048) }).strict();

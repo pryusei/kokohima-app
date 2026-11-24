@@ -37,17 +37,27 @@ export const unreadCount = (ctx: Ctx, viewerId: string) => repo.countUnread(ctx.
 export const markRead = (ctx: Ctx, viewerId: string, upTo: string) =>
   repo.markReadUpTo(ctx.env.DB, viewerId, upTo, ctx.deps.now());
 
-const ALL_ON: NotificationPreferences = { invites: true, broadcasts: true, meetups: true, friends: true, calendar: true };
+/** 行がないときの設定：すべてオン、ロック画面は種類だけ（T-35 の初期値） */
+const DEFAULTS: NotificationPreferences = {
+  invites: true,
+  broadcasts: true,
+  meetups: true,
+  friends: true,
+  calendar: true,
+  lockScreen: "hidden",
+};
 
 export async function getPreferences(ctx: Ctx, viewerId: string): Promise<NotificationPreferences> {
   const row = await repo.getPreferences(ctx.env.DB, viewerId);
-  if (!row) return ALL_ON;
+  if (!row) return DEFAULTS;
   return {
     invites: row.invites === 1,
     broadcasts: row.broadcasts === 1,
     meetups: row.meetups === 1,
     friends: row.friends === 1,
     calendar: row.calendar === 1,
+    // 知らない値は、出さない側に倒す
+    lockScreen: row.lock_screen === "detailed" ? "detailed" : "hidden",
   };
 }
 

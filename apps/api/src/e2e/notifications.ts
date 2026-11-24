@@ -13,6 +13,8 @@ export const E2E_PUSH_HOST = "push.e2e.invalid";
 export const E2E_NOTIFICATION_DEPS = {
   resendUrl: `https://${FAKE_MAIL_HOST}/emails`,
   extraPushHosts: [E2E_PUSH_HOST],
+  // CI がいつ走っても、プッシュの流れを確かめられるように、夜に鳴らさない決まりを外す（T-35。単体テストで確かめる）
+  quietHours: false,
 } as const;
 
 async function ensureTables() {
@@ -38,7 +40,7 @@ export async function e2eNotificationFetch(url: URL, init: RequestInit | undefin
   }
   if (url.host === E2E_PUSH_HOST) {
     await ensureTables();
-    const bodyLength = init?.body == null ? 0 : String(init.body).length;
+    const bodyLength = init?.body instanceof Uint8Array ? init.body.byteLength : init?.body == null ? 0 : String(init.body).length;
     await env.DB.prepare("INSERT INTO e2e_sent_pushes (endpoint_hash, body_length) VALUES (?1, ?2)")
       .bind(await sha256(url.toString()), bodyLength)
       .run();
