@@ -11,6 +11,7 @@ const item = (over: Partial<MyAvailability>): MyAvailability => ({
   startsAt: "2026-10-10T10:00:00.000Z",
   endsAt: "2026-10-10T14:00:00.000Z",
   label: "night",
+  freeNow: false,
   ...over,
 });
 const TODAY = "2026-10-10";

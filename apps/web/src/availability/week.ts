@@ -141,6 +141,7 @@ export function draftItem(presets: Presets, cell: Cell): MyAvailability {
     startsAt: new Date(range.start).toISOString(),
     endsAt: new Date(range.end).toISOString(),
     label: cell.preset,
+    freeNow: false,
   };
 }
 
