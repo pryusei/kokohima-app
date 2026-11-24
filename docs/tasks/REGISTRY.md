@@ -51,7 +51,7 @@
 | T-32 | LINE ログイン | 作業中 | docs/specs/T-32-line-login.md | #180 |
 | T-33 | ブロックと通報 | 済み | docs/specs/T-33-block-report.md | #181 |
 | T-34 | 「ここどう？」の入口 | 済み | docs/specs/T-34-kokodou-entry.md | #182・#202 |
-| T-35 | 通知の見え方を本人が選ぶ | 予約 | | #183 |
+| T-35 | 通知の見え方を本人が選ぶ | 作業中 | docs/specs/T-35-notification-visibility.md | #183 |
 | T-36 | プライバシー ポリシーと規約の改定 | 予約 | | #184 |
 | T-37 | 誘いから始まる招待 | 予約 | | #185 |
 | T-38 | 輪のリンク | 予約 | | #186 |

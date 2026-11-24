@@ -1,18 +1,49 @@
 import type { AppDeps, Bindings } from "../../env";
-import { encryptSecret, sha256 } from "../../shared/crypto";
+import { encryptSecret, fromBase64Url, sha256 } from "../../shared/crypto";
 import { pushEndpointOrigin } from "../domain/endpoint";
 import * as repo from "../infra/repository";
 
 // プッシュの購読（docs/specs/T-07-notification.md「プッシュの購読と Service Worker」）
-// 受け取るのは endpoint だけ。暗号化して保存し、ログには出さない
+// 受け取るのは endpoint と、中身の暗号化の鍵（T-35）だけ。どちらも暗号化して保存し、ログには出さない
 
 type Ctx = { env: Bindings; deps: AppDeps };
 
 export const pushAad = (userId: string) => `push:${userId}`;
 
-/** 登録（同じ endpoint は付け替える）。受け付けない宛先なら false */
-export async function subscribe(ctx: Ctx, viewer: { userId: string; sessionId: string }, endpoint: string) {
+/** 暗号化の鍵（p256dh・auth）の AAD。endpoint とは別にし、取り違えて復号できないようにする（T-35） */
+export const pushKeysAad = (userId: string) => `push-keys:${userId}`;
+
+/** 鍵の形を確かめる。p256dh は非圧縮の点（65バイト、先頭が 0x04）、auth は16バイト */
+function validKeys(keys: { p256dh: string; auth: string }) {
+  try {
+    const p256dh = fromBase64Url(keys.p256dh);
+    const auth = fromBase64Url(keys.auth);
+    return p256dh.byteLength === 65 && p256dh[0] === 0x04 && auth.byteLength === 16;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 登録（同じ endpoint は付け替える）。受け付けない宛先・形の違う鍵なら false。
+ * 鍵（T-35）は endpoint と同じく暗号化して保存する。鍵のない登録では、その購読の鍵を消す（本文のないプッシュになる）
+ */
+export async function subscribe(
+  ctx: Ctx,
+  viewer: { userId: string; sessionId: string },
+  endpoint: string,
+  keys: { p256dh: string; auth: string } | null,
+) {
   if (!pushEndpointOrigin(endpoint, ctx.deps.notification.extraPushHosts)) return false;
+  if (keys && !validKeys(keys)) return false;
+  const keysEnc = keys
+    ? await encryptSecret(
+        JSON.stringify({ p256dh: keys.p256dh, auth: keys.auth }),
+        ctx.env.NOTIFICATION_KEYS,
+        ctx.env.NOTIFICATION_CURRENT_KID,
+        pushKeysAad(viewer.userId),
+      )
+    : null;
   await repo.upsertSubscription(ctx.env.DB, {
     userId: viewer.userId,
     sessionId: viewer.sessionId,
@@ -23,6 +54,7 @@ export async function subscribe(ctx: Ctx, viewer: { userId: string; sessionId: s
       ctx.env.NOTIFICATION_CURRENT_KID,
       pushAad(viewer.userId),
     ),
+    keysEnc,
     now: ctx.deps.now(),
   });
   return true;
