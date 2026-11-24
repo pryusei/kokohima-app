@@ -15,6 +15,10 @@ describe("紹介のページの検査", () => {
     expect(landingProblems(OK)).toEqual([]);
   });
 
+  it("HTML のコメントがあると止まる（vite は HTML を圧縮しないので本番に出る）", () => {
+    expect(landingProblems(OK.replace("<html", "<!-- 内部の説明 --><html"))).toEqual([expect.stringContaining("HTML のコメント")]);
+  });
+
   it("landing.html がないと止まる", () => {
     expect(landingProblems(null)).toEqual([expect.stringContaining("landing.html がありません")]);
   });

@@ -13,6 +13,8 @@ export function landingProblems(html) {
   if (/<script\b/i.test(html)) problems.push("landing.html に script があります");
   if (/<style\b/i.test(html)) problems.push("landing.html にインラインの style 要素があります");
   if (/\sstyle\s*=/i.test(html)) problems.push("landing.html に style 属性があります");
+  // vite は HTML を圧縮しないので、コメントはそのまま本番に出る（内部の説明を外に出さない）
+  if (/<!--/.test(html)) problems.push("landing.html に HTML のコメントがあります");
   // 審査の要件：アプリ名が同意画面と同じ・ログインへの入口・プライバシー ポリシーと利用規約へのリンク
   if (!/<title>\s*ここ暇\s*<\/title>/.test(html)) problems.push("landing.html の <title> が「ここ暇」ではありません");
   if (!/<h1\b[^>]*>[^<]*ここ暇[^<]*<\/h1>/.test(html)) problems.push("landing.html の <h1> に「ここ暇」がありません");
