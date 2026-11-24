@@ -1,6 +1,6 @@
 # T-57 仕様書：成立した予定から Google カレンダーに入れる
 
-- 状態：仕様書
+- 状態：実装済み（実装PR。仕様書PR pryusei/kokohima-app#225。マージ前なので、台帳 docs/tasks/REGISTRY.md では「作業中」）
 - タスク票：docs/tasks/T-57-meetup-google-calendar.md
 - 関係する要件：F-13（成立した予定をカレンダーに入れる）、F-02（カレンダー連携）、要求定義書「デザイン原則」
 - 関係する仕様書：T-06（docs/specs/T-06-calendar.md「成立した予定のGoogleカレンダーへの書き込み」「画面」の「予定の詳細」）、T-04・T-05（成立した予定の詳細）、T-43（docs/specs/T-43-meet-moment.md。成立の演出の中の .ics）、T-11（docs/specs/T-11-design.md。トークンと部品）、T-56（docs/specs/T-56-motion.md。M-09 の結果の帯）
@@ -47,7 +47,7 @@
 - 想定外の失敗（例外）も、行を取り出せたあとなら行の戻り先へ戻す。今はコールバックのルート（`routes.ts`）が例外を受け、`completeConnect` は真偽だけを返すので、実装では `completeConnect` が戻り先（`return_meetup_id`）を結果と一緒に返すか、例外を `completeConnect` の中（行を取り出したあと）で受けるようにする。
 
 ## データ
-マイグレーションを1つ足す（番号は実装PRで main の次の番号を取る）。
+マイグレーションを1つ足す（`apps/api/migrations/0021_calendar_return_meetup.sql`）。
 
 ### `calendar_oauth_states`
 - `return_meetup_id`（TEXT、NULL 可）を足す。連携の開始で受け取った `meetupId`。外部キーは付けない（予定が消えても、行は10分で掃除される。T-06）。
@@ -121,22 +121,22 @@
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] API：`meetupId` 付きで始めると、`calendar_oauth_states.return_meetup_id` に入り、コールバックの成功で `/meetups/<id>?calendar=connected` へ303、行を取り出したあとの失敗（結びつけCookieの不一致・`error`・スコープ不足）で `/meetups/<id>?calendar=failed` へ303
-- [ ] API：本文なし・`{}` で始めると、今までどおり `/settings/calendar?calendar=…` へ303。`state` がない・期限切れ・使用済みは `/settings/calendar?calendar=failed`
-- [ ] API：`meetupId` 付きで行を取り出したあと、トークンの交換か保存で想定外の例外が起きても、`/meetups/<id>?calendar=failed` へ303（`/settings/calendar?calendar=failed` にならない）
-- [ ] 入力検証：`meetupId` が UUID でない、知らない項目、JSON でない本文は 400 `validation_failed`。行は足さない（回数の上限に数えない）
-- [ ] 他人のIDでは取得できない：他人の予定の ID・存在しない ID を `meetupId` にしても、応答は自分の予定のときと同じ200（形・項目が同じ）。戻った先の `GET /api/v1/meetups/{id}` は今までどおり404
-- [ ] 他人のIDでは取得できない：利用者 A の連携の状態は、B が連携していても A の行だけから返る（`GET /calendar/connections`。T-06 の既存のテストで足りていればそれを使う）
-- [ ] 戻り先がオープンリダイレクトにならない：`meetupId` に `//evil.example` や `../` を入れても400で、303 の `Location` は常に `APP_ORIGIN` の `/meetups/<uuid>` か `/settings/calendar`
-- [ ] 画面（`MeetupCalendarActions`）：`connected`・`none`・`needs_reauth` のそれぞれの文言とボタン・リンク。.ics の文言が「ほかのカレンダーに追加（.ics）」になる
-- [ ] 画面：取り消した予定・抜けた予定（`cancelled`）・終わった予定、連携の状態を読んでいる間・読めなかったときは Google の行を出さず、.ics は「カレンダーに追加（.ics）」
-- [ ] 画面：「Googleカレンダーに自動で入れる」で `{ meetupId }` を送り、`authorizeUrl` へ移る（`redirectTo` を差し替える）。失敗・429 は静かな文言。赤・エラー色のクラスがない
-- [ ] 画面：`/meetups/{id}?calendar=connected`・`failed` で結果の帯が1回だけ出て、連携の状態を読み直す
-- [ ] 成立の演出の中（誘いの詳細・募集の詳細）にも同じ欄が出て、「成立した予定を見る」は1つだけ（`meetMoment.test.tsx` を直す）
+- [x] API：`meetupId` 付きで始めると、`calendar_oauth_states.return_meetup_id` に入り、コールバックの成功で `/meetups/<id>?calendar=connected` へ303、行を取り出したあとの失敗（結びつけCookieの不一致・`error`・スコープ不足）で `/meetups/<id>?calendar=failed` へ303
+- [x] API：本文なし・`{}` で始めると、今までどおり `/settings/calendar?calendar=…` へ303。`state` がない・期限切れ・使用済みは `/settings/calendar?calendar=failed`
+- [x] API：`meetupId` 付きで行を取り出したあと、トークンの交換か保存で想定外の例外が起きても、`/meetups/<id>?calendar=failed` へ303（`/settings/calendar?calendar=failed` にならない）
+- [x] 入力検証：`meetupId` が UUID でない、知らない項目、JSON でない本文は 400 `validation_failed`。行は足さない（回数の上限に数えない）
+- [x] 他人のIDでは取得できない：他人の予定の ID・存在しない ID を `meetupId` にしても、応答は自分の予定のときと同じ200（形・項目が同じ）。戻った先の `GET /api/v1/meetups/{id}` は今までどおり404
+- [x] 他人のIDでは取得できない：利用者 A の連携の状態は、B が連携していても A の行だけから返る（`GET /calendar/connections`。T-06 の既存のテストで足りていればそれを使う）
+- [x] 戻り先がオープンリダイレクトにならない：`meetupId` に `//evil.example` や `../` を入れても400で、303 の `Location` は常に `APP_ORIGIN` の `/meetups/<uuid>` か `/settings/calendar`
+- [x] 画面（`MeetupCalendarActions`）：`connected`・`none`・`needs_reauth` のそれぞれの文言とボタン・リンク。.ics の文言が「ほかのカレンダーに追加（.ics）」になる
+- [x] 画面：取り消した予定・抜けた予定（`cancelled`）・終わった予定、連携の状態を読んでいる間・読めなかったときは Google の行を出さず、.ics は「カレンダーに追加（.ics）」
+- [x] 画面：「Googleカレンダーに自動で入れる」で `{ meetupId }` を送り、`authorizeUrl` へ移る（`redirectTo` を差し替える）。失敗・429 は静かな文言。赤・エラー色のクラスがない
+- [x] 画面：`/meetups/{id}?calendar=connected`・`failed` で結果の帯が1回だけ出て、連携の状態を読み直す
+- [x] 成立の演出の中（誘いの詳細・募集の詳細）にも同じ欄が出て、「成立した予定を見る」は1つだけ（`meetMoment.test.tsx` を直す）
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] `e2e/calendar.spec.ts`：連携していない人が、成立した予定の詳細で「Googleカレンダーに自動で入れる」→ 偽の認可画面 → 同じ予定の画面に戻り、「連携しました…」の帯と「連携中なので、Googleカレンダーの『ここ暇』に自動で入ります」が出るところまで。この予定が Google に書かれることは、書き込みの仕組みを変えないので E2E では確かめず、`calendar.test.ts` の既存の単体テスト（`CalendarConnected` でこれからの予定を書く）で確かめる（E2E の偽の Google は予定の書き込みを受け付けるだけで記録しない）
-- [ ] `e2e/calendar.spec.ts` の .ics の流れと `e2e/invites.spec.ts` の成立の演出：ボタンの名前を「ほかのカレンダーに追加（.ics）」に直す
+- [x] `e2e/calendar.spec.ts`：連携していない人が、成立した予定の詳細で「Googleカレンダーに自動で入れる」→ 偽の認可画面 → 同じ予定の画面に戻り、「連携しました…」の帯と「連携中なので、Googleカレンダーの『ここ暇』に自動で入ります」が出るところまで。この予定が Google に書かれることは、書き込みの仕組みを変えないので E2E では確かめず、`calendar.test.ts` の既存の単体テスト（`CalendarConnected` でこれからの予定を書く）で確かめる（E2E の偽の Google は予定の書き込みを受け付けるだけで記録しない）
+- [x] `e2e/calendar.spec.ts` の .ics の流れと `e2e/invites.spec.ts` の成立の演出：ボタンの名前を「ほかのカレンダーに追加（.ics）」に直す
 
 ## 実装PRで直す文書
 - docs/specs/T-06-calendar.md：API の表（連携の開始の本文、コールバックの303の行き先）、`calendar_oauth_states` の列、「画面」の「予定の詳細」をこの仕様書の振る舞いに合わせる。
@@ -166,3 +166,4 @@
 | --- | --- | --- |
 | 2026-11-24 | 作成 | 持ち主の指摘（成立した予定の画面に Google カレンダーに入れる方法が出てこない） |
 | 2026-11-24 | E2E を結果の帯と連携中の1行までにし、書き込みの確認は既存の単体テストに任せた。想定外の例外のときの戻り先と、その単体テストを足した。決めたこと4の理由を直した | 仕様書PRのレビュー |
+| 2026-11-24 | 実装した（マイグレーション 0021。「判断してほしいこと」は推奨のとおり） | 実装PR |

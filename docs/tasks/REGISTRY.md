@@ -73,7 +73,7 @@
 | T-54 | 保存できたことをボタンで伝える・退会のあとの一文 | 済み | docs/specs/T-54-save-and-goodbye-copy.md | |
 | T-55 | ここ暇タブを週の帯に作り直す | 済み | docs/specs/T-55-availability-week-grid.md | #217 |
 | T-56 | 画面の動きと手触り | 作業中 | docs/specs/T-56-motion.md | 仕様書 #216。実装PR①（土台とシート）が作業中 |
-| T-57 | 成立した予定から Google カレンダーに入れる | 作業中 | docs/specs/T-57-meetup-google-calendar.md | |
+| T-57 | 成立した予定から Google カレンダーに入れる | 作業中 | docs/specs/T-57-meetup-google-calendar.md | 仕様書 #225。実装PRが作業中 |
 
 ## 重なり（番号が2回使われたもの）
 

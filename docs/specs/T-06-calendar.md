@@ -76,8 +76,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 
 | メソッド | パス | 認証 | 入力 | 出力 | 主なエラー |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/api/v1/calendar/google/authorizations` | Bearer（`requireActiveSession`） | なし | 200：`{ authorizeUrl }`、結びつけCookie | 401、429 `rate_limited` |
-| GET | `/api/v1/calendar/google/callback` | なし（state と結びつけCookie） | query：`code`、`state`（または `error`） | 303：`/settings/calendar?calendar=connected` か `?calendar=failed` | （常に303） |
+| POST | `/api/v1/calendar/google/authorizations` | Bearer（`requireActiveSession`） | 本文（任意）：`calendarAuthorizationRequestSchema` `{ meetupId?: uuid }`（戻り先。T-57） | 200：`{ authorizeUrl }`、結びつけCookie | 400 `validation_failed`、401、429 `rate_limited` |
+| GET | `/api/v1/calendar/google/callback` | なし（state と結びつけCookie） | query：`code`、`state`（または `error`） | 303：戻り先（`/meetups/<meetupId>` か `/settings/calendar`。T-57「戻り先」）に `?calendar=connected` か `?calendar=failed` | （常に303） |
 | GET | `/api/v1/calendar/connections` | Bearer | なし | 200：`calendarConnectionsSchema` | 401 |
 | DELETE | `/api/v1/calendar/connections/google` | Bearer（`requireActiveSession`） | なし | 204 | 401、404（連携していない） |
 | GET | `/api/v1/calendar/free-slots` | Bearer | query：`from`、`to`（ISO 8601。最長14日） | 200：`freeSlotsSchema` | 400、401、429 `rate_limited`（T-10） |
@@ -164,6 +164,7 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 ### `calendar_oauth_states`
 - `state_hash`（主キー）、`binding_hash`、`user_id`（→ users、CASCADE）、`provider`、`code_verifier`。
 - `expires_at`（10分）、`used_at`（コールバックで使った日時）、`created_at`。
+- `return_meetup_id`（NULL 可。外部キーなし）：連携の開始で受け取った予定の ID。コールバックの戻り先 `/meetups/<id>` だけに使う（T-57。マイグレーション 0021）。
 - インデックス：`(user_id, created_at)`（開始の回数の上限に使う）、`(created_at)`（掃除に使う）。
 
 ### `ics_tokens`
@@ -190,7 +191,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 1. 上限を確かめながら、`calendar_oauth_states` に行を足す。
    - 書き方：`INSERT ... SELECT ... WHERE (閲覧者の直近10分の行の数) < 10`。使った行も数える。
    - 0行なら429。`Retry-After` は、いちばん古い行が10分を過ぎるまでの秒数。
-   - 行に入れるもの：`state` と `binding` のハッシュ、`code_verifier`、閲覧者の `user_id`。
+   - 行に入れるもの：`state` と `binding` のハッシュ、`code_verifier`、閲覧者の `user_id`、本文の `meetupId`（あれば。`return_meetup_id`。T-57）。
+   - 本文が `calendarAuthorizationRequestSchema` に合わなければ、行を足さずに400 `validation_failed`。`meetupId` の予定に参加しているかは確かめない（T-57 決めたこと4）。
    - `state`・`binding`・PKCE の `code_verifier` は、それぞれ32バイトのランダム値。
 2. 結びつけCookie `__Host-kh_cal=<binding>` を設定する。
    - 属性：HttpOnly、Secure、SameSite=Lax、Path=/、Max-Age=600。
@@ -223,7 +225,9 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
    - `calendar_id` は残す。
    - 前の行の更新用トークンは失効させない（決定事項13）。同じクライアントの許可全体が失効し、新しいトークンまで使えなくなるおそれがあるため。前のトークンは上書きして捨てる。
    - 同じ batch で、outbox に `CalendarConnected`（`{ userId, provider, occurredAt }`）を書く。
-6. 成功したら `/settings/calendar?calendar=connected` へ303。失敗はすべて `?calendar=failed` へ303で、理由は区別しない。
+6. 成功したら戻り先に `?calendar=connected` を付けて303。失敗はすべて `?calendar=failed` へ303で、理由は区別しない。
+   - 戻り先は、行の `return_meetup_id` があれば `/meetups/<id>`、なければ `/settings/calendar`（T-57「戻り先」）。行を取り出す前の失敗（`state` がない・行がない・期限切れ・使用済み）は `/settings/calendar`。
+   - 行を取り出したあとの想定外の例外も、行の戻り先へ `?calendar=failed`（`completeConnect` の中で受ける）。
 - ログには失敗の種類だけを出す。コード・トークン・Googleの応答の本文は出さない。
 
 ### 連携の状態と解除
@@ -439,7 +443,8 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 - `unavailable` は「カレンダーを読み込めませんでした」。`needs_reauth` は設定へのリンクを静かに出す。回数の上限（429）は「カレンダーの空きは、少し待ってからもう一度開くと出ます」（取り直さない）。
 
 #### 予定の詳細
-- 「カレンダーに追加（.ics）」のボタンを置く。
+- カレンダーへの入れ方の欄（`MeetupCalendarActions`）を置く。閲覧者自身の Google カレンダーの連携の状態に応じた1行かボタン（連携中は「連携中なので、Googleカレンダーの『ここ暇』に自動で入ります」、連携していなければ「Googleカレンダーに自動で入れる」でその場で連携を始め、この予定の画面へ戻る）と、その下に .ics。詳しくは docs/specs/T-57-meetup-google-calendar.md「振る舞い」。
+- .ics のボタンは、Google の行を出しているときは「ほかのカレンダーに追加（.ics）」、出していないとき（取り消し・終わった予定、連携の状態を読んでいる間・読めなかったとき）は「カレンダーに追加（.ics）」。
 - 押すと `ics-links` を呼び、返った `url` へ画面遷移する。iOS では OS のカレンダーへの追加が開き、ほかではダウンロードになる。失敗したら「カレンダーに追加できませんでした。もう一度お試しください」。
 
 ### 設定値（Workers）
@@ -697,3 +702,4 @@ Googleカレンダーとの連携を、ログインとは別の許可として�
 | 2026-11-23 | ここ暇タブの「カレンダーの空き」を、日ごとに1行・時間帯のボタンに変えた（最大21行で下まで見にくかったため） | 利用者の指摘 |
 | 2026-11-23 | カレンダーの空きを日ごとに1行・時間帯のボタンにする変更を実装した（`CalendarCandidates.tsx`。ボタンの高さは44px） | 実装PR |
 | 2026-11-24 | ここ暇タブの「カレンダーの空き」を、週の帯のマスの点にした。読む範囲を今日から14日にした（API の上限の中） | T-55（docs/specs/T-55-availability-week-grid.md） |
+| 2026-11-24 | 連携の開始で予定の ID（戻り先）を受け取り、コールバックで成立した予定の画面へ戻せるようにした。予定の詳細に Google カレンダーの欄を足した | T-57（docs/specs/T-57-meetup-google-calendar.md） |
