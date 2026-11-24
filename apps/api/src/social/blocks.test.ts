@@ -173,7 +173,12 @@ describe("ブロックしている間", () => {
 
     // 未ログインなら発行者が出るが、accept は404で友達にならず、人数も消費しない
     expect((await lookup(aLink.token)).status).toBe(200);
-    expect((await accept(b, aLink)).status).toBe(404);
+    const blockedAccept = await accept(b, aLink);
+    const revokedAccept = await accept(b, revoked);
+    expect(blockedAccept.status).toBe(404);
+    expect(revokedAccept.status).toBe(404);
+    expect(blockedAccept.headers.get("Set-Cookie")).toEqual(revokedAccept.headers.get("Set-Cookie"));
+    expect(strip((await blockedAccept.json()) as Record<string, unknown>)).toEqual(strip((await revokedAccept.json()) as Record<string, unknown>));
     expect((await accept(a, bLink)).status).toBe(404);
     expect(await friendsOf(a)).not.toContain(b.id);
     const uses = await env.DB.prepare("SELECT uses FROM invite_links WHERE id = ?").bind(aLink.id).first<{ uses: number }>();
@@ -189,7 +194,9 @@ describe("ブロックしている間", () => {
       token: b.token,
       body: { recipientIds: [a.id], startsAt: T("11:00"), endsAt: T("13:00") },
     });
-    expect(bc.status).not.toBe(201);
+    // 友達でない宛先は外れて宛先が空になり、知らない人を宛先にしたときと同じ400
+    expect(bc.status).toBe(400);
+    expect(((await bc.json()) as { code: string }).code).toBe("validation_failed");
   });
 
   it("ほかの人は、同じ発行者のリンクで今までどおり友達になれる", async () => {
@@ -259,6 +266,21 @@ describe("ブロックの一覧とやめる（GET /blocks・DELETE /blocks/{user
 });
 
 describe("退会", () => {
+  it("送り主が退会したあと、届いた誘いからブロックしても204で、ブロックの行は残らない", async () => {
+    const { a, b } = await pair();
+    const res = await invite(b, a);
+    expect(res.status).toBe(201);
+    const inv = (await res.json()) as { id: string };
+    expect(
+      (await u.call("POST", "/api/v1/me/withdrawal", { token: b.token, body: { confirm: "withdraw" }, cookie: `__Host-kh_rt=${b.refreshToken}` }))
+        .status,
+    ).toBe(204);
+    expect((await block(a, { userId: b.id, subject: { type: "direct_invite", id: inv.id } })).status).toBe(204);
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM blocks WHERE blocked_id = ?1").bind(b.id).first<{ n: number }>();
+    expect(n?.n).toBe(0);
+    expect((await listBlocks(a)).items).toHaveLength(0);
+  });
+
   it("どちらかが退会すると、両方向のブロックの行が消える", async () => {
     const { a, b } = await pair();
     await block(a, { userId: b.id });
