@@ -6,6 +6,8 @@ import { AvailabilityPage } from "./pages/AvailabilityPage";
 import { CalendarSettingsPage } from "./pages/CalendarSettingsPage";
 import { ContactPage } from "./pages/ContactPage";
 import { isContactOpenNow } from "./contact/open";
+import { BlockedUsersPage } from "./pages/BlockedUsersPage";
+import { isSafetyOpenNow } from "./safety/open";
 import { EveryonePage } from "./pages/EveryonePage";
 import { InstallPage } from "./pages/InstallPage";
 import { FriendDetailPage } from "./pages/FriendDetailPage";
@@ -150,6 +152,8 @@ function SignedIn({ pathname, search }: { pathname: string; search: string }) {
   if (pathname === "/settings/account") return <AccountSettingsPage search={search} />;
   // 問い合わせ（T-24）。公開の日より前は、知らない経路と同じ扱い（みんなのタブ）
   if (pathname === "/settings/contact" && isContactOpenNow()) return <ContactPage />;
+  // ブロックした人（T-33）。始める日より前は、知らない経路と同じ扱い
+  if (pathname === "/settings/blocks" && isSafetyOpenNow()) return <BlockedUsersPage />;
 
   const sheet = sheetOf(pathname, search);
   if (sheet) {

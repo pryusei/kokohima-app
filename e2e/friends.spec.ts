@@ -119,11 +119,13 @@ test("友達を解除すると、双方の一覧から消える", async ({ brows
   await b.page.getByRole("button", { name: "友達になる" }).click();
   await expect(friendList(b.page).getByText(a.displayName)).toBeVisible();
 
-  // 解除は友達の詳細（シート）から。確認は1回だけ
+  // 解除は友達の詳細（シート）の「…」から。確認は1回だけ（T-33）
   await a.page.goto("/friends");
   await friendList(a.page).getByRole("link", { name: b.displayName }).click();
+  await a.page.getByRole("button", { name: `${b.displayName}さんへの操作` }).click();
   await a.page.getByRole("button", { name: "友達を解除" }).click();
   await a.page.getByRole("button", { name: `${b.displayName}さんとの友達を解除する` }).click();
+  await a.page.getByRole("button", { name: "戻る" }).click();
   await expect(a.page).toHaveURL(/\/friends$/);
   await expect(a.page.getByText("まだ友達はいません")).toBeVisible();
 

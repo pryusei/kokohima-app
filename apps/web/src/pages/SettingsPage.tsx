@@ -15,6 +15,7 @@ import { AvatarForm } from "../account/AvatarForm";
 import { DisplayNameForm } from "../account/DisplayNameForm";
 import { displayNameOf, meQuery } from "../account/me";
 import { isContactOpenNow } from "../contact/open";
+import { isSafetyOpenNow } from "../safety/open";
 
 // 設定（docs/specs/T-11-design.md「画面のつながり」、キャンバス「19 設定」「21 時間帯プリセット」「23 アカウント」）
 // 友達タブの「アカウント」の節から開く。初回設定・ログインの方法の連携は、それぞれのタスクで作る（#43・#45）。退会は T-16
@@ -54,6 +55,8 @@ export function SettingsPage() {
         <Row to="/settings/calendar" label="カレンダー連携" value={status ? CALENDAR_STATUS[status] : undefined} />
         <Row to="/settings/presets" label="時間帯プリセット" value="昼・夕方・夜" />
         <Row to="/settings/notifications" label="通知の設定" />
+        {/* ブロックした人（T-33）は始める日から出す */}
+        {isSafetyOpenNow() && <Row to="/settings/blocks" label="ブロックした人" />}
         <Row to="/settings/account" label="アカウント" />
       </ul>
       <Section title="このアプリについて">
