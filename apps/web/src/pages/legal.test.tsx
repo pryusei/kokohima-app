@@ -381,7 +381,7 @@ describe("プライバシー ポリシーの本文", () => {
     renderApp();
     await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
     expect(clause("2. 預かる情報").textContent).toContain(
-      "問い合わせの種類と内容。送るときに、ログインに使っているメールアドレスと、利用者を区別する番号を一緒に運営に届けます。",
+      "問い合わせの種類と内容。送るときに、ログインに使っているメールアドレス（LINE でログインした人にはありません）と、利用者を区別する番号を一緒に運営に届けます。",
     );
     const three = clause("3. 使う目的");
     const purposes = Array.from(three.querySelectorAll("ol > li")).map((li) => li.textContent);
@@ -394,6 +394,7 @@ describe("プライバシー ポリシーの本文", () => {
     expect(within(clause("5. 外部の事業者に任せること（委託）")).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
       "Cloudflare, Inc.（米国）",
       "Google LLC（米国）",
+      "LINEヤフー株式会社（日本）",
       "Resend（米国の事業者。メールは東京の拠点から送ります）",
       "Slack Technologies, LLC（米国）",
       "Anthropic, PBC（米国）",
@@ -632,5 +633,32 @@ describe("ブロックと通報の本文", () => {
     await screen.findByRole("heading", { name: "利用規約", level: 1 });
     expect(clause("第6条（してはいけないこと）").textContent).toContain("事実でない通報をくり返すこと");
     expect(clause("第7条（利用の停止）").textContent).toContain("通報を受けたときは、運営が内容を確かめ");
+  });
+});
+
+describe("LINE ログインの本文（T-32）", () => {
+  it("プライバシー ポリシー：LINE から受け取るのは識別子だけ。LINEヤフーへの委託（日本）と、メールのない人の扱いを書く", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    const two = clause("2. 預かる情報").textContent ?? "";
+    expect(two).toContain("LINE でログインした人：LINE の識別子（LINE がこのサービスに対して発行する番号）だけ。メールアドレスは受け取りません。");
+    expect(two).toContain("LINE の友だちやトークも受け取りません。");
+    const five = clause("5. 外部の事業者に任せること（委託）");
+    expect(within(five).getByRole("heading", { name: "LINEヤフー株式会社（日本）", level: 3 })).toBeVisible();
+    // 日本の事業者なので「7.」の外国の名称には入れない
+    expect(clause("7. 外国の事業者に任せるとき").textContent).not.toContain("LINE");
+    expect(clause("3. 使う目的").textContent).toContain("メールアドレスがない人には、お知らせ一覧にだけ出します");
+    expect(clause("8. 保存する期間").textContent).toContain("Google と LINE の識別子");
+    expect(clause("12. 開示・訂正・削除などの求め").textContent).toContain("求めの内容に書いたメールアドレスにお送りします");
+  });
+
+  it("利用規約：Google か LINE でログインし、別のアカウントになる", async () => {
+    window.history.replaceState(null, "", "/terms");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "利用規約", level: 1 });
+    expect(clause("第3条（アカウント）").textContent).toContain("Google と LINE でログインすると別のアカウントになり、あとから1つにまとめられません。");
   });
 });

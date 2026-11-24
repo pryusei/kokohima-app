@@ -49,7 +49,7 @@ const authStartLimit = rateLimit({
 export function identityRoutes() {
   const app = new Hono<AppEnv>();
 
-  for (const provider of ["google", "apple"] as const satisfies OidcProviderName[]) {
+  for (const provider of ["google", "apple", "line"] as const satisfies OidcProviderName[]) {
     app.get(`/auth/${provider}/start`, authStartLimit, async (c) => {
       // 止めたログインの方法（T-12）：何も書かず、新しい結びつけ Cookie も発行しない。応答は T-01 の失敗と同じ
       if (!auth.providerEnabled(c.env, provider)) {
@@ -85,6 +85,8 @@ export function identityRoutes() {
     return c.redirect(`/auth/complete#code=${encodeURIComponent(loginCode)}`, 303);
   };
   app.get("/auth/google/callback", (c) => callback(c, "google", c.req.query()));
+  // LINE（T-32）も GET で戻る。止めた環境（secret がない）では handleCallback が失敗にする
+  app.get("/auth/line/callback", (c) => callback(c, "line", c.req.query()));
   app.post("/auth/apple/callback", async (c) => {
     // 止めた環境では本文を読まずに404（T-12）
     if (!auth.providerEnabled(c.env, "apple")) return problem(c.get("requestId"), 404, "not_found", "Not Found");

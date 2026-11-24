@@ -48,7 +48,7 @@
 | T-29 | 行きたいの AI 提案 | 済み | docs/specs/T-29-wish-suggestion.md | |
 | T-30 | CI の見直し | 済み | docs/specs/T-30-ci-review.md | #175・#177 |
 | T-31 | 表示名の必須化と友達になった直後の画面 | 済み | docs/specs/T-31-display-name-first-step.md | #179・#203 |
-| T-32 | LINE ログイン | 予約 | | #180 |
+| T-32 | LINE ログイン | 作業中 | docs/specs/T-32-line-login.md | #180 |
 | T-33 | ブロックと通報 | 済み | docs/specs/T-33-block-report.md | #181 |
 | T-34 | 「ここどう？」の入口 | 済み | docs/specs/T-34-kokodou-entry.md | #182・#202 |
 | T-35 | 通知の見え方を本人が選ぶ | 予約 | | #183 |

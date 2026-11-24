@@ -14,10 +14,11 @@ import { useAuth } from "../auth/AuthProvider";
 import { tokenStore } from "../auth/tokenStore";
 import { isLineInAppBrowser, withOpenExternalBrowser } from "../line/line";
 import { LineBrowserNotice } from "../line/LineBrowserNotice";
+import { LoginButtons } from "../auth/LoginButtons";
 import { navigate } from "../router";
 
 import { Avatar } from "../ui/Avatar";
-import { buttonClass, SendButton } from "../ui/Button";
+import { SendButton } from "../ui/Button";
 import { Loading } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { LegalLinks } from "./LegalDocument";
@@ -132,7 +133,6 @@ export function InvitePage() {
   };
 
   const canLogIn = state.kind === "ready" && status !== "authenticated" && status !== "checking";
-  const loginUrl = (provider: "google" | "apple") => `/api/v1/auth/${provider}/start?returnTo=${encodeURIComponent("/invite")}`;
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-6 py-12">
@@ -219,19 +219,7 @@ export function InvitePage() {
                 <LineBrowserNotice reopenHref={withOpenExternalBrowser(`/invite#${new URLSearchParams({ t: token })}`)} />
               )}
               <p className="text-ink-muted">友達になるには、ログインしてください。</p>
-              <a className={buttonClass("secondary", { block: true })} href={loginUrl("google")}>
-                Googleでログイン
-              </a>
-              {/* Sign in with Apple は VITE_APPLE_LOGIN_ENABLED が "1" のときだけ（T-12）。本番のビルドでは文字列ごと落ちる */}
-              {import.meta.env.VITE_APPLE_LOGIN_ENABLED === "1" && (
-                <a
-                  data-provider="apple-login"
-                  className={`${buttonClass("secondary", { block: true })} border-transparent bg-ink text-surface`}
-                  href={loginUrl("apple")}
-                >
-                  Appleでログイン
-                </a>
-              )}
+              <LoginButtons returnTo="/invite" />
             </>
           )}
         </>

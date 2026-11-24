@@ -29,7 +29,7 @@ type AuthContextValue = {
 export type WithdrawOutcome =
   | { kind: "done" }
   /** provider：ログインし直す方法。null ならログインの画面で選んでもらう */
-  | { kind: "reauth"; provider: "google" | "apple" | null }
+  | { kind: "reauth"; provider: "google" | "apple" | "line" | null }
   | { kind: "gone" }
   | { kind: "failed" };
 
@@ -129,7 +129,7 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
         } catch (err) {
           if (err instanceof ApiError && err.status === 403 && err.code === "reauth_required") {
             const p = err.problem?.reauthProvider;
-            return { kind: "reauth", provider: p === "google" || p === "apple" ? p : null };
+            return { kind: "reauth", provider: p === "google" || p === "apple" || p === "line" ? p : null };
           }
           // 401：応答が届かずに押し直したときなど（apiFetch がログアウト状態にする）
           if (err instanceof ApiError && err.status === 401) return { kind: "gone" };

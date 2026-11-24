@@ -52,6 +52,7 @@
   - `NotificationRow`、`TabBar`、`Header`、`BottomSheet`、`Switch`、`Avatar`、`Toast`、`EmptyState`、`StatusStates`
   - 問い合わせ（T-24）で足した部品：`ui/form.tsx` の `textareaClass`（`inputClass` に複数行の分を足した複数行の入力欄）と `CharCount`（「count / max」と、超えたときの文）。
   - 実装の置き場所：`Header` は `ui/Navigation.tsx` の `TabScreen`（鐘つき）と `SubScreen`（戻るつき）、`StatusStates` は `ui/feedback.tsx` の `Loading`・`LoadError`・`OfflineBanner`、`SlotChips` は `ui/form.tsx` の `Chip`・`ChipRow`。
+- `Button` の variant：`primary`・`lamp`・`secondary`・`ghost` と、ログインの事業者の決まりの色の `line`（LINE の緑。T-32）・`apple`（`bg-ink` の地に `text-surface`）。色（地・文字・枠）は variant の中だけで決め、`buttonClass()` のあとに `bg-`・`text-`・`border-` を足して上書きしない。Tailwind v4 は同じ性質のクラスをクラス名の順に出すので、あとに書いたほうが勝つとは限らない（T-32 で、LINE のボタンが副ボタンの `bg-surface` に負けて白の地に白の文字になった）。
 - 状態ごとの見た目は、真偽値の props を増やさず、`variant`（`"meet" | "pending" | "lamp" | "quiet"`）などの1つの値で渡す（`vercel-composition-patterns`）。
 - 誘いの状態 → バッジの対応は、`apps/web/src/invitations/format.ts` に関数を1つだけ置く（`statusTone`）：
   - `confirmed`（成立）→ `meet`
@@ -238,3 +239,4 @@
 | 2026-11-23 | ここ暇・みんなのタブと友達の詳細に行きたいの欄（T-22）を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |
 | 2026-11-23 | 共通の部品に `textareaClass`・`CharCount`、画面のつながりに `/settings/contact`、画面ごとの置き換えに `ContactPage` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |
 | 2026-11-23 | 「みんな」の「誰を誘う？」の顔の列で、見せない相手と暇がない相手を同じ形で出すことを足した | T-34（docs/specs/T-34-kokodou-entry.md） |
+| 2026-11-24 | `Button` に variant `line`・`apple` を足し、色を variant の中だけで決める決まりを書いた | T-32 の実装PRのレビュー（pryusei/kokohima-app#212） |

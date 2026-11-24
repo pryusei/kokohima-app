@@ -6,8 +6,9 @@ import { buttonClass } from "../ui/Button";
 export function LineBrowserNotice({ reopenHref }: { reopenHref: string }) {
   return (
     <section aria-label="ブラウザで開き直す" className="flex flex-col gap-3 rounded-m bg-surface-sunken px-4 py-3">
-      <p>LINEの中で開いています。Googleでログインできないことがあるので、ブラウザで開き直してください。</p>
-      <a className={buttonClass("primary", { block: true })} href={reopenHref}>
+      {/* LINE の中でも「LINEでログイン」は通るので、開き直しは Google を使う人向けの副ボタンにする（T-32「6.」） */}
+      <p>LINEの中で開いています。「LINEでログイン」なら、このまま続けられます。Googleでログインするときは、ブラウザで開き直してください。</p>
+      <a className={buttonClass("secondary", { block: true })} href={reopenHref}>
         ブラウザで開き直す
       </a>
       <p className="text-s text-ink-muted">開き直せないときは、右上のメニューから［ブラウザで開く］を選んでください。</p>

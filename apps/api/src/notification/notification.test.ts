@@ -334,6 +334,45 @@ describe("新しい端末でのログイン", () => {
   });
 });
 
+describe("メールアドレスのない利用者（LINE でログイン。T-32）", () => {
+  async function lineUser(name: string): Promise<User> {
+    const r = await h.login("line", `U${crypto.randomUUID().replace(/-/g, "")}`);
+    expect((await u.call("PATCH", "/api/v1/me", { token: r.accessToken, body: { displayName: name } })).status).toBe(200);
+    const me = (await (await u.call("GET", "/api/v1/me", { token: r.accessToken })).json()) as { id: string };
+    return { id: me.id, token: r.accessToken, refreshToken: r.refreshToken, name };
+  }
+
+  it("新しい端末のログインは、メールを送らず（no_address）、プッシュにも切り替えず、お知らせ一覧に残す", async () => {
+    const sub = `U${crypto.randomUUID().replace(/-/g, "")}`;
+    const first = await h.login("line", sub);
+    const me = (await (await u.call("GET", "/api/v1/me", { token: first.accessToken })).json()) as { id: string };
+    const who: User = { id: me.id, token: first.accessToken, refreshToken: first.refreshToken, name: "らい" };
+    await flush(who.id);
+    await subscribe(who);
+    h.clock.now += 5 * MIN;
+    await h.login("line", sub);
+    await flush(who.id);
+    expect((await rowsOf(who)).map((r) => [r.kind, r.channel, r.outcome])).toEqual([["new_login", "email", "no_address"]]);
+    expect(h.delivery.state.mails).toHaveLength(0);
+    expect(h.delivery.state.pushes).toHaveLength(0);
+    expect((await list(who))[0]).toMatchObject({ kind: "new_login" });
+  });
+
+  it("ほかのお知らせは、プッシュの購読があればプッシュで届き、なければ送らずにお知らせ一覧に残す", async () => {
+    const a = await person("あき");
+    const b = await lineUser("らい");
+    const c = await person("しー");
+    await u.befriend(a, b);
+    await u.befriend(c, b);
+    await flush(await invite(a, b));
+    expect((await rowsOf(b)).find((r) => r.kind === "invite_received")).toMatchObject({ channel: "email", outcome: "no_address" });
+    await subscribe(b);
+    await flush(await invite(c, b));
+    expect((await rowsOf(b)).filter((r) => r.kind === "invite_received").at(-1)).toMatchObject({ channel: "push", outcome: "sent" });
+    expect((await list(b)).filter((n) => n.kind === "invite_received")).toHaveLength(2);
+  });
+});
+
 describe("重複と再試行", () => {
   it("同じイベントが2回届いても1件。届け終えたお知らせは送り直さない", async () => {
     const { a, b } = await pair();

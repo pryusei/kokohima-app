@@ -18,7 +18,8 @@
 
   // 公開されてよい設定値。秘密情報（GOOGLE_CLIENT_SECRET、APPLE_PRIVATE_KEY、JWT_SIGNING_KEYS、CALENDAR_TOKEN_KEYS、
   // RESEND_API_KEY、VAPID_PRIVATE_KEY、NOTIFICATION_KEYS、CONTACT_SLACK_WEBHOOK_URL（問い合わせの Slack。T-24）、
-  // AVATAR_URL_KEY（アイコンの画像の URL の署名の鍵。T-27）、ANTHROPIC_API_KEY（行きたいのAI提案。T-29））は
+  // AVATAR_URL_KEY（アイコンの画像の URL の署名の鍵。T-27）、ANTHROPIC_API_KEY（行きたいのAI提案。T-29）、
+  // LINE_CHANNEL_ID・LINE_CHANNEL_SECRET（LINE ログイン。T-32。両方があるときだけ LINE ログインが動く））は
   // wrangler secret で設定する（ローカルは .dev.vars、E2Eは scripts/write-e2e-dev-vars.mjs が生成）
   "vars": {
     "APP_ORIGIN": "http://localhost:5173",
