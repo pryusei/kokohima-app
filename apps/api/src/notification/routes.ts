@@ -3,6 +3,7 @@ import {
   markReadRequestSchema,
   notificationPreferencesPatchSchema,
   pushSubscriptionRequestSchema,
+  pushUnsubscribeRequestSchema,
 } from "@kokohima/shared";
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../env";
@@ -60,13 +61,13 @@ export function notificationRoutes() {
   app.post("/push/subscriptions", async (c) => {
     const body = pushSubscriptionRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
-    const ok = await subscribe(ctx(c), c.var.viewer, body.data.endpoint);
+    const ok = await subscribe(ctx(c), c.var.viewer, body.data.endpoint, body.data.keys ?? null);
     return ok ? c.body(null, 204) : validationFailed(c, null);
   });
 
   // 購読がなくても204（ほかの人の購読があるかを推測させない）
   app.delete("/push/subscriptions", async (c) => {
-    const body = pushSubscriptionRequestSchema.safeParse(await json(c));
+    const body = pushUnsubscribeRequestSchema.safeParse(await json(c));
     if (!body.success) return validationFailed(c, body.error);
     await unsubscribe(ctx(c), c.var.viewer.userId, body.data.endpoint);
     return c.body(null, 204);

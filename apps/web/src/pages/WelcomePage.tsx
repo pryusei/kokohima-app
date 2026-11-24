@@ -6,6 +6,7 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { addDays, localDateOf, localInstant, PRESET_LABELS, PRESET_NAMES } from "../availability/format";
 import { presetsQuery } from "../availability/queries";
+import { LockScreenPicker } from "../notifications/LockScreenPicker";
 import { enablePush, pushEnabled, pushSupported } from "../notifications/push";
 import { navigate } from "../router";
 import { Button, ButtonLink, SendButton } from "../ui/Button";
@@ -126,9 +127,13 @@ function ReceiveNotifications() {
         </p>
       )}
       {supported && enabled === false && (
-        <SendButton variant="primary" block disabled={enable.isPending} onClick={() => enable.mutate()}>
-          お知らせを受け取る
-        </SendButton>
+        <>
+          {/* 許可を取る前に、ロック画面の見え方を見本で選ぶ（T-35） */}
+          <LockScreenPicker hint={false} />
+          <SendButton variant="primary" block disabled={enable.isPending} onClick={() => enable.mutate()}>
+            お知らせを受け取る
+          </SendButton>
+        </>
       )}
       {message && (
         <p role="status" className="text-s text-ink-muted">

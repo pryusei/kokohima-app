@@ -101,3 +101,8 @@ export async function declineForCancelledAvailability(
 
 export const broadcastOwnerOf = (ctx: Ctx, broadcastId: string) => repo.findBroadcastOwner(ctx.env.DB, broadcastId);
 export const inviteActorOf = (ctx: Ctx, inviteId: string) => repo.findInviteActor(ctx.env.DB, inviteId);
+/** お知らせのプッシュに出す日時（開始。T-35）。閲覧者で絞らない：受け取り手が決まったお知らせの対象の ID だけを渡すこと */
+export const slotStartOf = (
+  ctx: Ctx,
+  subject: { type: "direct_invite" | "counter" | "broadcast" | "meetup"; id: string },
+) => repo.findSlotStart(ctx.env.DB, subject);

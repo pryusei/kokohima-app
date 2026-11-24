@@ -2,8 +2,8 @@ import { importPKCS8, SignJWT } from "jose";
 import type { AppDeps, Bindings } from "../../env";
 import { pushEndpointOrigin } from "../domain/endpoint";
 
-// Webプッシュの送信（RFC 8030・RFC 8292）。本文は送らない（中身はアプリのお知らせ一覧で読む）ので、
-// RFC 8291 の暗号化はしない。endpoint・鍵・応答の本文はログに出さない
+// Webプッシュの送信（RFC 8030・RFC 8292）。本文は RFC 8291 で暗号化したもの（T-35。webpush-encryption.ts）か、
+// 鍵のない購読（T-35 より前に登録したもの）には本文なし。endpoint・鍵・本文・応答の本文はログに出さない
 
 const TIMEOUT_MS = 5000;
 const TTL_SECONDS = 86400;
@@ -19,7 +19,8 @@ export class PushUnavailable extends Error {
   }
 }
 
-export async function sendPush(env: Bindings, deps: AppDeps, endpoint: string): Promise<PushResult> {
+/** body は暗号化した本文（aes128gcm）。null なら本文なしで送る */
+export async function sendPush(env: Bindings, deps: AppDeps, endpoint: string, body: Uint8Array | null = null): Promise<PushResult> {
   // 保存した値でも、送る直前にもう一度確かめる
   const audience = pushEndpointOrigin(endpoint, deps.notification.extraPushHosts);
   if (!audience) return { outcome: "rejected", status: 0 };
@@ -38,11 +39,14 @@ export async function sendPush(env: Bindings, deps: AppDeps, endpoint: string): 
       method: "POST",
       redirect: "manual",
       headers: {
-        "Content-Length": "0",
+        ...(body
+          ? { "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream" }
+          : { "Content-Length": "0" }),
         TTL: String(TTL_SECONDS),
         Urgency: "normal",
         Authorization: `vapid t=${jwt}, k=${env.VAPID_PUBLIC_KEY}`,
       },
+      ...(body ? { body } : {}),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {

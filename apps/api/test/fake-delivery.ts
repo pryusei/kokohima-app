@@ -2,7 +2,14 @@
 // 受けたリクエストを記録し、テストから「何を外に渡したか」を確かめられるようにする
 
 export type SentMail = { to: string[]; from: string; subject: string; text: string; html?: string; idempotencyKey: string | null; authorization: string | null };
-export type SentPush = { url: string; headers: Record<string, string>; bodyLength: number; redirect: string | undefined };
+export type SentPush = {
+  url: string;
+  headers: Record<string, string>;
+  bodyLength: number;
+  /** 暗号化した本文（T-35）。本文なしなら null */
+  body: Uint8Array | null;
+  redirect: string | undefined;
+};
 
 export function createFakeDelivery() {
   const state = {
@@ -35,8 +42,9 @@ export function createFakeDelivery() {
     }
     const status = state.pushStatus.get(url.toString()) ?? 201;
     if (status === "throw") throw new DOMException("The operation timed out.", "TimeoutError");
-    const bodyLength = init?.body == null ? 0 : String(init.body).length;
-    state.pushes.push({ url: url.toString(), headers: Object.fromEntries(headers.entries()), bodyLength, redirect: init?.redirect });
+    const body = init?.body instanceof Uint8Array ? init.body : null;
+    const bodyLength = body ? body.byteLength : init?.body == null ? 0 : String(init.body).length;
+    state.pushes.push({ url: url.toString(), headers: Object.fromEntries(headers.entries()), bodyLength, body, redirect: init?.redirect });
     return new Response(null, { status });
   }
 
