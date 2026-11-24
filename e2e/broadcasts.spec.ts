@@ -60,6 +60,10 @@ test("AがB・C・Dに募集 → BとCが応じる → Aには人数だけ → �
   await expect(a.page.getByText(b.displayName)).toHaveCount(0);
   await expect(a.page.getByText(c.displayName)).toHaveCount(0);
   await a.page.getByRole("button", { name: "決める" }).click();
+  // 成立の演出（T-43）：自分と2人の丸が重なる
+  const moment = sheet(a.page).getByRole("region", { name: "決まった！" });
+  await expect(moment).toBeVisible();
+  await expect(moment.getByTestId("meet-dot")).toHaveCount(3);
   await a.page.getByRole("link", { name: "成立した予定を見る" }).click();
   await expect(sheet(a.page).getByText(b.displayName)).toBeVisible();
   await expect(sheet(a.page).getByText(c.displayName)).toBeVisible();
