@@ -9,7 +9,7 @@ import {
   type SafetySubject,
 } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, apiGet, apiSend } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
@@ -65,9 +65,36 @@ function useForget() {
 
 const failedText = "できませんでした。もう一度お試しください。";
 
-export function PersonActions({ person, subject, onBack, onDone }: Props) {
+export function PersonActions(props: Props) {
+  // 「…」は開くと消えるので、中身を置き換えるたびに、この領域へフォーカスを移す（読み上げにも置き換わったことが伝わる）
+  const region = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<"menu" | "report">("menu");
   const [done, setDone] = useState<null | { result: PersonActionsResult; text: string }>(null);
+  useEffect(() => {
+    region.current?.focus();
+  }, [view, done]);
+  return (
+    <div ref={region} tabIndex={-1} role="group" aria-label={`${props.person.name}さんへの操作`} className="outline-none">
+      <PersonActionsBody {...props} view={view} setView={setView} done={done} setDone={setDone} />
+    </div>
+  );
+}
+
+function PersonActionsBody({
+  person,
+  subject,
+  onBack,
+  onDone,
+  view,
+  setView,
+  done,
+  setDone,
+}: Props & {
+  view: "menu" | "report";
+  setView: (v: "menu" | "report") => void;
+  done: null | { result: PersonActionsResult; text: string };
+  setDone: (d: { result: PersonActionsResult; text: string }) => void;
+}) {
   if (done) {
     return (
       <div role="status" className="flex flex-col gap-3">

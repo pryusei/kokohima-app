@@ -80,6 +80,21 @@ describe("「…」のシート（友達の詳細）", () => {
     expect(await within(sheet).findByRole("link", { name: "誘う" })).toBeVisible();
   });
 
+  it("フォーカス：開くとシートの中身（操作の領域）へ、通報に進むとその中身へ、「戻る」で「…」へ戻る", async () => {
+    friendDetail();
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "あきさんへの操作" }));
+    const region = screen.getByRole("group", { name: "あきさんへの操作" });
+    await waitFor(() => expect(region).toHaveFocus());
+    // 通報に進むと中身が置き換わるので、もう一度領域へ移す
+    await userEvent.click(within(region).getByRole("button", { name: "通報" }));
+    expect(within(region).getByRole("heading", { name: "あきさんを通報" })).toBeVisible();
+    await waitFor(() => expect(region).toHaveFocus());
+    await userEvent.click(within(region).getByRole("button", { name: "戻る" }));
+    await userEvent.click(within(region).getByRole("button", { name: "戻る" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "あきさんへの操作" })).toHaveFocus());
+  });
+
   it("ブロックは確認を1回はさみ、POST /blocks（相手の ID だけ）。静かに「ブロックしました。」→ 閉じると友達タブへ", async () => {
     const { calls } = friendDetail({ "/api/v1/blocks": () => new Response(null, { status: 204 }) });
     renderApp();

@@ -17,7 +17,7 @@ import { Field, inputClass } from "../ui/form";
 import { ResponseButtons } from "../ui/HeadCount";
 import { Link } from "../ui/Link";
 import { LinkCard } from "../ui/LinkCard";
-import { MoreButton } from "../safety/MoreButton";
+import { MoreButton, usePersonActionsToggle } from "../safety/MoreButton";
 import { PersonActions } from "../safety/PersonActions";
 
 // 誘いの詳細と返答（docs/specs/T-04-direct-invite.md「画面」、キャンバス「12 受信した誘い」「12 この時間なら」「13 送信した誘い」）
@@ -75,7 +75,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
   const [failed, setFailed] = useState<string | null>(null);
   const [countering, setCountering] = useState(false);
   // 届いた誘いの「…」（相手への操作。docs/specs/T-33-block-report.md「振る舞い 1.」）
-  const [acting, setActing] = useState(false);
+  const { acting, open: openActions, close: closeActions, moreRef } = usePersonActionsToggle();
   const key = keys.invites.detail(inviteId);
 
   // 返答・決定は押したらすぐ表示を変え、失敗したら戻して静かな文言を出す。409 なら最新の状態を読み直す
@@ -139,7 +139,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
             </div>
             <Badge tone={statusTone(d.status)}>{statusText(d)}</Badge>
             {d.direction === "received" && !d.counterpart.withdrawn && !acting && (
-              <MoreButton name={name} onClick={() => setActing(true)} />
+              <MoreButton ref={moreRef} name={name} onClick={openActions} />
             )}
           </div>
         ) : (
@@ -151,8 +151,8 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
         <PersonActions
           person={{ id: d.counterpart.id, name }}
           subject={{ type: "direct_invite", id: d.id }}
-          onBack={() => setActing(false)}
-          onDone={() => setActing(false)}
+          onBack={closeActions}
+          onDone={closeActions}
         />
       )}
       {invite.isPending && <Loading />}

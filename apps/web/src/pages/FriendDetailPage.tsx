@@ -1,6 +1,5 @@
 import { friendSchema } from "@kokohima/shared";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { ApiError, apiGet } from "../api/client";
 import { keys } from "../api/keys";
 import { formatDate, formatSlot, localDateOf } from "../availability/format";
@@ -12,7 +11,7 @@ import { SheetScreen } from "../ui/BottomSheet";
 import { ButtonLink } from "../ui/Button";
 import { LoadError, Loading } from "../ui/feedback";
 import { Section } from "../ui/Navigation";
-import { MoreButton } from "../safety/MoreButton";
+import { MoreButton, usePersonActionsToggle } from "../safety/MoreButton";
 import { PersonActions } from "../safety/PersonActions";
 import { displayNameOf } from "../account/me";
 import { FriendWishList } from "../wish/FriendWishes";
@@ -28,7 +27,7 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
     queryFn: () => apiGet(`/api/v1/friends/${encodeURIComponent(friendId)}`, friendSchema),
   });
   const slots = useQuery({ ...friendSlotsQuery(friendId, date), enabled: friend.isSuccess });
-  const [acting, setActing] = useState(false);
+  const { acting, open: openActions, close: closeActions, moreRef } = usePersonActionsToggle();
 
   if (friend.error instanceof ApiError && friend.error.status === 404) {
     return (
@@ -48,16 +47,16 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
         <div className="flex items-center gap-4">
           {friend.data && <Avatar name={friend.data.displayName} src={friend.data.avatarUrl} size="l" />}
           <h2 className="min-w-0 flex-1 truncate text-xl font-bold">{name}</h2>
-          {friend.data && !acting && <MoreButton name={name} onClick={() => setActing(true)} />}
+          {friend.data && !acting && <MoreButton ref={moreRef} name={name} onClick={openActions} />}
         </div>
       }
     >
       {acting && friend.data && (
         <PersonActions
           person={{ id: friendId, name }}
-          onBack={() => setActing(false)}
+          onBack={closeActions}
           onDone={(result) => {
-            if (result === "reported") setActing(false);
+            if (result === "reported") closeActions();
             // 友達でなくなったら友達タブへ（解除と同じ）
             else navigate("/friends", { replace: true });
           }}
