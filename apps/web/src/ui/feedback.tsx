@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "./Button";
 import { useOnline } from "./online";
 
-// 空の状態・読み込み中・読み込めない・オフライン・操作の結果（デザインシステム「EmptyState」「StatusStates」「Toast」）
+// 空の状態・読み込み中・読み込めない・オフライン（デザインシステム「EmptyState」「StatusStates」）。操作の結果は ResultBand.tsx
 // どれも赤や警告の印を使わず、surface-sunken の静かな帯で出す
 
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
@@ -65,15 +65,6 @@ export function OfflineBanner() {
         オフラインです。つながると最新の内容になります
       </p>
     </div>
-  );
-}
-
-/** 操作の結果の一文。成功も失敗も同じ見た目 */
-export function Toast({ children }: { children: ReactNode }) {
-  return (
-    <p role="status" className="self-start rounded-m bg-ink px-4 py-3 text-surface shadow-float">
-      {children}
-    </p>
   );
 }
 

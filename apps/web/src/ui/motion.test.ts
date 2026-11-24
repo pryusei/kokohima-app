@@ -84,8 +84,11 @@ describe("動きの長さと曲線の直書きがない（docs/specs/T-56-motion
     expect(found).toEqual([]);
   });
 
-  it("index.css に秒・ミリ秒の数を直書きしない（トークンの定義と T-43 の成立の演出だけを除く）", () => {
-    const rest = withoutBlocks(css, [/@theme static\s*\{/, /\.kh-meet-(?:dot|pair|reveal)\s*\{/, /@keyframes kh-meet-[\w-]+\s*\{/]);
+  it("index.css に秒・ミリ秒の数を直書きしない（トークンの定義と T-43 の成立の演出、M-12 の灯りの 500ms だけを除く）", () => {
+    const rest = withoutBlocks(css, [/@theme static\s*\{/, /\.kh-meet-(?:dot|pair|reveal)\s*\{/, /@keyframes kh-meet-[\w-]+\s*\{/]).replace(
+      "--animate-kh-lamp-on: kh-lamp-on 500ms",
+      "",
+    );
     // コメントの中の数（「約1.2秒」など）は数えない
     const code = rest.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(code.match(/(?<![\w-])\d*\.?\d+m?s\b/g)).toBeNull();

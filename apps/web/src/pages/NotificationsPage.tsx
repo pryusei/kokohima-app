@@ -6,39 +6,44 @@ import { keys } from "../api/keys";
 import { notificationsQuery } from "../notifications/queries";
 import { linkOf, textOf } from "../notifications/text";
 import { SendButton } from "../ui/Button";
-import { EmptyState, LoadError, Loading, Toast } from "../ui/feedback";
+import { Collapse } from "../ui/Collapse";
+import { EmptyState, LoadError, Loading } from "../ui/feedback";
 import { SubScreen } from "../ui/Navigation";
 import { NotificationRow } from "../ui/NotificationRow";
+import { useResultBand } from "../ui/ResultBand";
 
 // お知らせ一覧（docs/specs/T-07-notification.md「お知らせ一覧」、キャンバス「18 お知らせ」）。断り・キャンセルも同じ静かな見た目で出す
 // ヘッダーの鐘から開く。左上の「戻る」で、開いた画面（なければ「みんな」）へ戻る
 
-/** 友達追加のお知らせの「この人に見せない」（F-08） */
+/** 友達追加のお知らせの「この人に見せない」（F-08）。できたらボタンを縮めて消し、結果の帯に出す（docs/specs/T-56-motion.md「M-09」） */
 function HideFromFriend({ friendId }: { friendId: string }) {
   const queryClient = useQueryClient();
+  const showBand = useResultBand();
   const [state, setState] = useState<"idle" | "done" | "gone" | "failed">("idle");
   const hide = useMutation({
     mutationFn: () => apiSend("PATCH", `/api/v1/friends/${encodeURIComponent(friendId)}`, { sharesMyAvailability: false }),
-    onSuccess: () => setState("done"),
+    onSuccess: () => {
+      setState("done");
+      showBand({ text: "見せないにしました" });
+    },
     // 友達でなくなっていれば（404）、ボタンを消す
     onError: (err) => setState(err instanceof ApiError && err.status === 404 ? "gone" : "failed"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: keys.friends.all() }),
   });
   if (state === "gone") return null;
-  if (state === "done") {
-    return <Toast>見せないにしました</Toast>;
-  }
   return (
-    <div className="flex flex-col gap-1">
-      <SendButton size="s" className="self-start" disabled={hide.isPending} onClick={() => hide.mutate()}>
-        この人に見せない
-      </SendButton>
-      {state === "failed" && (
-        <p role="status" className="text-s text-ink-muted">
-          変更できませんでした。もう一度お試しください
-        </p>
-      )}
-    </div>
+    <Collapse show={state !== "done"}>
+      <div className="flex flex-col gap-1">
+        <SendButton size="s" className="self-start" disabled={hide.isPending} onClick={() => hide.mutate()}>
+          この人に見せない
+        </SendButton>
+        {state === "failed" && (
+          <p role="status" className="text-s text-ink-muted">
+            変更できませんでした。もう一度お試しください
+          </p>
+        )}
+      </div>
+    </Collapse>
   );
 }
 

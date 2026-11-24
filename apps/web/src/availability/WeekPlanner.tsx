@@ -1,6 +1,6 @@
 import { DEFAULT_PRESETS, myAvailabilitySchema, type MyAvailability, type PresetName, type Presets } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError, apiSend } from "../api/client";
 import { signatureOf, useIdempotencyKeys } from "../api/idempotency";
 import { keys } from "../api/keys";
@@ -10,7 +10,7 @@ import { Button, SendButton } from "../ui/Button";
 import { LoadError, Note } from "../ui/feedback";
 import { Link } from "../ui/Link";
 import { useOnline } from "../ui/online";
-import { UndoToast, type ToastMessage } from "../ui/UndoToast";
+import { useResultBand, type BandMessage } from "../ui/ResultBand";
 import { formatDate, localDateOf, PRESET_LABELS, PRESET_NAMES, WEEKDAYS } from "./format";
 import { mineQuery, presetsQuery, rulesQuery, today as todayOf } from "./queries";
 import { RecurrenceSheet, ruleSummary } from "./RecurrenceSheet";
@@ -57,7 +57,7 @@ const cellLabel = (cell: Cell) => `${formatDate(cell.date)} ${PRESET_LABELS[cell
 /** マスの操作の useMutation の目印。送っている操作が残っている間は、読み直さない */
 const WEEK_CHANGE_KEY = ["availability", "week-change"] as const;
 
-function useWeekChanges(date: string, presets: Presets, showToast: (m: Omit<ToastMessage, "id">) => void) {
+function useWeekChanges(date: string, presets: Presets, showToast: (m: BandMessage) => void) {
   const queryClient = useQueryClient();
   const mineKey = keys.availability.mine(date);
   // マスごと（送る内容ごと）のキー。続けて別のマスを押しても、5xx のあとの送り直しは同じキー（T-10）
@@ -252,15 +252,11 @@ const CellButton = memo(function CellButton({
 function CellSheet({
   cell,
   items,
-  toast,
-  onToastDone,
   onChange,
   onClose,
 }: {
   cell: Cell;
   items: MyAvailability[];
-  toast: ToastMessage | null;
-  onToastDone: () => void;
   onChange: (c: Change) => void;
   onClose: () => void;
 }) {
@@ -283,8 +279,6 @@ function CellSheet({
           </li>
         ))}
       </ul>
-      {/* 結果の一文と「取り消す」はシートの中に出す（後ろの画面は inert なので、下の一文は押せず読み上げにも届かない） */}
-      <UndoToast inline message={toast} onDone={onToastDone} />
     </BottomSheet>
   );
 }
@@ -436,10 +430,8 @@ export function WeekPlanner() {
   const [today] = useState(todayOf);
   const [week, setWeek] = useState(0);
   const [open, setOpen] = useState<Open>(null);
-  const [toast, setToast] = useState<ToastMessage | null>(null);
-  const toastId = useRef(0);
-  const showToast = useCallback((m: Omit<ToastMessage, "id">) => setToast({ ...m, id: ++toastId.current }), []);
-  const hideToast = useCallback(() => setToast(null), []);
+  // 結果の一文と「取り消す」は、アプリに1つの結果の帯に出す（シートを開いているときもシートの上。docs/specs/T-56-motion.md「M-09」）
+  const showToast = useResultBand();
 
   // プリセットが読めるまではマスを押せない（時刻・過ぎた時間帯・どのマスに入るかが、プリセットで決まるため）
   const presetsResult = useQuery(presetsQuery());
@@ -548,13 +540,10 @@ export function WeekPlanner() {
         <CellSheet
           cell={openCell}
           items={openCellItems}
-          toast={toast}
-          onToastDone={hideToast}
           onChange={mutate}
           onClose={() => setOpen(null)}
         />
       )}
-      <UndoToast message={cellSheetShown ? null : toast} onDone={hideToast} />
     </section>
   );
 }

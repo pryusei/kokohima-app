@@ -157,7 +157,7 @@ export function EveryonePage() {
                         </Link>
                         <NowMark slot={item} />
                       </span>
-                      <AvailabilityChip text={formatSlot(item)} overlaps={item.overlapsMine} />
+                      <AvailabilityChip text={formatSlot(item)} overlaps={item.overlapsMine} lampKey={`${item.friend.id}|${item.startsAt}|${item.endsAt}`} />
                       <InviteFromSlot item={item} />
                     </div>
                   </li>

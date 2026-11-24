@@ -8,6 +8,7 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button, ButtonLink, SendButton } from "../ui/Button";
+import { SubmitButton, useSubmitState } from "../ui/SubmitButton";
 import { LoadError, Loading, Note } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { LinkCard } from "../ui/LinkCard";
@@ -89,6 +90,7 @@ function AddWishSheet({ onClose, draft }: { onClose: () => void; draft?: PlaceDr
   const [excluded, setExcluded] = useState<string[]>([]);
   const friends = useQuery({ ...everyFriendQuery(), enabled: choosing });
 
+  const [dismiss, setDismiss] = useState(false);
   const idempotency = useIdempotencyKey();
   const create = useMutation({
     mutationFn: () => {
@@ -105,20 +107,22 @@ function AddWishSheet({ onClose, draft }: { onClose: () => void; draft?: PlaceDr
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
-      onClose();
+      // 「✓ 置きました」を短く見せてから、出る動きで閉じる（docs/specs/T-56-motion.md「M-03」）
+      submit.succeed(() => setDismiss(true));
     },
     onError: (error) => reloadFriendsOn404(queryClient, error),
   });
+  const submit = useSubmitState(create.isPending);
 
   return (
-    <BottomSheet title="行きたいを置く" label="行きたいを置く" onClose={onClose}>
+    <BottomSheet title="行きたいを置く" label="行きたいを置く" onClose={onClose} dismiss={dismiss}>
       {draft && <Note>候補から入れました。直してから置けます。</Note>}
       <Note>日時を決めずに置いておけます。友達はこれを見て誘えます。置いても友達には通知しません。</Note>
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          create.mutate();
+          if (submit.state === "ready") create.mutate();
         }}
       >
         <Field label="ひとこと">
@@ -152,9 +156,9 @@ function AddWishSheet({ onClose, draft }: { onClose: () => void; draft?: PlaceDr
             </div>
           )}
         </div>
-        <SendButton type="submit" variant="lamp" block disabled={create.isPending || message.trim() === ""}>
+        <SubmitButton state={submit.state} variant="lamp" sending="置いています…" done="置きました" disabled={message.trim() === ""}>
           置く
-        </SendButton>
+        </SubmitButton>
         {create.isError && (
           <p role="status" className="text-s text-ink-muted">
             {createErrorText(create.error)}

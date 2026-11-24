@@ -73,8 +73,9 @@ describe("退会", () => {
     const dialog = await openConfirm();
     await userEvent.click(within(dialog).getByRole("button", { name: "退会する" }));
     // 別れの一文は静かな表示のまま（赤を使わない）で、表示名は出さない（T-54）
-    const bye = await screen.findByRole("status");
-    expect(bye).toHaveTextContent("今まで使ってくれてありがとう。またいつでも待ってるね。");
+    // 結果の帯（T-56 M-09）の読み上げの場所もいつもあるので、文で探して status かを確かめる
+    const bye = await screen.findByText("今まで使ってくれてありがとう。またいつでも待ってるね。");
+    expect(bye).toHaveAttribute("role", "status");
     expect(bye).toBeVisible();
     expect(bye.className).toContain("bg-surface-sunken");
     expect(bye.className).not.toMatch(/red|danger|error/);

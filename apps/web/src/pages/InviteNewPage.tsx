@@ -19,10 +19,11 @@ import {
 import { friendSlotsQuery, presetsQuery, today } from "../availability/queries";
 import { EXPIRES, rangeOf, sendErrorText } from "../invitations/form";
 import { KIND_LABELS, nextQuarter } from "../invitations/format";
-import { navigate, useLocation } from "../router";
+import { swapSheet, useLocation } from "../router";
 import { SheetScreen, useSheetLeaving } from "../ui/BottomSheet";
 import { Badge } from "../ui/Badge";
-import { buttonClass, SendButton } from "../ui/Button";
+import { buttonClass } from "../ui/Button";
+import { SubmitButton, useSubmitState } from "../ui/SubmitButton";
 import { inputClass, labelClass } from "../ui/form";
 import { everyFriendQuery } from "../account/friends";
 import { displayNameOf, meQuery } from "../account/me";
@@ -112,10 +113,16 @@ function InviteForm({ initial }: { initial: Initial }) {
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (invite) => {
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
-      // 送信中にシートを閉じていたら（Esc など。閉じる出る動きの途中を含む）、戻った先の画面を詳細で置き換えない
-      if (invite && !sheetLeaving() && window.location.pathname === "/invites/new") navigate(`/invites/${invite.id}`, { replace: true });
+      // 「✓ 送りました」を短く見せてから詳細へ置き換える（docs/specs/T-56-motion.md「M-03」）。
+      // 送信中か「✓ 送りました」のあいだにシートを閉じていたら（Esc など。閉じる出る動きの途中を含む）、戻った先の画面を詳細で置き換えない
+      if (invite) {
+        submit.succeed(() => {
+          if (!sheetLeaving() && window.location.pathname === "/invites/new") swapSheet(`/invites/${invite.id}`);
+        });
+      }
     },
   });
+  const submit = useSubmitState(send.isPending);
 
   const applyPreset = (name: PresetName) => {
     const p = presets.data?.[name];
@@ -129,7 +136,7 @@ function InviteForm({ initial }: { initial: Initial }) {
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          send.mutate();
+          if (submit.state === "ready") send.mutate();
         }}
       >
         <label className={labelClass}>
@@ -189,9 +196,9 @@ function InviteForm({ initial }: { initial: Initial }) {
             ))}
           </select>
         </label>
-        <SendButton type="submit" variant="primary" block disabled={send.isPending || friendId === "" || !validRange}>
+        <SubmitButton state={submit.state} sending="送っています…" done="送りました" disabled={friendId === "" || !validRange}>
           誘う
-        </SendButton>
+        </SubmitButton>
         {send.isError && (
           <p role="status" className="text-s text-ink-muted">
             {sendErrorText(send.error)}
