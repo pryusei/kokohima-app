@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
 import { decideLabel, initialRange, inviteTimes, linkLabel, nextQuarter, statusText } from "../invitations/format";
-import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
+import { json, mockFetch, renderApp, tokenBody, waitForShellGone } from "../test/helpers";
 
 // 時計は 2026-10-10T00:00:00Z（東京は土曜 09:00）
 const FRIEND_ID = "22222222-2222-4222-8222-222222222222";
@@ -380,5 +380,68 @@ describe("誘いタブと成立した予定", () => {
     await userEvent.click(await screen.findByRole("button", { name: "やっぱり難しい" }));
     expect(await screen.findByText("やっぱり難しくなりました")).toBeVisible();
     expect(calls.some((c) => c.url.endsWith("/cancel"))).toBe(true);
+  });
+});
+
+describe("誘いタブの切り替えと詳細の見出し（docs/specs/T-56-motion.md「M-08」「V-1」）", () => {
+  it("白い板は1枚で、?tab= に合わせた番号の位置に滑る。URL と aria-current は今のまま", async () => {
+    window.history.replaceState(null, "", "/invites?tab=sent");
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/direct-invites": empty,
+      "/api/v1/broadcasts": empty,
+      "/api/v1/meetups": empty,
+    });
+    renderApp();
+    await waitForShellGone();
+    const segments = await screen.findByRole("navigation", { name: "誘いの一覧" });
+    const plates = within(segments).getAllByTestId("segment-plate");
+    expect(plates).toHaveLength(1);
+    const plate = plates[0] as HTMLElement;
+    expect(plate).toHaveAttribute("aria-hidden", "true");
+    expect(plate.style.transform).toBe("translateX(calc(1 * (100% + 0.25rem)))");
+    expect(plate.className).toMatch(/transition-transform duration-\(--duration-base\) ease-out/);
+    // 項目のリンクには白い板の色・影を付けない（板は1枚だけ）
+    for (const link of within(segments).getAllByRole("link")) expect(link.className).not.toMatch(/bg-surface|shadow-card/);
+    expect(within(segments).getByRole("link", { name: "送信" })).toHaveAttribute("aria-current", "page");
+    await userEvent.click(within(segments).getByRole("link", { name: "成立" }));
+    expect(window.location.search).toBe("?tab=meetups");
+    await waitFor(() => expect(plate.style.transform).toBe("translateX(calc(3 * (100% + 0.25rem)))"));
+    expect(within(segments).getByRole("link", { name: "成立" })).toHaveAttribute("aria-current", "page");
+    expect(within(segments).getByRole("link", { name: "送信" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("切り替えた中身はフェードで入る（FadeIn。止まった形が最終形）", async () => {
+    window.history.replaceState(null, "", "/invites?tab=sent");
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/direct-invites": json({ items: [invite({ direction: "sent" })], nextCursor: null }),
+    });
+    renderApp();
+    const list = await screen.findByRole("list", { name: "送信した誘い" });
+    expect(list.parentElement).toHaveClass("kh-fade");
+    expect(list.parentElement?.className).not.toMatch(/opacity-0/);
+  });
+
+  it("受信の誘いの詳細：バッジは名前の行ではなく、種類の文字の行に置く", async () => {
+    window.history.replaceState(null, "", `/invites/${INVITE_ID}`);
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/direct-invites": empty,
+      "/api/v1/meetups": empty,
+      [`/api/v1/direct-invites/${INVITE_ID}`]: json(invite()),
+    });
+    renderApp();
+    const sheet = await screen.findByRole("dialog", { name: "あきさんからの誘い" });
+    const name = within(sheet).getByRole("heading", { name: "あき" });
+    const kind = within(sheet).getByText("あそぼ");
+    const badge = within(sheet).getByText("返事をしてください");
+    // 種類の文字とバッジが同じ行（名前の下）。名前の行の並び（アバター・名前と種類・…）にはバッジを置かない
+    expect(badge.parentElement).toBe(kind.parentElement);
+    expect(kind.parentElement?.parentElement).toBe(name.parentElement);
+    const firstRow = name.parentElement?.parentElement as HTMLElement;
+    expect([...firstRow.children]).not.toContain(badge);
   });
 });

@@ -70,7 +70,7 @@ export function NotificationsPage() {
 
   return (
     <SubScreen title="お知らせ" back="/">
-      {notifications.isPending && <Loading />}
+      {notifications.isPending && <Loading variant="list" />}
       {notifications.isError && (
         <LoadError text="読み込めませんでした。通信状態を確認して、もう一度お試しください" retry={() => void notifications.refetch()} />
       )}

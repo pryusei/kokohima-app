@@ -10,6 +10,7 @@ import { Button, SendButton } from "../ui/Button";
 import { LoadError, Note } from "../ui/feedback";
 import { Link } from "../ui/Link";
 import { useOnline } from "../ui/online";
+import { MotionRow, useRowExits } from "../ui/RowMotion";
 import { UndoToast, type ToastMessage } from "../ui/UndoToast";
 import { formatDate, localDateOf, PRESET_LABELS, PRESET_NAMES, WEEKDAYS } from "./format";
 import { mineQuery, presetsQuery, rulesQuery, today as todayOf } from "./queries";
@@ -261,27 +262,44 @@ function CellSheet({
   items: MyAvailability[];
   toast: ToastMessage | null;
   onToastDone: () => void;
-  onChange: (c: Change) => void;
+  onChange: (c: Change, options?: { onError?: () => void }) => void;
   onClose: () => void;
 }) {
+  // 取り消した・外した行は閉じて消え、送れずに戻ったら元の場所に開いて戻る（docs/specs/T-56-motion.md「M-10」）
+  const exits = useRowExits(items, itemKey);
   return (
     <BottomSheet title={cellLabel(cell)} label={cellLabel(cell)} onClose={onClose}>
       <ul aria-label="このマスのここ暇" className="rounded-l border border-line px-4">
-        {items.map((item) => (
-          <li key={itemKey(item)} className="flex items-center justify-between gap-2 border-b border-line py-3 last:border-b-0">
-            <span className="tabular-nums">
-              {itemTime(item)}
-              {item.source === "recurrence" && <span className="ml-2 text-xs text-ink-muted">くり返し</span>}
-            </span>
-            <SendButton
-              variant="ghost"
-              size="s"
-              onClick={() => onChange(item.source === "manual" ? { kind: "cancel", cell, item } : { kind: "except", cell, item })}
+        {exits.rows.map((row) => {
+          const item = row.item;
+          return (
+            <MotionRow
+              key={row.key}
+              row={row}
+              onHidden={exits.hidden}
+              onAppeared={exits.appeared}
+              inSheet
+              className="flex items-center justify-between gap-2 border-b border-line py-3 group-last:border-b-0"
             >
-              {item.source === "manual" ? "取り消す" : "この日だけ外す"}
-            </SendButton>
-          </li>
-        ))}
+              <span className="tabular-nums">
+                {itemTime(item)}
+                {item.source === "recurrence" && <span className="ml-2 text-xs text-ink-muted">くり返し</span>}
+              </span>
+              <SendButton
+                variant="ghost"
+                size="s"
+                onClick={() => {
+                  exits.leave(row.key);
+                  onChange(item.source === "manual" ? { kind: "cancel", cell, item } : { kind: "except", cell, item }, {
+                    onError: () => exits.restore(row.key),
+                  });
+                }}
+              >
+                {item.source === "manual" ? "取り消す" : "この日だけ外す"}
+              </SendButton>
+            </MotionRow>
+          );
+        })}
       </ul>
       {/* 結果の一文と「取り消す」はシートの中に出す（後ろの画面は inert なので、下の一文は押せず読み上げにも届かない） */}
       <UndoToast inline message={toast} onDone={onToastDone} />

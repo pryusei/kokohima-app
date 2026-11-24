@@ -7,6 +7,7 @@ import { keys } from "../api/keys";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button, SendButton } from "../ui/Button";
 import { LoadError, Loading, Note } from "../ui/feedback";
+import { markCreatedRow, MotionRow, useRowExits } from "../ui/RowMotion";
 import { Field, inputClass } from "../ui/form";
 import { asEnd, formatDate, PRESET_LABELS, PRESET_NAMES, WEEKDAYS } from "./format";
 import { rulesQuery } from "./queries";
@@ -41,7 +42,9 @@ function AddRecurrenceForm({ onDone }: { onDone: () => void }) {
       });
     },
     onSettled: (_data, error) => ruleIdempotency.settle(error),
-    onSuccess: () => {
+    onSuccess: (rule) => {
+      // 一覧に戻ったときに、増えた行を開いて一度だけ光らせる（docs/specs/T-56-motion.md「M-10」）
+      if (rule) markCreatedRow(rule.id);
       void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
       onDone();
     },
@@ -107,12 +110,20 @@ function AddRecurrenceForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+const NO_RULES: RecurrenceRuleDto[] = [];
+const ruleKey = (rule: RecurrenceRuleDto) => rule.id;
+
 function RuleList({ onAdd }: { onAdd: () => void }) {
   const queryClient = useQueryClient();
   const rules = useQuery(rulesQuery());
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.availability.all() });
+  // 削除した行は閉じて消え、失敗したら元の場所に開いて戻る（docs/specs/T-56-motion.md「M-10」）
+  const exits = useRowExits(rules.data?.items ?? NO_RULES, ruleKey);
+  const { leave, restore: restoreRow } = exits;
   const remove = useMutation({
     mutationFn: (id: string) => apiSend("DELETE", `/api/v1/recurrence-rules/${id}`, undefined),
+    onMutate: (id) => leave(id),
+    onError: (_error, id) => restoreRow(id),
     onSuccess: invalidate,
   });
   const restore = useMutation({
@@ -127,25 +138,32 @@ function RuleList({ onAdd }: { onAdd: () => void }) {
       {rules.isPending && <Loading />}
       {rules.isError && <LoadError retry={() => void rules.refetch()} />}
       {rules.data?.items.length === 0 && <Note>まだくり返しはありません。毎週の決まった暇な時間を入れておけます。</Note>}
-      {rules.data && rules.data.items.length > 0 && (
+      {exits.rows.length > 0 && (
         <ul aria-label="くり返し" className="rounded-l border border-line px-4">
-          {rules.data.items.map((rule) => (
-            <li key={rule.id} className="flex flex-col gap-1 border-b border-line py-3 last:border-b-0">
+          {exits.rows.map((row) => (
+            <MotionRow
+              key={row.key}
+              row={row}
+              onHidden={exits.hidden}
+              onAppeared={exits.appeared}
+              inSheet
+              className="flex flex-col gap-1 border-b border-line py-3 group-last:border-b-0"
+            >
               <div className="flex items-center justify-between gap-2">
-                <span className="tabular-nums">{ruleText(rule)}</span>
-                <SendButton variant="ghost" size="s" onClick={() => remove.mutate(rule.id)}>
+                <span className="tabular-nums">{ruleText(row.item)}</span>
+                <SendButton variant="ghost" size="s" onClick={() => remove.mutate(row.item.id)}>
                   削除
                 </SendButton>
               </div>
-              {rule.exceptions.map((date) => (
+              {row.item.exceptions.map((date) => (
                 <div key={date} className="flex items-center justify-between gap-2 text-s text-ink-muted">
                   <span>{formatDate(date)}は外しています</span>
-                  <SendButton variant="ghost" size="s" onClick={() => restore.mutate({ id: rule.id, date })}>
+                  <SendButton variant="ghost" size="s" onClick={() => restore.mutate({ id: row.item.id, date })}>
                     戻す
                   </SendButton>
                 </div>
               ))}
-            </li>
+            </MotionRow>
           ))}
         </ul>
       )}

@@ -129,14 +129,19 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
           {b?.direction === "received" && <Avatar name={b.owner.displayName} src={b.owner.avatarUrl} />}
           <div className="flex min-w-0 flex-1 flex-col">
             <h2 className="truncate text-l font-bold">{ownerNamed ? `${ownerNamed}の募集` : "暇な人いる？"}</h2>
-            {owner && <span className="text-s text-ink-muted">暇な人いる？</span>}
+            {/* バッジは「暇な人いる？」の横（1行めに置くと、名前が数文字で切れる。入らなければ種類の文字の下へ折り返す。docs/specs/T-56-motion.md「V-1」） */}
+            {(owner || b) && (
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {owner && <span className="min-w-0 truncate text-s text-ink-muted">暇な人いる？</span>}
+                {/* 募集者の募集中は、人数を下の HeadCount で大きく出すので、バッジは「募集中」だけにする */}
+                {b && (
+                  <Badge tone={broadcastStatusTone(b)}>
+                    {b.direction === "sent" && b.status === "open" ? "募集中" : broadcastStatusText(b)}
+                  </Badge>
+                )}
+              </span>
+            )}
           </div>
-          {/* 募集者の募集中は、人数を下の HeadCount で大きく出すので、バッジは「募集中」だけにする */}
-          {b && (
-            <Badge tone={broadcastStatusTone(b)}>
-              {b.direction === "sent" && b.status === "open" ? "募集中" : broadcastStatusText(b)}
-            </Badge>
-          )}
           {b?.direction === "received" && owner && !b.owner.withdrawn && !acting && (
             <MoreButton ref={moreRef} name={owner} onClick={openActions} />
           )}

@@ -62,7 +62,7 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
           }}
         />
       )}
-      {!acting && friend.isPending && <Loading />}
+      {!acting && friend.isPending && <Loading variant="list" />}
       {!acting && friend.isError && <LoadError text="読み込めませんでした。通信状態を確認して、もう一度お試しください。" retry={() => void friend.refetch()} />}
       {!acting && friend.data && (
         <Section title="見えているここ暇" aside="今日から14日">

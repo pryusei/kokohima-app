@@ -8,6 +8,7 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { Button, buttonClass, SendButton } from "../ui/Button";
 import { Note } from "../ui/feedback";
 import { Chip, ChipRow, Field, inputClass } from "../ui/form";
+import { markCreatedRow } from "../ui/RowMotion";
 
 // 招待リンクの発行のシート（docs/specs/T-02-friends.md、T-28「LINEで送る」）。
 // 友達タブの「招待リンクを作る」と、友達が0人のときの「みんな」の「友達を招待する」（T-34）から開く。
@@ -23,6 +24,8 @@ export function InviteLinkSheet({ onClose }: { onClose: () => void }) {
     mutationFn: () => apiSend("POST", "/api/v1/invite-links", { expiresInDays, maxUses }, createdInviteLinkSchema),
     onSuccess: (link) => {
       setCreated(link ?? null);
+      // 友達タブの「有効な招待リンク」に、シートを閉じたあと開いて一度だけ光る（docs/specs/T-56-motion.md「M-10」）
+      if (link) markCreatedRow(link.id);
       void queryClient.invalidateQueries({ queryKey: keys.inviteLinks.list() });
     },
   });

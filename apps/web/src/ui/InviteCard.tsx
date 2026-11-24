@@ -5,6 +5,10 @@ import { Link } from "./Link";
 
 // 誘い・募集のカード（デザインシステム「InviteCard」「BroadcastCard」）。状態の見た目は tone の1つの値で渡す
 // 成立は上端に meet-soft の帯、静かな状態（quiet）は影をなくして一段下げる
+// 押した感触（docs/specs/T-56-motion.md「M-11」）：押している間は少し縮み、影を一段弱く（影なし）。PC はマウスを乗せると影を shadow-float に。
+// 静かな状態のカードは影を足さない。フォーカスの輪（outline）は transition に含めない
+const PRESS = "transition-[scale,box-shadow] duration-(--duration-press) ease-out active:scale-[.98]";
+const PRESS_SHADOW = "active:shadow-none lg:hover:shadow-float";
 
 type CardProps = {
   to: string;
@@ -26,11 +30,11 @@ function Card({ to, avatarName, avatarUrl = null, title, subtitle, when, whenNot
     tone === "quiet"
       ? "border border-line bg-surface"
       : tone === "meet"
-        ? "border-t-6 border-meet-soft bg-surface shadow-card"
-        : "bg-surface shadow-card";
+        ? `border-t-6 border-meet-soft bg-surface shadow-card ${PRESS_SHADOW}`
+        : `bg-surface shadow-card ${PRESS_SHADOW}`;
   const ink = tone === "quiet" ? "text-quiet-ink" : "text-ink";
   return (
-    <Link to={to} className={`flex flex-col gap-2 rounded-l p-4 no-underline ${look}`}>
+    <Link to={to} className={`flex flex-col gap-2 rounded-l p-4 no-underline ${PRESS} ${look}`}>
       <span className="flex items-center gap-3">
         <Avatar name={avatarName} src={avatarUrl} />
         <span className="flex min-w-0 flex-1 flex-col">

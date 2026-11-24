@@ -69,7 +69,7 @@ function WhoToInvite({ friends }: { friends: Friend[] }) {
               <Link
                 to={`/invites/new?friend=${encodeURIComponent(f.id)}`}
                 aria-label={`${name}を誘う`}
-                className="flex w-16 flex-col items-center gap-1 text-ink no-underline"
+                className="flex w-16 flex-col items-center gap-1 text-ink no-underline transition-transform duration-(--duration-press) ease-out active:scale-[.95]"
               >
                 <Avatar name={f.displayName} src={f.avatarUrl} size="l" />
                 <span className="w-full truncate text-center text-s">{name}</span>
@@ -127,7 +127,7 @@ export function EveryonePage() {
       <ButtonLink to="/broadcasts/new" variant="lamp" block>
         暇な人いる？と募る
       </ButtonLink>
-      {everyone.isPending && <Loading />}
+      {everyone.isPending && <Loading variant="chips" />}
       {everyone.isError && !isRateLimited(everyone.error) && <LoadError retry={() => void everyone.refetch()} />}
       {/* 回数の上限（429。T-14）：前に読めた内容があれば出したまま。なければ静かに待ってもらう（取り直さない） */}
       {everyone.isError && isRateLimited(everyone.error) && !everyone.data && (
@@ -145,7 +145,8 @@ export function EveryonePage() {
         <section aria-label="みんなのここ暇" className="flex flex-col gap-4">
           {groupByDate(everyone.data).map(([day, items]) => (
             <section key={day} className="flex flex-col">
-              <h2 className="-mx-4 bg-head px-4 py-1 font-bold tabular-nums">{formatDate(day)}</h2>
+              {/* 日付の帯は上に貼り付き、次の日の帯が来たら押し上げられる（docs/specs/T-56-motion.md「M-17」。重なりはシート・下のタブより下） */}
+              <h2 className="sticky top-0 z-[1] -mx-4 bg-head px-4 py-1 font-bold tabular-nums lg:-mx-6 lg:px-6">{formatDate(day)}</h2>
               <ul className="flex flex-col">
                 {items.map((item) => (
                   <li key={`${item.friend.id}|${item.startsAt}`} className="flex gap-2 border-b border-line py-3 last:border-b-0">

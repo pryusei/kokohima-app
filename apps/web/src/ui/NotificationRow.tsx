@@ -8,7 +8,10 @@ type Props = { to: string; text: string; unread: boolean; avatarName: string | n
 
 export function NotificationRow({ to, text, unread, avatarName, avatarUrl = null, children }: Props) {
   return (
-    <li className={`flex gap-3 border-b border-line bg-surface px-4 py-3 ${unread ? "border-l-4 border-l-lamp" : ""}`}>
+    // 押している間は地を沈める（docs/specs/T-56-motion.md「M-11」）
+    <li
+      className={`flex gap-3 border-b border-line bg-surface px-4 py-3 transition-[background-color] duration-(--duration-press) active:bg-surface-sunken lg:hover:bg-surface-sunken ${unread ? "border-l-4 border-l-lamp" : ""}`}
+    >
       <Avatar name={avatarName} src={avatarUrl} size="s" />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <Link to={to} className={`no-underline ${unread ? "font-bold text-ink" : "text-ink"}`}>

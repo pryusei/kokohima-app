@@ -184,3 +184,28 @@ describe("友達の詳細", () => {
     expect(within(sheet).queryByRole("link", { name: "ここどう？と誘う" })).toBeNull();
   });
 });
+
+describe("みんなタブの動き（docs/specs/T-56-motion.md「M-06」「M-10」「M-11」「M-17」）", () => {
+  it("日付の見出しは上に貼り付く（sticky）。友達の側の行には出入りの動き（Collapse）を付けない", async () => {
+    everyoneTab({ "/api/v1/friend-availabilities": json({ items: [slot(1, "あき")], nextCursor: null }) });
+    renderApp();
+    const list = await screen.findByRole("region", { name: "みんなのここ暇" });
+    const heading = within(list).getByRole("heading", { level: 2 });
+    expect(heading).toHaveClass("sticky", "top-0");
+    expect(within(list).getAllByRole("listitem").length).toBeGreaterThan(0);
+    expect(list.querySelector(".kh-collapse")).toBeNull();
+  });
+
+  it("ここ暇の読み込み中は、日付の帯と丸いチップの形の骨組み", async () => {
+    everyoneTab({ "/api/v1/friend-availabilities": () => new Promise<Response>(() => {}) });
+    renderApp();
+    await waitFor(() => expect(document.querySelector('[role="status"][data-variant="chips"]')).not.toBeNull());
+  });
+
+  it("「誰を誘う？」の顔は、押している間に縮む（scale .95・press）", async () => {
+    everyoneTab();
+    renderApp();
+    const face = within(await whoToInvite()).getByRole("link", { name: "あきを誘う" });
+    expect(face).toHaveClass("active:scale-[.95]", "duration-(--duration-press)", "transition-transform");
+  });
+});
