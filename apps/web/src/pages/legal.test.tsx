@@ -68,16 +68,10 @@ const TERMS_SECTIONS = [
 ];
 // 「この改定で変わるところ」の箇条書き（仕様書の6節・7節の文案）
 const PRIVACY_CHANGES = [
-  "「5.」「6.」「7.」：外国の事業者に取り扱いを任せるときの書き方を直し、「7.」に、外国の名称、事業者がとる措置、その確かめ方などを書きました。",
-  "「12.」：「7.」の情報の提供を求められることを書きました。",
-  "「2.」「4.」「8.」と退会したとき：行きたい（ひとこと・エリア・リンク・見せない相手）を預かる情報に足し、見える相手と保存する期間を書きました。",
-  "「2.」「3.」「5.」「7.」「8.」「12.」：アプリの中の問い合わせのフォームを足したことに合わせて、預かる情報（問い合わせの種類と内容）、使う目的、任せる事業者（Slack）、保存する期間、開示などの求め方を書きました。問い合わせのフォームについてのこれらの定めは、フォームを使い始める2026年11月23日から適用します。",
-  "「2.」「4.」「8.」と退会したとき：アイコンに画像を設定できるようにしたことに合わせて、預かる情報（アイコンの画像）、見える相手（友達と、招待リンクを開いた人）、保存する期間を書きました。",
-  "「2.」「3.」「5.」「7.」「8.」と退会したとき：行きたいをAIで探せるようにしたことに合わせて、預かる情報（探した回数の記録。入力した言葉と候補は残しません）、使う目的、任せる事業者（Anthropic）、保存する期間を書きました。",
+  "「2.」「3.」「4.」「5.」「7.」「8.」と退会したとき：ブロックと通報を足したことに合わせて、預かる情報（ブロックした相手、通報の理由・くわしく・対象の誘いや募集）、使う目的、相手への見え方、任せる事業者（Slack）、保存する期間を書きました。",
 ];
 const TERMS_CHANGES = [
-  "第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。",
-  "第5条4・第6条：アイコンの画像の削除を求めるときの連絡先と、ほかの人の写真などを同意なくアイコンにしないことを足しました。",
+  "第6条・第7条：ブロックと通報を足したことに合わせて、事実でない通報をくり返さないことと、通報を受けたときの扱いを書きました。",
 ];
 const pages = [
   { path: "/privacy", title: "プライバシー ポリシー", section: "1. 運営者と連絡先", sections: PRIVACY_SECTIONS, changes: PRIVACY_CHANGES },
@@ -306,7 +300,7 @@ describe("プライバシー ポリシーの本文", () => {
     const items = (name: string) => Array.from(sub(name).querySelectorAll("li")).map(own);
     expect(Array.from(seven.querySelectorAll(":scope > p")).map((p) => p.textContent)).toEqual([
       "「5.」の事業者のうち、Cloudflare・Google・Resend・Slack・Anthropic・ブラウザのプッシュ通知の事業者は、外国の事業者です。運営は、個人情報保護法の基準に適合する体制（日本の法律の定めに沿った措置を続けてとるための体制）を整えている事業者にだけ、個人データの取り扱いを任せます。本人の同意によらずに任せるため、外国にある第三者に個人データを渡すときに本人の求めに応じて知らせることになっている事項を、求めを待たずにここに書きます。",
-      "監視のための障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません（問い合わせを届ける Slack は含めます）。",
+      "監視のための障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません（問い合わせと通報を届ける Slack は含めます）。",
     ]);
     expect(items("外国の名称")).toEqual([
       "米国：Cloudflare・Google・Resend・Slack・Anthropic・ブラウザのプッシュ通知の事業者",
@@ -377,7 +371,9 @@ describe("プライバシー ポリシーの本文", () => {
     );
     const three = clause("3. 使う目的");
     const purposes = Array.from(three.querySelectorAll("ol > li")).map((li) => li.textContent);
-    expect(purposes[6]).toBe("不正な利用を防ぎ、障害に気づいて直すため。問い合わせで知らせてもらった不具合を直すため");
+    expect(purposes[6]).toBe(
+      "不正な利用を防ぎ、障害に気づいて直すため。問い合わせで知らせてもらった不具合を直すため。通報を受けて、危ない使い方や規約に反する使い方に対応するため",
+    );
     expect(purposes[8]).toBe("問い合わせでもらったご意見をもとに、このサービスを良くするため");
     expect(three.textContent).toContain("問い合わせのときは、返信先として運営の連絡用の Slack に届けます");
     // 仕様書の6節の文案と同じ並び（Slack は Resend とプッシュ通知の事業者の間）
@@ -395,15 +391,16 @@ describe("プライバシー ポリシーの本文", () => {
       .getByRole("heading", { name: "Slack Technologies, LLC（米国）", level: 3 })
       .closest("section") as HTMLElement;
     expect(within(slack).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "任せること：問い合わせを運営者に届けて、保管すること",
+      "任せること：問い合わせと通報を運営者に届けて、保管すること",
       "渡すもの：問い合わせの種類・内容・受け付けた時刻・利用者を区別する番号・返信先のメールアドレス",
+      "通報で渡すもの：理由・くわしく・受け付けた時刻・通報した人と通報された人を区別する番号・ブロックもしたか。誘い・募集から通報したときは、その誘い・募集の日時・エリア・ひとこと・リンク。メールアドレスと名前は渡しません。",
     ]);
     const eight = clause("8. 保存する期間").textContent ?? "";
     expect(eight).toContain(
       `問い合わせ：運営に届けたら、このサービスのデータベースから内容を消します。うまく届かなかったものは、処理の記録として${RETENTION.processedOutboxDays}日で消えます。運営の連絡用の Slack に届いたものは、対応を終えたら消し、遅くとも Slack に届いてから${PLATFORM_RETENTION.contactSlackDays}日で消えます。`,
     );
     expect(eight).toContain("遅くとも Slack に届いてから90日で消えます");
-    expect(eight).toContain("まだ運営に届いていない問い合わせは、届けずに消します。");
+    expect(eight).toContain("まだ運営に届いていない問い合わせと通報は、届けずに消します。");
     expect(clause("12. 開示・訂正・削除などの求め").textContent).toContain(
       "ログインしているなら、アプリの「設定 → 問い合わせ」（種類「個人情報の開示・削除の請求」）からも求められます。",
     );
@@ -411,8 +408,10 @@ describe("プライバシー ポリシーの本文", () => {
 
   // 公開の日と改定日が同じかは、デプロイの検査（apps/api/scripts/lib/effective-date.mjs の contactStartProblems）で確かめる。
   // ここで常に同じことを求めると、次の改定で改定日を変えるたびに問い合わせを閉じることになるため
-  it("デプロイの検査が本番の JS で探す問い合わせの目印が、「この改定で変わるところ」の行と本文にある（T-24「11.」）", async () => {
-    expect(PRIVACY_REVISION_CHANGES?.some((line) => line.includes(CONTACT_NOTICE_MARKER))).toBe(true);
+  // 問い合わせを知らせた改定（2026-11-30）は終わったので、「この改定で変わるところ」の行の目印は、今の箇条書きにはない。
+  // デプロイの検査は、本番の本文の目印（CONTACT_POLICY_MARKER）で「前の改定で知らせ済み」と判断する（T-24「11.」）
+  it("デプロイの検査が本番の JS で探す問い合わせの目印が本文にある。前の改定の行の目印は、今の箇条書きにない（T-24「11.」）", async () => {
+    expect(PRIVACY_REVISION_CHANGES?.some((line) => line.includes(CONTACT_NOTICE_MARKER))).toBe(false);
     window.history.replaceState(null, "", "/privacy");
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
     renderApp();
@@ -592,5 +591,32 @@ describe("リンクの置き場所", () => {
     expect(section).not.toBeNull();
     expect(within(section as HTMLElement).getByRole("link", { name: /プライバシー ポリシー/ })).toHaveAttribute("href", "/privacy");
     expect(within(section as HTMLElement).getByRole("link", { name: /利用規約/ })).toHaveAttribute("href", "/terms");
+  });
+});
+
+// ブロックと通報（docs/specs/T-33-block-report.md「振る舞い 7.」）
+describe("ブロックと通報の本文", () => {
+  it("プライバシー ポリシー：「2.」の預かる情報、「4.」の見え方、「8.」の期間と退会。日数は retention.ts から", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    const two = clause("2. 預かる情報").textContent ?? "";
+    expect(two).toContain("ブロックした相手と、ブロックした時刻");
+    expect(two).toContain("通報の理由と、くわしく（書いたときだけ）、通報した相手。");
+    expect(clause("4. ほかの利用者に見えるもの").textContent).toContain("ブロックや通報をしたことは、相手に知らせません。");
+    const eight = clause("8. 保存する期間").textContent ?? "";
+    expect(eight).toContain("ブロック：ブロックをやめたとき、どちらかが退会したときに消します（期限はありません）。");
+    expect(eight).toContain(`遅くとも Slack に届いてから${PLATFORM_RETENTION.contactSlackDays}日で消えます。`);
+    expect(eight).toContain("あなたについての通報は、通報した人のものなので");
+  });
+
+  it("利用規約：第6条に事実でない通報、第7条に通報を受けたときの扱い", async () => {
+    window.history.replaceState(null, "", "/terms");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "利用規約", level: 1 });
+    expect(clause("第6条（してはいけないこと）").textContent).toContain("事実でない通報をくり返すこと");
+    expect(clause("第7条（利用の停止）").textContent).toContain("通報を受けたときは、運営が内容を確かめ");
   });
 });
