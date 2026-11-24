@@ -2,7 +2,7 @@
 
 - `requirements.md`：要求定義書（サービス全体の仕様の正）
 - `specs/`：タスクごとの仕様書。仕様書PRとして先に追加する
-- `tasks/`：タスク票（1タスク1ファイル）
+- `tasks/`：タスク票（1タスク1ファイル）。タスクIDは `tasks/REGISTRY.md`（台帳）で取る
 - `decisions/`：技術や設計の大きな判断の決定記録（ADR）
 - `roadmap.md`：今後の流れと実装順
 - `design/`：画面一覧、Claude Design用プロンプト、モック

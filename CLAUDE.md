@@ -49,6 +49,7 @@
 - CIは、PRごとと main への push で型チェック・lint・単体テスト・本番のビルド、main への PR と main への push で E2E を実行する。PR が文書（`docs/` と、`apps/`・`packages/`・`e2e/`・`scripts/` の外の `.md`）だけを変えるときは飛ばす（main への push では常に回す）。E2E は CI では flaky も失敗にする（docs/specs/T-30-ci-review.md）。PRの説明は `.github/pull_request_template.md` に沿って書く
 
 ## 進め方
+- タスクID（`T-xx`）は `docs/tasks/REGISTRY.md`（タスク番号の台帳）で取り、使う前に台帳に行を足す
 - ブランチは仕様書PRが `spec/T-01-auth`、実装PRが `feat/T-01-auth` のようにタスクIDを含める。コミットは小さく。単体テストの検査（CI の `require-unit-tests`）はブランチ名ではなく差分で判定する（`scripts/ci/changes.mjs`）
 - 完了と言う前に typecheck・lint・関連テストを実行し、コマンドと結果を示す
 - コンパクション時は、変更したファイルの一覧・実行中のタスクID・仕様書のパス・テストコマンドを必ず残す
