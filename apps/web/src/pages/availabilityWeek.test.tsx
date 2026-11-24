@@ -104,10 +104,24 @@ describe("週の帯の形", () => {
     expect(screen.getByRole("heading", { name: "自分のここ暇 10/17〜10/23" })).toBeVisible();
     expect(await cell("10/23（金） 夜")).toBeVisible();
     expect(screen.queryByRole("button", { name: (n) => n.startsWith("10/16（金） 夜 ") })).toBeNull();
-    expect(screen.getByRole("button", { name: "次の7日 ›" })).toBeDisabled();
+    // 端の週では aria-disabled（押した直後にフォーカスを失わない）。押しても進まない
+    const next = screen.getByRole("button", { name: "次の7日 ›" });
+    expect(next).toHaveAttribute("aria-disabled", "true");
+    expect(next).toHaveFocus();
+    await userEvent.click(next);
+    expect(screen.getByRole("heading", { name: "自分のここ暇 10/17〜10/23" })).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "前の7日" }));
     expect(await cell("10/10（土） 昼")).toBeVisible();
-    expect(screen.getByRole("button", { name: "前の7日" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "前の7日" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "前の7日" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "次の7日 ›" })).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("プリセットが読めなければ、マスを押せず「読み込めませんでした」を出す", async () => {
+    tab({ "/api/v1/me/presets": json({}, 500) });
+    renderApp();
+    expect(await screen.findByText("読み込めませんでした。もう一度お試しください")).toBeVisible();
+    await waitFor(() => expect(cellNow("10/12（月） 夕方")).toBeDisabled());
   });
 
   it("今日の過ぎた時間帯（終わりが過ぎた）は押せない。始まっている時間帯は押せる", async () => {
@@ -234,6 +248,148 @@ describe("押すとすぐ変わる（楽観的更新）と「取り消す」", (
     await userEvent.click(within(rows[1] as HTMLElement).getByRole("button", { name: "取り消す" }));
     await waitFor(() => expect(sent(calls, "DELETE", `/api/v1/availabilities/${SLOT_ID}`)).toHaveLength(1));
   });
+
+  it("2つ以上のマスのシートで失敗したら、シートの中に静かな文言を出す（後ろの画面に隠さない）", async () => {
+    tab({
+      "/api/v1/availabilities": json({ items: [manual, { ...manual, id: NEW_ID, label: null, startsAt: "2026-10-10T11:00:00.000Z" }], nextCursor: null }),
+      [`/api/v1/availabilities/${SLOT_ID}`]: () => new Response(null, { status: 503 }),
+    });
+    renderApp();
+    const night = await cell("10/10（土） 夜");
+    await waitFor(() => expect(night).toHaveAccessibleName("10/10（土） 夜 ここ暇が2つ。押すと選べる"));
+    await userEvent.click(night);
+    const sheet = screen.getByRole("dialog", { name: "10/10（土） 夜" });
+    await userEvent.click(within(sheet).getAllByRole("button", { name: "取り消す" })[0] as HTMLElement);
+    const status = within(sheet).getByRole("status");
+    await waitFor(() => expect(status).toHaveTextContent("変更できませんでした。もう一度お試しください。"));
+    expect(within(sheet).getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("シートの枠を全部取り消すと閉じ、「取り消す」で戻してもシートは開き直さない", async () => {
+    const second = { ...manual, id: NEW_ID, label: null, startsAt: "2026-10-10T11:00:00.000Z" };
+    let server = [manual, second];
+    const remove = (id: string) => () => {
+      server = server.filter((i) => i.id !== id);
+      return new Response(null, { status: 204 });
+    };
+    const { calls } = tab({
+      "/api/v1/availabilities": ({ init }) => {
+        if (init.method !== "POST") return json({ items: server, nextCursor: null })();
+        server = [...server, second];
+        return json(second, 201)();
+      },
+      [`/api/v1/availabilities/${SLOT_ID}`]: remove(SLOT_ID),
+      [`/api/v1/availabilities/${NEW_ID}`]: remove(NEW_ID),
+    });
+    renderApp();
+    const night = await cell("10/10（土） 夜");
+    await waitFor(() => expect(night).toHaveAccessibleName("10/10（土） 夜 ここ暇が2つ。押すと選べる"));
+    await userEvent.click(night);
+    const sheet = screen.getByRole("dialog", { name: "10/10（土） 夜" });
+    await userEvent.click(within(sheet).getAllByRole("button", { name: "取り消す" })[0] as HTMLElement);
+    // 1つ残っている間はシートのまま。結果の一文と「取り消す」はシートの中
+    expect(await within(sheet).findByText("10/10（土） 夜のここ暇を取り消しました")).toBeVisible();
+    await userEvent.click(within(within(sheet).getByRole("listitem")).getByRole("button"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await userEvent.click(await undoOf("10/10（土） 夜のここ暇を取り消しました"));
+    await waitFor(() => expect(sent(calls, "POST", "/api/v1/availabilities")).toHaveLength(1));
+    expect(await screen.findByText("元に戻しました")).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("続けて2つのマスを押し、あとの方が失敗しても、その操作の分だけ戻す（先に作った本物の枠は残る）", async () => {
+    const createdA = { ...manual, id: NEW_ID, startsAt: "2026-10-11T10:00:00.000Z", endsAt: "2026-10-11T14:00:00.000Z" };
+    let serverItems: unknown[] = [manual];
+    let answerA: (r: Response) => void = () => {};
+    let answerB: (r: Response) => void = () => {};
+    const { calls } = tab({
+      "/api/v1/availabilities": ({ init }) =>
+        init.method === "POST" ? new Promise<Response>((resolve) => (answerA = resolve)) : json({ items: serverItems, nextCursor: null })(),
+      [`/api/v1/availabilities/${SLOT_ID}`]: () => new Promise<Response>((resolve) => (answerB = resolve)),
+      [`/api/v1/availabilities/${NEW_ID}`]: () => new Response(null, { status: 204 }),
+    });
+    const reads = () => calls.filter((c) => c.url.split("?")[0] === "/api/v1/availabilities" && (c.init.method ?? "GET") === "GET").length;
+    renderApp();
+    await waitFor(() => expect(cellNow("10/10（土） 夜")).toHaveAttribute("aria-pressed", "true"));
+    await userEvent.click(cellNow("10/11（日） 夜"));
+    await userEvent.click(cellNow("10/10（土） 夜"));
+    await waitFor(() => expect(sent(calls, "DELETE", `/api/v1/availabilities/${SLOT_ID}`)).toHaveLength(1));
+    const before = reads();
+    serverItems = [manual, createdA];
+    answerA(json(createdA, 201)());
+    expect(await screen.findByText("10/11（日） 夜をここ暇にしました")).toBeVisible();
+    // 送っている操作が残っている間は読み直さない
+    expect(reads()).toBe(before);
+    answerB(new Response(null, { status: 503 }));
+    expect(await screen.findByText("変更できませんでした。もう一度お試しください。")).toBeVisible();
+    expect(cellNow("10/10（土） 夜")).toHaveAttribute("aria-pressed", "true");
+    expect(cellNow("10/11（日） 夜")).toHaveAttribute("aria-pressed", "true");
+    // 先に作った枠は応答の id で消せる
+    await userEvent.click(cellNow("10/11（日） 夜"));
+    await waitFor(() => expect(sent(calls, "DELETE", `/api/v1/availabilities/${NEW_ID}`)).toHaveLength(1));
+    expect(calls.some((c) => c.url.includes("draft-"))).toBe(false);
+  });
+
+  it("5xx のあとに同じマスを押し直すと、間にほかのマスを作っても同じ Idempotency-Key", async () => {
+    let first = true;
+    const { calls } = tab({
+      "/api/v1/availabilities": ({ init }) => {
+        if (init.method !== "POST") return empty();
+        const body = JSON.parse(String(init.body)) as { date: string };
+        if (body.date === "2026-10-10" && first) {
+          first = false;
+          return new Response(null, { status: 503 });
+        }
+        return json({ ...manual, id: body.date === "2026-10-10" ? NEW_ID : SLOT_ID }, 201)();
+      },
+    });
+    renderApp();
+    await userEvent.click(await cell("10/10（土） 夜"));
+    expect(await screen.findByText(/通信状態を確認して/)).toBeVisible();
+    await userEvent.click(cellNow("10/12（月） 夜"));
+    await waitFor(() => expect(sent(calls, "POST", "/api/v1/availabilities")).toHaveLength(2));
+    await waitFor(() => expect(cellNow("10/10（土） 夜")).toHaveAttribute("aria-pressed", "false"));
+    await userEvent.click(cellNow("10/10（土） 夜"));
+    await waitFor(() => expect(sent(calls, "POST", "/api/v1/availabilities")).toHaveLength(3));
+    const keyOf = (i: number) => new Headers(sent(calls, "POST", "/api/v1/availabilities")[i]?.init.headers).get("Idempotency-Key");
+    expect(keyOf(2)).toBe(keyOf(0));
+    expect(keyOf(1)).not.toBe(keyOf(0));
+  });
+
+  it("終わりが過ぎた枠を取り消したときは、作り直せないので「取り消す」を出さない", async () => {
+    // 東京の 16:30。今日の昼（11:00〜15:00）は終わっている
+    vi.setSystemTime(new Date("2026-10-10T07:30:00Z"));
+    const ended = { ...manual, label: "day", startsAt: "2026-10-10T02:00:00.000Z", endsAt: "2026-10-10T06:00:00.000Z" };
+    tab({
+      "/api/v1/availabilities": json({ items: [ended], nextCursor: null }),
+      [`/api/v1/availabilities/${SLOT_ID}`]: () => new Response(null, { status: 204 }),
+    });
+    renderApp();
+    const day = await cell("10/10（土） 昼");
+    await waitFor(() => expect(day).toHaveAttribute("aria-pressed", "true"));
+    await userEvent.click(day);
+    const message = await screen.findByText("10/10（土） 昼のここ暇を取り消しました");
+    expect(within(message.parentElement as HTMLElement).queryByRole("button", { name: "取り消す" })).toBeNull();
+  });
+
+  it("「取り消す」は続けて押しても1回だけ送る。戻したら、押したマスにフォーカスを戻す", async () => {
+    let answer: (r: Response) => void = () => {};
+    const { calls } = tab({
+      "/api/v1/availabilities": ({ init }) => (init.method === "POST" ? json(createdNight, 201)() : empty()),
+      [`/api/v1/availabilities/${NEW_ID}`]: () => new Promise<Response>((resolve) => (answer = resolve)),
+    });
+    renderApp();
+    await userEvent.click(await cell("10/10（土） 夜"));
+    const undo = await undoOf("10/10（土） 夜をここ暇にしました");
+    await userEvent.click(undo);
+    await userEvent.click(undo);
+    await waitFor(() => expect(sent(calls, "DELETE", `/api/v1/availabilities/${NEW_ID}`)).toHaveLength(1));
+    expect(undo).toHaveAttribute("aria-disabled", "true");
+    answer(new Response(null, { status: 204 }));
+    expect(await screen.findByText("元に戻しました")).toBeVisible();
+    expect(sent(calls, "DELETE", `/api/v1/availabilities/${NEW_ID}`)).toHaveLength(1);
+    expect(cellNow("10/10（土） 夜")).toHaveFocus();
+  });
 });
 
 describe("1行のリンク", () => {
@@ -241,6 +397,7 @@ describe("1行のリンク", () => {
     const custom = { ...manual, id: NEW_ID, label: null, startsAt: "2026-10-10T13:00:00.000Z", endsAt: "2026-10-10T17:00:00.000Z" };
     const { calls } = tab({
       "/api/v1/availabilities": ({ init }) => (init.method === "POST" ? json(custom, 201)() : empty()),
+      [`/api/v1/availabilities/${NEW_ID}`]: () => new Response(null, { status: 204 }),
     });
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: /^時間を細かく決めて入れる/ }));
@@ -256,7 +413,9 @@ describe("1行のリンク", () => {
       endsAt: "2026-10-10T17:00:00.000Z",
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await undoOf("10/10（土） 22:00〜10/11（日） 02:00を入れました")).toBeVisible();
+    await userEvent.click(await undoOf("10/10（土） 22:00〜10/11（日） 02:00を入れました"));
+    await waitFor(() => expect(sent(calls, "DELETE", `/api/v1/availabilities/${NEW_ID}`)).toHaveLength(1));
+    expect(await screen.findByText("元に戻しました")).toBeVisible();
   });
 
   it("「時間を細かく決めて入れる」で作れなければ、シートに静かな文言", async () => {

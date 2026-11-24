@@ -1,8 +1,8 @@
 import { DEFAULT_PRESETS, myAvailabilitySchema, type MyAvailability, type PresetName, type Presets } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, apiSend } from "../api/client";
-import { signatureOf, useIdempotencyKey } from "../api/idempotency";
+import { signatureOf, useIdempotencyKeys } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { connectionsQuery, freeSlotsQuery } from "../calendar/queries";
 import { BottomSheet } from "../ui/BottomSheet";
@@ -23,6 +23,7 @@ import {
   cellText,
   draftItem,
   freeCells,
+  hasEnded,
   isPast,
   itemKey,
   itemsByCell,
@@ -53,10 +54,14 @@ const FAILED_TEXT = "変更できませんでした。もう一度お試しく�
 
 const cellLabel = (cell: Cell) => `${formatDate(cell.date)} ${PRESET_LABELS[cell.preset]}`;
 
+/** マスの操作の useMutation の目印。送っている操作が残っている間は、読み直さない */
+const WEEK_CHANGE_KEY = ["availability", "week-change"] as const;
+
 function useWeekChanges(date: string, presets: Presets, showToast: (m: Omit<ToastMessage, "id">) => void) {
   const queryClient = useQueryClient();
   const mineKey = keys.availability.mine(date);
-  const idempotency = useIdempotencyKey();
+  // マスごと（送る内容ごと）のキー。続けて別のマスを押しても、5xx のあとの送り直しは同じキー（T-10）
+  const idempotency = useIdempotencyKeys();
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [lastCreated, setLastCreated] = useState<string | null>(null);
   const mark = (cell: Cell, on: boolean) =>
@@ -67,12 +72,21 @@ function useWeekChanges(date: string, presets: Presets, showToast: (m: Omit<Toas
       return next;
     });
 
-  const post = (body: unknown) => {
+  const post = async (body: unknown) => {
     const path = "/api/v1/availabilities";
-    return apiSend("POST", path, body, myAvailabilitySchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, body)) });
+    const signature = signatureOf(path, body);
+    try {
+      const created = await apiSend("POST", path, body, myAvailabilitySchema, { idempotencyKey: idempotency.keyFor(signature) });
+      idempotency.settle(signature, null);
+      return created;
+    } catch (error) {
+      idempotency.settle(signature, error);
+      throw error;
+    }
   };
 
   const change = useMutation({
+    mutationKey: WEEK_CHANGE_KEY,
     mutationFn: async (c: Change): Promise<MyAvailability | undefined> => {
       switch (c.kind) {
         case "create":
@@ -90,23 +104,39 @@ function useWeekChanges(date: string, presets: Presets, showToast: (m: Omit<Toas
           return undefined;
       }
     },
-    // 楽観的更新（data-fetching スキル）：押したらすぐ変え、失敗したら戻す
+    // 楽観的更新（data-fetching スキル）：押したらすぐ変え、失敗したらその操作の分だけ戻す。
+    // 一覧ごとのスナップショットに戻すと、続けて押したほかのマスの変更や、応答で置き換えた本物の枠まで巻き戻るため
     onMutate: async (c) => {
       mark(c.cell, true);
       await queryClient.cancelQueries({ queryKey: mineKey });
-      const previous = queryClient.getQueryData<MyList>(mineKey);
       const added = c.kind === "create" ? draftItem(presets, c.cell) : c.kind === "restore" || c.kind === "unexcept" ? c.item : null;
+      const removed = c.kind === "cancel" || c.kind === "except" ? c.item : null;
+      let index = -1;
       queryClient.setQueryData<MyList>(mineKey, (list) => {
         if (!list) return list;
         if (added) return { ...list, items: [...list.items, added] };
-        if (c.kind === "create") return list;
-        return { ...list, items: list.items.filter((i) => itemKey(i) !== itemKey(c.item)) };
+        if (!removed) return list;
+        index = list.items.findIndex((i) => itemKey(i) === itemKey(removed));
+        return { ...list, items: list.items.filter((i) => itemKey(i) !== itemKey(removed)) };
       });
       setLastCreated(c.kind === "create" ? cellKey(c.cell.date, c.cell.preset) : null);
-      return { previous, added };
+      return { added, removed, index };
     },
     onError: (error, c, context) => {
-      if (context?.previous) queryClient.setQueryData(mineKey, context.previous);
+      if (context) {
+        queryClient.setQueryData<MyList>(mineKey, (list) => {
+          if (!list) return list;
+          if (context.added) {
+            const key = itemKey(context.added);
+            return { ...list, items: list.items.filter((i) => itemKey(i) !== key) };
+          }
+          const back = context.removed;
+          if (!back || list.items.some((i) => itemKey(i) === itemKey(back))) return list;
+          const items = [...list.items];
+          items.splice(context.index < 0 ? items.length : Math.min(context.index, items.length), 0, back);
+          return { ...list, items };
+        });
+      }
       showToast({ text: c.kind === "create" || c.kind === "restore" ? createErrorText(error) : FAILED_TEXT });
     },
     onSuccess: (result, c, context) => {
@@ -122,6 +152,8 @@ function useWeekChanges(date: string, presets: Presets, showToast: (m: Omit<Toas
           return;
         case "cancel":
           if (c.undo) showToast({ text: "元に戻しました" });
+          // 終わりが過ぎた枠は作り直せない（T-03 で400）ので、「取り消す」を出さない
+          else if (hasEnded(c.item)) showToast({ text: `${label}のここ暇を取り消しました` });
           else showToast({ text: `${label}のここ暇を取り消しました`, undo: () => change.mutate({ kind: "restore", cell: c.cell, item: c.item }) });
           return;
         case "except":
@@ -133,10 +165,10 @@ function useWeekChanges(date: string, presets: Presets, showToast: (m: Omit<Toas
           return;
       }
     },
-    onSettled: (_data, error, c) => {
-      if (c.kind === "create" || c.kind === "restore") idempotency.settle(error);
+    onSettled: (_data, _error, c) => {
       mark(c.cell, false);
-      void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
+      // 読み直しは、送っている操作がこれだけのとき（ほかのマスの変更より前の一覧で、楽観的更新を上書きしないように）
+      if (queryClient.isMutating({ mutationKey: WEEK_CHANGE_KEY }) <= 1) void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
     },
   });
 
@@ -173,7 +205,7 @@ const CELL_LOOK: Record<CellState["kind"], string> = {
   many: "border-lamp-line bg-lamp-soft font-bold text-ink",
 };
 
-function CellButton({
+const CellButton = memo(function CellButton({
   cell,
   state,
   presets,
@@ -188,7 +220,7 @@ function CellButton({
   busy: boolean;
   ready: boolean;
   pop: boolean;
-  onPress: () => void;
+  onPress: (cell: Cell, state: CellState) => void;
 }) {
   const online = useOnline();
   const recurring =
@@ -204,7 +236,7 @@ function CellButton({
       aria-disabled={busy || undefined}
       disabled={disabled}
       onClick={() => {
-        if (!busy) onPress();
+        if (!busy) onPress(cell, state);
       }}
       className={`relative grid h-12 w-full place-items-center rounded-m border text-xs tabular-nums ${CELL_LOOK[state.kind]} ${
         recurring ? "border-dashed" : ""
@@ -214,10 +246,24 @@ function CellButton({
       {state.kind === "empty" && state.free && <span aria-hidden="true" className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-meet" />}
     </button>
   );
-}
+});
 
 /** マスに2つ以上のここ暇があるとき、1つずつ選んで取り消す・外すシート */
-function CellSheet({ cell, items, onChange, onClose }: { cell: Cell; items: MyAvailability[]; onChange: (c: Change) => void; onClose: () => void }) {
+function CellSheet({
+  cell,
+  items,
+  toast,
+  onToastDone,
+  onChange,
+  onClose,
+}: {
+  cell: Cell;
+  items: MyAvailability[];
+  toast: ToastMessage | null;
+  onToastDone: () => void;
+  onChange: (c: Change) => void;
+  onClose: () => void;
+}) {
   return (
     <BottomSheet title={cellLabel(cell)} label={cellLabel(cell)} onClose={onClose}>
       <ul aria-label="このマスのここ暇" className="rounded-l border border-line px-4">
@@ -237,14 +283,15 @@ function CellSheet({ cell, items, onChange, onClose }: { cell: Cell; items: MyAv
           </li>
         ))}
       </ul>
+      {/* 結果の一文と「取り消す」はシートの中に出す（後ろの画面は inert なので、下の一文は押せず読み上げにも届かない） */}
+      <UndoToast inline message={toast} onDone={onToastDone} />
     </BottomSheet>
   );
 }
 
-function WeekGrid({
+const WeekGrid = memo(function WeekGrid({
   dates,
   today,
-  now,
   presets,
   cells,
   free,
@@ -255,7 +302,6 @@ function WeekGrid({
 }: {
   dates: string[];
   today: string;
-  now: number;
   presets: Presets;
   cells: Map<string, MyAvailability[]>;
   free: Set<string>;
@@ -264,6 +310,19 @@ function WeekGrid({
   lastCreated: string | null;
   onPress: (cell: Cell, state: CellState) => void;
 }) {
+  // 時計は表の中だけで進める（1分ごとに画面全体を描き直さない）。マスの状態は、変わったときだけ作り直す
+  const now = useNow();
+  const rows = useMemo(
+    () =>
+      PRESET_NAMES.map((preset) =>
+        dates.map((date) => {
+          const cell: Cell = { date, preset };
+          const key = cellKey(date, preset);
+          return { key, cell, state: cellState(cells.get(key), free.has(key), isPast(presets, cell, now)) };
+        }),
+      ),
+    [dates, cells, free, presets, now],
+  );
   return (
     // マスの間は4px。表の外側の隙間を負の余白で打ち消して、左右の端を中身の幅にそろえる
     <table className="-mx-1 w-[calc(100%+0.5rem)] table-fixed border-separate border-spacing-1">
@@ -296,7 +355,7 @@ function WeekGrid({
         </tr>
       </thead>
       <tbody>
-        {PRESET_NAMES.map((preset: PresetName) => (
+        {PRESET_NAMES.map((preset: PresetName, row) => (
           <tr key={preset}>
             <th scope="row" className="text-left text-xxs font-normal text-ink-muted">
               <span className="block text-s font-bold text-ink">{PRESET_LABELS[preset]}</span>
@@ -307,30 +366,25 @@ function WeekGrid({
                 {presets[preset].start}〜{presets[preset].end}
               </span>
             </th>
-            {dates.map((date) => {
-              const cell = { date, preset };
-              const key = cellKey(date, preset);
-              const state = cellState(cells.get(key), free.has(key), isPast(presets, cell, now));
-              return (
-                <td key={key} className="p-0">
-                  <CellButton
-                    cell={cell}
-                    state={state}
-                    presets={presets}
-                    busy={pending.has(key)}
-                    ready={ready}
-                    pop={lastCreated === key}
-                    onPress={() => onPress(cell, state)}
-                  />
-                </td>
-              );
-            })}
+            {rows[row]?.map(({ key, cell, state }) => (
+              <td key={key} className="p-0">
+                <CellButton
+                  cell={cell}
+                  state={state}
+                  presets={presets}
+                  busy={pending.has(key)}
+                  ready={ready}
+                  pop={lastCreated === key}
+                  onPress={onPress}
+                />
+              </td>
+            ))}
           </tr>
         ))}
       </tbody>
     </table>
   );
-}
+});
 
 /** 1行のリンク（押すとシートを開く） */
 function RowLink({ children, aside, onClick }: { children: ReactNode; aside: string; onClick: () => void }) {
@@ -355,10 +409,11 @@ function useCalendarFree(date: string) {
   const unavailable = slots.data?.status === "unavailable";
   // 回数の上限（429。T-10）は、点を出さずに静かに待ってもらう（取り直さない。freeSlotsQuery の retry）
   const rateLimited = slots.error instanceof ApiError && slots.error.status === 429;
+  const free = useMemo(() => freeCells(slots.data?.status === "ok" ? slots.data.items : []), [slots.data]);
   return {
     rateLimited,
     connected: status === "connected" && !reauth,
-    free: freeCells(slots.data?.status === "ok" ? slots.data.items : []),
+    free,
     reauth,
     unavailable,
   };
@@ -379,7 +434,6 @@ type Open = { kind: "time" } | { kind: "rule" } | { kind: "cell"; cell: Cell } |
 export function WeekPlanner() {
   // 日付は開いたときに決める（日をまたいで開いたままでも、読み込みのキーがずれないように）
   const [today] = useState(todayOf);
-  const now = useNow();
   const [week, setWeek] = useState(0);
   const [open, setOpen] = useState<Open>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -387,24 +441,36 @@ export function WeekPlanner() {
   const showToast = useCallback((m: Omit<ToastMessage, "id">) => setToast({ ...m, id: ++toastId.current }), []);
   const hideToast = useCallback(() => setToast(null), []);
 
-  const presetsData = useQuery(presetsQuery()).data;
-  const presets = presetsData ?? DEFAULT_PRESETS;
+  // プリセットが読めるまではマスを押せない（時刻・過ぎた時間帯・どのマスに入るかが、プリセットで決まるため）
+  const presetsResult = useQuery(presetsQuery());
+  const presets = presetsResult.data ?? DEFAULT_PRESETS;
   const mine = useQuery(mineQuery(today));
   const rules = useQuery(rulesQuery());
   const calendar = useCalendarFree(today);
   const { change, pending, lastCreated } = useWeekChanges(today, presets, showToast);
 
-  const dates = weekDates(today, week);
-  const cells = itemsByCell(mine.data?.items ?? [], presets, today);
+  const dates = useMemo(() => weekDates(today, week), [today, week]);
+  const mineItems = mine.data?.items;
+  const cells = useMemo(() => itemsByCell(mineItems ?? [], presets, today), [mineItems, presets, today]);
   const ruleItems = rules.data?.items ?? [];
+  const ready = mine.isSuccess && presetsResult.isSuccess;
 
-  const press = (cell: Cell, state: CellState) => {
-    if (state.kind === "empty") change.mutate({ kind: "create", cell });
-    else if (state.kind === "one") change.mutate(state.item.source === "manual" ? { kind: "cancel", cell, item: state.item } : { kind: "except", cell, item: state.item });
-    else if (state.kind === "many") setOpen({ kind: "cell", cell });
-  };
+  const { mutate } = change;
+  const press = useCallback(
+    (cell: Cell, state: CellState) => {
+      if (state.kind === "empty") mutate({ kind: "create", cell });
+      else if (state.kind === "one") mutate(state.item.source === "manual" ? { kind: "cancel", cell, item: state.item } : { kind: "except", cell, item: state.item });
+      else if (state.kind === "many") setOpen({ kind: "cell", cell });
+    },
+    [mutate],
+  );
   const openCell = open?.kind === "cell" ? open.cell : null;
   const openCellItems = openCell ? cells.get(cellKey(openCell.date, openCell.preset)) ?? [] : [];
+  const cellSheetShown = openCell !== null && openCellItems.length > 0;
+  // シートの枠を全部取り消したら閉じる（開いたままにすると、そのマスに枠が戻ったときに勝手に開き直る）。
+  // 描画の中で状態を直す（React の「props の変化に合わせて状態を調整する」書き方。effect にすると1回余計に描く）
+  if (openCell !== null && openCellItems.length === 0) setOpen(null);
+  const loadFailed = mine.isError || presetsResult.isError;
 
   return (
     <section aria-labelledby="week-title" className="flex flex-col gap-2">
@@ -413,23 +479,34 @@ export function WeekPlanner() {
           <span className="sr-only">自分のここ暇</span> {weekRangeText(dates)}
         </h2>
         <div className="flex">
-          <Button variant="ghost" aria-label="前の7日" disabled={week === 0} onClick={() => setWeek((w) => w - 1)}>
+          {/* 端の週では aria-disabled（disabled にすると、押した直後にフォーカスが body に落ちる） */}
+          <Button variant="ghost" aria-label="前の7日" aria-disabled={week === 0 || undefined} onClick={() => setWeek((w) => Math.max(0, w - 1))}>
             ‹
           </Button>
-          <Button variant="ghost" disabled={week === WEEK_COUNT - 1} onClick={() => setWeek((w) => w + 1)}>
+          <Button
+            variant="ghost"
+            aria-disabled={week === WEEK_COUNT - 1 || undefined}
+            onClick={() => setWeek((w) => Math.min(WEEK_COUNT - 1, w + 1))}
+          >
             次の7日 ›
           </Button>
         </div>
       </div>
-      {mine.isError && <LoadError retry={() => void mine.refetch()} />}
+      {loadFailed && (
+        <LoadError
+          retry={() => {
+            if (mine.isError) void mine.refetch();
+            if (presetsResult.isError) void presetsResult.refetch();
+          }}
+        />
+      )}
       <WeekGrid
         dates={dates}
         today={today}
-        now={now}
         presets={presets}
         cells={cells}
         free={calendar.free}
-        ready={mine.isSuccess}
+        ready={ready}
         pending={pending}
         lastCreated={lastCreated}
         onPress={press}
@@ -467,15 +544,17 @@ export function WeekPlanner() {
         />
       )}
       {open?.kind === "rule" && <RecurrenceSheet onClose={() => setOpen(null)} />}
-      {openCell && openCellItems.length > 0 && (
+      {openCell && cellSheetShown && (
         <CellSheet
           cell={openCell}
           items={openCellItems}
-          onChange={(c) => change.mutate(c)}
+          toast={toast}
+          onToastDone={hideToast}
+          onChange={mutate}
           onClose={() => setOpen(null)}
         />
       )}
-      <UndoToast message={toast} onDone={hideToast} />
+      <UndoToast message={cellSheetShown ? null : toast} onDone={hideToast} />
     </section>
   );
 }

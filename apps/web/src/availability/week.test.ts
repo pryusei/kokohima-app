@@ -1,6 +1,6 @@
 import { DEFAULT_PRESETS, type MyAvailability } from "@kokohima/shared";
 import { describe, expect, it } from "vitest";
-import { cellName, cellOf, cellState, cellText, isPast, itemsByCell, restoreBody, weekDates, weekRangeText } from "./week";
+import { cellName, cellOf, cellState, cellText, hasEnded, isPast, itemsByCell, restoreBody, weekDates, weekRangeText } from "./week";
 
 // 週の帯の計算（docs/specs/T-55-availability-week-grid.md「振る舞い」）。東京（+09:00）
 
@@ -81,6 +81,12 @@ describe("過ぎた時間帯", () => {
     const presets = { ...DEFAULT_PRESETS, night: { start: "20:00", end: "24:00" } };
     expect(isPast(presets, { date: TODAY, preset: "night" }, Date.parse("2026-10-10T14:59:00Z"))).toBe(false);
     expect(isPast(presets, { date: TODAY, preset: "night" }, Date.parse("2026-10-10T15:00:00Z"))).toBe(true);
+  });
+
+  it("枠の終わりが今以前なら終わった（作り直せない）", () => {
+    const ended = item({ endsAt: "2026-10-10T14:00:00.000Z" });
+    expect(hasEnded(ended, Date.parse("2026-10-10T14:00:00Z"))).toBe(true);
+    expect(hasEnded(ended, Date.parse("2026-10-10T13:59:00Z"))).toBe(false);
   });
 });
 

@@ -76,6 +76,9 @@ export const freeCells = (slots: FreeSlot[]) => new Set(slots.map((s) => cellKey
 /** 時間帯の終わりが過ぎたマス（作っても400になる。T-03「終了が現在より前の枠は作れない」） */
 export const isPast = (presets: Presets, cell: Cell, now: number) => presetRange(presets, cell.date, cell.preset).end <= now;
 
+/** 枠の終わりが過ぎた（作り直すと400になる。取り消したあとに「取り消す」を出さない） */
+export const hasEnded = (item: Pick<MyAvailability, "endsAt">, now = Date.now()) => Date.parse(item.endsAt) <= now;
+
 /** 枠の時刻だけ（「20:30〜23:30」） */
 export const itemTime = (item: Pick<MyAvailability, "startsAt" | "endsAt">) => formatSlot({ ...item, label: null });
 
