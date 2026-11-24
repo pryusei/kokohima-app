@@ -1,11 +1,11 @@
 # T-44 仕様書：ログインなしで読める紹介のページ
 
-- 状態：下書き（仕様書PR）
+- 状態：実装済み（実装PR。仕様書PR pryusei/kokohima-app#219。マージ前なので、台帳 docs/tasks/REGISTRY.md では「作業中」）
 - タスク票：docs/tasks/T-44-landing.md
 - 関係する要件：要求定義書「残りの論点」（Google の審査）、T-12 人が行う作業3（同意画面のブランディング）、T-19 決めたこと10（ホームページは審査のときに見直す）・決めたこと17（本格稼働までは予告なしで改定）。issue pryusei/kokohima-app#192・#199（親 #178）
 
 ## 概要
-Google の OAuth の審査（#199）では、同意画面の「アプリのホームページ」が、ログインなしで読めて、アプリの働きの説明とプライバシー ポリシーへのリンクを持ち、アプリ名が同意画面と同じであることが求められる。今の `https://kokohima.app/` は未ログインだと `/login` へ移り、HTML は空の `<div id="root">` だけなので、この要件を満たさない。そこで、審査に足りる最小の紹介のページを、JavaScript を使わない静的な HTML として作り、未ログインで `/` を開いた人に出す。ログインしている人には、今までどおりアプリ（みんな）を出す。あわせて、プライバシー ポリシーの「11. Google から受け取った情報の扱い」に、審査をする人が読める英語の段落を足す（T-19 の改定。予告なし）。
+Google の OAuth の審査（#199。使うスコープはすべて機微でないので、受けるのはブランドの確認だけ）では、同意画面の「アプリのホームページ」が、ログインなしで読めて、アプリの働きの説明とプライバシー ポリシーへのリンクを持ち、アプリ名が同意画面と同じであることが求められる。今の `https://kokohima.app/` は未ログインだと `/login` へ移り、HTML は空の `<div id="root">` だけなので、この要件を満たさない。そこで、審査に足りる最小の紹介のページを、JavaScript を使わない静的な HTML として作り、未ログインで `/` を開いた人に出す。ログインしている人には、今までどおりアプリ（みんな）を出す。あわせて、プライバシー ポリシーの「11. Google から受け取った情報の扱い」に、審査をする人が読める英語の段落を足す（T-19 の改定。予告なし）。
 
 ## 決めたこと
 1. **範囲は審査に足りる最小**：見出し・短い説明・3つの約束・ログインへの入口・プライバシー ポリシーと利用規約へのリンクだけにする。#192 のほかの案（動く見本、安全とよくある質問の節、「LINE で始める」を主ボタンにすること、`?src=` の数え方、インスタ向けの見せ方）はスコープ外（あとで）。
@@ -20,8 +20,9 @@ Google の OAuth の審査（#199）では、同意画面の「アプリのホ�
 
 ## 前提
 - 審査の要件（2026-11-24 に Google の公式の資料で確かめた。#199 の準備の資料）：
+  - 同意画面に登録したスコープ（`openid`・`userinfo.email`・`userinfo.profile`・`calendar.app.created`・`calendar.freebusy`）は、Google Cloud Console の表示ですべて「機微でない」（2026-11-24 に持ち主が確かめた）。アプリが要求するのは `openid email` と、カレンダーの2つだけ（`userinfo.profile` は要求しないので、同意画面の「データアクセス」から外す。T-12 人が行う作業3）。機微なスコープの確認（動画など）は要らず、ユーザー数の上限も当たらない。受けるのはブランドの確認だけ。
   - ブランドの確認：ホームページがログインなしで読める、アプリの働きを説明している、プライバシー ポリシーへのリンクがある、アプリ名が同意画面と同じ、ホームページ・ポリシー・リダイレクト URI のドメインが承認済みのドメイン（Search Console で確認済み）である。
-  - 機微なスコープの確認：ポリシーが Google のユーザーデータの扱い（何を読み、何に使い、誰に渡すか）を開示している。言語の指定は見つからなかったが、審査をする人は英語で読むことが多い。
+  - 機微なスコープの確認（機微なスコープを足すときに要る。今は要らない）：ポリシーが Google のユーザーデータの扱い（何を読み、何に使い、誰に渡すか）を開示している。言語の指定は見つからなかったが、審査をする人は英語で読むことが多い。英語の段落（「7.」）は、ブランドの確認でもポリシーの中身を読みやすくするために置く。
 - `run_worker_first: true`（T-12）なので、`/` の要求は Worker のコードを通る。`__Host-kh_rt` は `Path=/`・`SameSite=Strict`・`HttpOnly`（`apps/api/src/identity/cookies.ts`）なので、同じサイトの移動・アドレスの直接の入力・再読み込み・ホーム画面からの起動では `/` に届き、ほかのサイトのリンクから来たときは届かない。
 - Service Worker（`apps/web/public/sw.js`）は `fetch` を扱わず、キャッシュもしないので、振り分けに影響しない。
 
@@ -38,7 +39,7 @@ Google の OAuth の審査（#199）では、同意画面の「アプリのホ�
 - `routeRequest` の画面の側（`ASSETS` があり、`GET`・`HEAD`）で、`URL.pathname === "/"` のときだけ、次のとおりにする。ほかのパス（`/login`・`/invite`・`/invites/…`・`/privacy` など）は今までどおり。
   - 要求の `Cookie` ヘッダーに名前が `__Host-kh_rt` で値が空でない Cookie がある：今までどおり `ASSETS.fetch(request)`（SPA の `index.html`）。
   - ない：`ASSETS.fetch` に、同じ要求のパスを `/landing` に変えたもの（メソッドとヘッダーはそのまま）を渡し、その応答を返す（`html_handling` の既定で `/landing.html` は `/landing` にリダイレクトされるため、`/landing` で取る）。
-  - どちらの応答にも `Vary: Cookie` を足す（同じ URL で Cookie によって中身が変わるため）。セキュリティのヘッダーと `Cache-Control: no-cache` は、今の `withPageHeaders` のまま（HTML なので no-cache）。
+  - どちらの応答にも `Vary` に `Cookie` を追加する（同じ URL で Cookie によって中身が変わるため）。`headers.append` で足し、`ASSETS` の応答のもとの `Vary`（`Accept-Encoding` など）は残す。セキュリティのヘッダーと `Cache-Control: no-cache` は、今の `withPageHeaders` のまま（HTML なので no-cache）。
 - Cookie の名前は `apps/api/src/identity/cookies.ts` から `REFRESH_COOKIE_NAME`（`__Host-kh_rt`）として出し、Worker はそれを使う（名前を2か所に書かない）。Cookie の値は読まず、ログにも出さない。
 - `/landing` を直接開いても紹介のページが出る（ログインの状態によらない。害がないので塞がない）。リンクや同意画面には `/landing` を書かず、いつも `https://kokohima.app/` を使う。
 - `ASSETS` がない環境（ローカルの開発・E2E の `--env e2e`・単体テスト）は今までどおり。vite の開発のサーバーでは `/landing.html` で紹介のページを見られる。
@@ -118,12 +119,12 @@ Google の OAuth の審査（#199）では、同意画面の「アプリのホ�
 - 約束の文は、事実と合わせる：位置情報は取らない（`Permissions-Policy: geolocation=()`。エリアは利用者が書く文字）、カレンダーは空き／埋まりだけ（T-06）、広告・解析なし（T-19 本文の10.）。どれかが変わったら、同じ PR でこのページも直す（「9.」）。
 
 ### 5. ビルドとビルドの検査
-- `apps/web/vite.config.ts`：`build.rollupOptions.input` に `index.html` と `landing.html` の2つを置く。`dist/landing.html` と、ハッシュ付きの CSS（`/assets/` の下。1年の immutable。T-49）ができる。
-- `apps/api/scripts/check-web-dist.mjs` に足す：
+- `apps/web/vite.config.ts`：`build.rollupOptions.input` に `index.html` と `landing.html` の2つを置く。`dist/landing.html` と、ハッシュ付きの CSS（`/assets/` の下。1年の immutable。T-49）ができる。`landing.css` は `index.css` を読むだけなので、ビルドでは SPA と同じ CSS のファイルを指す。
+- `landing.html` の検査は `apps/api/scripts/lib/landing.mjs` の純粋な関数 `landingProblems(html: string | null): string[]`（`null` は `landing.html` がない）にし、`apps/api/scripts/check-web-dist.mjs` はファイルを読んで渡すだけにする（apps/api の Vitest は Workers のランタイムで動き、fs がないため）。確かめること：
   - `dist/landing.html` がある。
   - `landing.html` に `<script` が1つもない（`src` があっても止める）。インラインの `style` 要素・`style` 属性がない（`index.html` と同じ検査）。
   - `landing.html` に、`<title>ここ暇</title>`・`<h1` の中の「ここ暇」・`href="/privacy"`・`href="/terms"`・`href="/login"` がある。
-  - 外のオリジンを指す `src`・`href`（`http://`・`https://` で始まるもの）がない。ただし `mailto:` は許す。
+  - 外のオリジンを指す `src`・`href`（`http://`・`https://`・`//` で始まるもの）がない。ただし `mailto:` は許す。
 - 本番のビルド（`pnpm --filter api build:prod`）でこの検査が回る（今までどおり）。
 
 ### 6. Service Worker と PWA のインストール（T-25）
@@ -135,17 +136,18 @@ Google の OAuth の審査（#199）では、同意画面の「アプリのホ�
 
 > The Japanese text above is the authoritative version. This section summarizes how we handle Google user data.
 >
-> The use and transfer to any other app of information received from Google APIs by ここ暇 (Kokohima) will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
+> ここ暇 (Kokohima)'s use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
 >
-> - Sign-in: we receive only your Google account ID and email address (scopes `openid` and `email`).
+> - Sign-in: we receive only your Google account ID and email address (scopes openid and email). We use your email address only for notification emails (sent via our email provider), for important notices from us and replies to your inquiries (when you contact us, it is delivered to our support Slack as the reply address), and to verify your identity when you make a request about your personal information.
 > - Google Calendar (only if you connect it): we read only free/busy times (the start and end of busy periods) on your primary calendar. We never read event titles, locations, descriptions or attendees.
 > - We write only to a calendar named "ここ暇" that the app creates in your Google Calendar, and only to add, update and delete plans confirmed in the app. We never read, create or change events in any other calendar.
-> - We use this data only to provide these features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or machine learning models. Our staff read it only with your consent, for security purposes, or to comply with the law.
-> - You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). We then delete the stored token and free/busy data. You can also remove access in your Google Account.
+> - Calendar data (free/busy times and the permission to write to the "ここ暇" calendar) is used only to provide these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or machine learning models. Our staff read calendar data only with your consent, for security purposes, or to comply with the law.
+> - You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). When you disconnect, we delete the stored token and the stored free/busy data (a temporary cache expires within 5 minutes). We keep only the record that you connected and the ID of the "ここ暇" calendar until you delete your account, so that reconnecting uses the same calendar. The "ここ暇" calendar and the plans already written to it stay in your Google Calendar. You can also remove access in your Google Account.
 
-- 1文めは、Google の User Data Policy が示す限定使用の開示の文（"[App]'s use and transfer to any other app of information received from Google APIs will adhere to Google API Services User Data Policy, including the Limited Use requirements."）に、アプリ名を入れたもの。
+- 1文めは、Google の User Data Policy が示す限定使用の開示の文（"[App]'s use and transfer to any other app of information received from Google APIs will adhere to Google API Services User Data Policy, including the Limited Use requirements."）の形のまま、アプリ名を入れたもの（語順を変えない。公式の文で探しても見つかるように）。
+- 使い道と運営が読む場面（4つめ）は、日本語の 11. の2・3項めと同じく「カレンダーの情報」に絞る。メールアドレスの使い道（1つめ）は、日本語の 3. の終わりの段落（5.・8.・12.）と同じことを書く。解除で消えるもの・残るもの（5つめ）は、日本語の 8. と T-06 決定事項4 と同じことを書く。「5 minutes」は `RETENTION.freeBusyCacheMinutes` から出す。
 - 数行の中身は、日本語の 11. と本文の2.・3.の3と4（T-19 仕様書の6節）・T-06 と食い違わない範囲だけを書く。日本語の本文が正で、英語は同じことを書いた参考とする（上の文案の1行め）。
-- `apps/web/src/pages/legal.ts` の `REVISION_DATE_LINE` を「改定日（効力が生じる日）：<この実装PRをマージしてデプロイする日>」にする。`REVISION_NOTICE_LINE`・`PRIVACY_REVISION_CHANGES`・`TERMS_REVISION_CHANGES` は `null` のまま（T-19 決めたこと17）。利用規約の本文は変えない。
+- `apps/web/src/pages/legal.ts` の `REVISION_DATE_LINE` を「改定日（効力が生じる日）：<この実装PRをマージしてデプロイする日>」にする（2026-11-24。T-33 の改定日と同じ日なので、値は「改定日（効力が生じる日）：2026年11月24日」のまま。デプロイの日がずれたら、`safetyStart.json` と一緒にずらす）。`REVISION_NOTICE_LINE`・`PRIVACY_REVISION_CHANGES`・`TERMS_REVISION_CHANGES` は `null` のまま（T-19 決めたこと17）。利用規約の本文は変えない。
 
 ### 8. 審査の要件との対応
 
@@ -162,7 +164,7 @@ Google の OAuth の審査（#199）では、同意画面の「アプリのホ�
 
 ### 9. 本文とページをそろえ続ける
 - 紹介のページの約束（場所・予定の中身・広告）と、プライバシー ポリシーの英語の段落は、プライバシー ポリシーの日本語の本文と同じことを言う。保存する情報・外に渡すもの・カレンダーで読むもの・書くものを変える PR では、この2つも同じ PR で直す（`.github/pull_request_template.md` の今の確認の項目に「紹介のページ（`apps/web/landing.html`）」を足す）。
-- 審査の途中は、同意画面のブランディング（アプリ名・ホームページの URL）を変えられない。紹介のページの URL（`/`）と見出しのアプリ名は、審査が通るまで変えない。
+- ブランドの確認の途中は、同意画面のブランディング（アプリ名・ホームページの URL）を変えられない。紹介のページの URL（`/`）と見出しのアプリ名は、確認が通るまで変えない。
 
 ## 認可と秘匿
 - 閲覧者IDの使い方：使わない（紹介のページは誰にでも同じ HTML。API を呼ばない）。
@@ -173,26 +175,29 @@ Google の OAuth の審査（#199）では、同意画面の「アプリのホ�
 ## テスト計画
 
 ### 単体テスト（実装PRで必須）
-- [ ] 振り分け（`apps/api/src/worker.test.ts`。`ASSETS` は偽物）：`GET /` で Cookie がないと、`ASSETS.fetch` に `/landing` の要求が渡り、その応答が返る。`HEAD /` も同じ
-- [ ] 振り分け：`Cookie: __Host-kh_rt=x` があると、`ASSETS.fetch` に元の `/` の要求が渡る。ほかの Cookie（`__Host-kh_oauth` だけ、`kh_rt`（接頭辞なし）、値が空の `__Host-kh_rt=`）は「ない」と同じ
-- [ ] 振り分け：`/?src=x`・`/?openExternalBrowser=1` も `/` と同じ。`/login`・`/invite`・`/invites/abc`・`/privacy`・`/landing` は Cookie によらず今までどおり `ASSETS.fetch(request)`
-- [ ] ヘッダー：`/` の応答は、Cookie の有無どちらでも `Vary: Cookie`・CSP・`Cache-Control: no-cache` を持つ。`POST /` は今までどおり405
-- [ ] `ASSETS` がない環境では、`/` は今までどおり Hono のアプリ
-- [ ] ビルドの検査（`apps/api/test/` の check-web-dist の検査、または関数に切り出してそのテスト）：`landing.html` がない・`<script` がある・`style` 属性がある・`/privacy` へのリンクがない・`<title>` が「ここ暇」でない・外のオリジンの `src` がある、のそれぞれで止まり、正しい `landing.html` で通る
-- [ ] プライバシー ポリシー（`apps/web/src/pages/legal.test.tsx`）：11. に `lang="en"` の節があり、限定使用の英文（"including the Limited Use requirements"）と、Google の User Data Policy へのリンクがある。改定日の行が新しい日付
-- [ ] 他人のIDでは取得できない：API を足さないので対象外（紹介のページは利用者のデータを持たない）
+- [x] 振り分け（`apps/api/src/worker.test.ts`。`ASSETS` は偽物）：`GET /` で Cookie がないと、`ASSETS.fetch` に `/landing` の要求が渡り、その応答が返る。`HEAD /` も同じ
+- [x] 振り分け：`Cookie: __Host-kh_rt=x` があると、`ASSETS.fetch` に元の `/` の要求が渡る。ほかの Cookie（`__Host-kh_oauth` だけ、`kh_rt`（接頭辞なし）、値が空の `__Host-kh_rt=`）は「ない」と同じ
+- [x] 振り分け：`/?src=x`・`/?openExternalBrowser=1` も `/` と同じ。`/login`・`/invite`・`/invites/abc`・`/privacy`・`/landing` は Cookie によらず今までどおり `ASSETS.fetch(request)`
+- [x] ヘッダー：`/` の応答は、Cookie の有無どちらでも `Vary` に `Cookie`・CSP・`Cache-Control: no-cache` を持つ。`ASSETS` が `Vary: Accept-Encoding` を返しても両方が残る。`POST /` は今までどおり405
+- [x] `ASSETS` がない環境では、`/` は今までどおり Hono のアプリ
+- [x] ビルドの検査（`apps/api/test/landing.test.ts`。`apps/api/scripts/lib/landing.mjs` の `landingProblems` を、`effective-date.test.ts` と同じ形で呼ぶ）：`landing.html` がない・`<script` がある・`style` 属性がある・`/privacy` へのリンクがない・`<title>` が「ここ暇」でない・外のオリジンの `src` がある、のそれぞれで止まり、正しい `landing.html` で通る
+- [x] プライバシー ポリシー（`apps/web/src/pages/legal.test.tsx`）：11. に `lang="en"` の節があり、限定使用の英文（公式の形のまま）と、Google の User Data Policy へのリンクがある。使い道はカレンダーの情報に絞り、解除で残るもの（5分の一時的な記録・「ここ暇」カレンダー）を書いている。改定日の行が新しい日付（今の値のまま）
+- [x] 紹介のページの色（`apps/web/src/ui/colors.test.ts`）：`landing.html` に Tailwind の既定の色がない
+- [x] 他人のIDでは取得できない：API を足さないので対象外（紹介のページは利用者のデータを持たない）
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 本番と同じ形（`e2e/release.spec.ts`。`--env assets`）：JavaScript を切って（`javaScriptEnabled: false`）`/` を開くと、見出し「ここ暇」、説明の3つの手順、3つの約束、「はじめる・ログイン」（`/login`）・「プライバシー ポリシー」（`/privacy`）・「利用規約」（`/terms`）のリンクが読める。CSP の違反がなく、ヘッダーが付く（今の表のテストに `/` を足す）
-- [ ] 本番と同じ形：JavaScript ありで `/` を開いても紹介のページで、「はじめる・ログイン」を押すとログインの画面（「Googleでログイン」）が出る
-- [ ] 本番と同じ形：`__Host-kh_rt` の Cookie（値は偽物）を置いて `/` を開くと、SPA の HTML が返り（`#root` がある）、Cookie が無効なのでログインの画面に移る（ログイン済みの人がアプリに入る道を、テスト用ログインなしで確かめる）
-- [ ] 今の E2E（vite と `--env e2e`）の `/` の流れ（ログイン後にみんなが出る、など）は、`ASSETS` がないので変わらない。直さない
+- [x] 本番と同じ形（`e2e/release.spec.ts`。`--env assets`）の表に `{ path: "/", rendered: 見出し「ここ暇」 }` を足す：JavaScript ありで、CSP の違反がなく、ヘッダーと `no-cache` が付く
+- [x] 本番と同じ形：`test.use({ javaScriptEnabled: false })` の別のテストで `/` を開くと、見出し「ここ暇」、説明の3つの手順、3つの約束、「はじめる・ログイン」（`/login`）・「プライバシー ポリシー」（`/privacy`）・「利用規約」（`/terms`）のリンクが読める（CSP はこちらでは見ない。違反を数える仕組みが JavaScript で動くため）
+- [x] 本番と同じ形：JavaScript ありで `/` を開いても紹介のページで、「はじめる・ログイン」を押すとログインの画面（「Googleでログイン」）が出る
+- [x] 本番と同じ形：`__Host-kh_rt` の Cookie（値は偽物。`http://localhost` には `__Host-` の Cookie を置けないので、要求のヘッダーで送る）で `/` を開くと、SPA の HTML が返り（`#root` がある。`Vary` に `Cookie`）、Cookie が無効なのでログインの画面に移る（ログイン済みの人がアプリに入る道を、テスト用ログインなしで確かめる）
+- [x] 本番と同じ形：紹介のページの `manifest` が SPA と同じ（`start_url`・`scope`・`id` が `/`）。ホーム画面に追加すると `/` が開く（決めたこと7）
+- [x] 今の E2E（vite と `--env e2e`）の `/` の流れ（ログイン後にみんなが出る、など）は、`ASSETS` がないので変わらない。直さない
 
 ## スコープ外
-- #192 のほかの案：動く見本（灯り → ここどう？ → 3つの返事）、安全（ブロック・通報）とよくある質問の節、「LINE で始める」を主ボタンにして「Google で始める」を下に置くこと、`?src=` の流入元の数え方、インスタ・TikTok 向けの見せ方（OGP の画像など）。審査が通ったあとに、別の仕様書で足す（審査の途中はブランディングを変えないため、ページの URL と名前は変えない形で）。
+- #192 のほかの案：動く見本（灯り → ここどう？ → 3つの返事）、安全（ブロック・通報）とよくある質問の節、「LINE で始める」を主ボタンにして「Google で始める」を下に置くこと、`?src=` の流入元の数え方、インスタ・TikTok 向けの見せ方（OGP の画像など）。ブランドの確認が通ったあとに、別の仕様書で足す（確認の途中はブランディングを変えないため、ページの URL と名前は変えない形で）。
 - `/privacy`・`/terms` を JavaScript なしの HTML にすること（今の SPA のページはログインなしで開ける。審査で差し戻されたら別のタスクにする）。
 - プライバシー ポリシー・利用規約の全体の英語版（T-19 決めたこと5のまま。11. の英語の段落だけが例外）。
-- Search Console でのドメインの確認と、その TXT の記録の PR（`infra-change` スキル）、同意画面のブランディングの入力、審査の申込み、審査用の動画（人の作業。#199）。
+- Search Console でのドメインの確認と、その TXT の記録の PR（`infra-change` スキル）、同意画面のブランディングの入力、ブランドの確認の申込み（人の作業。#199）。機微なスコープは使わないので、審査用の動画は要らない。
 - ログイン済みの人をほかのサイトのリンクからでもアプリに入れること（`SameSite` の変更や、別の Cookie を足すことはしない）。
 - Service Worker のキャッシュ（オフラインで開くこと）。
 
@@ -201,7 +206,8 @@ Google の OAuth の審査（#199）では、同意画面の「アプリのホ�
 - T-19（`docs/specs/T-19-privacy-terms.md`）：状態の行に、この改定の改定日（マージしてデプロイする日）を入れる。変更履歴に実装の1行。
 - T-12（`docs/specs/T-12-release.md`）：「振り分け」に、`/` を Cookie の有無で紹介のページと SPA に分けること（この仕様書の「1.」）と、`landing.html` のビルドの検査（「5.」）を足す。
 - T-11（`docs/specs/T-11-design.md`）：「画面のつながり」の表に、未ログインの `/` は紹介のページ（静的な HTML。T-44）であることを1行足す。
-- 要求定義書（`docs/requirements.md`）：「Googleの審査」の行の「JavaScript なしで読める版とホームページの扱いもそのときに見直す」を「ホームページは T-44」に。
+- T-12（`docs/specs/T-12-release.md`）：決定事項7・人が行う作業3・「本番にしたときの扱い」・スコープ外・確認事項（未解消）を「使うスコープはすべて機微でないので、ブランドの確認だけを受ける（T-44 のデプロイのあと）。確認を済ませるまでは、同意画面にアプリ名を出さない」に直す（確認されていないアプリの警告と、連携の累計100人の上限は当たらない）。
+- 要求定義書（`docs/requirements.md`）：リスクの表の「Googleのセンシティブスコープ審査」と、残りの論点の「Googleの審査（一般公開のとき…）」を、上の T-12 と同じ内容（機微でないスコープだけなので、ブランドの確認だけ。ホームページは T-44）に合わせる。
 - `.github/pull_request_template.md`：プライバシー ポリシーの確認の項目に「紹介のページ（`apps/web/landing.html`）」を足す（「9.」）。
 
 ## 確認事項（合意前に解消する）
@@ -211,3 +217,4 @@ Google の OAuth の審査（#199）では、同意画面の「アプリのホ�
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-24 | 作成 | Google の OAuth の審査（#199）にホームページが要るため。#192 のうち審査に足りる最小の範囲 |
+| 2026-11-24 | 実装：前提を「スコープはすべて機微でなく、ブランドの確認だけ」に直した。「7.」の英文を公式の形にし、使い道をカレンダーの情報に絞り、メールアドレスの使い道と解除で残るものを日本語の本文に合わせた。「1.」の `Vary` は追加（もとの値を残す）。「5.」の検査を `landingProblems` に切り出した。E2E を JavaScript ありと切ったものに分けた。「実装PRで直すもの」に T-12 と要求定義書の審査の記述を足した | 実装PR。仕様書PR #219 のレビュー、持ち主が Google Cloud Console で確かめたスコープの区分 |

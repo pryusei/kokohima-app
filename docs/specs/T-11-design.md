@@ -66,6 +66,7 @@
 
 ### 画面のつながり（決定事項3）
 - 下のタブは「みんな（`/`）・ここ暇（`/availability`）・誘い（`/invites`）・友達（`/friends`）」の4つ。今いるタブに `aria-current="page"`。
+- 未ログインで `/` を開くと、SPA ではなく紹介のページ（静的な HTML `apps/web/landing.html`。JavaScript なし）が出る。Worker がログインの Cookie の有無で分ける（T-44。docs/specs/T-44-landing.md）。
 - お知らせ（`/notifications`）はタブから外す。各タブのヘッダーの鐘のボタンから開く。未読があれば数を出す。
   - 0のときは数を出さない。`aria-label` は「お知らせ」。
   - 1〜98のときは数を出す。`aria-label` は「お知らせ N件の未読」。
@@ -247,3 +248,4 @@
 | 2026-11-24 | `Button` に variant `saved` と、共通の部品の保存のボタン（`SaveButton`・`useSaveState`）を足した | T-54（docs/specs/T-54-save-and-goodbye-copy.md） |
 | 2026-11-24 | スコープ外の「誘い・募集のカードを押したときの動き」を T-56（画面の動きと手触り）に移した。読み込み中の骨組みの形と動きは T-56 で決めると書いた。部品の一覧の `Toast`、シートを閉じる操作のつまみ、テスト計画のつまみの項目に、T-56（M-02・M-09）で変わることを書き添えた | T-56 の仕様書PR |
 | 2026-11-24 | ここ暇タブ（キャンバス5・8・9）を週の帯に作り直したことを注記した。共通の部品に下に数秒出す `UndoToast` と、`LinkCard` の `compact` を足した | T-55（docs/specs/T-55-availability-week-grid.md） |
+| 2026-11-24 | 「画面のつながり」に、未ログインの `/` は紹介のページであることを足した | T-44 実装PR（docs/specs/T-44-landing.md） |

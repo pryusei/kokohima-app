@@ -5,7 +5,7 @@
 - 関係する要件：要求定義書「残りの論点」（XSS対策・Content-Security-Policy）、「AI時代の攻撃を前提にした運用」（使わないルートは閉じる）、F-01（ログイン）。issue pryusei/kokohima-app#42（アプリの中で行う部分）、#52
 
 ## 概要
-- 最初のリリースは、友達だけに向けた Web アプリ（PWA）にする（Google の OAuth は審査を受けずに本番の公開ステータスにする。決定事項7）。アプリストアには出さない（利用者と決めた）。ホーム画面への追加の体験は docs/specs/T-25-installable-pwa.md で整える。
+- 最初のリリースは、友達だけに向けた Web アプリ（PWA）にする（Google の OAuth は本番の公開ステータスにする。使うスコープはすべて機微でないので、受けるのはブランドの確認だけ。決定事項7）。アプリストアには出さない（利用者と決めた）。ホーム画面への追加の体験は docs/specs/T-25-installable-pwa.md で整える。
 - 画面（`apps/web` のビルド）を、API と同じ Worker の静的アセットとして `https://kokohima.app` から出す。`/api` と画面が同じオリジンになるので、今の `__Host-` の Cookie と Origin の検査がそのまま使える。
 - ログインは Google だけにする。Sign in with Apple は設定で止め、コードは残す（Apple Developer Program を使わない。利用者と決めた）。
 - 画面と API の応答に、ブラウザ向けのセキュリティのヘッダー（CSP・HSTS など）を付ける。
@@ -68,6 +68,7 @@
   - `ASSETS` のバインディングがない（ローカル・E2E・単体テスト）：今までどおり Hono のアプリ（404 などは今と同じ）。
   - E2E のエントリ（`src/e2e/entry.ts`）の `/__e2e__/*` は、今までどおり E2E のアプリで受ける（`ASSETS` は E2E の環境にないので、振り分けは変わらない）。
 - 画面の経路（`/invites/xxx` など）は、`not_found_handling: single-page-application` で `index.html` が返る。
+- `GET`・`HEAD` の `/` だけは、更新用トークンの Cookie（`__Host-kh_rt`）の有無で分ける：あれば `index.html`（SPA）、なければ紹介のページ（`/landing` ＝ `landing.html`。JavaScript なし）。どちらも `Vary` に `Cookie` を追加する（docs/specs/T-44-landing.md「1.」）。
 - `run_worker_first: true` なので、画面のファイルの要求も Worker の呼び出しに数える（料金は確かめていないが、友達だけの規模では小さいとみて受け入れる。ヘッダーをコードで付けて、テストで確かめられることを優先する）。
 
 ### セキュリティのヘッダー
@@ -126,6 +127,7 @@
   - `apps/web/dist` に `Appleでログイン` と、Apple のボタンの目印 `data-provider="apple-login"` がないこと（本番のビルドで Apple のボタンが出ない。文言が変わっても目印で見つける。URL は実行時に組み立てるので、`auth/apple/start` の文字列では見つからない）。
   - `apps/web/dist` に `_headers`・`_redirects` がないこと（ヘッダーと振り分けはコードだけで決める）。
   - `apps/web/dist/index.html` にインラインの script・style（`style=` の属性を含む）がないこと。
+  - `apps/web/dist/landing.html` があり、script・インラインの style・外のオリジンのものがなく、題と見出しが「ここ暇」で、`/privacy`・`/terms`・`/login` へのリンクがあること（`apps/api/scripts/lib/landing.mjs`。docs/specs/T-44-landing.md「5.」）。
   - wrangler の設定：prod の `assets.run_worker_first` が `true`・`not_found_handling` が `single-page-application`・`binding` が `ASSETS`、トップレベルと prod の `workers_dev`・`preview_urls` が `false`、prod の `routes` が `kokohima.app`（`custom_domain`）だけ、prod の `APPLE_LOGIN_ENABLED` が `"0"` で `E2E_MODE` がない、トップレベルと prod の `main` が `src/index.ts`、どの環境も `workers_dev`・`preview_urls` を `true` にしない、prod 以外の環境とトップレベルに `routes` がない（設定が変わってヘッダーが付かなくなるのを CI で気づくため）。
 - `pnpm --filter api deploy:prod`（新しく足す）：`apps/web` をビルドし、CI と同じ検査（画面のビルド・wrangler の設定・`--dry-run` で作った API のビルドに E2E 用の経路がないこと。`apps/api/scripts/check-*.mjs`）を通してから `wrangler deploy --env prod`。手元の `.env.local` などが本番のビルドに入り込んでも、ここで止まる。人だけが実行する（Claude は実行しない）。
   - `deploy:prod` だけ、転記を忘れた値も検査する（`check-wrangler-config.mjs --deploy`）：prod の `vars.GOOGLE_CLIENT_ID`・`vars.VAPID_PUBLIC_KEY` が空、または prod の D1 の `database_id`・KV の `id` がすべて0の仮の値なら止まる。CI の `build:prod` は TODO のままの設定でビルドするので、この検査を付けない。
@@ -144,16 +146,16 @@
    - `kokohima.app` に既存の A・AAAA・CNAME の記録があれば消す（カスタムドメインを付けられないため）
    - メール転送で `ops@kokohima.app` を人のアドレスへ転送する（`VAPID_SUBJECT`）
 2. Terraform（infra/README.md の初回の手順を prod で）：状態ファイル用の R2 バケット `kokohima-tfstate` を作る → `infra/terraform/envs/prod` で `terraform init -backend-config=...` → `plan -var account_id=...` → `apply`（D1・KV・R2・Queues）。出力の D1・KV の ID を wrangler の prod に転記する PR を出す（Claude に頼んでよい）。
-3. Google Cloud：プロジェクトで Google Calendar API を有効にする。同意画面（ユーザーの種類は「外部」、公開ステータスは「本番」。審査は受けない。決定事項7）と、本番の OAuth クライアント（ウェブ アプリケーション）。
+3. Google Cloud：プロジェクトで Google Calendar API を有効にする。同意画面（ユーザーの種類は「外部」、公開ステータスは「本番」。使うスコープはすべて機微でないので、ブランドの確認だけを受ける（T-44 の紹介のページをデプロイしたあと。#199）。決定事項7）と、本番の OAuth クライアント（ウェブ アプリケーション）。
    - 承認済みのリダイレクト URI：`https://kokohima.app/api/v1/auth/google/callback` と `https://kokohima.app/api/v1/calendar/google/callback`
    - 同意画面のスコープ：`openid`・`email` と、カレンダーの `calendar.freebusy`・`calendar.app.created`（T-06 決定事項1）。`profile` は入れない（ログインの要求は `openid email` だけ。T-01。docs/specs/T-19-privacy-terms.md 決めたこと8）。すでに入れていれば、同意画面の「データアクセス」で `profile` を消す。
    - 同意画面の「ブランディング」：アプリのホームページ `https://kokohima.app`、プライバシー ポリシー `https://kokohima.app/privacy`、利用規約 `https://kokohima.app/terms`、承認済みのドメイン `kokohima.app`、サポートのメール `ops@kokohima.app`。ロゴは入れない（決定事項7）。
    - クライアント ID を wrangler に転記。
    - プライバシー ポリシーと利用規約（T-19）をデプロイしてから（制定日を決めないと `deploy:prod` が止まる）、同意画面の「対象」で「アプリを公開」を押し、公開ステータスを「本番」にする（テストユーザーの登録は要らない）。押したときの画面の説明（審査の要否・人数の上限）を確かめ、下の「本番にしたときの扱い」と違えば、この仕様書を直す。
-   - 本番にしたときの扱い（決定事項7。公式の資料はこの作業環境から読めなかったため、公開の画面の説明で確かめる）：
-     - ログイン（`openid`・`email`。審査の要らないスコープ）は、Google アカウントがあれば誰でもでき、確認されていないアプリの警告は出ない。
-     - カレンダーの連携（`calendar.freebusy`・`calendar.app.created`。審査の対象のスコープ）では、「Google はこのアプリを確認していません」の画面が出る。利用者は「詳細」から進む。審査を受けるまで、連携できる人数に上限（許可した人の累計で100人）がある。
-     - ログインできる人数には上限がない。
+   - 本番にしたときの扱い（決定事項7。2026-11-24 に持ち主が Google Cloud Console で確かめた）：
+     - 同意画面に登録したスコープ（`openid`・`userinfo.email`・`userinfo.profile`・`calendar.app.created`・`calendar.freebusy`）は、すべて「機微でない」（`userinfo.profile` はアプリが要求しないので、上の項目のとおり「データアクセス」から外す）。機微なスコープの確認（動画など）は要らず、確認されていないアプリの警告も、ユーザー数の上限も当たらない。
+     - ログインもカレンダーの連携も、Google アカウントがあれば誰でもでき、人数の上限はない。
+     - ブランドの確認（ホームページ・ポリシーのリンク・アプリ名の一致・承認済みのドメイン）は、T-44 の紹介のページをデプロイしたあとに申し込む。確認を済ませるまでは、同意画面にアプリ名を出さない。
      - 「テスト」のときの、更新用トークンが7日で失効する制約はなくなる（毎週の `needs_reauth` と「つなぎ直し」のお知らせは起きない）。
    - 誰でも Google でログインしてアカウントを作れるようになるが、ここ暇・誘い・募集が見えるのは招待リンクで友達になった相手だけ（T-02・T-03）なので、知らない人に友達の暇は見えない。
 4. Resend：`kokohima.app` を送信ドメインに足し、表示された記録（SPF・DKIM と、送信用のサブドメインの MX）に DMARC を加えて、Terraform の `cloudflare_dns_record` で足す PR を出す（infra/README.md「管理画面で手動変更しない」。値を受け取れば Claude が PR を書く）。
@@ -210,7 +212,7 @@
 - アプリストアへの公開、Apple のログイン、Apple カレンダー（T-09）。
 - WAF・ボット対策・エッジのレート制限（#42 の残り）。
 - 退会（#37）、古いデータの掃除（#38）、初回設定（#43）、画面のデザイン（T-11）。
-- Google の審査（一般公開のとき、または連携を許可した人の累計が100人に近づいたときに行う）。
+- 同意画面のブランドの確認の申込み（人の作業。T-44 の紹介のページをデプロイしたあと。#199）。機微なスコープを足すときは、機微なスコープの確認を別に受ける。
 
 ## 決定事項（仕様書PR pryusei/kokohima-app#83 のマージで合意）
 1. 最初のリリースは、友達だけに向けた Web アプリ。ログインは Google だけ（利用者と決めた）。
@@ -219,16 +221,15 @@
 4. Apple は設定値で止め、コードは残す（あとで戻せるように）。
 5. 最初のリリースは prod だけにし、staging は作らない（利用者と決めた）。
 6. カスタムドメインの DNS の記録は、Workers（`custom_domain: true`）が作り、管理する。Terraform の DNS の管理（infra/README.md）の例外として README に書く。Resend の記録などほかの DNS の記録は Terraform で持つ。
-7. Google の OAuth の公開ステータスは、審査を受けずに「本番」にする（友達をテストユーザーに1人ずつ足す手間と、カレンダーの連携が7日ごとに切れることをなくす。利用者と決めた）。カレンダーの連携で出る確認されていないアプリの警告と、連携できる人数の上限（100人）は受け入れる。一般公開の前に審査を受ける（この決定事項は、仕様書PR「Google の OAuth を本番に」のマージで合意する）。
+7. Google の OAuth の公開ステータスは「本番」にする（友達をテストユーザーに1人ずつ足す手間と、カレンダーの連携が7日ごとに切れることをなくす。利用者と決めた）。使うスコープはすべて機微でないので、ブランドの確認だけを受ける（T-44 のデプロイのあと）。確認を済ませるまでは、同意画面にアプリ名を出さない（この決定事項は、仕様書PR「Google の OAuth を本番に」のマージで合意し、T-44 の実装PRで今の事実に合わせた）。
    - 受け入れるリスク（利用者と決めた）：テストユーザーの登録という門がなくなり、招待リンク（推測できない乱数・期限7日・10人まで・無効化）が唯一の門になる。リンクが転送・流出すると、知らない人も「友達になる」を1回押すだけで友達になり、初期の「見せる」で暇とエリアが見える。友達追加の通知から「この人に見せない」にできる（要求定義書「受容したリスク」）。
-   - 受け入れるリスク（利用者と決めた）：連携の上限は、許可した人の累計で数えられ（連携を解除しても戻らないとみる）、知らない人も枠を使える。連携の開始は絞らない。Google Cloud の同意画面に出る人数を、ときどき確かめ、上限に近づいたら審査を前倒しする。上限に届いたあとは、新しい人の連携が Google の画面で止まる（ここ暇の側は連携が終わらないだけで、今の連携の失敗と同じ扱い）。
-   - 本番にする前に、同意画面に入れるプライバシー ポリシーと利用規約のページ（T-19）をデプロイしておく。ロゴは同意画面に入れない（ブランドの確認が要り、本番にするのが遅れるため）。
+   - 本番にする前に、同意画面に入れるプライバシー ポリシーと利用規約のページ（T-19）をデプロイしておく。ロゴは同意画面に入れない（ロゴを入れると確認がやり直しになり、時間がかかるため）。
 
 ## 確認事項（解消済み）
 - 決定事項2〜4・6と、送信のメールアドレス `notify@kokohima.app` は、仕様書PR pryusei/kokohima-app#83 のマージで合意した。決定事項7（2026-11-23 に変えた）は、その変更の仕様書PRのマージで合意する。
 
 ## 確認事項（未解消）
-- 決定事項7の「本番にしたときの扱い」（ログインで警告が出ない・連携は累計100人まで・7日の失効がなくなる）は、公式の資料をこの作業環境から読めず確かめていない。公開ステータスを本番にするときの画面の説明で確かめ、違えばこの仕様書を直す。
+- 決定事項7の「本番にしたときの扱い」のうち、7日の失効がなくなることは、公式の資料をこの作業環境から読めず確かめていない（スコープの区分と人数の上限は、2026-11-24 に持ち主が Google Cloud Console で確かめた）。
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
@@ -247,3 +248,4 @@
 | 2026-11-23 | 本番の秘密の一覧に `CONTACT_SLACK_WEBHOOK_URL` を足した | T-24 実装PR（docs/specs/T-24-contact.md） |
 | 2026-11-23 | 本番の秘密の一覧に `AVATAR_URL_KEY` を足した | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |
 | 2026-11-23 | 「キャッシュ」に、ハッシュ付きの `/assets/` の1年の immutable を足した | T-49（docs/specs/T-49-perf-small-fixes.md） |
+| 2026-11-24 | 「振り分け」に `/` の紹介のページ、ビルドの検査に `landing.html` を足した。決定事項7・人が行う作業3・「本番にしたときの扱い」・スコープ外・確認事項を、スコープがすべて機微でなくブランドの確認だけを受ける事実に合わせた（確認されていないアプリの警告と連携の累計100人の上限は当たらない） | T-44 実装PR（docs/specs/T-44-landing.md）。持ち主が Google Cloud Console で確かめた |
