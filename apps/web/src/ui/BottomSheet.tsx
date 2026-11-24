@@ -6,7 +6,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
@@ -20,7 +19,7 @@ import { useDesktop } from "./useDesktop";
 // 下から出るシート（docs/specs/T-11-design.md「画面のつながり」、デザインシステム「BottomSheet」）
 // 右上の「閉じる」のボタン、つまみを押す・下に引く、見出しの行を下に引く、後ろの暗い部分を押す、Esc で閉じる。確認のダイアログは出さない。
 // つまみとタイトルの行は、中をスクロールしても上に残す。つまみは見た目の手がかりなので、読み上げと Tab からは外す（「閉じる」は1つだけ）
-// 開いている間はフォーカスをシートの中に閉じ込め、閉じたら開いたボタンに戻す。
+// 開いている間はフォーカスをシートの中（とシートの上に重ねた結果の帯）に閉じ込め、閉じたら開いたボタンに戻す。
 // PC（幅1024px以上）では画面の中央のダイアログにし、つまみを隠す（docs/specs/T-20-desktop-layout.md「シート」）。
 // シートは body の直下に描き、開いている間はアプリの本体（#root）を inert にする（URL を持たないシートでも、後ろに Tab で入れないように）
 // 出入りの動き（docs/specs/T-56-motion.md「M-01」）：入るのは CSS（index.css の .kh-sheet・@starting-style）。
@@ -29,6 +28,8 @@ import { useDesktop } from "./useDesktop";
 // 差し替え（M-03）：swapSheet で作成から詳細へ移ったときは、入る動きを走らせず、前のシートの高さのまま描き始め、
 // 読み込み中が終わったら、測った中身の高さ（px）へ縮める。height: auto への transition は使わない（Safari・Firefox で動かない）
 
+/** シートの上に重ねる結果の帯（ResultBand.tsx）。Tab の循環に入れる */
+const RESULT_BAND = '[data-testid="result-band"]';
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 /** 見出しの行の中で、押し込みを引っぱりにしないもの（ボタン・リンクとして働く） */
 const PRESSABLE = 'button, a[href], [role="button"], input, select, textarea';
@@ -169,24 +170,40 @@ export function BottomSheet({ title, label, onClose, dismiss = false, children }
     };
   }, [opener, dialog]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "Tab" || !dialog.current) return;
-    const items = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
-    const first = items[0];
-    const last = items[items.length - 1];
-    if (!first || !last) {
-      e.preventDefault();
-      return;
-    }
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === dialog.current)) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
+  // Tab はシートの中と、シートの上に重ねた結果の帯（M-09。body の直下）の「取り消す」のあいだで回す。
+  // 帯はシートの外にあるので、帯にフォーカスがあるときの Tab も受けられるよう文書全体で受ける
+  useEffect(() => {
+    const onTab = (e: globalThis.KeyboardEvent) => {
+      const sheet = dialog.current;
+      if (e.key !== "Tab" || !sheet) return;
+      const band = document.querySelector<HTMLElement>(RESULT_BAND);
+      const active = document.activeElement;
+      const inSheet = active instanceof Node && sheet.contains(active);
+      const inBand = band !== null && active instanceof Node && band.contains(active);
+      if (!inSheet && !inBand) return;
+      const inside = [...sheet.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      const extra = band ? [...band.querySelectorAll<HTMLElement>(FOCUSABLE)] : [];
+      const items = [...inside, ...extra];
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) {
+        e.preventDefault();
+        return;
+      }
+      let next: HTMLElement | undefined;
+      if (e.shiftKey) {
+        if (active === first || active === sheet) next = last;
+        else if (inBand && active === extra[0]) next = inside[inside.length - 1] ?? last;
+      } else if (active === last) next = first;
+      else if (inSheet && active === inside[inside.length - 1]) next = extra[0];
+      if (next) {
+        e.preventDefault();
+        next.focus();
+      }
+    };
+    document.addEventListener("keydown", onTab);
+    return () => document.removeEventListener("keydown", onTab);
+  }, [dialog]);
 
   // 引いている間の見た目は、描き直さずに要素へ直接当てる（指の動きごとに React で描き直さない）
   const paintDrag = (offset: number | null, height: number) => {
@@ -277,7 +294,6 @@ export function BottomSheet({ title, label, onClose, dismiss = false, children }
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
-        onKeyDown={onKeyDown}
         className="kh-sheet relative mx-auto flex max-h-[92dvh] w-full max-w-md flex-col gap-4 overflow-y-auto overscroll-contain rounded-t-sheet bg-surface px-6 pt-2 pb-[max(24px,env(safe-area-inset-bottom))] shadow-sheet lg:max-h-[88dvh] lg:max-w-lg lg:rounded-sheet lg:pb-6 lg:shadow-float"
       >
         {/* つまみと見出しの行（つかんで引ける。帯の中のボタン・リンクから始めた押し込みは引っぱりにしない） */}
