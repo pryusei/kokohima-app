@@ -1,6 +1,6 @@
 import { blockedUserPageSchema, type BlockedUser } from "@kokohima/shared";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { apiGet, apiSend } from "../api/client";
 import { keys } from "../api/keys";
 import { nameOfProfile } from "../account/me";
@@ -16,21 +16,33 @@ const PAGE = 50;
 
 type Exits = ReturnType<typeof useRowExits<BlockedUser>>;
 
-/** ブロックをやめた行は閉じて消え、失敗したら元の場所に開いて戻る（docs/specs/T-56-motion.md「M-10」）。押している間は地を沈める（M-11） */
-function Row({ row, exits }: { row: MotionRowState<BlockedUser>; exits: Exits }) {
+/**
+ * ブロックをやめた行は閉じて消え、失敗したら元の場所に開いて戻る（docs/specs/T-56-motion.md「M-10」）。押している間は地を沈める（M-11）。
+ * 失敗の印は一覧の側に持つ（閉じ終わった行は描かないので、行の中の state は失敗が届く前に消える）
+ */
+function Row({
+  row,
+  exits,
+  failed,
+  setFailed,
+}: {
+  row: MotionRowState<BlockedUser>;
+  exits: Exits;
+  failed: boolean;
+  setFailed: (key: string, failed: boolean) => void;
+}) {
   const queryClient = useQueryClient();
-  const [failed, setFailed] = useState(false);
   const item = row.item;
   const name = nameOfProfile(item.user);
   const { leave, restore } = exits;
   const unblock = useMutation({
     mutationFn: () => apiSend("DELETE", `/api/v1/blocks/${item.user.id}`, undefined),
     onMutate: () => {
-      setFailed(false);
+      setFailed(row.key, false);
       leave(row.key);
     },
     onError: () => {
-      setFailed(true);
+      setFailed(row.key, true);
       restore(row.key);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: keys.blocks.list() }),
@@ -40,7 +52,8 @@ function Row({ row, exits }: { row: MotionRowState<BlockedUser>; exits: Exits })
       row={row}
       onHidden={exits.hidden}
       onAppeared={exits.appeared}
-      className="-mx-4 flex flex-col gap-1 border-b border-line px-4 py-3 transition-[background-color] duration-(--duration-press) group-last:border-b-0 active:bg-surface-sunken lg:hover:bg-surface-sunken"
+      itemClassName="-mx-4"
+      className="flex flex-col gap-1 border-b border-line px-4 py-3 transition-[background-color] duration-(--duration-press) group-last:border-b-0 active:bg-surface-sunken lg:hover:bg-surface-sunken"
     >
       <div className="flex items-center gap-3">
         <Avatar name={item.user.displayName} src={item.user.avatarUrl} />
@@ -70,6 +83,16 @@ export function BlockedUsersPage() {
   });
   const items = useMemo(() => list.data?.pages.flatMap((p) => p.items) ?? [], [list.data]);
   const exits = useRowExits(items, blockedKey);
+  const [failed, setFailedKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const setFailed = useCallback((key: string, value: boolean) => {
+    setFailedKeys((s) => {
+      if (s.has(key) === value) return s;
+      const next = new Set(s);
+      if (value) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
 
   return (
     <SubScreen title="ブロックした人" back="/settings">
@@ -80,7 +103,7 @@ export function BlockedUsersPage() {
       {exits.rows.length > 0 && (
         <ul aria-label="ブロックした人" className="kh-fade rounded-l bg-surface px-4 shadow-card">
           {exits.rows.map((row) => (
-            <Row key={row.key} row={row} exits={exits} />
+            <Row key={row.key} row={row} exits={exits} failed={failed.has(row.key)} setFailed={setFailed} />
           ))}
         </ul>
       )}

@@ -15,7 +15,7 @@ import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
 import { Button, ButtonLink, SendButton } from "../ui/Button";
 import { Collapse } from "../ui/Collapse";
-import { LoadError, Loading, Note } from "../ui/feedback";
+import { FadeIn, LoadError, Loading, Note } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { ResponseButtons } from "../ui/HeadCount";
 import { LinkCard } from "../ui/LinkCard";
@@ -176,7 +176,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
         <LoadError retry={() => void invite.refetch()} />
       )}
       {d && !acting && (
-        <>
+        <FadeIn className="flex flex-col gap-4">
           <p className="sr-only">
             {d.direction === "received" ? "誘ってくれた人" : "誘った相手"}：{name}
           </p>
@@ -257,7 +257,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
               {failed}
             </p>
           )}
-        </>
+        </FadeIn>
       )}
     </SheetScreen>
   );

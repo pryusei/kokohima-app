@@ -142,7 +142,7 @@ export function EveryonePage() {
         />
       )}
       {everyone.data && everyone.data.length > 0 && (
-        <section aria-label="みんなのここ暇" className="flex flex-col gap-4">
+        <section aria-label="みんなのここ暇" className="kh-fade flex flex-col gap-4">
           {groupByDate(everyone.data).map(([day, items]) => (
             <section key={day} className="flex flex-col">
               {/* 日付の帯は上に貼り付き、次の日の帯が来たら押し上げられる（docs/specs/T-56-motion.md「M-17」。重なりはシート・下のタブより下） */}

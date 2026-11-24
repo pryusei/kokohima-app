@@ -10,7 +10,7 @@ import { Button, SendButton } from "../ui/Button";
 import { EmptyState, LoadError, Loading, Note } from "../ui/feedback";
 import { Link } from "../ui/Link";
 import { Section, TabScreen } from "../ui/Navigation";
-import { MotionRow, useRowExits } from "../ui/RowMotion";
+import { markCreatedRow, MotionRow, useRowExits } from "../ui/RowMotion";
 import { Switch } from "../ui/Switch";
 
 // 友達タブ（docs/specs/T-02-friends.md「画面」、キャンバス「7 友達」「17 招待リンクの発行」）
@@ -141,7 +141,7 @@ export function FriendsPage() {
           <span aria-hidden="true">›</span>
         </Link>
       </Section>
-      {issuing && <InviteLinkSheet onClose={() => setIssuing(false)} />}
+      {issuing && <InviteLinkSheet onClose={() => setIssuing(false)} onCreated={markCreatedRow} />}
     </TabScreen>
   );
 }

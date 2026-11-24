@@ -281,6 +281,24 @@ describe("設定の「ブロックした人」", () => {
     await waitFor(() => expect(calls.some((c) => c.url === `/api/v1/blocks/${FRIEND_ID}` && c.init.method === "DELETE")).toBe(true));
   });
 
+  it("「ブロックをやめる」が失敗すると、閉じた行が戻り、失敗の文言が出る（行を閉じ終わってから失敗しても消えない。T-56「M-10」）", async () => {
+    blocked({ [`/api/v1/blocks/${FRIEND_ID}`]: json({}, 500) });
+    renderApp();
+    const list = await screen.findByRole("list", { name: "ブロックした人" });
+    await userEvent.click(within(list).getByRole("button", { name: "あきのブロックをやめる" }));
+    expect(await screen.findByText("できませんでした。もう一度お試しください。")).toBeVisible();
+    expect(within(screen.getByRole("list", { name: "ブロックした人" })).getByRole("button", { name: "あきのブロックをやめる" })).toBeVisible();
+  });
+
+  it("行の押した地は一覧の左右の端まで沈む（-mx-4 は li に付け、Collapse の中で切らない。T-56「M-11」）", async () => {
+    blocked();
+    renderApp();
+    const list = await screen.findByRole("list", { name: "ブロックした人" });
+    const item = within(list).getByRole("listitem");
+    expect(item).toHaveClass("-mx-4", "kh-collapse");
+    expect(item).toHaveAttribute("data-settled");
+  });
+
   it("いなければ空の表示", async () => {
     blocked({ "/api/v1/blocks": empty });
     renderApp();

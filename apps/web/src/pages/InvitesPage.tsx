@@ -69,23 +69,26 @@ function BroadcastList({ box }: { box: "received" | "sent" }) {
       {broadcasts.isPending && <Loading />}
       {broadcasts.isError && <LoadError retry={() => void broadcasts.refetch()} />}
       {broadcasts.data?.items.length === 0 && <p className="text-ink-muted">まだありません</p>}
-      <ul aria-label={label} className="flex flex-col gap-4">
-        {broadcasts.data?.items.map((b) => (
-          <li key={b.id}>
-            <BroadcastCard
-              to={`/broadcasts/${b.id}`}
-              avatarName={box === "received" ? b.owner.displayName : null}
-              avatarUrl={box === "received" ? b.owner.avatarUrl : null}
-              title={box === "received" ? `${honorificOf(b.owner)}の募集` : "暇な人いる？"}
-              subtitle={box === "received" ? "暇な人いる？" : "自分の募集"}
-              when={formatRange(b)}
-              note={b.message}
-              status={broadcastStatusText(b)}
-              tone={broadcastStatusTone(b)}
-            />
-          </li>
-        ))}
-      </ul>
+      {/* 読み込みのあと最初に描く一覧はフェードで入る（M-06。外の Broadcasts の FadeIn は切り替えの中身で、読み込みより先に描く） */}
+      {broadcasts.data && (
+        <ul aria-label={label} className="kh-fade flex flex-col gap-4">
+          {broadcasts.data.items.map((b) => (
+            <li key={b.id}>
+              <BroadcastCard
+                to={`/broadcasts/${b.id}`}
+                avatarName={box === "received" ? b.owner.displayName : null}
+                avatarUrl={box === "received" ? b.owner.avatarUrl : null}
+                title={box === "received" ? `${honorificOf(b.owner)}の募集` : "暇な人いる？"}
+                subtitle={box === "received" ? "暇な人いる？" : "自分の募集"}
+                when={formatRange(b)}
+                note={b.message}
+                status={broadcastStatusText(b)}
+                tone={broadcastStatusTone(b)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </Section>
   );
 }

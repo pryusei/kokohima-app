@@ -122,13 +122,15 @@ const noSheet = () => document.querySelector(".kh-sheet-scrim") === null;
 
 /**
  * 1行。li を Collapse の入れ物にし、中身（className の並べ方・余白・線）はその中の要素に描く（li は閉じると高さが0になる）。
- * inSheet：シートの中の一覧（増えた行をすぐ開く）。後ろの一覧は、シートが閉じ終わってから開く。光る動きは index.css の .kh-row-glow
+ * inSheet：シートの中の一覧（増えた行をすぐ開く）。後ろの一覧は、シートが閉じ終わってから開く。光る動きは index.css の .kh-row-glow。
+ * axis="x"：横に並ぶ一覧（幅を開閉する）。children を関数にすると、光る動きのクラスを受け取り、地を持つ要素（カード）に自分で付ける
  */
 export function MotionRow<T>({
   row,
   onHidden,
   onAppeared,
   inSheet = false,
+  axis = "y",
   itemClassName,
   className,
   children,
@@ -137,10 +139,12 @@ export function MotionRow<T>({
   onHidden: (key: string) => void;
   onAppeared: (key: string) => void;
   inSheet?: boolean;
+  axis?: "y" | "x";
   /** li 自身に付ける（横に並べる一覧の縮まない幅など） */
   itemClassName?: string;
   className?: string;
-  children: ReactNode;
+  /** 関数なら、光る動きのクラス（光らないときは空の文字列）を受け取る */
+  children: ReactNode | ((glowClassName: string) => ReactNode);
 }) {
   // 描いたときに開く行は、閉じた形で描き始める（動きを止める設定では、すぐ開いた形）
   const [opening, setOpening] = useState(() => row.appear && !prefersReducedMotion());
@@ -176,9 +180,12 @@ export function MotionRow<T>({
   const onRowHidden = useCallback(() => onHidden(key), [onHidden, key]);
   const glowing = glow && !opening;
   return (
-    <Collapse as="li" className={`group${itemClassName ? ` ${itemClassName}` : ""}`} show={!row.leaving && !opening} onHidden={onRowHidden}>
-      <div data-row-glow={glowing ? "" : undefined} className={`${className ?? ""}${glowing ? " kh-row-glow" : ""}`}>
-        {children}
+    <Collapse as="li" axis={axis} className={`group${itemClassName ? ` ${itemClassName}` : ""}`} show={!row.leaving && !opening} onHidden={onRowHidden}>
+      <div
+        data-row-glow={glowing ? "" : undefined}
+        className={`${className ?? ""}${glowing && typeof children !== "function" ? " kh-row-glow" : ""}`}
+      >
+        {typeof children === "function" ? children(glowing ? "kh-row-glow" : "") : children}
       </div>
     </Collapse>
   );

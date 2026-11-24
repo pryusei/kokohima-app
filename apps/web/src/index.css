@@ -290,6 +290,24 @@
     opacity: 0;
     transition: opacity var(--duration-fast) var(--ease-in);
   }
+  /* 開き終わったら中身を切らない（右端のボタンのフォーカスの輪、-mx-4 で一覧の端まで沈む地） */
+  .kh-collapse[data-settled] > * {
+    overflow: visible;
+  }
+  /* 幅の開閉（横に並ぶ一覧の行。M-10） */
+  .kh-collapse[data-axis="x"] {
+    grid-template-rows: none;
+    grid-template-columns: 1fr;
+    transition: grid-template-columns var(--duration-base) var(--ease-out);
+  }
+  .kh-collapse[data-axis="x"] > * {
+    min-width: 0;
+  }
+  .kh-collapse[data-axis="x"][data-closed] {
+    grid-template-rows: none;
+    grid-template-columns: 0fr;
+    transition: grid-template-columns var(--duration-fast) var(--ease-in);
+  }
   /* 閉じるときに中身を少し縮める（M-04 の返答のボタン群） */
   .kh-collapse-shrink {
     transition: transform var(--duration-base) var(--ease-out);

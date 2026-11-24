@@ -106,23 +106,31 @@ export function LoadError({
  * オフラインの帯（docs/specs/T-11-design.md「オフライン」）。出るとき・消えるときに高さを開閉する（docs/specs/T-56-motion.md「V-2」。
  * 中身が帯の高さだけ瞬間で下がらない）。つながっているあいだは、閉じ終わったら入れ物ごと描かない
  */
-export function OfflineBanner() {
+/**
+ * オフラインの帯。親の flex の gap の分（gap：main は m＝16px、シートの見出しの行は s＝8px）を帯の中の下の余白に持ち、
+ * 入れ物の負の余白で親の gap を打ち消す（出し入れの瞬間に gap の分だけ下の中身が跳ねない。V-2）
+ */
+export function OfflineBanner({ gap = "m" }: { gap?: "m" | "s" }) {
   const online = useOnline();
   const [mounted, setMounted] = useState(!online);
   if (!online && !mounted) setMounted(true);
   if (!mounted) return null;
-  return <OfflineBannerBody online={online} onHidden={() => setMounted(false)} />;
+  return <OfflineBannerBody online={online} gap={gap} onHidden={() => setMounted(false)} />;
 }
 
-function OfflineBannerBody({ online, onHidden }: { online: boolean; onHidden: () => void }) {
+const BANNER_GAP = { m: { outer: "-mb-4", inner: "pb-4" }, s: { outer: "-mb-2", inner: "pb-2" } } as const;
+
+function OfflineBannerBody({ online, gap, onHidden }: { online: boolean; gap: "m" | "s"; onHidden: () => void }) {
   const appeared = useAppear();
   return (
-    <Collapse show={!online && appeared} onHidden={onHidden}>
-      <div className="flex items-center gap-3 rounded-m bg-surface-sunken px-4 py-3">
-        <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-ink-muted" />
-        <p role="status" className="min-w-0 flex-1">
-          オフラインです。つながると最新の内容になります
-        </p>
+    <Collapse show={!online && appeared} onHidden={onHidden} className={BANNER_GAP[gap].outer}>
+      <div className={BANNER_GAP[gap].inner}>
+        <div className="flex items-center gap-3 rounded-m bg-surface-sunken px-4 py-3">
+          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-ink-muted" />
+          <p role="status" className="min-w-0 flex-1">
+            オフラインです。つながると最新の内容になります
+          </p>
+        </div>
       </div>
     </Collapse>
   );

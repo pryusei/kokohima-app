@@ -68,7 +68,7 @@ describe("押したときの感触（docs/specs/T-56-motion.md「M-11」）", ()
       expect(sources[path], path).toContain("lg:hover:bg-surface-sunken");
     }
     const card = sources["./InviteCard.tsx"] ?? "";
-    expect(card).toContain("active:shadow-none lg:hover:shadow-float");
+    expect(card).toContain("active:shadow-none lg:hover:not-active:shadow-float");
     expect(card).toMatch(/tone === "quiet"\s*\?\s*"border border-line bg-surface"/);
   });
 

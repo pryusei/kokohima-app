@@ -159,6 +159,41 @@ describe("useRowExits と MotionRow（止めない設定）", () => {
     expect(rowOf("い")).not.toHaveAttribute("data-closed");
   });
 
+  it("開き終わった行は中身を切らない（右端のボタンのフォーカスの輪・-mx-4 の地）。切るのは閉じている・開閉の途中だけ", () => {
+    const view = render(<List items={[A]} />);
+    expect(nth(0)).toHaveAttribute("data-settled");
+    markCreatedRow("b");
+    view.rerender(<List items={[A, B]} />);
+    act(() => vi.advanceTimersByTime(50));
+    expect(rowOf("い")).not.toHaveAttribute("data-closed");
+    expect(rowOf("い")).not.toHaveAttribute("data-settled");
+    act(() => vi.advanceTimersByTime(290));
+    expect(rowOf("い")).toHaveAttribute("data-settled");
+    act(() => screen.getByRole("button", { name: "あを消す" }).click());
+    expect(rowOf("あ")).not.toHaveAttribute("data-settled");
+    expect(css).toMatch(/\.kh-collapse > \*\s*\{[^}]*overflow: hidden;/);
+    expect(css).toMatch(/\.kh-collapse\[data-settled\] > \*\s*\{\s*overflow: visible;/);
+  });
+
+  it("横に並ぶ一覧（axis=\"x\"）は幅を開閉する。children を関数にすると、光るクラスを地を持つ要素（カード）に渡す", () => {
+    markCreatedRow("b");
+    render(
+      <ul>
+        {[{ key: "b", item: B, leaving: false, appear: true, glow: true }].map((row) => (
+          <MotionRow key={row.key} row={row} axis="x" onHidden={() => {}} onAppeared={() => {}} className="p-1">
+            {(glow) => <div className={`bg-surface ${glow}`}>{row.item.text}</div>}
+          </MotionRow>
+        ))}
+      </ul>,
+    );
+    const item = screen.getByRole("listitem");
+    expect(item).toHaveAttribute("data-axis", "x");
+    act(() => vi.advanceTimersByTime(50));
+    expect(screen.getByText("い")).toHaveClass("kh-row-glow", "bg-surface");
+    expect(screen.getByText("い").parentElement).not.toHaveClass("kh-row-glow");
+    expect(css).toMatch(/\.kh-collapse\[data-axis="x"\]\[data-closed\]\s*\{[^}]*grid-template-columns: 0fr;/);
+  });
+
   it("光る動きは、開いたあと（base の遅れ）に surface-sunken から元の色へ戻る 600ms（sheet＋base）", () => {
     expect(css).toMatch(
       /\.kh-row-glow\s*\{\s*animation: kh-row-glow calc\(var\(--duration-sheet\) \+ var\(--duration-base\)\) var\(--ease-out\) var\(--duration-base\) backwards;/,

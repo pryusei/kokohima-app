@@ -81,7 +81,7 @@ export function NotificationsPage() {
       )}
       {notifications.data && notifications.data.items.length === 0 && <EmptyState title="お知らせはありません" />}
       {notifications.data && notifications.data.items.length > 0 && (
-        <ul className="-mx-4 flex flex-col border-t border-line">
+        <ul className="kh-fade -mx-4 flex flex-col border-t border-line">
           {notifications.data.items.map((n) => (
             <Item key={n.id} n={n} />
           ))}

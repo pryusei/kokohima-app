@@ -1057,6 +1057,22 @@ describe("下のタブ・画面の切り替え・未読のバッジ・スイッ�
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 500, behavior: "auto" });
   });
 
+  it("外から直接開いた最初のエントリ（history.state が null）でも、下の画面へ移って戻ると元の位置に戻る", async () => {
+    window.history.replaceState(null, "", "/settings");
+    mockFetch({ ...page, "/api/v1/calendar/connections": json({ google: { status: "none", connectedAt: null } }) });
+    renderApp();
+    expect(await screen.findByRole("heading", { name: "設定", level: 1 })).toBeVisible();
+    scrollY = 260;
+    await userEvent.click(screen.getByRole("link", { name: /カレンダー連携/ }));
+    expect(await screen.findByRole("heading", { name: "カレンダー連携", level: 1 })).toBeVisible();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "auto" });
+    await browserBack();
+    expect(await screen.findByRole("heading", { name: "設定", level: 1 })).toBeVisible();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 260, behavior: "auto" });
+    // 最初のエントリに足すのは印だけ（アプリの中から開いた印は付けない）
+    expect((window.history.state as { inApp?: boolean }).inApp).toBeUndefined();
+  });
+
   it("タブからシートを開いて閉じても、後ろのタブの位置は動かさない", async () => {
     window.history.replaceState(null, "", "/friends");
     mockFetch({ ...page, [`/api/v1/friends/${FRIEND_ID}`]: json({}, 404) });

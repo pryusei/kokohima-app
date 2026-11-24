@@ -40,6 +40,16 @@ let tabPositions: ScrollPositions = new Map();
 let entryPositions: ScrollPositions = new Map();
 if (typeof window !== "undefined" && "scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
 
+/**
+ * 今のエントリに印（key）がなければ付ける（外から直接開いた最初のエントリは history.state が null。印がないと、
+ * そこへ戻ったときに位置を戻せない）。置き換えでほかの印（inApp・behind）は足さない
+ */
+function ensureKey() {
+  if (state()?.key) return;
+  window.history.replaceState({ ...(state() ?? {}), depth: state()?.depth ?? 0, key: newKey() }, "");
+}
+if (typeof window !== "undefined") ensureKey();
+
 /** 画面を離れるときに、そのエントリ（とタブ）の位置を覚える */
 function remember(from: Entry) {
   const y = window.scrollY;
@@ -177,6 +187,7 @@ export function navigate(to: string, { replace = false } = {}) {
 }
 
 function go(to: string, replace: boolean) {
+  ensureKey();
   const from = entryNow();
   remember(from);
   if (replace) {

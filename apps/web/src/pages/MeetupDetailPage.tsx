@@ -13,7 +13,7 @@ import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
 import { SendButton } from "../ui/Button";
-import { LoadError, Loading, Note } from "../ui/feedback";
+import { FadeIn, LoadError, Loading, Note } from "../ui/feedback";
 import { LinkCard } from "../ui/LinkCard";
 
 // 成立した予定（docs/specs/T-04-direct-invite.md「画面」、キャンバス「15 成立した予定」）。「やっぱり難しい」は確認なしで送る
@@ -89,7 +89,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
         <LoadError retry={() => void meetup.refetch()} />
       )}
       {m && (
-        <>
+        <FadeIn className="flex flex-col gap-4">
           {moment && !cancelled ? (
             <MeetMoment meetup={m} />
           ) : (
@@ -125,7 +125,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
               送れませんでした。もう一度お試しください
             </p>
           )}
-        </>
+        </FadeIn>
       )}
     </SheetScreen>
   );

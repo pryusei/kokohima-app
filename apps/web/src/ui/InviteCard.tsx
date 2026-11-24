@@ -8,7 +8,8 @@ import { Link } from "./Link";
 // 押した感触（docs/specs/T-56-motion.md「M-11」）：押している間は少し縮み、影を一段弱く（影なし）。PC はマウスを乗せると影を shadow-float に。
 // 静かな状態のカードは影を足さない。フォーカスの輪（outline）は transition に含めない
 const PRESS = "transition-[scale,box-shadow] duration-(--duration-press) ease-out active:scale-[.98]";
-const PRESS_SHADOW = "active:shadow-none lg:hover:shadow-float";
+// lg:hover は active より後ろに出て勝つので、押している間は hover の影を付けない（not-active）
+const PRESS_SHADOW = "active:shadow-none lg:hover:not-active:shadow-float";
 
 type CardProps = {
   to: string;

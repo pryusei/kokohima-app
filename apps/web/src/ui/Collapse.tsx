@@ -5,15 +5,36 @@ import { MOTION_MS, prefersReducedMotion, useExitAnimation } from "./motion";
 // grid-template-rows を 0fr ↔ 1fr、中身の opacity を 0 ↔ 1 にする（height: auto への transition は Safari・Firefox で動かないので使わない）。
 // 開く：--duration-base・--ease-out。閉じる：--duration-fast・--ease-in。閉じる動きのあいだは中身を描き続け、終わったら描かない。
 // 最初の描画では動かさない。閉じている途中と閉じたあとは、中身を inert にする。
-// 入れ物は as で li にもできる（一覧の行。M-10）。閉じ終わったら onHidden を呼ぶ（呼び出し側が入れ物ごと外すため）
+// 入れ物は as で li にもできる（一覧の行。M-10）。閉じ終わったら onHidden を呼ぶ（呼び出し側が入れ物ごと外すため）。
+// axis="x" は幅の開閉（grid-template-columns。横に並ぶ一覧の行。M-10）。
+// 中身を切る（overflow: hidden）のは、閉じている・開閉の途中だけ。開き終わったら（data-settled）切らない（フォーカスの輪・はみ出す地を切らない）
 
-type Props = { show: boolean; children: ReactNode; as?: "div" | "li"; className?: string; onHidden?: () => void };
+type Props = {
+  show: boolean;
+  children: ReactNode;
+  as?: "div" | "li";
+  axis?: "y" | "x";
+  className?: string;
+  onHidden?: () => void;
+};
 
-export function Collapse({ show, children, as: Tag = "div", className, onHidden }: Props) {
+export function Collapse({ show, children, as: Tag = "div", axis = "y", className, onHidden }: Props) {
   const { start, cancel, ref } = useExitAnimation<HTMLElement>(MOTION_MS.fast);
   const [rendered, setRendered] = useState(show);
   // 開くときは、閉じた見た目（0fr）の入れ物のまま中身を描き、同じ描画で開いた側へ替える
   if (show && !rendered) setRendered(true);
+  // 開き終わったか。最初の描画は動かさないので開き終わった形。show が変わったら、開く動き（＋保険の50ms）のあとに開き終わる
+  const [settled, setSettled] = useState(true);
+  const [shownBefore, setShownBefore] = useState(show);
+  if (show !== shownBefore) {
+    setShownBefore(show);
+    setSettled(false);
+  }
+  useEffect(() => {
+    if (settled || !show) return;
+    const timer = setTimeout(() => setSettled(true), prefersReducedMotion() ? 0 : MOTION_MS.base + 50);
+    return () => clearTimeout(timer);
+  }, [settled, show]);
   const hidden = useRef(onHidden);
   useEffect(() => {
     hidden.current = onHidden;
@@ -30,7 +51,13 @@ export function Collapse({ show, children, as: Tag = "div", className, onHidden 
   }, [show, rendered, start, cancel]);
 
   return (
-    <Tag ref={ref as never} className={`kh-collapse${className ? ` ${className}` : ""}`} data-closed={show ? undefined : ""}>
+    <Tag
+      ref={ref as never}
+      className={`kh-collapse${className ? ` ${className}` : ""}`}
+      data-axis={axis === "x" ? "x" : undefined}
+      data-closed={show ? undefined : ""}
+      data-settled={show && settled ? "" : undefined}
+    >
       <div inert={!show}>{rendered ? children : null}</div>
     </Tag>
   );

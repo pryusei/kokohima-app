@@ -285,26 +285,37 @@ type WishExits = ReturnType<typeof useRowExits<Wish>>;
 function MyWishCard({ row, exits, onAudience, onDelete }: { row: MotionRowState<Wish>; exits: WishExits; onAudience: () => void; onDelete: () => void }) {
   const wish = row.item;
   return (
-    <MotionRow row={row} onHidden={exits.hidden} onAppeared={exits.appeared} itemClassName="-m-1 shrink-0 snap-start" className="h-full p-1">
-      <div className="flex h-full w-56 flex-col gap-2 rounded-l bg-surface p-3 shadow-card">
-        <p className="line-clamp-3 font-bold whitespace-pre-line">{wish.message}</p>
-        {wish.area && <p className="truncate text-s text-ink-muted">エリア：{wish.area}</p>}
-        <LinkCard url={wish.url} preview={wish.linkPreview} compact />
-        <div className="mt-auto grid grid-cols-2 gap-2 pt-1">
-          <ButtonLink to={`/invites/new?wish=${encodeURIComponent(wish.id)}`} size="s">
-            誘う
-          </ButtonLink>
-          <ButtonLink to={`/broadcasts/new?wish=${encodeURIComponent(wish.id)}`} size="s">
-            募集する
-          </ButtonLink>
-          <Button variant="ghost" size="s" onClick={onAudience}>
-            見せる相手
-          </Button>
-          <Button variant="ghost" size="s" onClick={onDelete}>
-            消す
-          </Button>
+    // 横に並ぶので幅を開閉する。カードの間（12px）は ul の gap ではなく中の右の余白に持つ（閉じると間も一緒に詰まる）。
+    // 光るのはカードの地（docs/specs/T-56-motion.md「M-10」）
+    <MotionRow
+      row={row}
+      axis="x"
+      onHidden={exits.hidden}
+      onAppeared={exits.appeared}
+      itemClassName="-m-1 shrink-0 snap-start"
+      className="h-full py-1 pr-4 pl-1 group-last:pr-1"
+    >
+      {(glow) => (
+        <div className={`flex h-full w-56 flex-col gap-2 rounded-l bg-surface p-3 shadow-card${glow ? ` ${glow}` : ""}`}>
+          <p className="line-clamp-3 font-bold whitespace-pre-line">{wish.message}</p>
+          {wish.area && <p className="truncate text-s text-ink-muted">エリア：{wish.area}</p>}
+          <LinkCard url={wish.url} preview={wish.linkPreview} compact />
+          <div className="mt-auto grid grid-cols-2 gap-2 pt-1">
+            <ButtonLink to={`/invites/new?wish=${encodeURIComponent(wish.id)}`} size="s">
+              誘う
+            </ButtonLink>
+            <ButtonLink to={`/broadcasts/new?wish=${encodeURIComponent(wish.id)}`} size="s">
+              募集する
+            </ButtonLink>
+            <Button variant="ghost" size="s" onClick={onAudience}>
+              見せる相手
+            </Button>
+            <Button variant="ghost" size="s" onClick={onDelete}>
+              消す
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </MotionRow>
   );
 }
@@ -344,7 +355,7 @@ export function MyWishes() {
       )}
       {exits.rows.length > 0 && (
         // 横にめくる。件数で縦に伸びない（docs/specs/T-55-availability-week-grid.md「振る舞い 5.」）
-        <ul aria-label="自分の行きたい" className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pt-0.5 pb-2 lg:-mx-6 lg:scroll-px-6 lg:px-6">
+        <ul aria-label="自分の行きたい" className="kh-fade -mx-4 flex snap-x snap-mandatory scroll-px-4 overflow-x-auto px-4 pt-0.5 pb-2 lg:-mx-6 lg:scroll-px-6 lg:px-6">
           {exits.rows.map((row) => (
             <MyWishCard
               key={row.key}

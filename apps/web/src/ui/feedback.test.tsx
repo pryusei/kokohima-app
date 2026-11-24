@@ -73,6 +73,27 @@ describe("FadeIn（M-06）・EmptyState（M-19）", () => {
     expect(rule(".kh-fade")).toMatch(/kh-fade-in var\(--duration-fast\) var\(--ease-out\) backwards/);
   });
 
+  it("読み込み中（Loading）を出す画面は、読み込みのあと最初に描く中身をフェードで入れる（FadeIn か kh-fade）", () => {
+    const files = [
+      "../pages/EveryonePage.tsx",
+      "../pages/NotificationsPage.tsx",
+      "../pages/FriendDetailPage.tsx",
+      "../pages/InviteDetailPage.tsx",
+      "../pages/BroadcastDetailPage.tsx",
+      "../pages/MeetupDetailPage.tsx",
+      "../pages/FriendsPage.tsx",
+      "../pages/BlockedUsersPage.tsx",
+      "../pages/InvitesPage.tsx",
+      "../wish/MyWishes.tsx",
+    ];
+    for (const file of files) {
+      const source = readFileSync(join(import.meta.dirname, file), "utf8");
+      expect(source, file).toMatch(/<FadeIn|"kh-fade /);
+    }
+    // 募集は、送った・受け取った一覧のそれぞれ（読み込みより先に描く外の箱ではない）
+    expect(readFileSync(join(import.meta.dirname, "../pages/InvitesPage.tsx"), "utf8")).toMatch(/<ul aria-label=\{label\} className="kh-fade /);
+  });
+
   it("EmptyState は下から8pxのフェードで入る（base・ease-out）。普段のクラスに opacity-0 がない", () => {
     render(<EmptyState title="まだありません" />);
     const box = screen.getByText("まだありません").parentElement as HTMLElement;
@@ -110,6 +131,20 @@ describe("オフラインの帯（V-2）", () => {
     expect(box()).toHaveAttribute("data-closed");
     act(() => vi.advanceTimersByTime(210));
     expect(view.container.innerHTML).toBe("");
+  });
+
+  it("親の gap の分は帯の中の下の余白に持ち、入れ物の負の余白で打ち消す（出し入れで下の中身が gap の分だけ跳ねない）", () => {
+    const setOnline = network();
+    const view = render(<OfflineBanner />);
+    setOnline(false);
+    const box = view.container.querySelector(".kh-collapse") as HTMLElement;
+    expect(box).toHaveClass("-mb-4");
+    expect(box.firstElementChild?.firstElementChild).toHaveClass("pb-4");
+    view.unmount();
+    const sheet = render(<OfflineBanner gap="s" />);
+    const sheetBox = sheet.container.querySelector(".kh-collapse") as HTMLElement;
+    expect(sheetBox).toHaveClass("-mb-2");
+    expect(sheetBox.firstElementChild?.firstElementChild).toHaveClass("pb-2");
   });
 
   it("動きを止める設定（jsdom の既定）では、オフラインになるとすぐ開いた形で出る", () => {

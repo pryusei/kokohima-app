@@ -13,7 +13,7 @@ import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
 import { ButtonLink, SendButton } from "../ui/Button";
-import { LoadError, Loading, Note } from "../ui/feedback";
+import { FadeIn, LoadError, Loading, Note } from "../ui/feedback";
 import { HeadCount } from "../ui/HeadCount";
 import { LinkCard } from "../ui/LinkCard";
 import { MoreButton, usePersonActionsToggle } from "../safety/MoreButton";
@@ -164,7 +164,7 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
         <LoadError retry={() => void broadcast.refetch()} />
       )}
       {b && !acting && (
-        <>
+        <FadeIn className="flex flex-col gap-4">
           <p className="text-ink-muted">
             {b.direction === "received" ? <>募集した人：{owner}</> : <>宛先：{b.recipients?.length ?? 0}人</>}
           </p>
@@ -181,7 +181,7 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
           {b.message && <p className="whitespace-pre-wrap">{b.message}</p>}
           <LinkCard url={b.url} preview={b.linkPreview} />
           <Actions b={b} onDecided={() => setDecidedByMe(true)} />
-        </>
+        </FadeIn>
       )}
     </SheetScreen>
   );
