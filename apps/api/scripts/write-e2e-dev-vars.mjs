@@ -62,3 +62,7 @@ if (!readFileSync(path, "utf8").includes("AVATAR_URL_KEY=")) {
 if (!readFileSync(path, "utf8").includes("ANTHROPIC_API_KEY=")) {
   appendFileSync(path, "ANTHROPIC_API_KEY=e2e-unused\n");
 }
+// T-32 より前に作ったファイルには、偽の LINE ログインのチャネル ID とシークレットを足す（E2E のエントリが line.e2e.invalid に向ける）
+if (!readFileSync(path, "utf8").includes("LINE_CHANNEL_ID=")) {
+  appendFileSync(path, "LINE_CHANNEL_ID=1000000000\nLINE_CHANNEL_SECRET=e2e-unused\n");
+}

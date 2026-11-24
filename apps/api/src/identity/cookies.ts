@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import type { OidcProviderName } from "./infra/oidc";
 import type { AppEnv } from "../env";
 
 // Cookie（docs/specs/T-01-auth.md）。どちらも __Host- 接頭辞（Secure、Path=/、Domainなし）
@@ -30,8 +31,8 @@ export function getBindingCookie(c: Context<AppEnv>) {
   return getCookie(c, BINDING, "host");
 }
 
-/** Apple は form_post（クロスサイトのPOST）で戻るため SameSite=None、Google は Lax */
-export function setBindingCookie(c: Context<AppEnv>, value: string, provider: "google" | "apple") {
+/** Apple は form_post（クロスサイトのPOST）で戻るため SameSite=None、Google・LINE は GET で戻るので Lax */
+export function setBindingCookie(c: Context<AppEnv>, value: string, provider: OidcProviderName) {
   setCookie(c, BINDING, value, {
     prefix: "host",
     path: "/",

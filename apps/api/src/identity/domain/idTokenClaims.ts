@@ -1,6 +1,6 @@
 // IDトークンの検証済みクレームから、保存してよいメールアドレスを取り出す
 
-export type Provider = "google" | "apple" | "e2e";
+export type Provider = "google" | "apple" | "line" | "e2e";
 
 export type VerifiedClaims = {
   sub: string;
@@ -8,8 +8,12 @@ export type VerifiedClaims = {
   email_verified?: unknown;
 };
 
-/** 確認済みのメールアドレスだけを返す。Appleは email_verified を文字列 "true" で返すことがある */
+/**
+ * 確認済みのメールアドレスだけを返す。Appleは email_verified を文字列 "true" で返すことがある。
+ * LINE はメールアドレスを求めないので、いつも null（docs/specs/T-32-line-login.md 決めたこと2）
+ */
 export function verifiedEmail(provider: Provider, claims: VerifiedClaims): string | null {
+  if (provider === "line") return null;
   if (typeof claims.email !== "string" || claims.email.length === 0 || claims.email.length > 320) {
     return null;
   }

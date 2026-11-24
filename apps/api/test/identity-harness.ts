@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
-import { createLocalJWKSet, exportJWK, exportPKCS8, generateKeyPair, type JWK, SignJWT } from "jose";
+import { compactVerify, createLocalJWKSet, exportJWK, exportPKCS8, generateKeyPair, type JWK, SignJWT } from "jose";
 import { createApp, defaultDeps } from "../src/app";
-import type { AppDeps, Bindings, JobMessage } from "../src/env";
+import { LINE_ENDPOINTS, type AppDeps, type Bindings, type JobMessage } from "../src/env";
 import { createFakeClaude } from "./fake-claude";
 import { createFakeDelivery } from "./fake-delivery";
 import { createFakeGoogle } from "./fake-google";
@@ -11,7 +11,8 @@ import { createFakeWeb } from "./fake-web";
 // identity のテスト用の道具。本番のコードからは読み込まない（*.test.ts からだけ使う）
 
 export const ORIGIN = "https://app.test";
-type ProviderName = "google" | "apple";
+type ProviderName = "google" | "apple" | "line";
+type JwksProviderName = "google" | "apple";
 
 /** overrides：AppDeps の一部を差し替える（問い合わせの公開の日など） */
 export async function createHarness(overrides: Partial<AppDeps> = {}) {
@@ -20,7 +21,7 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
     google: await generateKeyPair("RS256", { extractable: true }),
     apple: await generateKeyPair("RS256", { extractable: true }),
   };
-  const jwk = async (p: ProviderName): Promise<JWK> => ({
+  const jwk = async (p: JwksProviderName): Promise<JWK> => ({
     ...(await exportJWK(providerKeys[p].publicKey)),
     kid: `${p}-kid`,
     alg: "RS256",
@@ -52,6 +53,20 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
     new Response("not configured", { status: 500 });
   const tokenRequests: { provider: ProviderName; body: URLSearchParams }[] = [];
 
+  // LINE の IDトークンの検証のエンドポイント（T-32）。既定は本物に近い形：チャネルシークレットの HS256 の署名だけを確かめ、
+  // ペイロードをそのまま返す（発行者・宛先・期限・nonce のこちら側の確かめをテストできるよう、それらは確かめない）
+  const lineSecret = () => new TextEncoder().encode(bindings.LINE_CHANNEL_SECRET ?? "");
+  const defaultVerifyResponder = async (body: URLSearchParams): Promise<Response> => {
+    try {
+      const { payload } = await compactVerify(body.get("id_token") ?? "", lineSecret(), { algorithms: ["HS256"] });
+      return Response.json(JSON.parse(new TextDecoder().decode(payload)));
+    } catch {
+      return Response.json({ error: "invalid_request", error_description: "Invalid IdToken." }, { status: 400 });
+    }
+  };
+  let verifyResponder = defaultVerifyResponder;
+  const verifyRequests: URLSearchParams[] = [];
+
   const fakeFetch: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (google.handles(new URL(url), init)) return google.handle(new URL(url), init);
@@ -59,11 +74,18 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
     if (web.handles(new URL(url))) return web.handle(new URL(url), init);
     if (slack.handles(new URL(url))) return slack.handle(new URL(url), init);
     if (claude.handles(new URL(url))) return claude.handle(new URL(url), init);
+    if (url === LINE_ENDPOINTS.verify) {
+      const body = new URLSearchParams(String(init?.body ?? ""));
+      verifyRequests.push(body);
+      return verifyResponder(body);
+    }
     const provider: ProviderName | null = url.startsWith("https://oauth2.googleapis.com/token")
       ? "google"
       : url.startsWith("https://appleid.apple.com/auth/token")
         ? "apple"
-        : null;
+        : url === LINE_ENDPOINTS.token
+          ? "line"
+          : null;
     if (!provider) throw new Error(`unexpected fetch: ${url}`);
     const body = new URLSearchParams(String(init?.body ?? ""));
     tokenRequests.push({ provider, body });
@@ -100,9 +122,15 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
   async function signIdToken(
     provider: ProviderName,
     claims: Record<string, unknown>,
-    opts: { alg?: string; key?: CryptoKey; kid?: string } = {},
+    opts: { alg?: string; key?: CryptoKey | Uint8Array; kid?: string } = {},
   ) {
     const iat = Math.floor(clock.now / 1000);
+    if (provider === "line") {
+      // LINE の Web のログインの IDトークンは、チャネルシークレットの HS256（verify のエンドポイントの偽物が確かめる）
+      return new SignJWT({ iss: "https://access.line.me", aud: bindings.LINE_CHANNEL_ID, iat, exp: iat + 3600, amr: ["linesso"], ...claims })
+        .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+        .sign(opts.key ?? lineSecret());
+    }
     return new SignJWT({
       iss: provider === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
       aud: provider === "google" ? env.GOOGLE_CLIENT_ID : env.APPLE_CLIENT_ID,
@@ -135,8 +163,8 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
 
   async function callback(provider: ProviderName, params: Record<string, string>, binding?: string) {
     const headers: Record<string, string> = binding ? { Cookie: `__Host-kh_oauth=${binding}` } : {};
-    if (provider === "google") {
-      return request(`/api/v1/auth/google/callback?${new URLSearchParams(params)}`, { headers });
+    if (provider === "google" || provider === "line") {
+      return request(`/api/v1/auth/${provider}/callback?${new URLSearchParams(params)}`, { headers });
     }
     return request("/api/v1/auth/apple/callback", {
       method: "POST",
@@ -193,6 +221,10 @@ export async function createHarness(overrides: Partial<AppDeps> = {}) {
     clock,
     request,
     tokenRequests,
+    verifyRequests,
+    setVerifyResponder: (r: typeof verifyResponder | null) => {
+      verifyResponder = r ?? defaultVerifyResponder;
+    },
     appleSigningKey,
     signIdToken,
     respondWithIdToken,

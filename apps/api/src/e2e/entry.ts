@@ -4,6 +4,7 @@ import { createWorker } from "../worker";
 import { e2eExpireBroadcast } from "./broadcasts";
 import { E2E_CONTACT_WEBHOOK_TARGET, e2eContactPosts } from "./contact";
 import { E2E_GOOGLE_ENDPOINTS, e2eCalendarAuthorize, e2eCalendarBusy, e2eCalendarSync, e2eFetch, e2eOutboxDrain } from "./calendar";
+import { E2E_LINE_ENDPOINTS, e2eLineAuthorize } from "./line";
 import { e2eLogin } from "./login";
 import { E2E_LINK_PREVIEW_DEPS } from "./linkPreview";
 import { E2E_NOTIFICATION_DEPS, e2eNotificationsSent } from "./notifications";
@@ -11,10 +12,13 @@ import { E2E_NOTIFICATION_DEPS, e2eNotificationsSent } from "./notifications";
 // E2E用のエントリ（wrangler の env.e2e でだけ使う）。本番のエントリからはimportしない
 // Google・メール配信・プッシュへの fetch は偽の実装に向ける
 // （docs/specs/T-06-calendar.md「E2E用の偽のGoogle」、docs/specs/T-07-notification.md「E2E用の偽のメール・プッシュ」、
-// docs/specs/T-08-link-preview.md「E2E用の偽のサイト」、docs/specs/T-24-contact.md「8.」の偽の Slack）
+// docs/specs/T-08-link-preview.md「E2E用の偽のサイト」、docs/specs/T-24-contact.md「8.」の偽の Slack、
+// docs/specs/T-32-line-login.md「E2E用の偽の LINE」）
 const { app, handler } = createWorker({
   fetch: e2eFetch,
   google: { endpoints: E2E_GOOGLE_ENDPOINTS },
+  // 偽の LINE ログイン（docs/specs/T-32-line-login.md「E2E用の偽の LINE」）
+  line: { endpoints: E2E_LINE_ENDPOINTS },
   notification: E2E_NOTIFICATION_DEPS,
   // 並んで走るテストが同じ回線になり、偽の埋まりを途中で変えるテストもあるので、上限とキャッシュを使わない（T-10）
   rateLimit: async () => true,
@@ -38,6 +42,7 @@ app.use("/__e2e__/*", async (c, next) => {
 app.post("/__e2e__/login", e2eLogin);
 app.post("/__e2e__/broadcasts/:id/expire", requireAuth, e2eExpireBroadcast);
 app.get("/__e2e__/calendar/google/authorize", e2eCalendarAuthorize);
+app.get("/__e2e__/line/authorize", e2eLineAuthorize);
 app.post("/__e2e__/calendar/busy", requireAuth, e2eCalendarBusy);
 app.post("/__e2e__/calendar/sync", requireAuth, e2eCalendarSync);
 app.post("/__e2e__/outbox/drain", requireAuth, e2eOutboxDrain);

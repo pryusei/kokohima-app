@@ -1,6 +1,6 @@
 import { isLineInAppBrowser, withOpenExternalBrowser } from "../line/line";
 import { LineBrowserNotice } from "../line/LineBrowserNotice";
-import { buttonClass } from "../ui/Button";
+import { LoginButtons } from "../auth/LoginButtons";
 import { LegalLinks } from "./LegalDocument";
 // ログイン画面（docs/specs/T-01-auth.md、キャンバス「2 ログイン」）
 
@@ -9,8 +9,6 @@ export function LoginPage({ search }: { search: string }) {
   const failed = params.get("error") === "login_failed";
   const withdrawn = params.get("withdrawn") === "1";
   const returnTo = params.get("returnTo") ?? "/";
-  const startUrl = (provider: "google" | "apple") =>
-    `/api/v1/auth/${provider}/start?returnTo=${encodeURIComponent(returnTo)}`;
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 px-6 py-12">
@@ -38,21 +36,7 @@ export function LoginPage({ search }: { search: string }) {
       {isLineInAppBrowser() && (
         <LineBrowserNotice reopenHref={withOpenExternalBrowser(`${window.location.pathname}${search}`)} />
       )}
-      <div className="flex flex-col gap-2">
-        <a className={buttonClass("secondary", { block: true })} href={startUrl("google")}>
-          Googleでログイン
-        </a>
-        {/* Sign in with Apple は VITE_APPLE_LOGIN_ENABLED が "1" のときだけ（T-12）。本番のビルドでは文字列ごと落ちる */}
-        {import.meta.env.VITE_APPLE_LOGIN_ENABLED === "1" && (
-          <a
-            data-provider="apple-login"
-            className={`${buttonClass("secondary", { block: true })} border-transparent bg-ink text-surface`}
-            href={startUrl("apple")}
-          >
-            Appleでログイン
-          </a>
-        )}
-      </div>
+      <LoginButtons returnTo={returnTo} />
       {/* 同意はこの1行で取る。チェックボックスも同意の記録もない（docs/specs/T-19-privacy-terms.md 決めたこと7） */}
       <LegalLinks consent />
     </main>

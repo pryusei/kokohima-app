@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deviceSummary } from "./deviceSummary";
 import { verifiedEmail } from "./idTokenClaims";
+import { checkLineClaims } from "./lineIdToken";
 import { decideRefresh, nextTokenExpiry, REFRESH_TOKEN_TTL_MS, RESCUE_WINDOW_MS } from "./refresh";
 import { sanitizeReturnTo } from "./returnTo";
 
@@ -57,6 +58,47 @@ describe("verifiedEmail", () => {
       "x@privaterelay.appleid.com",
     );
     expect(verifiedEmail("apple", { sub: "1", email: "x@example.com", email_verified: "false" })).toBeNull();
+  });
+
+  it("LINE は確認済みでもメールアドレスを返さない（email のスコープを求めていない。T-32）", () => {
+    expect(verifiedEmail("line", { sub: "U1", email: "a@example.com", email_verified: true })).toBeNull();
+  });
+});
+
+describe("checkLineClaims（T-32）", () => {
+  const now = Date.parse("2026-11-24T00:00:00Z");
+  const sec = now / 1000;
+  const good = { iss: "https://access.line.me", aud: "123", sub: "U1", iat: sec, exp: sec + 600, nonce: "n" };
+  const check = (p: unknown) => checkLineClaims(p, { channelId: "123", now });
+
+  it("正しいクレームなら sub と nonce を返す", () => {
+    expect(check(good)).toEqual({ ok: true, claims: { sub: "U1", nonce: "n" } });
+  });
+
+  it("期限は60秒まで許す。過ぎたら失敗。iat が60秒より先でも失敗", () => {
+    expect(check({ ...good, exp: sec - 59 }).ok).toBe(true);
+    expect(check({ ...good, exp: sec - 60 }).ok).toBe(false);
+    expect(check({ ...good, iat: sec + 60 }).ok).toBe(true);
+    expect(check({ ...good, iat: sec + 61 }).ok).toBe(false);
+  });
+
+  it.each([
+    ["発行者が違う", { iss: "https://access.line.me/" }],
+    ["宛先が違う", { aud: "456" }],
+    ["宛先が配列", { aud: ["123"] }],
+    ["exp が文字列", { exp: String(sec + 600) }],
+    ["iat がない", { iat: undefined }],
+    ["nonce がない", { nonce: undefined }],
+    ["nonce が空", { nonce: "" }],
+    ["sub がない", { sub: undefined }],
+    ["sub が長すぎる", { sub: "U".repeat(256) }],
+  ])("%s なら失敗", (_name, patch) => {
+    expect(check({ ...good, ...patch }).ok).toBe(false);
+  });
+
+  it("オブジェクトでなければ失敗", () => {
+    expect(check(null).ok).toBe(false);
+    expect(check("x").ok).toBe(false);
   });
 });
 

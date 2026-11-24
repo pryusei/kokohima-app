@@ -33,7 +33,9 @@ export function ContactPage() {
 
   return (
     <SubScreen title="問い合わせ" back="/settings">
-      <p>不具合・ご意見・個人情報の求めなどを、運営に送れます。返事が要るものは、ログインに使っているアカウントのメールアドレスにお送りします。</p>
+      <p>
+        不具合・ご意見・個人情報の求めなどを、運営に送れます。返事が要るものは、ログインに使っているアカウントのメールアドレスにお送りします。LINEでログインしているときはメールアドレスがないので、返事が要るものは、返信先のメールアドレスを内容に書いてください。
+      </p>
       {send.isSuccess ? (
         <div role="status" className="flex flex-col gap-3 rounded-l bg-surface p-4 shadow-card">
           <h2 className="text-l font-bold">送りました</h2>
@@ -59,7 +61,7 @@ export function ContactPage() {
           </ChipRow>
           {category === "privacy_request" && (
             <Note>
-              本人の確認のため、返事はログインに使っているアカウントのメールアドレスにだけお送りします。運営に届く前に退会すると、この求めは届きません。アカウントとデータをすべて消すときは、設定の『アカウント』から退会もできます。
+              本人の確認のため、返事はログインに使っているアカウントのメールアドレスにだけお送りします（LINEでログインしているときは、この画面から送った求めに書いたメールアドレスにお送りします）。運営に届く前に退会すると、この求めは届きません。アカウントとデータをすべて消すときは、設定の『アカウント』から退会もできます。
             </Note>
           )}
           <div className="flex flex-col gap-1">

@@ -18,3 +18,8 @@ AVATAR_URL_KEY=<base64urlの32バイト>
 # 行きたいのAI提案（T-29）の Claude API のキー。ローカルでは入れなくてよい（入れなければ「AIで探す」が出ない）。
 # 入れるときは、開発用に作った別のキーにする（本番のキーを使わない）
 ANTHROPIC_API_KEY=
+# LINE ログイン（T-32）のチャネル ID とチャネルシークレット（どちらも LINE Developers のチャネルの「チャネル基本設定」）。
+# 入れなければ LINE ログインは止まる（ボタンを押すとログインの失敗の画面に戻る）。ローカルで確かめるときは、開発用のチャネルを作り、
+# コールバック URL に http://localhost:5173/api/v1/auth/line/callback を登録する
+LINE_CHANNEL_ID=
+LINE_CHANNEL_SECRET=

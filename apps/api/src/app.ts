@@ -2,7 +2,7 @@ import { contactStartAt, safetyStartAt } from "@kokohima/shared";
 import { Hono } from "hono";
 import { requestId } from "hono/request-id";
 import { createRemoteJWKSet } from "jose";
-import { GOOGLE_ENDPOINTS, type AppDeps, type AppEnv } from "./env";
+import { GOOGLE_ENDPOINTS, LINE_ENDPOINTS, type AppDeps, type AppEnv } from "./env";
 import { healthReady } from "./http/health";
 import { problem } from "./http/problem";
 import { rateLimit } from "./http/rateLimit";
@@ -31,6 +31,7 @@ export function defaultDeps(): AppDeps {
     },
     now: () => Date.now(),
     google: { endpoints: GOOGLE_ENDPOINTS },
+    line: { endpoints: LINE_ENDPOINTS },
     notification: { resendUrl: "https://api.resend.com/emails", extraPushHosts: [], quietHours: true },
     // バインディングがない（設定の漏れ）・判定に失敗したときは、記録を残して通す。おおよその上限なので、止めるより通す側に倒す
     // 記録にはキー（IP・利用者 ID）を入れない

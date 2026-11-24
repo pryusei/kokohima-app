@@ -102,6 +102,22 @@ describe("退会", () => {
     expect(await screen.findByRole("dialog", { name: "退会の確認" })).toBeVisible();
   });
 
+  it("403 で方法が LINE なら、LINE のログインし直しへ移る（T-32）", async () => {
+    window.history.replaceState(null, "", "/settings/account");
+    const go = vi.spyOn(reauthRedirect, "go").mockImplementation(() => {});
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/me": json(ME),
+      "/api/v1/me/withdrawal": problem(403, "reauth_required", { reauthProvider: "line" }),
+    });
+    renderApp();
+    const dialog = await openConfirm();
+    await userEvent.click(within(dialog).getByRole("button", { name: "退会する" }));
+    await waitFor(() =>
+      expect(go).toHaveBeenCalledWith(`/api/v1/auth/line/start?returnTo=${encodeURIComponent("/settings/account?withdraw=1")}`),
+    );
+  });
+
   it("403 で方法が分からなければ（null）、ログインの画面で選んでもらう。確認の画面に今の表示名を出す", async () => {
     window.history.replaceState(null, "", "/settings/account");
     const go = vi.spyOn(reauthRedirect, "go").mockImplementation(() => {});

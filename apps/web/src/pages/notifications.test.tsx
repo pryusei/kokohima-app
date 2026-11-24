@@ -203,7 +203,7 @@ describe("通知の設定", () => {
     const invites = await screen.findByRole("switch", { name: "誘い" });
     expect(screen.getAllByRole("switch")).toHaveLength(5);
     expect(invites).toBeChecked();
-    expect(screen.getByText("新しい端末でのログインのお知らせは止められません")).toBeVisible();
+    expect(screen.getByText("新しい端末でのログインのお知らせは止められません（メールで届きます。LINEでログインした人には、お知らせ一覧にだけ出します）")).toBeVisible();
     await userEvent.click(invites);
     await waitFor(() => expect(invites).not.toBeChecked());
     const patch = calls.find((c) => c.init.method === "PATCH");
@@ -321,7 +321,7 @@ describe("通知の設定", () => {
       "/api/v1/me/notification-preferences": json(prefs),
     });
     renderApp();
-    expect(await screen.findByText("ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます")).toBeVisible();
+    expect(await screen.findByText("ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます（LINEでログインした人はメールアドレスがないので、お知らせ一覧にだけ残ります）")).toBeVisible();
     expect(screen.queryByRole("button", { name: "この端末でプッシュ通知を受け取る" })).toBeNull();
     expect(screen.getByRole("link", { name: "追加の方法" })).toHaveAttribute("href", "/settings/install");
   });

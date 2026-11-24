@@ -44,6 +44,12 @@ export type Bindings = {
   AVATAR_URL_KEY: string;
   /** アプリ自身の登録ドメイン（カンマ区切りの小文字のホスト名）。このドメインとそのサブドメインは取りに行かない */
   LINK_PREVIEW_OWN_DOMAINS: string;
+  /**
+   * LINE ログインのチャネル ID とチャネルシークレット（どちらも secret。docs/specs/T-32-line-login.md「設定値」）。
+   * 両方が入っているときだけ LINE ログインを動かす
+   */
+  LINE_CHANNEL_ID?: string;
+  LINE_CHANNEL_SECRET?: string;
   /** Sign in with Apple を動かすか（"1" のときだけ。docs/specs/T-12-release.md） */
   APPLE_LOGIN_ENABLED?: string;
   /** 画面（apps/web のビルド）の静的アセット。prod と、ローカル専用の assets の環境にだけある（docs/specs/T-12-release.md「振り分け」） */
@@ -81,6 +87,8 @@ export type AppDeps = {
   jwks: { google: JWTVerifyGetKey; apple: JWTVerifyGetKey };
   now: () => number;
   google: { endpoints: GoogleEndpoints };
+  /** LINE ログインの各エンドポイント。E2E では偽の経路に向ける（docs/specs/T-32-line-login.md「E2E用の偽の LINE」） */
+  line: { endpoints: LineEndpoints };
   notification: {
     /** メール配信の送信先 */
     resendUrl: string;
@@ -140,4 +148,19 @@ export const GOOGLE_ENDPOINTS: GoogleEndpoints = {
   token: "https://oauth2.googleapis.com/token",
   revoke: "https://oauth2.googleapis.com/revoke",
   calendar: "https://www.googleapis.com/calendar/v3",
+};
+
+/** LINE ログイン（v2.1）の各エンドポイント（docs/specs/T-32-line-login.md） */
+export type LineEndpoints = {
+  /** 利用者のブラウザが画面遷移する認可の画面 */
+  authorize: string;
+  token: string;
+  /** IDトークンの検証 */
+  verify: string;
+};
+
+export const LINE_ENDPOINTS: LineEndpoints = {
+  authorize: "https://access.line.me/oauth2/v2.1/authorize",
+  token: "https://api.line.me/oauth2/v2.1/token",
+  verify: "https://api.line.me/oauth2/v2.1/verify",
 };

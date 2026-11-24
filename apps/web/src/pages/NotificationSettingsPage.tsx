@@ -58,7 +58,7 @@ function PushSection() {
       <div className="flex flex-col gap-3 rounded-l bg-surface p-4 shadow-card">
         {!supported && (
           <>
-            <Note>ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます</Note>
+            <Note>ホーム画面に追加すると通知を受け取れます。追加しない場合はメールで届きます（LINEでログインした人はメールアドレスがないので、お知らせ一覧にだけ残ります）</Note>
             <Link to="/settings/install" className="text-s text-action underline">
               追加の方法
             </Link>
@@ -115,7 +115,7 @@ export function NotificationSettingsPage() {
             変更できませんでした。もう一度お試しください
           </p>
         )}
-        <Note>新しい端末でのログインのお知らせは止められません</Note>
+        <Note>新しい端末でのログインのお知らせは止められません（メールで届きます。LINEでログインした人には、お知らせ一覧にだけ出します）</Note>
       </Section>
       <PushSection />
       <Section title="ロック画面">
