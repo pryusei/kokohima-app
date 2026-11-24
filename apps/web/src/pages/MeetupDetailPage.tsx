@@ -4,9 +4,9 @@ import { useState } from "react";
 import { ApiError, apiSend } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
-import { createIcsLink } from "../calendar/queries";
-import { redirectTo } from "./CalendarSettingsPage";
+import { IcsButton } from "../calendar/IcsButton";
 import { formatRange } from "../invitations/format";
+import { MeetMoment, useMeetMoment } from "../invitations/MeetMoment";
 import { meetupQuery } from "../invitations/queries";
 import { nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
@@ -23,7 +23,8 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
   const queryClient = useQueryClient();
   const meetup = useQuery(meetupQuery(meetupId));
   const [failed, setFailed] = useState(false);
-  const [icsFailed, setIcsFailed] = useState<false | "failed" | "limited">(false);
+  // 成立を知って最初に開いた1回だけ、時間の欄の代わりに成立の演出を出す（docs/specs/T-43-meet-moment.md）
+  const moment = useMeetMoment(meetupId);
   // 表示した時点の時刻で判定する（描画のたびに時計を読まない）
   const [openedAt] = useState(() => Date.now());
   const key = keys.meetups.detail(meetupId);
@@ -50,17 +51,6 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
       await queryClient.invalidateQueries({ queryKey: keys.meetups.all() });
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
     },
-  });
-
-  // .ics は一時的な URL を発行してから画面遷移する（iOS では OS のカレンダーへの追加が開く。決定事項10）
-  const ics = useMutation({
-    mutationFn: () => createIcsLink(meetupId),
-    onMutate: () => setIcsFailed(false),
-    onSuccess: (link) => {
-      if (link) redirectTo.go(link.url);
-    },
-    // 回数の上限（429。T-10）は、少し待ってもらう
-    onError: (error) => setIcsFailed(error instanceof ApiError && error.status === 429 ? "limited" : "failed"),
   });
 
   if (meetup.error instanceof ApiError && meetup.error.status === 404) {
@@ -92,10 +82,14 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
       )}
       {m && (
         <>
-          <div className={`-mx-6 flex flex-col gap-1 px-6 py-4 ${cancelled ? "bg-quiet-bg" : "bg-meet-soft"}`}>
-            <p className={`text-xl font-bold tabular-nums ${cancelled ? "text-quiet-ink" : "text-ink"}`}>{formatRange(m)}</p>
-            {m.area && <p className={cancelled ? "text-quiet-ink" : "font-bold text-meet-ink"}>エリア：{m.area}</p>}
-          </div>
+          {moment && !cancelled ? (
+            <MeetMoment meetup={m} />
+          ) : (
+            <div className={`-mx-6 flex flex-col gap-1 px-6 py-4 ${cancelled ? "bg-quiet-bg" : "bg-meet-soft"}`}>
+              <p className={`text-xl font-bold tabular-nums ${cancelled ? "text-quiet-ink" : "text-ink"}`}>{formatRange(m)}</p>
+              {m.area && <p className={cancelled ? "text-quiet-ink" : "font-bold text-meet-ink"}>エリア：{m.area}</p>}
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <span className="text-xs font-bold text-ink-muted">参加する人</span>
             <ul className="flex flex-wrap gap-4">
@@ -109,16 +103,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
           </div>
           {m.message && <p className="whitespace-pre-wrap">{m.message}</p>}
           <LinkCard url={m.url} preview={m.linkPreview} />
-          <SendButton block onClick={() => ics.mutate()}>
-            カレンダーに追加（.ics）
-          </SendButton>
-          {icsFailed && (
-            <p role="status" className="text-s text-ink-muted">
-              {icsFailed === "limited"
-                ? "少し待ってから、もう一度お試しください"
-                : "カレンダーに追加できませんでした。もう一度お試しください"}
-            </p>
-          )}
+          <IcsButton meetupId={m.id} />
           {cancellable && (
             <>
               <SendButton variant="ghost" block onClick={() => cancel.mutate()}>

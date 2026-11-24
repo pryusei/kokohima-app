@@ -6,7 +6,9 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { addDays, formatDate, formatTime, localDateOf, localInstant } from "../availability/format";
 import { decideLabel, inviteTimes, KIND_LABELS, statusText, statusTone } from "../invitations/format";
+import { MeetMoment, useMeetMoment } from "../invitations/MeetMoment";
 import { inviteQuery } from "../invitations/queries";
+import { IcsButton } from "../calendar/IcsButton";
 import { honorificOf, nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
@@ -77,6 +79,9 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
   // 届いた誘いの「…」（相手への操作。docs/specs/T-33-block-report.md「振る舞い 1.」）
   const { acting, open: openActions, close: closeActions, moreRef } = usePersonActionsToggle();
   const key = keys.invites.detail(inviteId);
+  // 成立した（行く・決める）あと、または成立を知って最初に開いた1回だけ、成立の演出を出す（docs/specs/T-43-meet-moment.md）。
+  // 予定の ID はサーバーの応答で入るので、楽観的更新の間は流さない
+  const moment = useMeetMoment(invite.data?.status === "confirmed" ? invite.data.meetupId : null);
 
   // 返答・決定は押したらすぐ表示を変え、失敗したら戻して静かな文言を出す。409 なら最新の状態を読み直す
   const idempotency = useIdempotencyKey();
@@ -164,11 +169,17 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
           <p className="sr-only">
             {d.direction === "received" ? "誘ってくれた人" : "誘った相手"}：{name}
           </p>
-          <div className="flex flex-col gap-1">
-            <p className="text-xl font-bold tabular-nums">{times?.when}</p>
-            {times?.original && <p className="text-s text-ink-muted tabular-nums">{times.original}</p>}
-            {d.area && <p className="text-ink-muted">エリア：{d.area}</p>}
-          </div>
+          {moment ? (
+            <MeetMoment meetup={moment}>
+              <IcsButton meetupId={moment.id} />
+            </MeetMoment>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <p className="text-xl font-bold tabular-nums">{times?.when}</p>
+              {times?.original && <p className="text-s text-ink-muted tabular-nums">{times.original}</p>}
+              {d.area && <p className="text-ink-muted">エリア：{d.area}</p>}
+            </div>
+          )}
           {d.message && <p className="whitespace-pre-wrap">{d.message}</p>}
           <LinkCard url={d.url} preview={d.linkPreview} />
           {d.status === "pending" && (

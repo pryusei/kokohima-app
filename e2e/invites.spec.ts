@@ -160,3 +160,36 @@ test("成立した予定で「やっぱり難しい」→ 双方の「成立」�
   await a.page.goto(inviteUrl);
   await expect(sheet(a.page).getByText("やっぱり難しくなりました")).toBeVisible();
 });
+
+test("成立の演出（T-43）：Bが「行く」で流れ、再読み込みでは流さない。Aは最初に開いた1回だけで、動きを減らす設定では止まった一枚絵", async ({ browser }) => {
+  // docs/specs/T-43-meet-moment.md「E2Eテスト」
+  const a = await newUser(browser, "A");
+  const b = await newUser(browser, "B");
+  await befriend(a, b);
+  await sendFromFriendDetail(a.page, b);
+  const inviteUrl = a.page.url();
+
+  await openReceived(b.page, a);
+  await b.page.getByRole("button", { name: "行く" }).click();
+  const moment = sheet(b.page).getByRole("region", { name: "決まった！" });
+  await expect(moment).toBeVisible();
+  await expect(moment.getByText(`${a.displayName}と会える`)).toBeVisible();
+  await expect(moment.getByRole("button", { name: "カレンダーに追加（.ics）" })).toBeVisible();
+  await expect(moment.getByTestId("meet-dot")).toHaveCount(2);
+  await b.page.reload();
+  await expect(sheet(b.page).getByText("成立", { exact: true })).toBeVisible();
+  await expect(sheet(b.page).getByText(/^\d+\/\d+（.） 10:00〜12:00$/)).toBeVisible();
+  await expect(sheet(b.page).getByRole("region", { name: "決まった！" })).toHaveCount(0);
+
+  // 誘った側：動きを減らす設定では動かさず、重なった青緑（meet）の丸だけを出す
+  await a.page.emulateMedia({ reducedMotion: "reduce" });
+  await a.page.goto(inviteUrl);
+  const still = sheet(a.page).getByRole("region", { name: "決まった！" });
+  await expect(still).toBeVisible();
+  const dot = still.getByTestId("meet-dot").first();
+  await expect(dot).toHaveCSS("animation-name", "none");
+  await expect(dot).toHaveCSS("background-color", "rgb(15, 127, 133)");
+  await a.page.reload();
+  await expect(sheet(a.page).getByText("成立", { exact: true })).toBeVisible();
+  await expect(sheet(a.page).getByRole("region", { name: "決まった！" })).toHaveCount(0);
+});

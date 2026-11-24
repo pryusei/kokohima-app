@@ -4,6 +4,7 @@ import { ApiError, apiFetch, setUnauthenticatedHandler } from "../api/client";
 import { removeSubscriptionBeforeLogout, resendSubscription, unsubscribeLocally } from "../notifications/push";
 import { navigate } from "../router";
 import { broadcastLogout, onAuthMessage, refreshAccessToken, type RefreshOutcome } from "./refresh";
+import { clearMeetMomentSeen } from "../invitations/meetMomentSeen";
 import { tokenStore } from "./tokenStore";
 
 // ログイン状態。起動時に更新用トークンでアクセストークンを取り直す
@@ -42,10 +43,14 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
   const becomeAnonymous = useCallback(() => {
     tokenStore.clear();
     queryClient.clear();
+    // 成立の演出を見た予定の記録も、同じ端末の次の人に残さない（docs/specs/T-43-meet-moment.md「2.」）
+    clearMeetMomentSeen();
     setStatus("anonymous");
   }, [queryClient]);
 
   const applyOutcome = useCallback((outcome: RefreshOutcome) => {
+    // 起動時などにログインが切れていたときも、前の人の成立の演出の記録を消す（docs/specs/T-43-meet-moment.md「2.」）
+    if (outcome === "unauthenticated") clearMeetMomentSeen();
     setStatus(outcome === "ok" ? "authenticated" : outcome === "unauthenticated" ? "anonymous" : "error");
   }, []);
 

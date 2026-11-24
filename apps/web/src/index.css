@@ -158,3 +158,69 @@
     }
   }
 }
+
+/* 成立の演出「ふたつの灯りが重なる」（docs/specs/T-43-meet-moment.md「3.」）。
+   灯りの色の丸が外から寄って重なり、成立の青緑に変わる（約1.2秒）。そのあと文字が下から順に出る。
+   止まった形（アニメーションがないときの見た目）が、重なった青緑の丸の一枚絵になるようにしてある。
+   prefers-reduced-motion では、上の @layer base の決まり（animation: none !important）で動かない */
+@layer components {
+  .kh-meet-dot {
+    animation: kh-meet-converge 1200ms cubic-bezier(0.45, 0, 0.25, 1) both;
+  }
+  .kh-meet-pair {
+    animation: kh-meet-glow 1300ms ease-out both;
+  }
+  .kh-meet-reveal {
+    animation: kh-meet-reveal 300ms ease-out both;
+    animation-delay: calc(950ms + var(--kh-meet-i, 0) * 60ms);
+  }
+}
+
+@keyframes kh-meet-converge {
+  0% {
+    transform: translateX(var(--kh-meet-from, 0px));
+    background-color: var(--color-lamp);
+    color: var(--color-on-lamp);
+  }
+  55% {
+    transform: translateX(0);
+    background-color: var(--color-lamp);
+    color: var(--color-on-lamp);
+  }
+  80% {
+    transform: scale(1.08);
+    background-color: var(--color-meet);
+    color: var(--color-on-meet);
+  }
+  100% {
+    transform: none;
+    background-color: var(--color-meet);
+    color: var(--color-on-meet);
+  }
+}
+
+@keyframes kh-meet-glow {
+  0% {
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: drop-shadow(0 0 18px var(--color-lamp));
+  }
+  80% {
+    filter: drop-shadow(0 0 14px var(--color-meet));
+  }
+  100% {
+    filter: drop-shadow(0 0 0 transparent);
+  }
+}
+
+@keyframes kh-meet-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
