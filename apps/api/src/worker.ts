@@ -3,6 +3,7 @@ import { DORMANCY_BATCH, markDormantConnections, wakeDormantConnections } from "
 import { assignSyncs } from "./calendar/application/sync";
 import type { AppDeps, Bindings, JobMessage } from "./env";
 import { isApiPath, withApiHeaders, withPageHeaders } from "./http/securityHeaders";
+import { REFRESH_COOKIE_NAME } from "./identity/cookies";
 import { handleBatch } from "./jobs/consumer";
 import { cleanupExpired, dispatchOutbox, recordCronRun, runCappedStep, runStep } from "./jobs/dispatch";
 import {
@@ -35,9 +36,36 @@ export async function runScheduled(cron: string, env: Bindings, deps: AppDeps) {
   await runStep("heartbeat", () => recordCronRun(env.DB, "minutely", deps.now()));
 }
 
+/** 紹介のページ（apps/web/landing.html）。`html_handling` の既定で `/landing.html` は `/landing` へリダイレクトされるので、`/landing` で取る */
+export const LANDING_PATH = "/landing";
+
+/** 要求に、値が空でない更新用トークンの Cookie があるか。値は確かめない（D1 を読まない。docs/specs/T-44-landing.md「1.」） */
+export function hasRefreshCookie(request: Request): boolean {
+  const header = request.headers.get("Cookie");
+  if (!header) return false;
+  return header.split(";").some((part) => {
+    const eq = part.indexOf("=");
+    return eq > 0 && part.slice(0, eq).trim() === REFRESH_COOKIE_NAME && part.slice(eq + 1).trim() !== "";
+  });
+}
+
+/** `/` の応答：ログインの Cookie があれば SPA（index.html）、なければ紹介のページ。どちらにも Vary: Cookie を足す（もとの Vary は残す） */
+async function fetchHome(request: Request, assets: Fetcher): Promise<Response> {
+  let target = request;
+  if (!hasRefreshCookie(request)) {
+    const url = new URL(request.url);
+    url.pathname = LANDING_PATH;
+    target = new Request(url, request);
+  }
+  const res = withPageHeaders("/", await assets.fetch(target));
+  res.headers.append("Vary", "Cookie");
+  return res;
+}
+
 /**
  * 要求の振り分け（docs/specs/T-12-release.md「振り分け」）。`/api/` は API、それ以外は画面の静的アセット（ASSETS があるとき）。
- * ASSETS がない環境（ローカル・E2E・単体テスト）は、今までどおりすべて API のアプリが受ける。どの応答にもセキュリティのヘッダーを付ける
+ * ASSETS がない環境（ローカル・E2E・単体テスト）は、今までどおりすべて API のアプリが受ける。どの応答にもセキュリティのヘッダーを付ける。
+ * `/` だけは、ログインの Cookie の有無で紹介のページと SPA に分ける（docs/specs/T-44-landing.md「1.」）
  */
 export async function routeRequest(
   app: { fetch: (req: Request, env: Bindings, ctx: ExecutionContext) => Response | Promise<Response> },
@@ -50,6 +78,7 @@ export async function routeRequest(
   if (request.method !== "GET" && request.method !== "HEAD") {
     return withPageHeaders(pathname, new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } }));
   }
+  if (pathname === "/") return fetchHome(request, env.ASSETS);
   return withPageHeaders(pathname, await env.ASSETS.fetch(request));
 }
 
