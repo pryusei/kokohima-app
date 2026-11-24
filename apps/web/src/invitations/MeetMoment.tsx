@@ -1,6 +1,6 @@
 import type { Meetup } from "@kokohima/shared";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
 import { meQuery, nameOfProfile } from "../account/me";
 import { formatRange } from "./format";
 import { hasSeenMeetMoment, markMeetMomentSeen } from "./meetMomentSeen";
@@ -40,8 +40,9 @@ export function meetMomentOffset(index: number, count: number): number {
 
 /**
  * この画面で成立の演出を流すか。予定の ID ごとに、最初に描いたときに一度だけ決める（描画の中で前の値と比べる）。
- * 流すと決めたら、すぐに端末に「見た」と記録する（同じ予定では、ほかの画面でも二度と流さない）。
- * 流すのは、この端末でまだ見ていない、閲覧者から見て成立中（confirmed）で、まだ終わっていない予定だけ
+ * 流すのは、この端末でまだ見ていない、閲覧者から見て成立中（confirmed）で、まだ終わっていない予定だけ。
+ * 端末に「見た」と記録するのは、予定を参加者として読めて、流すと決まったときだけ（読めない・404・取り消し・終わった予定は記録しない）。
+ * 記録したあとも、その画面を開いている間は出し続ける（同じ予定では、ほかの画面でも二度と流さない）
  */
 export function useMeetMoment(meetupId: string | null): Meetup | null {
   const [decision, setDecision] = useState<{ id: string; first: boolean } | null>(null);
@@ -49,15 +50,17 @@ export function useMeetMoment(meetupId: string | null): Meetup | null {
     setDecision({ id: meetupId, first: !hasSeenMeetMoment(meetupId) });
   }
   const first = meetupId !== null && decision?.id === meetupId && decision.first;
-  useEffect(() => {
-    if (first && meetupId !== null) markMeetMomentSeen(meetupId);
-  }, [first, meetupId]);
   // 表示した時点の時刻で判定する（描画のたびに時計を読まない）
   const [openedAt] = useState(() => Date.now());
   const meetup = useQuery({ ...meetupQuery(meetupId ?? ""), enabled: first });
   const m = meetup.data;
-  if (!first || !m || m.id !== meetupId || m.status !== "confirmed" || Date.parse(m.endsAt) <= openedAt) return null;
-  return m;
+  const result =
+    first && m && m.id === meetupId && m.status === "confirmed" && Date.parse(m.endsAt) > openedAt ? m : null;
+  const playingId = result?.id ?? null;
+  useEffect(() => {
+    if (playingId !== null) markMeetMomentSeen(playingId);
+  }, [playingId]);
+  return result;
 }
 
 /** 成立の演出と「決まった！」。children に、その画面にまだない成立後の操作を置く */
@@ -65,9 +68,10 @@ export function MeetMoment({ meetup, children }: { meetup: Meetup; children?: Re
   const me = useQuery(meQuery());
   const dots = meetMomentDots(me.data?.displayName ?? null, meetup.participants);
   const reveal = (i: number) => ({ "--kh-meet-i": i }) as CSSProperties;
+  const titleId = useId();
   return (
     <section
-      aria-labelledby="meet-moment-title"
+      aria-labelledby={titleId}
       className="-mx-6 flex flex-col items-center gap-2 bg-meet-soft px-6 pt-4 pb-6 text-center"
     >
       <div aria-hidden="true" className="kh-meet-pair flex h-24 items-center justify-center">
@@ -82,7 +86,7 @@ export function MeetMoment({ meetup, children }: { meetup: Meetup; children?: Re
           </span>
         ))}
       </div>
-      <h3 id="meet-moment-title" className="kh-meet-reveal text-xxl font-bold" style={reveal(0)}>
+      <h3 id={titleId} className="kh-meet-reveal text-xxl font-bold" style={reveal(0)}>
         決まった！
       </h3>
       <p className="kh-meet-reveal font-bold tabular-nums" style={reveal(1)}>

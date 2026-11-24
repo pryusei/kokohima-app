@@ -49,6 +49,8 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
   }, [queryClient]);
 
   const applyOutcome = useCallback((outcome: RefreshOutcome) => {
+    // 起動時などにログインが切れていたときも、前の人の成立の演出の記録を消す（docs/specs/T-43-meet-moment.md「2.」）
+    if (outcome === "unauthenticated") clearMeetMomentSeen();
     setStatus(outcome === "ok" ? "authenticated" : outcome === "unauthenticated" ? "anonymous" : "error");
   }, []);
 

@@ -165,6 +165,45 @@ describe("誘いの「行く」", () => {
     expect(moment()).toBeNull();
     expect(calls.some((c) => c.url.includes("/api/v1/meetups/"))).toBe(false);
   });
+  it("「この時間なら」が返った送信の誘いで決めると、予定の（代わりの）時間で流し、最初の時間は出さない", async () => {
+    const counterProposal = { startsAt: "2026-10-10T11:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z" };
+    const sent = { direction: "sent", status: "counter_proposed", counterProposal };
+    open(`/invites/${INVITE_ID}`, {
+      [`/api/v1/direct-invites/${INVITE_ID}`]: [
+        json(invite(sent)),
+        json(invite({ ...sent, status: "confirmed", meetupId: MEETUP_ID })),
+      ],
+      [`/api/v1/direct-invites/${INVITE_ID}/decide`]: json(invite({ ...sent, status: "confirmed", meetupId: MEETUP_ID })),
+      [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup(counterProposal)),
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "20:00〜で決める" }));
+    const region = await screen.findByRole("region", { name: "決まった！" });
+    expect(within(region).getByText("10/10（土） 20:00〜23:00")).toBeVisible();
+    expect(screen.queryByText(/最初の時間/)).toBeNull();
+    expect(screen.queryByText("10/10（土） 19:00〜23:00")).toBeNull();
+    await waitFor(() => expect(hasSeenMeetMoment(MEETUP_ID)).toBe(true));
+  });
+});
+
+describe("記録するのは、参加者として読めて流したときだけ", () => {
+  it.each([
+    ["見つからない（参加者でない）", 404, "この予定は見つかりませんでした。"],
+    ["読めなかった（通信・サーバー）", 503, "読み込めませんでした。もう一度お試しください"],
+  ])("%s予定は記録せず、次に読めたときに流す", async (_label, status, text) => {
+    open(`/meetups/${MEETUP_ID}`, {
+      [`/api/v1/meetups/${MEETUP_ID}`]: [json({ error: { code: "x", message: "x" } }, status), json(meetup())],
+    });
+    const first = renderApp();
+    expect(await screen.findByText(text)).toBeVisible();
+    expect(moment()).toBeNull();
+    expect(window.localStorage.getItem(MEET_MOMENT_SEEN_KEY)).toBeNull();
+    first.unmount();
+
+    renderApp();
+    expect(await screen.findByRole("region", { name: "決まった！" })).toBeVisible();
+    await waitFor(() => expect(hasSeenMeetMoment(MEETUP_ID)).toBe(true));
+  });
 });
 
 describe("誘った側（成立を知って最初に開いた1回だけ）", () => {
@@ -219,6 +258,8 @@ describe("誘った側（成立を知って最初に開いた1回だけ）", () 
     expect(await screen.findByRole("heading", { name: "成立した予定" })).toBeVisible();
     await screen.findByText(/^10\/(9|10)（.）/);
     expect(moment()).toBeNull();
+    // 流さない予定は端末に記録しない
+    expect(window.localStorage.getItem(MEET_MOMENT_SEEN_KEY)).toBeNull();
   });
 });
 
@@ -317,6 +358,14 @@ describe("見た予定の端末の記録", () => {
     mockFetch({ ...base, "/api/v1/auth/logout": () => new Response(null, { status: 204 }) });
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: "ログアウト" }));
+    await waitFor(() => expect(window.localStorage.getItem(MEET_MOMENT_SEEN_KEY)).toBeNull());
+  });
+
+  it("アプリを閉じている間にログインが切れていたら、起動したときに記録を消す", async () => {
+    markMeetMomentSeen(MEETUP_ID);
+    window.history.replaceState(null, "", "/");
+    mockFetch({ ...base, "/api/v1/auth/refresh": () => new Response(null, { status: 401 }) });
+    renderApp();
     await waitFor(() => expect(window.localStorage.getItem(MEET_MOMENT_SEEN_KEY)).toBeNull());
   });
 });
