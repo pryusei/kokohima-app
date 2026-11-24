@@ -18,9 +18,15 @@ export const LOGIN_CODE_TTL_MS = 60 * 1000;
 
 type Ctx = { env: Bindings; deps: AppDeps };
 
-/** その方法のログインを使えるか。Apple は APPLE_LOGIN_ENABLED が "1" のときだけ（それ以外は止める。T-12） */
-export const providerEnabled = (env: Bindings, provider: OidcProviderName) =>
-  provider !== "apple" || env.APPLE_LOGIN_ENABLED === "1";
+/**
+ * その方法のログインを使えるか。Apple は APPLE_LOGIN_ENABLED が "1" のときだけ（それ以外は止める。T-12）。
+ * LINE はチャネル ID とチャネルシークレット（secret）の両方が入っているときだけ（T-32「設定値」）
+ */
+export function providerEnabled(env: Bindings, provider: OidcProviderName): boolean {
+  if (provider === "apple") return env.APPLE_LOGIN_ENABLED === "1";
+  if (provider === "line") return !!env.LINE_CHANNEL_ID && !!env.LINE_CHANNEL_SECRET;
+  return true;
+}
 
 export type IssuedSession = {
   refreshToken: string;
@@ -46,7 +52,7 @@ export async function startLogin(ctx: Ctx, provider: OidcProviderName, returnTo:
     returnTo: sanitizeReturnTo(returnTo, ctx.env.APP_ORIGIN),
     expiresAt: now + OAUTH_TX_TTL_MS,
   });
-  const redirectUrl = await authorizeUrl(ctx.env, provider, { state, nonce, codeVerifier });
+  const redirectUrl = await authorizeUrl(ctx.env, ctx.deps, provider, { state, nonce, codeVerifier });
   return { redirectUrl, binding };
 }
 

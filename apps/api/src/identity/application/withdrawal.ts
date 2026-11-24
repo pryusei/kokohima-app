@@ -25,7 +25,7 @@ export const WITHDRAWAL_RETRY_AFTER_MS = 60 * 60 * 1000;
 export const WITHDRAWAL_RETRY_LIMIT = 5;
 
 /** ログインし直しに使える方法。それ以外（E2E のテスト用ログインなど）は null で返し、画面はログインの画面へ移す */
-const REAUTH_PROVIDERS = ["google", "apple"] as const;
+const REAUTH_PROVIDERS = ["google", "apple", "line"] as const;
 export type ReauthProvider = (typeof REAUTH_PROVIDERS)[number];
 
 export type WithdrawResult =
