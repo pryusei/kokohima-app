@@ -1,5 +1,7 @@
 /*
  * 紹介のページ（apps/web/landing.html。docs/specs/T-44-landing.md「3.」）の CSS。
+ * landing.html：未ログインで / を開いた人に Worker が返す。JavaScript を置かない（script・インラインの style・style 属性・外のオリジンのもの・HTML のコメントを入れない。check-web-dist.mjs で確かめる）。
+ * 文はプライバシー ポリシーの本文と同じことを言う。保存する情報・外に渡すもの・カレンダーで読むもの・書くものを変えたら、同じ PR で直す
  * index.css のトークンとユーティリティだけを使う（Tailwind の既定の色は index.css で消している）。暗い表示も index.css のトークンに従う
  */
 @import "./index.css";
