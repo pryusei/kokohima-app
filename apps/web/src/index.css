@@ -158,6 +158,8 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     line-height: 1.5;
+    /* 押したときの反応は、行・カードの押した感触で出す（docs/specs/T-56-motion.md「M-11」） */
+    -webkit-tap-highlight-color: transparent;
   }
   /* フォーカスは2pxの隙間の外に focus の2pxの輪（docs/specs/T-46-countered-card-focus-ring.md）。
      box-shadow だと shadow-card などの影のクラスに上書きされ、強制カラーのモードでは消えるので outline で描く */
@@ -272,6 +274,120 @@
   .kh-collapse[data-closed] > * {
     opacity: 0;
     transition: opacity var(--duration-fast) var(--ease-in);
+  }
+}
+
+/* 一覧とナビの動き（docs/specs/T-56-motion.md「3. 実装PR③」）。入る動きは、止まった形（普段の指定）を最終形にし、
+   始まりの形はキーフレームの from にだけ書いて backwards で付ける（動きを止める設定で animation: none になっても見える） */
+@layer components {
+  /* M-06 読み込み中の骨組み：200ms の遅れのあとに出て、出終わってから明滅する（1.4秒。光が流れる動きは使わない） */
+  .kh-skeleton {
+    animation:
+      kh-fade-in var(--duration-fast) var(--ease-out) 200ms backwards,
+      kh-breathe 1.4s ease-in-out calc(200ms + var(--duration-fast)) infinite;
+  }
+  /* M-06・M-08 読み込みのあとの中身・誘いタブの切り替えの中身 */
+  .kh-fade {
+    animation: kh-fade-in var(--duration-fast) var(--ease-out) backwards;
+  }
+  /* M-10 自分が増やした行：開いたあとに一度だけ、地を surface-sunken から元の色へ戻す（600ms） */
+  .kh-row-glow {
+    animation: kh-row-glow calc(var(--duration-sheet) + var(--duration-base)) var(--ease-out) var(--duration-base) backwards;
+  }
+  /* M-15 未読のバッジ：出るとき・増えたときに「ぽん」。消えるときは縮んで薄くなる */
+  .kh-badge {
+    transition:
+      transform var(--duration-fast) var(--ease-in),
+      opacity var(--duration-fast) var(--ease-in);
+  }
+  .kh-badge[data-pop] {
+    animation: kh-badge-pop var(--duration-sheet) var(--ease-spring);
+  }
+  .kh-badge[data-exiting] {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+@keyframes kh-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes kh-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes kh-row-glow {
+  from {
+    background-color: var(--color-surface-sunken);
+  }
+}
+@keyframes kh-badge-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* M-07・M-13 画面の切り替え（View Transitions）。動かすのは中身の領域（main の kh-content）だけで、
+   画面全体・下のタブ・左のナビは動かさない。向きは html の data-nav（fade・push・pop） */
+::view-transition-group(root),
+::view-transition-old(root),
+::view-transition-new(root),
+::view-transition-group(kh-tabbar),
+::view-transition-new(kh-tabbar),
+::view-transition-group(kh-sidenav),
+::view-transition-new(kh-sidenav),
+::view-transition-group(kh-content) {
+  animation: none;
+}
+::view-transition-old(kh-tabbar),
+::view-transition-old(kh-sidenav) {
+  display: none;
+}
+html[data-nav="fade"]::view-transition-old(kh-content) {
+  animation: kh-vt-out var(--duration-fast) var(--ease-in) both;
+}
+html[data-nav="fade"]::view-transition-new(kh-content) {
+  animation: kh-vt-in var(--duration-fast) var(--ease-out) both;
+}
+html[data-nav="push"]::view-transition-old(kh-content) {
+  --kh-vt-x: -10%;
+  animation: kh-vt-out var(--duration-base) var(--ease-out) both;
+}
+html[data-nav="push"]::view-transition-new(kh-content) {
+  --kh-vt-x: 30%;
+  animation: kh-vt-in var(--duration-base) var(--ease-out) both;
+}
+html[data-nav="pop"]::view-transition-old(kh-content) {
+  --kh-vt-x: 30%;
+  animation: kh-vt-out var(--duration-fast) var(--ease-in) both;
+}
+html[data-nav="pop"]::view-transition-new(kh-content) {
+  --kh-vt-x: -10%;
+  animation: kh-vt-in var(--duration-fast) var(--ease-in) both;
+}
+@keyframes kh-vt-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--kh-vt-x, 0));
+  }
+}
+@keyframes kh-vt-out {
+  to {
+    opacity: 0;
+    transform: translateX(var(--kh-vt-x, 0));
   }
 }
 
