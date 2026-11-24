@@ -40,13 +40,15 @@ export const CALENDAR_TYPES = [
   "UserWithdrew",
   // 問い合わせを Slack に届ける（docs/specs/T-24-contact.md「振る舞い 2.」）
   "ContactMessageSubmitted",
+  // 通報を Slack に届ける（docs/specs/T-33-block-report.md「振る舞い 5.」）
+  "UserReported",
 ] as const;
 
 /**
  * Queue のメッセージに payload を載せない型（docs/specs/T-24-contact.md「振る舞い 2.」）。
  * Queue のメッセージは再試行の間と退避キューに残り、退会で D1 の行を消しても残るため。consumer は受付番号で D1 の行を読む
  */
-export const ID_ONLY_TYPES: readonly string[] = ["ContactMessageSubmitted"];
+export const ID_ONLY_TYPES: readonly string[] = ["ContactMessageSubmitted", "UserReported"];
 
 /** outbox の行から Queue のメッセージを作る（dispatchOnce と、E2E の outbox を流す経路の両方が使う） */
 export function toJobMessage(row: { id: string; type: string; payload: string; created_at: number }): Extract<JobMessage, { kind: "outbox" }> {

@@ -7,6 +7,7 @@ import { handleLinkAttached } from "../link-preview/application/fetchPreview";
 import { createFromEvent, deliver } from "../notification/application/delivery";
 import { completeWithdrawal } from "../identity/application/withdrawal";
 import { deliverContactMessage } from "../contact/application/deliver";
+import { deliverReport } from "../contact/application/report";
 
 // Queue の consumer（docs/specs/T-06-calendar.md）。kind と type で振り分ける。どの処理も冪等にしてあるので、
 // 二重に届いても結果は同じ。ログには kind・type・id だけを出し、payload の中身は出さない
@@ -35,6 +36,10 @@ async function handleCalendarSide(ctx: Ctx, id: string, type: string, payload: u
     // 問い合わせ（T-24）：Queue のメッセージの payload は使わず、受付番号で D1 の行を読む
     case "ContactMessageSubmitted":
       await deliverContactMessage(ctx, id);
+      return;
+    // 通報（T-33）：同じく受付番号で D1 の行を読む
+    case "UserReported":
+      await deliverReport(ctx, id);
       return;
     case "UserWithdrew":
       await completeWithdrawal(ctx, withdrewPayload.parse(payload).userId);
