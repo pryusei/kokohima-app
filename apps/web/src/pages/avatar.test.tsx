@@ -1,10 +1,10 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { centerSquare, MAX_SOURCE_BYTES } from "../account/avatarImage";
 import { tokenStore } from "../auth/tokenStore";
 import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
-import { Avatar } from "../ui/Avatar";
+import { Avatar, useAvatarImage } from "../ui/Avatar";
 
 // アイコンの画像（docs/specs/T-27-avatar-upload.md「端末での作り直し」「画面」）
 
@@ -178,6 +178,34 @@ describe("Avatar", () => {
     const { container } = renderApp();
     await screen.findByText("あき");
     expect(container.querySelector(`img[src="${URL_1}"]`)).not.toBeNull();
+  });
+});
+
+describe("useAvatarImage", () => {
+  // Avatar と成立の演出の丸で共有する（docs/specs/T-58-meet-moment-avatars.md「5.」）
+  it("読めなかった（error）ら出さず、URL が変わるか、オンラインに戻ると読み直す", () => {
+    const { result, rerender } = renderHook(({ src }: { src: string | null }) => useAvatarImage(src), {
+      initialProps: { src: URL_1 as string | null },
+    });
+    expect(result.current.showImage).toBe(true);
+    act(() => result.current.onError());
+    expect(result.current.showImage).toBe(false);
+    rerender({ src: `${URL_1}x` });
+    expect(result.current.showImage).toBe(true);
+    act(() => result.current.onError());
+    expect(result.current.showImage).toBe(false);
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    expect(result.current.showImage).toBe(false);
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(result.current.showImage).toBe(true);
+    rerender({ src: null });
+    expect(result.current.showImage).toBe(false);
   });
 });
 

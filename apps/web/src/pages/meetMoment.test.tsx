@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -481,10 +481,11 @@ describe("丸の並べ方と名前", () => {
   const people = (n: number) => Array.from({ length: n }, (_, i) => person(uuid(i + 1), `友${i + 1}`));
 
   it("自分を左に、合わせて4つまで。5人以上は最後を「+n」にする", () => {
-    expect(meetMomentDots("はる", people(1)).map((d) => d.label)).toEqual(["は", "友"]);
-    expect(meetMomentDots("はる", people(3)).map((d) => d.label)).toEqual(["は", "友", "友", "友"]);
-    expect(meetMomentDots("はる", people(4)).map((d) => d.label)).toEqual(["は", "友", "友", "+2"]);
-    expect(meetMomentDots("はる", people(9)).map((d) => d.label)).toEqual(["は", "友", "友", "+7"]);
+    const haru = { displayName: "はる", avatarUrl: null };
+    expect(meetMomentDots(haru, people(1)).map((d) => d.label)).toEqual(["は", "友"]);
+    expect(meetMomentDots(haru, people(3)).map((d) => d.label)).toEqual(["は", "友", "友", "友"]);
+    expect(meetMomentDots(haru, people(4)).map((d) => d.label)).toEqual(["は", "友", "友", "+2"]);
+    expect(meetMomentDots(haru, people(9)).map((d) => d.label)).toEqual(["は", "友", "友", "+7"]);
     // 名前がない・読めない・退会した人は「？」
     expect(meetMomentDots(null, [person(uuid(1), null), person(uuid(2), "あき", true)]).map((d) => d.label)).toEqual(["？", "？", "？"]);
   });
@@ -500,6 +501,130 @@ describe("丸の並べ方と名前", () => {
     expect([0, 1].map((i) => meetMomentOffset(i, 2))).toEqual([-74, 74]);
     expect([0, 1, 2].map((i) => meetMomentOffset(i, 3))).toEqual([-64, 0, 64]);
     expect([0, 1, 2, 3].map((i) => meetMomentOffset(i, 4))).toEqual([-60, -20, 20, 60]);
+  });
+});
+
+describe("丸の中のアイコンの画像（docs/specs/T-58-meet-moment-avatars.md）", () => {
+  const ME_URL = "/api/v1/avatars/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa?e=1760061600&s=me";
+  const url = (n: number) => `/api/v1/avatars/${uuid(n)}?e=1760061600&s=${n}`;
+  const withAvatar = (id: string, displayName: string | null, avatarUrl: string | null) => ({ id, displayName, avatarUrl, withdrawn: false });
+  const yu = (avatarUrl: string | null) => json({ id: ME_ID, displayName: "ゆう", avatarUrl });
+
+  /** 成立した予定の詳細を開いて、演出の丸を返す */
+  async function openMoment(participants: unknown[], meResponse = yu(ME_URL)) {
+    open(`/meetups/${MEETUP_ID}`, { "/api/v1/me": meResponse, [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup({ participants })) });
+    renderApp();
+    const region = await screen.findByRole("region", { name: "決まった！" });
+    // 自分の名前（GET /me）が読めるまで待つ
+    await waitFor(() => expect(region.querySelector("[data-testid=meet-dot]")?.textContent).not.toBe("？"));
+    return { region, dots: () => [...region.querySelectorAll<HTMLElement>("[data-testid=meet-dot]")] };
+  }
+  const imgOf = (dot: HTMLElement | undefined) => dot?.querySelector("img") ?? null;
+  const classes = (dots: HTMLElement[]) => dots.map((d) => d.className);
+
+  it("自分と相手に avatarUrl があると、丸の中に API の URL のまま <img alt=\"\"> を出す。load の前は1文字め、load のあとは画像", async () => {
+    const { region, dots } = await openMoment([withAvatar(FRIEND_ID, "ゆき", url(1))]);
+    const [mine, theirs] = dots();
+    expect(imgOf(mine)).toHaveAttribute("src", ME_URL);
+    expect(imgOf(theirs)).toHaveAttribute("src", url(1));
+    for (const img of [imgOf(mine), imgOf(theirs)]) {
+      expect(img).toHaveAttribute("alt", "");
+      expect(img).toHaveAttribute("loading", "eager");
+      expect(img).toHaveAttribute("decoding", "async");
+      expect(img).toHaveAttribute("referrerpolicy", "no-referrer");
+      expect(img).toHaveClass("size-15", "rounded-full", "object-cover", "invisible");
+    }
+    // 画像を待たずに「決まった！」と日時と名前が出ている（load はまだ来ていない）
+    expect(within(region).getByRole("heading", { name: "決まった！" })).toBeVisible();
+    expect(within(region).getByText("10/10（土） 19:00〜23:00")).toBeVisible();
+    expect(within(region).getByText("ゆきと会える")).toBeVisible();
+    expect(dots().map((d) => d.textContent)).toEqual(["ゆ", "ゆ"]);
+    const before = classes(dots());
+
+    fireEvent.load(imgOf(theirs)!);
+    expect(theirs?.textContent).toBe("");
+    expect(imgOf(theirs)).not.toHaveClass("invisible");
+    // 自分の画像はまだ読めていないので1文字めのまま
+    expect(mine?.textContent).toBe("ゆ");
+    expect(imgOf(mine)).toHaveClass("invisible");
+    fireEvent.load(imgOf(mine)!);
+    expect(dots().map((d) => d.textContent)).toEqual(["", ""]);
+    // 丸の大きさ・重なりのクラスは、読み込みの前後で同じ
+    expect(classes(dots())).toEqual(before);
+    // 差し替えに動きを付けない
+    expect(imgOf(mine)?.className).not.toMatch(/transition|animate|opacity|duration/);
+  });
+
+  it("画像の色を染めない（画像に色の膜・mix-blend-mode・filter を付けない）。色は丸の地（輪）だけ", async () => {
+    const { dots } = await openMoment([withAvatar(FRIEND_ID, "ゆき", url(1))]);
+    for (const dot of dots()) {
+      expect(imgOf(dot)?.className).not.toMatch(/blend|filter|bg-|opacity/);
+      expect(dot.querySelectorAll("*")).toHaveLength(1);
+    }
+  });
+
+  it("画像がない人は1文字め、名前のない人・退会した人は「？」で、画像を出さない", async () => {
+    const { dots } = await openMoment(
+      [withAvatar(uuid(1), "あき", null), withAvatar(uuid(2), null, null), { ...withAvatar(uuid(3), null, null), withdrawn: true }],
+      yu(null),
+    );
+    expect(dots().map((d) => d.textContent)).toEqual(["ゆ", "あ", "？", "？"]);
+    expect(dots().map(imgOf)).toEqual([null, null, null, null]);
+  });
+
+  it("友達でない参加者・ブロックの相手（API が avatarUrl: null を返す）は、画像がない人と同じ形の1文字め", async () => {
+    const { dots } = await openMoment([withAvatar(uuid(1), "ゆき", url(1)), withAvatar(uuid(2), "ゆな", null)]);
+    const [, friendDot, stranger] = dots();
+    expect(stranger?.textContent).toBe("ゆ");
+    expect(imgOf(stranger)).toBeNull();
+    // 丸のクラスは画像のある人と同じ（見た目から理由を区別できない）
+    expect(stranger?.className.replace("-ml-5", "")).toBe(friendDot?.className.replace("-ml-5", ""));
+  });
+
+  it("読めなかった（error）ら1文字めに戻り、オンラインに戻ると読み直す", async () => {
+    const { dots } = await openMoment([withAvatar(FRIEND_ID, "ゆき", url(1))]);
+    const before = classes(dots());
+    fireEvent.error(imgOf(dots()[1])!);
+    expect(imgOf(dots()[1])).toBeNull();
+    expect(dots()[1]?.textContent).toBe("ゆ");
+    expect(classes(dots())).toEqual(before);
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(imgOf(dots()[1])).toHaveAttribute("src", url(1));
+    fireEvent.load(imgOf(dots()[1])!);
+    expect(dots()[1]?.textContent).toBe("");
+  });
+
+  it("3人以上でも出ている人の丸は画像で、「+n」は文字だけ。並べ方は変えない", async () => {
+    const others = [1, 2, 3, 4, 5].map((n) => withAvatar(uuid(n), `友${n}`, url(n)));
+    const { region, dots } = await openMoment(others);
+    expect(dots().map((d) => d.textContent)).toEqual(["ゆ", "友", "友", "+3"]);
+    expect(dots().map((d) => imgOf(d)?.getAttribute("src") ?? null)).toEqual([ME_URL, url(1), url(2), null]);
+    expect(dots().map((d) => d.style.getPropertyValue("--kh-meet-from"))).toEqual(["-60px", "-20px", "20px", "60px"]);
+    // 丸の並びは飾り（読み上げない）
+    expect(region.querySelector("[aria-hidden=true]")?.contains(dots()[0]!)).toBe(true);
+    expect(within(region).getByText("友1・友2ほか3人と会える")).toBeVisible();
+  });
+
+  it("3人（自分と2人）の募集でも、画像のある人だけ画像", async () => {
+    const { dots } = await openMoment([withAvatar(uuid(1), "友1", url(1)), withAvatar(uuid(2), "友2", null)]);
+    expect(dots().map((d) => imgOf(d)?.getAttribute("src") ?? null)).toEqual([ME_URL, url(1), null]);
+  });
+
+  it("動きを減らす設定でも同じ丸（画像と、止まった形の meet の地）を出す", async () => {
+    stubReducedMotion(true);
+    const { dots } = await openMoment([withAvatar(FRIEND_ID, "ゆき", url(1))]);
+    for (const dot of dots()) {
+      expect(dot).toHaveClass("kh-meet-dot", "bg-meet", "text-on-meet", "border-meet-soft", "size-18");
+      fireEvent.load(imgOf(dot)!);
+      expect(imgOf(dot)).not.toHaveClass("invisible");
+    }
   });
 });
 
@@ -571,6 +696,18 @@ describe("動きと色（index.css）", () => {
   it("動きは CSS のアニメーションだけで、prefers-reduced-motion では共通の決まりで止まる（止まった形が重なった青緑の丸）", () => {
     expect(css).toMatch(/\.kh-meet-dot\s*\{\s*animation: kh-meet-converge 1200ms/);
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\{\s*transition: none !important;\s*animation: none !important;/);
+  });
+
+  it("輪（丸の地）の色は 0%・55% が lamp、80%・100% が meet。長さと曲線は T-43 のまま（T-58）", () => {
+    const converge = block("kh-meet-converge");
+    const at = (step: string) => {
+      const from = converge.indexOf(`${step} {`);
+      return converge.slice(from, converge.indexOf("}", from));
+    };
+    for (const step of ["0%", "55%"]) expect(at(step)).toContain("background-color: var(--color-lamp);");
+    for (const step of ["80%", "100%"]) expect(at(step)).toContain("background-color: var(--color-meet);");
+    expect(css).toMatch(/\.kh-meet-dot\s*\{\s*animation: kh-meet-converge 1200ms cubic-bezier\(0\.45, 0, 0\.25, 1\) both;/);
+    expect(css).toMatch(/\.kh-meet-pair\s*\{\s*animation: kh-meet-glow 1300ms ease-out both;/);
   });
 
   it("色は灯り（lamp）から成立（meet）のトークンだけで、色を直書きしない", () => {

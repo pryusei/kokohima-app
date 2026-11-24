@@ -74,7 +74,7 @@
 | T-55 | ここ暇タブを週の帯に作り直す | 済み | docs/specs/T-55-availability-week-grid.md | #217 |
 | T-56 | 画面の動きと手触り | 作業中 | docs/specs/T-56-motion.md | 仕様書 #216。実装PR①（土台とシート）が作業中 |
 | T-57 | 成立した予定から Google カレンダーに入れる | 済み | docs/specs/T-57-meetup-google-calendar.md | 仕様書 #225・実装 #228・直し #229 |
-| T-58 | 成立の演出の丸にアイコンの画像を出す | 仕様書 | docs/specs/T-58-meet-moment-avatars.md | 仕様書 #227 |
+| T-58 | 成立の演出の丸にアイコンの画像を出す | 作業中 | docs/specs/T-58-meet-moment-avatars.md | 仕様書 #227・実装 #230 |
 
 ## 重なり（番号が2回使われたもの）
 
