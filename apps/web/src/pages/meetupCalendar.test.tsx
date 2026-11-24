@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../api/keys";
@@ -105,11 +105,54 @@ describe("連携の状態ごとの見た目", () => {
     expect(go).not.toHaveBeenCalled();
   });
 
+  it("送っている間は押せない見た目になり、もう一度押しても送らない（T-56 M-14）", async () => {
+    const go = vi.spyOn(redirectTo, "go").mockImplementation(() => {});
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { calls } = openMeetup({
+      "/api/v1/calendar/connections": none,
+      "/api/v1/calendar/google/authorizations": async () => {
+        await held;
+        return json({ authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth?x=3" })();
+      },
+    });
+    renderApp();
+    const button = await screen.findByRole("button", { name: CONNECT });
+    await userEvent.click(button);
+    await waitFor(() => expect(button).toHaveAttribute("aria-disabled", "true"));
+    await userEvent.click(button);
+    expect(calls.filter((c) => c.url === "/api/v1/calendar/google/authorizations")).toHaveLength(1);
+    release();
+    await waitFor(() => expect(go).toHaveBeenCalledTimes(1));
+  });
+
+  it("オフラインの間は押せない（T-11）", async () => {
+    const { calls } = openMeetup({ "/api/v1/calendar/connections": none });
+    renderApp();
+    const button = await screen.findByRole("button", { name: CONNECT });
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(calls.some((c) => c.url === "/api/v1/calendar/google/authorizations")).toBe(false);
+    // オンラインに戻す（TanStack Query の onlineManager もイベントで戻るので、ほかのテストに残さない）
+    onLine.mockRestore();
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+  });
+
   it("もう一度連携が要る：静かな1行と、設定へのリンク", async () => {
     openMeetup({ "/api/v1/calendar/connections": needsReauth });
     renderApp();
     const link = await screen.findByRole("link", { name: "カレンダー連携へ" });
     expect(link).toHaveAttribute("href", "/settings/calendar");
+    // 押せることが分かるように、ほかの文中のリンクと同じ見た目にする
+    expect(link).toHaveClass("text-action", "underline");
     expect(screen.getByText(/Googleカレンダーに入れるには、もう一度連携してください/)).toHaveClass("text-ink-muted");
     expect(screen.queryByRole("button", { name: CONNECT })).toBeNull();
     expect(screen.getByRole("button", { name: OTHER_ICS })).toBeVisible();
