@@ -10,6 +10,7 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 | ここ暇 | Availability | 「誘っていい」という許可。保存は常に時刻の範囲 |
 | 時間帯プリセット | Preset | 昼・夕方・夜。入力のショートカットで、境界はユーザーごと |
 | くり返し | RecurrenceRule | 毎週の基本暇。ルール＋例外の2層 |
+| 今ひま | FreeNow | 1回押すと今（15分で切り上げ）から3時間のここ暇を作る（`freeNow`。手動の枠の1つ。友達には作り方を返さない。docs/specs/T-40-ima-hima.md） |
 | 誘い（個別） | DirectInvite | 枠と重なれば kind=asobo（あそぼ）、重ならなければ kind=kokodou（ここどう？） |
 | 募集 | Broadcast | 複数人への「暇な人いる？」 |
 | 行く／今回は難しい／この時間なら | Accept / Decline / CounterProposal | 返答は3種のみ |
