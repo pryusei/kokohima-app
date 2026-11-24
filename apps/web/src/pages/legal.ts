@@ -8,7 +8,8 @@ import { useEffect } from "react";
  */
 export const EFFECTIVE_DATE_LINE = "制定日：2026年11月23日";
 
-// 改定の日付（docs/specs/T-19-privacy-terms.md「8.」）。公表日＝本番にデプロイする日、改定日（効力が生じる日）＝その7日後。
+// 改定の日付（docs/specs/T-19-privacy-terms.md「8.」）。本格稼働（一般公開）までは予告なしで、改定日＝マージしてデプロイする日にする（T-19 決めたこと17）。
+// 一般公開のあとは、公表日＝本番にデプロイする日、改定日（効力が生じる日）＝その7日後。
 // デプロイの日がずれたら、デプロイの前に、この2つの文字列の日付を同じだけずらす。問い合わせを始める日（T-24）より前なら、
 // packages/shared/src/contactStart.json の startDate も改定日と同じ日にずらす（ほかの場所に日付を書かない）。
 // ブロックと通報を始める日（packages/shared/src/safetyStart.json。T-33）も、改定日と同じ日にずらす。
@@ -20,26 +21,21 @@ export const EFFECTIVE_DATE_LINE = "制定日：2026年11月23日";
  * 改定日の行。「改定日（効力が生じる日）：YYYY年M月D日」の1つの文字列（行は1つだけ。2回めからは日付を書き換える）。
  * 改定していなければ null。入れたら、制定日と同じく deploy:prod で本物の日付かを検査する
  */
-export const REVISION_DATE_LINE: string | null = "改定日（効力が生じる日）：2026年12月8日";
+export const REVISION_DATE_LINE: string | null = "改定日（効力が生じる日）：2026年11月24日";
 
 /**
  * 予告の行。予告の間（公表日から改定日まで）だけ入れ、ほかのときは null（決めたこと14）。
  * 改定日を過ぎたら、PRIVACY_REVISION_CHANGES・TERMS_REVISION_CHANGES とともに null に戻す（「8.」の5）
  */
-export const REVISION_NOTICE_LINE: string | null =
-  "公表日：2026年12月1日（この版は改定日から適用します。それまでは、前の版を適用します）";
+export const REVISION_NOTICE_LINE: string | null = null;
 
 /**
  * 「この改定で変わるところ」の箇条書き（決めたこと15）。予告の行があるときだけ出す。
  * 文に「制定日：」「改定日（効力が生じる日）：」「公表日：」を入れない（ビルドの検査の数がずれるため）。
- * 今の改定はブロックと通報（docs/specs/T-33-block-report.md「振る舞い 8.」）。始める日は packages/shared/src/safetyStart.json（改定日と同じ日）
+ * 今は予告なしの改定なので null（T-19 決めたこと17）
  */
-export const PRIVACY_REVISION_CHANGES: readonly string[] | null = [
-  "「2.」「3.」「4.」「5.」「7.」「8.」と退会したとき：ブロックと通報を足したことに合わせて、預かる情報（ブロックした相手、通報の理由・くわしく・対象の誘いや募集）、使う目的、相手への見え方、任せる事業者（Slack）、保存する期間を書きました。",
-];
-export const TERMS_REVISION_CHANGES: readonly string[] | null = [
-  "第6条・第7条：ブロックと通報を足したことに合わせて、事実でない通報をくり返さないことと、通報を受けたときの扱いを書きました。",
-];
+export const PRIVACY_REVISION_CHANGES: readonly string[] | null = null;
+export const TERMS_REVISION_CHANGES: readonly string[] | null = null;
 
 export const CONTACT_EMAIL = "ops@kokohima.app";
 

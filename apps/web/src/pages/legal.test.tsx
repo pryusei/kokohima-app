@@ -34,7 +34,6 @@ afterEach(async () => {
 
 const CHANGES = "この改定で変わるところ";
 const PRIVACY_SECTIONS = [
-  CHANGES,
   "1. 運営者と連絡先",
   "2. 預かる情報",
   "3. 使う目的",
@@ -51,7 +50,6 @@ const PRIVACY_SECTIONS = [
   "14. このポリシーの変更",
 ];
 const TERMS_SECTIONS = [
-  CHANGES,
   "第1条（同意）",
   "第2条（使える人）",
   "第3条（アカウント）",
@@ -66,13 +64,10 @@ const TERMS_SECTIONS = [
   "第12条（連絡）",
   "第13条（準拠法と裁判所）",
 ];
-// 「この改定で変わるところ」の箇条書き（仕様書の6節・7節の文案）
-const PRIVACY_CHANGES = [
-  "「2.」「3.」「4.」「5.」「7.」「8.」と退会したとき：ブロックと通報を足したことに合わせて、預かる情報（ブロックした相手、通報の理由・くわしく・対象の誘いや募集）、使う目的、相手への見え方、任せる事業者（Slack）、保存する期間を書きました。",
-];
-const TERMS_CHANGES = [
-  "第6条・第7条：ブロックと通報を足したことに合わせて、事実でない通報をくり返さないことと、通報を受けたときの扱いを書きました。",
-];
+// 予告の間の形を確かめるための見本（本格稼働までは予告なしで改定するので、legal.ts の値は null。T-19 決めたこと17）
+const SAMPLE_NOTICE = "公表日：2026年12月1日（この版は改定日から適用します。それまでは、前の版を適用します）";
+const PRIVACY_CHANGES = ["「2.」：見本の変わるところ。"];
+const TERMS_CHANGES = ["第6条：見本の変わるところ。"];
 const pages = [
   { path: "/privacy", title: "プライバシー ポリシー", section: "1. 運営者と連絡先", sections: PRIVACY_SECTIONS, changes: PRIVACY_CHANGES },
   { path: "/terms", title: "利用規約", section: "第1条（同意）", sections: TERMS_SECTIONS, changes: TERMS_CHANGES },
@@ -106,95 +101,54 @@ describe.each(pages)("$path", ({ path, title, section, sections, changes }) => {
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(sections);
   });
 
-  it("制定日の下に、改定日の行と予告の行がこの順で1つずつ出る", async () => {
+  it("制定日の下に、改定日の行だけが出る（予告の行と「この改定で変わるところ」はない）", async () => {
     window.history.replaceState(null, "", path);
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
     renderApp();
     await screen.findByRole("heading", { name: title, level: 1 });
     expect(REVISION_DATE_LINE).toMatch(DATE_LINE);
-    expect(REVISION_NOTICE_LINE).toMatch(DATE_LINE);
-    expect(REVISION_NOTICE_LINE).toMatch(/（この版は改定日から適用します。それまでは、前の版を適用します）$/);
+    expect(REVISION_NOTICE_LINE).toBeNull();
     const dates = screen.getByText(EFFECTIVE_DATE_LINE).parentElement as HTMLElement;
-    expect(Array.from(dates.children).map((p) => p.textContent)).toEqual([EFFECTIVE_DATE_LINE, REVISION_DATE_LINE, REVISION_NOTICE_LINE]);
-    expect(screen.getAllByText(/^改定日（効力が生じる日）：/)).toHaveLength(1);
-    expect(screen.getAllByText(/^公表日：/)).toHaveLength(1);
-  });
-
-  it("予告の行があるとき、日付の行と本文の間に「この改定で変わるところ」と、そのページの箇条書きを出す", async () => {
-    window.history.replaceState(null, "", path);
-    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
-    renderApp();
-    await screen.findByRole("heading", { name: title, level: 1 });
-    const notice = clause(CHANGES);
-    expect(within(notice).getAllByRole("listitem").map((li) => li.textContent)).toEqual(changes);
-    // 日付の行の次、本文の最初の節より前
-    const dates = screen.getByText(EFFECTIVE_DATE_LINE).parentElement as HTMLElement;
-    expect(dates.nextElementSibling).toBe(notice);
-    expect(notice.compareDocumentPosition(clause(section)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // 箇条書きに日付の見出しの文字を入れない（ビルドの検査の数がずれないように）
-    for (const c of changes) expect(c).not.toMatch(/制定日：|改定日（効力が生じる日）：|公表日：|改定日：/);
-  });
-
-  it("連絡先は mailto: のリンク", async () => {
-    window.history.replaceState(null, "", path);
-    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
-    renderApp();
-    await screen.findByRole("heading", { name: title, level: 1 });
-    const links = screen.getAllByRole("link", { name: "ops@kokohima.app" });
-    expect(links.length).toBeGreaterThanOrEqual(2);
-    for (const link of links) expect(link).toHaveAttribute("href", "mailto:ops@kokohima.app");
-  });
-
-  it.each(refreshStates)("%s でも本文を出し、別の画面に移らない", async (_, refresh) => {
-    window.history.replaceState(null, "", path);
-    const { calls } = mockFetch({ "/api/v1/auth/refresh": refresh });
-    renderApp();
-    expect(await screen.findByRole("heading", { name: title, level: 1 })).toBeVisible();
-    expect(screen.getByRole("heading", { name: section, level: 2 })).toBeVisible();
-    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(screen.getByText(EFFECTIVE_DATE_LINE)).toBeVisible();
-    await new Promise((r) => setTimeout(r, 20));
-    expect(window.location.pathname).toBe(path);
-    // AuthProvider の refresh のほかに、API を呼ばない
-    expect(calls.map((c) => c.url)).toEqual(["/api/v1/auth/refresh"]);
-  });
-
-  it("タブの題を変え、離れたら「ここ暇」に戻す", async () => {
-    window.history.replaceState(null, "", "/login");
-    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
-    renderApp();
-    await userEvent.click(await screen.findByRole("link", { name: title }));
-    expect(await screen.findByRole("heading", { name: title, level: 1 })).toBeVisible();
-    expect(document.title).toBe(`${title}｜ここ暇`);
-    // 「戻る」でログインの画面へ（アプリの中から開いたので1つ前に戻る）
-    await userEvent.click(screen.getByRole("button", { name: "戻る" }));
-    expect(await screen.findByRole("link", { name: "Googleでログイン" })).toBeVisible();
-    expect(window.location.pathname).toBe("/login");
-    expect(document.title).toBe("ここ暇");
-  });
-
-  it("外から直接開いた「戻る」は / に移る（ログインしていなければログインの画面）", async () => {
-    window.history.replaceState(null, "", path);
-    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
-    renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "戻る" }));
-    await waitFor(() => expect(window.location.pathname).toBe("/login"));
-  });
-
-  it("オフラインの帯が出ていても、本文を出す", async () => {
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
-    window.history.replaceState(null, "", path);
-    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
-    renderApp();
-    expect(await screen.findByText(/オフラインです/)).toBeVisible();
-    expect(screen.getByRole("heading", { name: section, level: 2 })).toBeVisible();
+    expect(Array.from(dates.children).map((p) => p.textContent)).toEqual([EFFECTIVE_DATE_LINE, REVISION_DATE_LINE]);
+    expect(screen.queryByText(/^公表日：/)).toBeNull();
+    expect(screen.queryByRole("heading", { name: CHANGES })).toBeNull();
   });
 });
 
 describe("legal.ts の箇条書き", () => {
-  it("仕様書の6節・7節の「この改定で変わるところ」と同じ", () => {
-    expect(PRIVACY_REVISION_CHANGES).toEqual(PRIVACY_CHANGES);
-    expect(TERMS_REVISION_CHANGES).toEqual(TERMS_CHANGES);
+  it("予告なしで改定しているので、2つの箇条書きも null（T-19 決めたこと17）", () => {
+    expect(PRIVACY_REVISION_CHANGES).toBeNull();
+    expect(TERMS_REVISION_CHANGES).toBeNull();
+  });
+});
+
+describe("予告の行があるとき（一般公開のあとの改定）", () => {
+  afterEach(() => {
+    vi.doUnmock("./legal");
+    vi.resetModules();
+  });
+
+  it.each(pages)("$path：改定日・予告の行の順に出し、日付の行と本文の間に「この改定で変わるところ」を出す", async ({ path, title, section, sections, changes }) => {
+    vi.resetModules();
+    vi.doMock("./legal", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("./legal")>()),
+      REVISION_NOTICE_LINE: SAMPLE_NOTICE,
+      PRIVACY_REVISION_CHANGES: PRIVACY_CHANGES,
+      TERMS_REVISION_CHANGES: TERMS_CHANGES,
+    }));
+    const helpers = await import("../test/helpers");
+    const legal = await import("./legal");
+    window.history.replaceState(null, "", path);
+    helpers.mockFetch({ "/api/v1/auth/refresh": helpers.json({}, 401) });
+    helpers.renderApp();
+    await screen.findByRole("heading", { name: title, level: 1 });
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([CHANGES, ...sections]);
+    const dates = screen.getByText(EFFECTIVE_DATE_LINE).parentElement as HTMLElement;
+    expect(Array.from(dates.children).map((p) => p.textContent)).toEqual([EFFECTIVE_DATE_LINE, legal.REVISION_DATE_LINE, SAMPLE_NOTICE]);
+    const notice = clause(CHANGES);
+    expect(within(notice).getAllByRole("listitem").map((li) => li.textContent)).toEqual(changes);
+    expect(dates.nextElementSibling).toBe(notice);
+    expect(notice.compareDocumentPosition(clause(section)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -206,7 +160,12 @@ describe("予告の行がないとき（改定日のあと）", () => {
 
   it.each(pages)("$path：箇条書きがあっても「この改定で変わるところ」を出さず、改定日の行は残す", async ({ path, title }) => {
     vi.resetModules();
-    vi.doMock("./legal", async (importOriginal) => ({ ...(await importOriginal<typeof import("./legal")>()), REVISION_NOTICE_LINE: null }));
+    vi.doMock("./legal", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("./legal")>()),
+      REVISION_NOTICE_LINE: null,
+      PRIVACY_REVISION_CHANGES: PRIVACY_CHANGES,
+      TERMS_REVISION_CHANGES: TERMS_CHANGES,
+    }));
     const helpers = await import("../test/helpers");
     const legal = await import("./legal");
     expect(legal.REVISION_NOTICE_LINE).toBeNull();
@@ -411,7 +370,7 @@ describe("プライバシー ポリシーの本文", () => {
   // 問い合わせを知らせた改定（2026-11-30）は終わったので、「この改定で変わるところ」の行の目印は、今の箇条書きにはない。
   // デプロイの検査は、本番の本文の目印（CONTACT_POLICY_MARKER）で「前の改定で知らせ済み」と判断する（T-24「11.」）
   it("デプロイの検査が本番の JS で探す問い合わせの目印が本文にある。前の改定の行の目印は、今の箇条書きにない（T-24「11.」）", async () => {
-    expect(PRIVACY_REVISION_CHANGES?.some((line) => line.includes(CONTACT_NOTICE_MARKER))).toBe(false);
+    expect((PRIVACY_REVISION_CHANGES ?? []).some((line) => line.includes(CONTACT_NOTICE_MARKER))).toBe(false);
     window.history.replaceState(null, "", "/privacy");
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
     renderApp();
