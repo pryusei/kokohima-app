@@ -180,7 +180,8 @@ test("成立の演出（T-43）：Bが「行く」で流れ、再読み込みで
   const moment = sheet(b.page).getByRole("region", { name: "決まった！" });
   await expect(moment).toBeVisible();
   await expect(moment.getByText(`${a.displayName}と会える`)).toBeVisible();
-  await expect(moment.getByRole("button", { name: "カレンダーに追加（.ics）" })).toBeVisible();
+  // 連携していない人には、Google の行の下に .ics（docs/specs/T-57-meetup-google-calendar.md）
+  await expect(moment.getByRole("button", { name: "ほかのカレンダーに追加（.ics）" })).toBeVisible();
   await expect(moment.getByTestId("meet-dot")).toHaveCount(2);
   await b.page.reload();
   await expect(sheet(b.page).getByText("成立", { exact: true })).toBeVisible();

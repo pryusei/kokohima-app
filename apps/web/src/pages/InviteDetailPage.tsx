@@ -8,7 +8,7 @@ import { addDays, formatDate, formatTime, localDateOf, localInstant } from "../a
 import { decideLabel, inviteTimes, KIND_LABELS, statusText, statusTone } from "../invitations/format";
 import { MeetMoment, useMeetMoment } from "../invitations/MeetMoment";
 import { inviteQuery } from "../invitations/queries";
-import { IcsButton } from "../calendar/IcsButton";
+import { MeetupCalendarActions } from "../calendar/MeetupCalendarActions";
 import { honorificOf, nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
@@ -182,7 +182,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
           </p>
           {moment ? (
             <MeetMoment meetup={moment}>
-              <IcsButton meetupId={moment.id} />
+              <MeetupCalendarActions meetup={moment} />
             </MeetMoment>
           ) : (
             <div className="flex flex-col gap-1">

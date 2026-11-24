@@ -28,7 +28,11 @@ export type StartResult =
   | { kind: "ok"; authorizeUrl: string; binding: string }
   | { kind: "rate_limited"; retryAfterSeconds: number };
 
-export async function startConnect(ctx: Ctx, viewerId: string): Promise<StartResult> {
+/**
+ * 連携を始める。returnMeetupId（UUID として検証済み）は戻り先 /meetups/<id> だけに使い、予定は読まない
+ * （参加しているかも確かめない。予定の有無を確かめる手段にしないため。docs/specs/T-57-meetup-google-calendar.md「入力」）
+ */
+export async function startConnect(ctx: Ctx, viewerId: string, returnMeetupId: string | null = null): Promise<StartResult> {
   const now = ctx.deps.now();
   const state = randomToken();
   const binding = randomToken();
@@ -41,6 +45,7 @@ export async function startConnect(ctx: Ctx, viewerId: string): Promise<StartRes
       userId: viewerId,
       provider: "google",
       codeVerifier,
+      returnMeetupId,
       now,
     },
     OAUTH_STATE_TTL_MS,
@@ -61,23 +66,54 @@ export async function startConnect(ctx: Ctx, viewerId: string): Promise<StartRes
 
 // ---- コールバック ----
 
-/** 成功か失敗だけを返す（失敗の理由は画面で区別しない。ログには種類だけを出す） */
+/** 連携の結果と戻り先のパス（APP_ORIGIN の中だけ。docs/specs/T-57-meetup-google-calendar.md「戻り先」） */
+export type CompleteResult = { connected: boolean; returnPath: string };
+
+export const SETTINGS_RETURN_PATH = "/settings/calendar";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 保存した予定の ID だけから戻り先を組み立てる（保存の前に検証済みだが、ここでも UUID でなければ設定へ） */
+export const returnPathFor = (meetupId: string | null) =>
+  meetupId && UUID.test(meetupId) ? `/meetups/${meetupId}` : SETTINGS_RETURN_PATH;
+
+/**
+ * 成功か失敗と戻り先を返す（失敗の理由は画面で区別しない。ログには種類だけを出す）。
+ * state の行を取り出したあとの想定外の例外も、ここで受けて行の戻り先へ戻す
+ */
 export async function completeConnect(
   ctx: Ctx,
   params: { code?: string; state?: string; error?: string; binding?: string },
-): Promise<boolean> {
-  const fail = (reason: string) => {
-    log("calendar_connect_failed", { reason });
-    return false;
-  };
-  if (!params.state) return fail("state_missing");
+): Promise<CompleteResult> {
+  if (!params.state) return failed("state_missing", SETTINGS_RETURN_PATH);
   const now = ctx.deps.now();
   const tx = await repo.takeOauthState(ctx.env.DB, await sha256(params.state), now);
-  if (!tx) return fail("state_invalid");
-  if (!params.binding || !timingSafeEqual(await sha256(params.binding), tx.binding_hash)) {
-    return fail("binding_mismatch");
+  if (!tx) return failed("state_invalid", SETTINGS_RETURN_PATH);
+  const returnPath = returnPathFor(tx.return_meetup_id);
+  try {
+    const reason = await finishConnect(ctx, params, tx, now);
+    return reason === null ? { connected: true, returnPath } : failed(reason, returnPath);
+  } catch (e) {
+    console.error(JSON.stringify({ event: "calendar_connect_failed", reason: "unexpected", name: e instanceof Error ? e.name : "unknown" }));
+    return { connected: false, returnPath };
   }
-  if (params.error || !params.code) return fail("denied");
+}
+
+function failed(reason: string, returnPath: string): CompleteResult {
+  log("calendar_connect_failed", { reason });
+  return { connected: false, returnPath };
+}
+
+type OauthState = NonNullable<Awaited<ReturnType<typeof repo.takeOauthState>>>;
+
+/** 取り出した state の行で連携を保存する。成功は null、失敗はその種類（ログ用） */
+async function finishConnect(
+  ctx: Ctx,
+  params: { code?: string; error?: string; binding?: string },
+  tx: OauthState,
+  now: number,
+): Promise<string | null> {
+  if (!params.binding || !timingSafeEqual(await sha256(params.binding), tx.binding_hash)) return "binding_mismatch";
+  if (params.error || !params.code) return "denied";
 
   const provider = providerFor(ctx);
   let tokens;
@@ -88,7 +124,7 @@ export async function completeConnect(
       redirectUri: redirectUri(ctx.env),
     });
   } catch {
-    return fail("token_exchange");
+    return "token_exchange";
   }
 
   const current = await repo.findConnection(ctx.env.DB, tx.user_id, tx.provider);
@@ -96,7 +132,7 @@ export async function completeConnect(
     // 今の連携が active なら失効させずに捨てる。revoke は同じプロジェクトの許可全体を失効させ、今の連携まで
     // 使えなくするため（決定事項13）
     if (current?.status !== "active") await provider.revoke(tokens.refreshToken);
-    return fail("scope_missing");
+    return "scope_missing";
   }
 
   let refreshTokenEnc: string;
@@ -108,7 +144,7 @@ export async function completeConnect(
       aadFor(tx.user_id, tx.provider),
     );
   } catch {
-    return fail("encrypt");
+    return "encrypt";
   }
   // 前の更新用トークンは失効させずに上書きして捨てる（決定事項13）
   const saved = await repo.saveConnection(
@@ -126,10 +162,10 @@ export async function completeConnect(
     } catch {
       log("calendar_revoke_skipped", {});
     }
-    return fail("user_withdrawn");
+    return "user_withdrawn";
   }
   log("calendar_connected", { provider: tx.provider });
-  return true;
+  return null;
 }
 
 // ---- 状態と解除 ----

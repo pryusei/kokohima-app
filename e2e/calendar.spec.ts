@@ -90,13 +90,10 @@ test("自動取り消し：A のここ暇が実予定で消え、B の誘いが�
   await expect(item.getByText("今回は難しいみたい")).toBeVisible();
 });
 
-test(".ics：成立した予定の詳細から .ics を開くと、中身に予定の時刻がある", async ({ browser }) => {
-  const a = await newUser(browser, "A");
-  const b = await newUser(browser, "B");
-  await befriend(a, b);
+/** a が b のここ暇（明日の夜）に誘い、b が「行く」で成立させて、a が成立した予定の詳細を開く */
+async function openMeetupFromInvite(a: E2EUser, b: E2EUser) {
   const date = tomorrow();
   await addAvailability(b.page, date, "夜");
-
   await a.page.goto("/");
   await a.page.getByRole("listitem").filter({ hasText: b.displayName }).getByRole("link", { name: "この時間に誘う" }).click();
   await a.page.getByRole("button", { name: "誘う", exact: true }).click();
@@ -108,12 +105,37 @@ test(".ics：成立した予定の詳細から .ics を開くと、中身に予�
 
   await a.page.goto("/invites?tab=meetups");
   await a.page.getByRole("list", { name: "成立した予定" }).getByRole("link").filter({ hasText: b.displayName }).click();
+  return date;
+}
+
+test(".ics：成立した予定の詳細から .ics を開くと、中身に予定の時刻がある", async ({ browser }) => {
+  const a = await newUser(browser, "A");
+  const b = await newUser(browser, "B");
+  await befriend(a, b);
+  const date = await openMeetupFromInvite(a, b);
   const downloading = a.page.waitForEvent("download");
-  await a.page.getByRole("button", { name: "カレンダーに追加（.ics）" }).click();
+  // 連携していない人には、Google の行の下に .ics（docs/specs/T-57-meetup-google-calendar.md）
+  await a.page.getByRole("button", { name: "ほかのカレンダーに追加（.ics）" }).click();
   const download = await downloading;
   const text = await readFile((await download.path()) ?? "", "utf8");
   const start = at(date, "19:00").replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   expect(text).toContain("BEGIN:VEVENT");
   expect(text).toContain(`DTSTART:${start}`);
   expect(text).toContain(`SUMMARY:ここ暇：${b.displayName}`);
+});
+
+test("成立した予定から連携（T-57）：「Googleカレンダーに自動で入れる」→ 偽の認可画面 → 同じ予定の画面に戻り、「自動で入ります」", async ({ browser }) => {
+  // docs/specs/T-57-meetup-google-calendar.md「E2Eテスト」。予定が Google に書かれることは単体テスト（calendar.test.ts）で確かめる
+  const a = await newUser(browser, "A");
+  const b = await newUser(browser, "B");
+  await befriend(a, b);
+  await openMeetupFromInvite(a, b);
+  const meetupPath = new URL(a.page.url()).pathname;
+  expect(meetupPath).toMatch(/^\/meetups\/[0-9a-f-]{36}$/);
+
+  await sheet(a.page).getByRole("button", { name: "Googleカレンダーに自動で入れる" }).click();
+  await expect(a.page.getByText("連携しました。Googleカレンダーの『ここ暇』に入ります")).toBeVisible();
+  expect(new URL(a.page.url()).pathname).toBe(meetupPath);
+  await expect(sheet(a.page).getByText("連携中なので、Googleカレンダーの『ここ暇』に自動で入ります")).toBeVisible();
+  await expect(sheet(a.page).getByRole("button", { name: "ほかのカレンダーに追加（.ics）" })).toBeVisible();
 });
