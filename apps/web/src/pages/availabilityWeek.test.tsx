@@ -249,7 +249,7 @@ describe("押すとすぐ変わる（楽観的更新）と「取り消す」", (
     await waitFor(() => expect(sent(calls, "DELETE", `/api/v1/availabilities/${SLOT_ID}`)).toHaveLength(1));
   });
 
-  it("2つ以上のマスのシートで失敗したら、シートの中に静かな文言を出す（後ろの画面に隠さない）", async () => {
+  it("2つ以上のマスのシートで失敗したら、シートの上に重ねた結果の帯に静かな文言を出す（後ろの画面に隠さない。T-56 M-09）", async () => {
     tab({
       "/api/v1/availabilities": json({ items: [manual, { ...manual, id: NEW_ID, label: null, startsAt: "2026-10-10T11:00:00.000Z" }], nextCursor: null }),
       [`/api/v1/availabilities/${SLOT_ID}`]: () => new Response(null, { status: 503 }),
@@ -260,8 +260,10 @@ describe("押すとすぐ変わる（楽観的更新）と「取り消す」", (
     await userEvent.click(night);
     const sheet = screen.getByRole("dialog", { name: "10/10（土） 夜" });
     await userEvent.click(within(sheet).getAllByRole("button", { name: "取り消す" })[0] as HTMLElement);
-    const status = within(sheet).getByRole("status");
+    const status = screen.getByTestId("result-band");
     await waitFor(() => expect(status).toHaveTextContent("変更できませんでした。もう一度お試しください。"));
+    // 帯はシートの後ろの #root の外（body の直下）に出る
+    expect(status.parentElement).toBe(document.body);
     expect(within(sheet).getAllByRole("listitem")).toHaveLength(2);
   });
 
@@ -287,8 +289,8 @@ describe("押すとすぐ変わる（楽観的更新）と「取り消す」", (
     await userEvent.click(night);
     const sheet = screen.getByRole("dialog", { name: "10/10（土） 夜" });
     await userEvent.click(within(sheet).getAllByRole("button", { name: "取り消す" })[0] as HTMLElement);
-    // 1つ残っている間はシートのまま。結果の一文と「取り消す」はシートの中
-    expect(await within(sheet).findByText("10/10（土） 夜のここ暇を取り消しました")).toBeVisible();
+    // 1つ残っている間はシートのまま。結果の一文と「取り消す」はシートの上に重ねた結果の帯
+    expect(await within(screen.getByTestId("result-band")).findByText("10/10（土） 夜のここ暇を取り消しました")).toBeVisible();
     await userEvent.click(within(within(sheet).getByRole("listitem")).getByRole("button"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await userEvent.click(await undoOf("10/10（土） 夜のここ暇を取り消しました"));

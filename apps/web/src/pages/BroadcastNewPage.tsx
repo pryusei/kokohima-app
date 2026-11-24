@@ -17,13 +17,14 @@ import { keys } from "../api/keys";
 import { formatTime, localDateOf, PRESET_LABELS, PRESET_NAMES } from "../availability/format";
 import { presetsQuery, today } from "../availability/queries";
 import { SheetScreen, useSheetLeaving } from "../ui/BottomSheet";
-import { buttonClass, SendButton } from "../ui/Button";
+import { buttonClass } from "../ui/Button";
+import { SubmitButton, useSubmitState } from "../ui/SubmitButton";
 import { LoadError, Loading, Note } from "../ui/feedback";
 import { inputClass, labelClass } from "../ui/form";
 import { EXPIRES, rangeOf, sendErrorText } from "../invitations/form";
 import { nextQuarter } from "../invitations/format";
 import { broadcastQuery } from "../invitations/queries";
-import { navigate, useLocation } from "../router";
+import { swapSheet, useLocation } from "../router";
 import { everyFriendQuery } from "../account/friends";
 import { displayNameOf, meQuery } from "../account/me";
 import { wishQuery } from "../wish/queries";
@@ -110,10 +111,16 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: keys.broadcasts.all() });
-      // 送信中にシートを閉じていたら（Esc など。閉じる出る動きの途中を含む）、戻った先の画面を詳細で置き換えない
-      if (created && !sheetLeaving() && window.location.pathname === "/broadcasts/new") navigate(`/broadcasts/${created.id}`, { replace: true });
+      // 「✓ 募りました」を短く見せてから詳細へ置き換える（docs/specs/T-56-motion.md「M-03」）。
+      // 送信中か「✓ 募りました」のあいだにシートを閉じていたら（Esc など。閉じる出る動きの途中を含む）、戻った先の画面を詳細で置き換えない
+      if (created) {
+        submit.succeed(() => {
+          if (!sheetLeaving() && window.location.pathname === "/broadcasts/new") swapSheet(`/broadcasts/${created.id}`);
+        });
+      }
     },
   });
+  const submit = useSubmitState(send.isPending);
 
   const toggle = (id: string, checked: boolean) =>
     setRecipientIds((ids) => (checked ? [...ids, id] : ids.filter((x) => x !== id)));
@@ -129,7 +136,7 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
       className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
-        send.mutate();
+        if (submit.state === "ready") send.mutate();
       }}
     >
       <fieldset className="flex flex-col gap-1">
@@ -198,9 +205,9 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
         </select>
       </label>
       <Note>応じた人は、あなたにも人数だけが表示されます。「決める」と、参加する人どうしに名前が開示されます。</Note>
-      <SendButton type="submit" variant="lamp" block disabled={send.isPending || !enoughRecipients || !validRange}>
+      <SubmitButton state={submit.state} variant="lamp" sending="募っています…" done="募りました" disabled={!enoughRecipients || !validRange}>
         募集する
-      </SendButton>
+      </SubmitButton>
       {send.isError && (
         <p role="status" className="text-s text-ink-muted">
           {createErrorText(send.error)}

@@ -5,6 +5,7 @@ import { ApiError, apiSend } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { SendButton } from "../ui/Button";
+import { MOTION_MS, useExitAnimation } from "../ui/motion";
 import { useOnline } from "../ui/online";
 import { formatTime, formatUntil, freeNowRange } from "./format";
 import { mineQuery, today } from "./queries";
@@ -131,15 +132,20 @@ export function FreeNowCard() {
     return () => clearTimeout(id);
   }, [activeId, activeEnd, queryClient, date]);
 
-  // 「元に戻す」と「おしまい」は数秒で消し、灯りのボタンに戻す。元に戻す送信の途中は消さない（結果を待つ）
+  // 「元に戻す」と「おしまい」は数秒で消し、灯りのボタンに戻す。元に戻す送信の途中は消さない（結果を待つ）。
+  // 消えるときは fast のフェード（docs/specs/T-56-motion.md「M-09」）
   const noticeKind = notice?.kind;
   const restoring = restore.isPending;
+  const { ref: fadeRef, exiting: fading, start: startFade, cancel: cancelFade } = useExitAnimation<HTMLElement>(MOTION_MS.fast);
   useEffect(() => {
     if (noticeKind !== "stopped" && noticeKind !== "ended") return;
     if (restoring) return;
-    const id = setTimeout(() => setNotice(null), FREE_NOW_NOTICE_MS);
-    return () => clearTimeout(id);
-  }, [notice, noticeKind, restoring]);
+    const id = setTimeout(() => startFade(() => setNotice(null)), FREE_NOW_NOTICE_MS);
+    return () => {
+      clearTimeout(id);
+      cancelFade();
+    };
+  }, [notice, noticeKind, restoring, startFade, cancelFade]);
 
   const message = notice?.kind === "message" && (
     <p role="status" className="text-s text-ink-muted">
@@ -167,7 +173,12 @@ export function FreeNowCard() {
 
   if (notice?.kind === "stopped" || notice?.kind === "ended") {
     return (
-      <section aria-label="今ひま" className="flex items-center gap-3 rounded-l bg-quiet-bg px-4 py-3 text-quiet-ink">
+      <section
+        ref={fadeRef}
+        aria-label="今ひま"
+        data-exiting={fading ? "" : undefined}
+        className="kh-fade-exit flex animate-kh-rise items-center gap-3 rounded-l bg-quiet-bg px-4 py-3 text-quiet-ink"
+      >
         <p role="status" className="min-w-0 flex-1">
           {notice.kind === "stopped" ? "今ひまをやめました" : `${formatTime(notice.endsAt)}で今ひまはおしまい`}
         </p>

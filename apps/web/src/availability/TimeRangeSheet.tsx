@@ -5,7 +5,7 @@ import { ApiError, apiSend, isIdempotencyConflict } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { BottomSheet } from "../ui/BottomSheet";
-import { SendButton } from "../ui/Button";
+import { SubmitButton, useSubmitState } from "../ui/SubmitButton";
 import { Note } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { addDays, localInstant } from "./format";
@@ -35,6 +35,7 @@ export function TimeRangeSheet({ onClose, onCreated }: { onClose: () => void; on
   const [start, setStart] = useState("19:00");
   const [end, setEnd] = useState("23:00");
 
+  const [dismiss, setDismiss] = useState(false);
   const idempotency = useIdempotencyKey();
   const create = useMutation({
     mutationFn: (body: { startsAt: string; endsAt: string }) => {
@@ -45,11 +46,13 @@ export function TimeRangeSheet({ onClose, onCreated }: { onClose: () => void; on
     onSuccess: (item) => {
       void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
       if (item) onCreated(item);
-      onClose();
+      // 「✓ 入れました」を短く見せてから、出る動きで閉じる（docs/specs/T-56-motion.md「M-03」）
+      submit.succeed(() => setDismiss(true));
     },
   });
+  const submit = useSubmitState(create.isPending);
 
-  const submit = () => {
+  const send = () => {
     const startsAt = localInstant(date, start);
     // 終了が開始以前なら翌日の時刻（例：22:00〜02:00）
     let endsAt = localInstant(date, end);
@@ -58,12 +61,12 @@ export function TimeRangeSheet({ onClose, onCreated }: { onClose: () => void; on
   };
 
   return (
-    <BottomSheet title="時間を決めて入れる" label="時間を決めて入れる" onClose={onClose}>
+    <BottomSheet title="時間を決めて入れる" label="時間を決めて入れる" onClose={onClose} dismiss={dismiss}>
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          if (submit.state === "ready") send();
         }}
       >
         <Field label="日付">
@@ -86,9 +89,9 @@ export function TimeRangeSheet({ onClose, onCreated }: { onClose: () => void; on
           </Field>
         </div>
         <Note>終了が開始より前なら、翌日の時刻になります（22:00〜翌02:00）。60日先まで入れられます。</Note>
-        <SendButton type="submit" variant="lamp" block disabled={create.isPending || date === ""}>
+        <SubmitButton state={submit.state} variant="lamp" sending="入れています…" done="入れました" disabled={date === ""}>
           入れる
-        </SendButton>
+        </SubmitButton>
       </form>
       {create.isError && (
         <p role="status" className="text-s text-ink-muted">

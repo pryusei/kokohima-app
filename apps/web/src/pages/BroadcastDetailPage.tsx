@@ -15,7 +15,6 @@ import { SheetScreen } from "../ui/BottomSheet";
 import { ButtonLink, SendButton } from "../ui/Button";
 import { LoadError, Loading, Note } from "../ui/feedback";
 import { HeadCount } from "../ui/HeadCount";
-import { Link } from "../ui/Link";
 import { LinkCard } from "../ui/LinkCard";
 import { MoreButton, usePersonActionsToggle } from "../safety/MoreButton";
 import { PersonActions } from "../safety/PersonActions";
@@ -34,7 +33,8 @@ const request = (id: string, action: Action, idempotencyKey: (signature: string)
   return apiSend("POST", path, undefined, broadcastSchema, { idempotencyKey: idempotencyKey(signatureOf(path, undefined)) });
 };
 
-function Actions({ b }: { b: Broadcast }) {
+/** onDecided：自分の「決める」が成功して決まったとき（バッジの「ぽん」。M-04） */
+function Actions({ b, onDecided }: { b: Broadcast; onDecided: () => void }) {
   const queryClient = useQueryClient();
   const [failed, setFailed] = useState<string | null>(null);
   const key = keys.broadcasts.detail(b.id);
@@ -42,8 +42,9 @@ function Actions({ b }: { b: Broadcast }) {
   const act = useMutation({
     mutationFn: (action: Action) => request(b.id, action, idempotency.keyFor),
     onMutate: () => setFailed(null),
-    onSuccess: (updated) => {
+    onSuccess: (updated, action) => {
       if (updated) queryClient.setQueryData(key, updated);
+      if (action === "decide" && updated?.status === "decided") onDecided();
     },
     onError: (error) => {
       // 409 なら最新の状態を読み直して表示する
@@ -89,9 +90,9 @@ function Actions({ b }: { b: Broadcast }) {
         <Note>応じても、募集した人には人数だけが伝わります。応じなければ、そのままで大丈夫です。</Note>
       )}
       {b.meetupId && (
-        <Link to={`/meetups/${b.meetupId}`} className="text-action underline">
+        <ButtonLink to={`/meetups/${b.meetupId}`} variant="meet" block>
           成立した予定を見る
-        </Link>
+        </ButtonLink>
       )}
       {failed && (
         <p role="status" className="text-s text-ink-muted">
@@ -108,6 +109,8 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
   const { acting, open: openActions, close: closeActions, moreRef } = usePersonActionsToggle();
   // 決めたあと、または決まったことを知って最初に開いた1回だけ、成立の演出を出す（docs/specs/T-43-meet-moment.md）
   const moment = useMeetMoment(broadcast.data?.status === "decided" ? broadcast.data.meetupId : null);
+  // 自分の「決める」で決まったとき・成立の演出が流れるときだけ、バッジが「ぽん」とする（予定の参加者だけ。M-04）
+  const [decidedByMe, setDecidedByMe] = useState(false);
 
   if (broadcast.error instanceof ApiError && broadcast.error.status === 404) {
     return (
@@ -133,7 +136,7 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
           </div>
           {/* 募集者の募集中は、人数を下の HeadCount で大きく出すので、バッジは「募集中」だけにする */}
           {b && (
-            <Badge tone={broadcastStatusTone(b)}>
+            <Badge tone={broadcastStatusTone(b)} pop={decidedByMe || moment !== null}>
               {b.direction === "sent" && b.status === "open" ? "募集中" : broadcastStatusText(b)}
             </Badge>
           )}
@@ -172,7 +175,7 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
           )}
           {b.message && <p className="whitespace-pre-wrap">{b.message}</p>}
           <LinkCard url={b.url} preview={b.linkPreview} />
-          <Actions b={b} />
+          <Actions b={b} onDecided={() => setDecidedByMe(true)} />
         </>
       )}
     </SheetScreen>

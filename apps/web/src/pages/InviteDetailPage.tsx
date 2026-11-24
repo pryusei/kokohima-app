@@ -13,11 +13,11 @@ import { honorificOf, nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
-import { Button, SendButton } from "../ui/Button";
+import { Button, ButtonLink, SendButton } from "../ui/Button";
+import { Collapse } from "../ui/Collapse";
 import { LoadError, Loading, Note } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { ResponseButtons } from "../ui/HeadCount";
-import { Link } from "../ui/Link";
 import { LinkCard } from "../ui/LinkCard";
 import { MoreButton, usePersonActionsToggle } from "../safety/MoreButton";
 import { PersonActions } from "../safety/PersonActions";
@@ -76,6 +76,8 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
   const invite = useQuery(inviteQuery(inviteId));
   const [failed, setFailed] = useState<string | null>(null);
   const [countering, setCountering] = useState(false);
+  // 自分の操作（「行く」・「決める」）で成立に変わったか。バッジの「ぽん」はこのときだけ（取り直しで相手の操作により変わったときは動かさない。M-04）
+  const [metByMe, setMetByMe] = useState(false);
   // 届いた誘いの「…」（相手への操作。docs/specs/T-33-block-report.md「振る舞い 1.」）
   const { acting, open: openActions, close: closeActions, moreRef } = usePersonActionsToggle();
   const key = keys.invites.detail(inviteId);
@@ -97,10 +99,14 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
       setCountering(false);
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<DirectInvite>(key);
-      queryClient.setQueryData<DirectInvite>(key, (d) => d && { ...d, status: optimisticStatus(action) });
+      const status = optimisticStatus(action);
+      if (status === "confirmed") setMetByMe(true);
+      queryClient.setQueryData<DirectInvite>(key, (d) => d && { ...d, status });
       return { previous };
     },
     onError: (error, _action, context) => {
+      // 送れなかったら元のバッジに戻す（戻るのは動かさない）。返答のボタン群は Collapse で元の場所に開いて戻る
+      setMetByMe(false);
       if (context?.previous) queryClient.setQueryData(key, context.previous);
       setFailed(
         error instanceof ApiError && error.status === 409 && !isIdempotencyConflict(error)
@@ -142,7 +148,9 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
               <h2 className="truncate text-l font-bold">{d.direction === "received" ? name : `${named}へ`}</h2>
               <span className="truncate text-s text-ink-muted">{KIND_LABELS[d.kind]}</span>
             </div>
-            <Badge tone={statusTone(d.status)}>{statusText(d)}</Badge>
+            <Badge tone={statusTone(d.status)} pop={metByMe || moment !== null}>
+              {statusText(d)}
+            </Badge>
             {d.direction === "received" && !d.counterpart.withdrawn && !acting && (
               <MoreButton ref={moreRef} name={name} onClick={openActions} />
             )}
@@ -188,47 +196,57 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
             </Note>
           )}
           {d.meetupId && (
-            <Link to={`/meetups/${d.meetupId}`} className="text-action underline">
+            <ButtonLink to={`/meetups/${d.meetupId}`} variant="meet" block>
               成立した予定を見る
-            </Link>
+            </ButtonLink>
           )}
 
-          {d.direction === "received" && d.status === "pending" && (
-            <div className="flex flex-col gap-3">
-              <ResponseButtons>
-                <SendButton variant="primary" onClick={() => act.mutate({ path: "responses", body: { response: "accept" } })}>
-                  行く
-                </SendButton>
-                <SendButton onClick={() => act.mutate({ path: "responses", body: { response: "decline" } })}>
-                  今回は難しい
-                </SendButton>
-                <Button aria-pressed={countering} onClick={() => setCountering((v) => !v)}>
-                  この時間なら
-                </Button>
-              </ResponseButtons>
-              <Note>「今回は難しい」を選んでも、理由は伝わりません。</Note>
-              {countering && (
-                <CounterForm
-                  invite={d}
-                  onSubmit={(startsAt, endsAt) =>
-                    act.mutate({ path: "responses", body: { response: "counter", startsAt, endsAt } })
-                  }
-                />
-              )}
+          {/* 返答・決定のボタン群は、押して状態が変わったら縮んで消える（「今回は難しい」「見送る」も同じ静かな動き。M-04）。
+              シートの gap を打ち消し、開いている間だけ中身の上の余白で間を取る */}
+          {d.direction === "received" && (
+            <div className="-mt-4">
+              <Collapse show={d.status === "pending"}>
+                <div className="kh-collapse-shrink flex flex-col gap-3 pt-4">
+                  <ResponseButtons>
+                    <SendButton variant="primary" onClick={() => act.mutate({ path: "responses", body: { response: "accept" } })}>
+                      行く
+                    </SendButton>
+                    <SendButton onClick={() => act.mutate({ path: "responses", body: { response: "decline" } })}>
+                      今回は難しい
+                    </SendButton>
+                    <Button aria-pressed={countering} onClick={() => setCountering((v) => !v)}>
+                      この時間なら
+                    </Button>
+                  </ResponseButtons>
+                  <Note>「今回は難しい」を選んでも、理由は伝わりません。</Note>
+                  {countering && (
+                    <CounterForm
+                      invite={d}
+                      onSubmit={(startsAt, endsAt) =>
+                        act.mutate({ path: "responses", body: { response: "counter", startsAt, endsAt } })
+                      }
+                    />
+                  )}
+                </div>
+              </Collapse>
             </div>
           )}
 
-          {d.direction === "sent" && d.status === "counter_proposed" && (
-            <div className="flex flex-col gap-3">
-              <ResponseButtons>
-                <SendButton variant="primary" onClick={() => act.mutate({ path: "decide", body: { decision: "accept" } })}>
-                  {d.counterProposal ? decideLabel(d.counterProposal) : "決める"}
-                </SendButton>
-                <SendButton onClick={() => act.mutate({ path: "decide", body: { decision: "skip" } })}>
-                  見送る
-                </SendButton>
-              </ResponseButtons>
-              <Note>見送っても、相手には「見送りになりました」とだけ伝わります。</Note>
+          {d.direction === "sent" && (
+            <div className="-mt-4">
+              <Collapse show={d.status === "counter_proposed"}>
+                <div className="kh-collapse-shrink flex flex-col gap-3 pt-4">
+                  <ResponseButtons>
+                    <SendButton variant="primary" onClick={() => act.mutate({ path: "decide", body: { decision: "accept" } })}>
+                      {d.counterProposal ? decideLabel(d.counterProposal) : "決める"}
+                    </SendButton>
+                    <SendButton onClick={() => act.mutate({ path: "decide", body: { decision: "skip" } })}>
+                      見送る
+                    </SendButton>
+                  </ResponseButtons>
+                  <Note>見送っても、相手には「見送りになりました」とだけ伝わります。</Note>
+                </div>
+              </Collapse>
             </div>
           )}
           {failed && (

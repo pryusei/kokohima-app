@@ -43,6 +43,14 @@ beforeEach(() => {
   tokenStore.clear();
 });
 
+/** 動きを止める設定（matches）を差し替える。PC の幅の問い合わせは false */
+function stubReducedMotion(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((q: string) => ({ matches: q === "(prefers-reduced-motion: reduce)" ? matches : false, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+  );
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -90,6 +98,30 @@ describe("自分の行きたい（ここ暇のタブ）", () => {
       excludedUserIds: [uuid(2)],
     });
     expect(new Headers(post?.init.headers).get("Idempotency-Key")).toBeTruthy();
+  });
+
+  it("置くと「置いています…」、「✓ 置きました」を見せてから、出る動きでシートを閉じる（T-56 M-03）", async () => {
+    stubReducedMotion(false);
+    let respond: (r: Response) => void = () => {};
+    availabilityTab({
+      "/api/v1/wishes": [
+        json({ items: [], nextCursor: null }),
+        () => new Promise<Response>((resolve) => (respond = resolve)),
+        json({ items: [wish({ message: "キャンプ" })], nextCursor: null }),
+      ],
+    });
+    renderApp();
+    await screen.findByText("行きたいはまだありません");
+    await userEvent.click(screen.getByRole("button", { name: "＋ 行きたいを置く" }));
+    const dialog = await screen.findByRole("dialog", { name: "行きたいを置く" });
+    await userEvent.type(within(dialog).getByLabelText("ひとこと"), "キャンプ");
+    await userEvent.click(within(dialog).getByRole("button", { name: "置く" }));
+    expect(await within(dialog).findByRole("button", { name: "置いています…" })).toHaveAttribute("aria-disabled", "true");
+    respond(new Response(JSON.stringify(wish({ message: "キャンプ" })), { status: 201, headers: { "Content-Type": "application/json" } }));
+    expect(await within(dialog).findByRole("button", { name: "置きました" })).toHaveTextContent("✓置きました");
+    // 500ms のあと、出る動き（data-exiting）で閉じる
+    await waitFor(() => expect(screen.getByTestId("sheet-scrim")).toHaveAttribute("data-exiting"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "行きたいを置く" })).toBeNull());
   });
 
   it("リンク付きの行きたいに OGP のカードが出る。取れなければドメインだけ", async () => {

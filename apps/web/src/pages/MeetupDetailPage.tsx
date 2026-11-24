@@ -72,7 +72,15 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
       title={
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xl font-bold">成立した予定</h2>
-          {m && (cancelled ? <Badge tone="quiet">やっぱり難しくなりました</Badge> : <Badge tone="meet">成立</Badge>)}
+          {m &&
+            (cancelled ? (
+              <Badge tone="quiet">やっぱり難しくなりました</Badge>
+            ) : (
+              // 成立の演出が流れるときだけ「ぽん」とする（docs/specs/T-56-motion.md「M-04」）
+              <Badge tone="meet" pop={moment !== null}>
+                成立
+              </Badge>
+            ))}
         </div>
       }
     >

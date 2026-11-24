@@ -126,7 +126,9 @@ test("友達追加と「見せない」：お知らせ一覧の「この人に�
   await a.page.goto("/notifications");
   const item = a.page.getByRole("listitem").filter({ hasText: `${b.displayName}さんと友達になりました` });
   await item.getByRole("button", { name: "この人に見せない" }).click();
-  await expect(item.getByText("見せないにしました")).toBeVisible();
+  // 結果は結果の帯に出す（docs/specs/T-56-motion.md「M-09」）
+  await expect(a.page.getByTestId("result-band").getByText("見せないにしました")).toBeVisible();
+  await expect(item.getByRole("button", { name: "この人に見せない" })).toHaveCount(0);
 
   await b.page.goto("/");
   await expect(b.page.getByRole("heading", { name: "みんな" })).toBeVisible();

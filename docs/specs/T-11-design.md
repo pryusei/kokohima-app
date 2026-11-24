@@ -54,7 +54,7 @@
   - 保存のボタン（T-54）：`ui/SaveButton.tsx` の `SaveButton` と `useSaveState`。変えるまで押せず、保存できたらボタンそのものが約2秒「✓ 保存しました」になる。設定の表示名・時間帯プリセットと名前の画面で使う（docs/specs/T-54-save-and-goodbye-copy.md）。
   - 問い合わせ（T-24）で足した部品：`ui/form.tsx` の `textareaClass`（`inputClass` に複数行の分を足した複数行の入力欄）と `CharCount`（「count / max」と、超えたときの文）。
   - 実装の置き場所：`Header` は `ui/Navigation.tsx` の `TabScreen`（鐘つき）と `SubScreen`（戻るつき）、`StatusStates` は `ui/feedback.tsx` の `Loading`・`LoadError`・`OfflineBanner`、`SlotChips` は `ui/form.tsx` の `Chip`・`ChipRow`。
-- `Button` の variant：`primary`・`lamp`・`secondary`・`ghost` と、ログインの事業者の決まりの色の `line`（LINE の緑。T-32）・`apple`（`bg-ink` の地に `text-surface`）と、保存できた直後の `saved`（`border-meet`・`bg-meet-soft`・`text-meet-ink`。押せないあいだも灰色にしない。`SaveButton` だけが使う。T-54）。色（地・文字・枠）は variant の中だけで決め、`buttonClass()` のあとに `bg-`・`text-`・`border-` を足して上書きしない。Tailwind v4 は同じ性質のクラスをクラス名の順に出すので、あとに書いたほうが勝つとは限らない（T-32 で、LINE のボタンが副ボタンの `bg-surface` に負けて白の地に白の文字になった）。
+- `Button` の variant：`primary`・`lamp`・`secondary`・`ghost` と、ログインの事業者の決まりの色の `line`（LINE の緑。T-32）・`apple`（`bg-ink` の地に `text-surface`）と、保存・送信できた直後の `saved`（`border-action`・`bg-surface`・`text-action`。押せないあいだも灰色にしない。`SaveButton` と送る操作の `SubmitButton` だけが使う。T-54・T-56 M-03）と、成立した予定へ進む `meet`（`bg-meet`・`text-on-meet`。「成立した予定を見る」。T-56 M-04）。色（地・文字・枠）は variant の中だけで決め、`buttonClass()` のあとに `bg-`・`text-`・`border-` を足して上書きしない。Tailwind v4 は同じ性質のクラスをクラス名の順に出すので、あとに書いたほうが勝つとは限らない（T-32 で、LINE のボタンが副ボタンの `bg-surface` に負けて白の地に白の文字になった）。
 - 状態ごとの見た目は、真偽値の props を増やさず、`variant`（`"meet" | "pending" | "lamp" | "quiet"`）などの1つの値で渡す（`vercel-composition-patterns`）。
 - 誘いの状態 → バッジの対応は、`apps/web/src/invitations/format.ts` に関数を1つだけ置く（`statusTone`）：
   - `confirmed`（成立）→ `meet`
@@ -248,4 +248,4 @@
 | 2026-11-24 | `Button` に variant `saved` と、共通の部品の保存のボタン（`SaveButton`・`useSaveState`）を足した | T-54（docs/specs/T-54-save-and-goodbye-copy.md） |
 | 2026-11-24 | スコープ外の「誘い・募集のカードを押したときの動き」を T-56（画面の動きと手触り）に移した。読み込み中の骨組みの形と動きは T-56 で決めると書いた。部品の一覧の `Toast`、シートを閉じる操作のつまみ、テスト計画のつまみの項目に、T-56（M-02・M-09）で変わることを書き添えた | T-56 の仕様書PR |
 | 2026-11-24 | ここ暇タブ（キャンバス5・8・9）を週の帯に作り直したことを注記した。共通の部品に下に数秒出す `UndoToast` と、`LinkCard` の `compact` を足した | T-55（docs/specs/T-55-availability-week-grid.md） |
-| 2026-11-24 | 「画面のつながり」に、未ログインの `/` は紹介のページであることを足した | T-44 実装PR（docs/specs/T-44-landing.md） |
+| 2026-11-24 | `Button` の variant `saved` の色を操作の青にし、`meet` を足した。`Toast` をやめて結果の帯（`ResultBand`）に、T-55 の `UndoToast` を結果の帯に一本化した | T-56 の実装PR②（docs/specs/T-56-motion.md「M-03」「M-04」「M-09」） |
