@@ -205,14 +205,17 @@ export async function isBlockedEitherWay(d1: D1Database, a: string, b: string) {
 
 /**
  * ブロックの行を書き（すでにあれば最初の時刻のまま）、両方向の友達の行を消す。also は同じ batch で走らせる文
- * （公開設定の「見せる」の行を消す文。友達の解除と同じ。T-17「7.」）。ブロックする人が退会していれば何も書かない
+ * （公開設定の「見せる」の行を消す文。友達の解除と同じ。T-17「7.」）。どちらかが退会していればブロックの行は書かない
+ * （退会の削除はもう済んでいて、書くと消えずに残るため。同じ文の中で確かめる）
  */
 export async function blockInBatch(d1: D1Database, blockerId: string, blockedId: string, now: number, also: D1PreparedStatement[] = []) {
   await d1.batch([
     d1
       .prepare(
         `INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at)
-         SELECT ?1, ?2, ?3 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)`,
+         SELECT ?1, ?2, ?3
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM users WHERE id = ?2 AND withdrawn_at IS NOT NULL)`,
       )
       .bind(blockerId, blockedId, now),
     d1.prepare("DELETE FROM friendships WHERE user_id = ?1 AND friend_id = ?2").bind(blockerId, blockedId),
