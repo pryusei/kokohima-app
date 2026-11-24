@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { problem } from "../http/problem";
 import type { AppEnv } from "../env";
@@ -20,6 +21,17 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   c.set("viewer", viewer);
   await next();
 });
+
+/**
+ * 認証を求めない経路用（招待リンクの lookup。T-33）：Bearer があって正しければ閲覧者 ID、なければ・正しくなければ null。
+ * 401 にはしない（未ログインでも同じ経路を使うため）
+ */
+export async function optionalViewerId(c: Context<AppEnv>): Promise<string | null> {
+  const header = c.req.header("Authorization");
+  const match = header?.match(/^Bearer ([A-Za-z0-9._~+/-]+=*)$/);
+  const viewer = match?.[1] ? await verifyAccessToken(c.env, match[1], c.var.deps.now()) : null;
+  return viewer?.userId ?? null;
+}
 
 /** 重要な操作用：requireAuth に加えて、セッションが失効していないことをD1で毎回確認する */
 export const requireActiveSession = createMiddleware<AppEnv>(async (c, next) => {

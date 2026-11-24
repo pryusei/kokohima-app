@@ -96,11 +96,15 @@ export async function revokeAllInviteLinks(ctx: Ctx, viewerId: string) {
   await repo.revokeAllOwnInviteLinks(repo.db(ctx.env.DB), viewerId, ctx.deps.now());
 }
 
-/** 使えるリンクなら発行者の公開プロフィールを返す。理由にかかわらず使えなければ null */
-export async function lookupInvite(ctx: Ctx, token: string | undefined) {
+/**
+ * 使えるリンクなら発行者の公開プロフィールを返す。理由にかかわらず使えなければ null。
+ * viewerId（ログインしていれば）と発行者の間に、どちらかの向きのブロックがあれば、使えないリンクと同じ null（T-33）
+ */
+export async function lookupInvite(ctx: Ctx, token: string | undefined, viewerId?: string) {
   if (!token || token.length > 128) return null;
   const link = await repo.findInviteLinkByTokenHash(repo.db(ctx.env.DB), await sha256(token));
   if (!link || !isUsable(link, ctx.deps.now())) return null;
+  if (viewerId && viewerId !== link.ownerId && (await repo.isBlockedEitherWay(ctx.env.DB, viewerId, link.ownerId))) return null;
   const inviter = await getInviterProfile(ctx, link.ownerId);
   if (!inviter) return null;
   return { linkId: link.id, inviter: { displayName: inviter.displayName, avatarUrl: inviter.avatarUrl } };
@@ -138,7 +142,7 @@ export async function acceptInvite(
   const me = (await getPublicProfiles(ctx, viewerId, [viewerId])).get(viewerId);
   if (!me?.displayName) return { kind: "display_name_required" };
 
-  // 4. 人数の消費・両方向の行・イベントを1つのバッチで書く
+  // 4. 人数の消費・両方向の行・イベントを1つのバッチで書く。どちらかの向きのブロックがあれば、消費の文が0行になり404（T-33）
   const outcome = await repo.acceptInBatch(ctx.env.DB, {
     linkId: link.id,
     inviterId: link.ownerId,

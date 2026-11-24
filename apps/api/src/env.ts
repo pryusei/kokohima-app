@@ -106,6 +106,8 @@ export type AppDeps = {
   contactWebhookTarget: ContactWebhookTarget;
   /** 問い合わせの公開の日（Unix ミリ秒。null は未定）。既定は packages/shared の contactStartAt()。E2E のエントリだけが 0 にする */
   contactStartAt: number | null;
+  /** ブロックと通報を始める日（Unix ミリ秒。null は未定。T-33「振る舞い 8.」）。既定は packages/shared の safetyStartAt()。E2E のエントリだけが 0 にする */
+  safetyStartAt: number | null;
   /** 行きたいのAI提案（T-29）。全体の時間の上限（ミリ秒）。テストでだけ短くする */
   wishSuggest: { timeoutMs: number };
 };

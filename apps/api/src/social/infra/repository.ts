@@ -117,9 +117,10 @@ export async function acceptInBatch(
         `UPDATE invite_links SET uses = uses + 1
          WHERE id = ? AND uses < max_uses AND revoked_at IS NULL AND expires_at > ?
            AND NOT EXISTS (SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ?)
-           AND NOT EXISTS (SELECT 1 FROM users WHERE id IN (?, ?) AND withdrawn_at IS NOT NULL)`,
+           AND NOT EXISTS (SELECT 1 FROM users WHERE id IN (?, ?) AND withdrawn_at IS NOT NULL)
+           AND NOT EXISTS (SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?))`,
       )
-      .bind(linkId, now, acceptorId, inviterId, acceptorId, inviterId),
+      .bind(linkId, now, acceptorId, inviterId, acceptorId, inviterId, acceptorId, inviterId, inviterId, acceptorId),
     d1
       .prepare("INSERT INTO friendships (user_id, friend_id, created_at) SELECT ?, ?, ? WHERE changes() = 1")
       .bind(acceptorId, inviterId, now),
@@ -182,12 +183,75 @@ export async function deleteFriendship(d1: D1Database, userId: string, friendId:
   return mine?.meta.changes === 1;
 }
 
-/** 退会（T-16 入口を止める段）：本人の招待リンクと、両方向の友達の行を消す文 */
+/** 退会（T-16 入口を止める段）：本人の招待リンクと、両方向の友達の行と、両方向のブロックの行（T-33）を消す文 */
 export function withdrawalPurgeStatements(d1: D1Database, userId: string): D1PreparedStatement[] {
   return [
     d1.prepare("DELETE FROM invite_links WHERE owner_id = ?").bind(userId),
     d1.prepare("DELETE FROM friendships WHERE user_id = ?1 OR friend_id = ?1").bind(userId),
+    d1.prepare("DELETE FROM blocks WHERE blocker_id = ?1 OR blocked_id = ?1").bind(userId),
   ];
+}
+
+// ブロック（docs/specs/T-33-block-report.md「振る舞い 2.」「3.」）
+
+/** どちらかの向きにブロックがあるか */
+export async function isBlockedEitherWay(d1: D1Database, a: string, b: string) {
+  const row = await d1
+    .prepare("SELECT 1 FROM blocks WHERE (blocker_id = ?1 AND blocked_id = ?2) OR (blocker_id = ?2 AND blocked_id = ?1) LIMIT 1")
+    .bind(a, b)
+    .first();
+  return row !== null;
+}
+
+/**
+ * ブロックの行を書き（すでにあれば最初の時刻のまま）、両方向の友達の行を消す。also は同じ batch で走らせる文
+ * （公開設定の「見せる」の行を消す文。友達の解除と同じ。T-17「7.」）。ブロックする人が退会していれば何も書かない
+ */
+export async function blockInBatch(d1: D1Database, blockerId: string, blockedId: string, now: number, also: D1PreparedStatement[] = []) {
+  await d1.batch([
+    d1
+      .prepare(
+        `INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at)
+         SELECT ?1, ?2, ?3 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1 AND withdrawn_at IS NULL)`,
+      )
+      .bind(blockerId, blockedId, now),
+    d1.prepare("DELETE FROM friendships WHERE user_id = ?1 AND friend_id = ?2").bind(blockerId, blockedId),
+    d1.prepare("DELETE FROM friendships WHERE user_id = ?1 AND friend_id = ?2").bind(blockedId, blockerId),
+    ...also,
+  ]);
+}
+
+/** 閲覧者がブロックした人（ブロックした新しい順、同じなら相手 ID の降順） */
+export async function listBlocks(d1: D1Database, blockerId: string, limit: number, cursor: Cursor | null) {
+  const rows = cursor
+    ? await d1
+        .prepare(
+          `SELECT blocked_id AS blockedId, created_at AS createdAt FROM blocks
+           WHERE blocker_id = ?1 AND (created_at < ?2 OR (created_at = ?2 AND blocked_id < ?3))
+           ORDER BY created_at DESC, blocked_id DESC LIMIT ?4`,
+        )
+        .bind(blockerId, cursor.k, cursor.id, limit + 1)
+        .all<{ blockedId: string; createdAt: number }>()
+    : await d1
+        .prepare(
+          `SELECT blocked_id AS blockedId, created_at AS createdAt FROM blocks
+           WHERE blocker_id = ?1 ORDER BY created_at DESC, blocked_id DESC LIMIT ?2`,
+        )
+        .bind(blockerId, limit + 1)
+        .all<{ blockedId: string; createdAt: number }>();
+  return rows.results;
+}
+
+/** 閲覧者が userId をブロックしているか（閲覧者の行だけを見る） */
+export async function hasOwnBlock(d1: D1Database, blockerId: string, blockedId: string) {
+  const row = await d1.prepare("SELECT 1 FROM blocks WHERE blocker_id = ?1 AND blocked_id = ?2").bind(blockerId, blockedId).first();
+  return row !== null;
+}
+
+/** 閲覧者のブロックだけを消す。消せたら true */
+export async function deleteOwnBlock(d1: D1Database, blockerId: string, blockedId: string) {
+  const r = await d1.prepare("DELETE FROM blocks WHERE blocker_id = ?1 AND blocked_id = ?2").bind(blockerId, blockedId).run();
+  return r.meta.changes === 1;
 }
 
 /** 掃除（docs/specs/T-17-retention.md「5.」）：期限が expiredBefore より前の招待リンクを消す（上限つき。使い切ったもの・無効化したものも）。消した数 */

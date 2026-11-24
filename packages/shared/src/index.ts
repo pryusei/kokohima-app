@@ -11,3 +11,5 @@ export * from "./schemas/wish";
 export * from "./schemas/contact";
 export * from "./contactStart";
 export * from "./schemas/wishSuggestion";
+export * from "./schemas/safety";
+export * from "./safetyStart";
