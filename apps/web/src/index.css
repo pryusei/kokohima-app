@@ -31,6 +31,9 @@
   --kh-on-action: #ffffff;
   --kh-focus: #0077c7;
   --kh-scrim: #03030280;
+  /* LINE のログインのボタンの色（LINE の決まり。夜のテーマでも同じ。docs/specs/T-32-line-login.md「6.」） */
+  --kh-brand-line: #06c755;
+  --kh-on-brand-line: #ffffff;
   --kh-shadow-card: 0 1px 2px 0 #0303024d;
   --kh-shadow-float: 0 4px 8px 2px #0303024d;
   --kh-shadow-sheet: 0 -4px 10px 0 #0303024d;
@@ -113,6 +116,8 @@
   --color-on-action: var(--kh-on-action);
   --color-focus: var(--kh-focus);
   --color-scrim: var(--kh-scrim);
+  --color-brand-line: var(--kh-brand-line);
+  --color-on-brand-line: var(--kh-on-brand-line);
   --shadow-card: var(--kh-shadow-card);
   --shadow-float: var(--kh-shadow-float);
   --shadow-sheet: var(--kh-shadow-sheet);
