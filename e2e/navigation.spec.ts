@@ -123,3 +123,59 @@ test("動きを止めない設定でも、シートは閉じる動きのあと�
   await expect(sheet(page)).toHaveCount(0);
   await expect(opener).toBeFocused();
 });
+
+test("みんなタブを下へスクロールして誘いタブへ移り、みんなタブに戻ると位置が戻る。今いるタブを押すと一番上に戻る（docs/specs/T-56-motion.md「M-07」）", async ({ browser }) => {
+  const a = await newUser(browser, "A");
+  const b = await newUser(browser, "B");
+  await befriend(b, a);
+  const page = a.page;
+  // 中身がスクロールできる高さにする
+  await page.setViewportSize({ width: 390, height: 420 });
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "誰を誘う？" })).toBeVisible();
+  const tabs = page.getByRole("navigation", { name: "タブ" });
+  await expect(tabs).not.toHaveAttribute("inert");
+  await page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
+  const scrolled = Number(await page.evaluate("window.scrollY"));
+  expect(scrolled).toBeGreaterThan(0);
+
+  await tabs.getByRole("link", { name: "誘い" }).click();
+  await expect(page.getByRole("heading", { name: "誘い", level: 1 })).toBeVisible();
+  // 初めてのタブは一番上から
+  await expect.poll(async () => Number(await page.evaluate("window.scrollY"))).toBe(0);
+
+  await tabs.getByRole("link", { name: "みんな" }).click();
+  await expect(page.getByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
+  await expect.poll(async () => Number(await page.evaluate("window.scrollY"))).toBe(scrolled);
+
+  // 今いるタブをもう一度押すと一番上へ。URL は変えない
+  await tabs.getByRole("link", { name: "みんな" }).click();
+  await expect.poll(async () => Number(await page.evaluate("window.scrollY"))).toBe(0);
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("ログインの確認中もヘッダーと下のタブが出て、確認の前後で位置と大きさが変わらない（docs/specs/T-56-motion.md「M-05」）", async ({ browser }) => {
+  const { page } = await newUser(browser, "A");
+  await page.setViewportSize({ width: 390, height: 844 });
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/v1/auth/refresh", async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.goto("/invites");
+  const header = page.getByRole("banner");
+  const tabs = page.getByRole("navigation", { name: "タブ" });
+  await expect(page.getByRole("heading", { name: "誘い", level: 1 })).toBeVisible();
+  await expect(tabs).toHaveAttribute("inert", "");
+  await expect(page.getByRole("status", { name: "読み込み中" })).toBeAttached();
+  const before = { header: await header.boundingBox(), tabs: await tabs.boundingBox() };
+  release();
+  await expect(tabs).not.toHaveAttribute("inert");
+  await expect(page.getByRole("link", { name: /^お知らせ/ })).toBeVisible();
+  const after = { header: await header.boundingBox(), tabs: await tabs.boundingBox() };
+  expect(before.header).not.toBeNull();
+  expect(after).toEqual(before);
+});

@@ -33,6 +33,8 @@ async function expectNoHorizontalScroll(page: E2EUser["page"]) {
 test("左のナビで みんな → ここ暇 → 誘い → 友達 → お知らせ → 設定 と移れ、下のタブと鐘は出ない。どの画面も横にスクロールしない", async ({ loggedInPage: page }) => {
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: "タブ" });
+  // ログインの確認中の殻（押せないナビ。docs/specs/T-56-motion.md「M-05」）が、いつものナビに替わるのを待つ
+  await expect(nav).not.toHaveAttribute("inert");
   await expect(nav.getByRole("link")).toHaveText(["みんな", "ここ暇", "誘い", "友達", "お知らせ", "設定"]);
   const box = await nav.boundingBox();
   expect(box?.x).toBe(0);
@@ -128,4 +130,28 @@ test("誘いの作成のシートに入力したまま幅を390pxと1280pxの間
   await expect(create).toBeVisible();
   await expect(create.getByLabel("日付")).toHaveValue(tomorrow());
   await expect(create.getByLabel("開始", { exact: true })).toHaveValue("10:00");
+});
+
+test("PC の幅でも、ログインの確認中に左のナビとヘッダーが出て、確認の前後で位置と大きさが変わらない（docs/specs/T-56-motion.md「M-05」）", async ({ browser }) => {
+  const { page } = await newUser(browser, "A");
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/v1/auth/refresh", async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.goto("/friends");
+  const header = page.getByRole("banner");
+  const nav = page.getByRole("navigation", { name: "タブ" });
+  await expect(page.getByRole("heading", { name: "友達", level: 1 })).toBeVisible();
+  await expect(nav).toHaveAttribute("inert", "");
+  const before = { header: await header.boundingBox(), nav: await nav.boundingBox() };
+  release();
+  await expect(nav).not.toHaveAttribute("inert");
+  await expect(nav.getByRole("link", { name: /^お知らせ/ })).toBeVisible();
+  const after = { header: await header.boundingBox(), nav: await nav.boundingBox() };
+  expect(before.nav).not.toBeNull();
+  expect(after).toEqual(before);
 });
