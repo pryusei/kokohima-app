@@ -10,8 +10,10 @@ import { useOnline } from "./online";
 
 export type ButtonVariant = "primary" | "lamp" | "secondary" | "ghost" | "line" | "apple" | "saved" | "meet";
 
+// 押した縮みは、押せるときだけ（disabled・aria-disabled（送信中・「✓ 送りました」のあいだ）では縮まない）。
+// 打ち消しのクラス（active:scale-100）を後ろに足しても、出力の順で負けることがあるので、条件のほうに書く
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-m border px-4 font-bold transition-transform duration-(--duration-press) ease-out active:scale-[.98] disabled:cursor-default disabled:active:scale-100";
+  "inline-flex items-center justify-center gap-2 rounded-m border px-4 font-bold transition-transform duration-(--duration-press) ease-out not-disabled:not-aria-disabled:active:scale-[.98] disabled:cursor-default";
 
 // 押せないときの色。saved は押せないあいだも「✓」の色を見せたいので付けない
 // （disabled: の色は地の色のクラスより後に出て必ず勝つので、saved の側からは上書きできない）
@@ -70,7 +72,7 @@ export function SendButton({ disabled, pending = false, className, onClick, ...r
       disabled={disabled || !online}
       aria-disabled={pending || undefined}
       data-pending={pending || undefined}
-      className={`kh-send-motion ${pending ? "cursor-default opacity-70 active:scale-100" : ""} ${className ?? ""}`}
+      className={`kh-send-motion ${pending ? "cursor-default opacity-70" : ""} ${className ?? ""}`}
       onClick={ignore}
       {...rest}
     />
