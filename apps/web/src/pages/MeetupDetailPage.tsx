@@ -1,10 +1,10 @@
 import { meetupSchema, type Meetup } from "@kokohima/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, apiSend } from "../api/client";
 import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
-import { IcsButton } from "../calendar/IcsButton";
+import { MeetupCalendarActions } from "../calendar/MeetupCalendarActions";
 import { formatRange } from "../invitations/format";
 import { MeetMoment, useMeetMoment } from "../invitations/MeetMoment";
 import { meetupQuery } from "../invitations/queries";
@@ -15,11 +15,18 @@ import { SheetScreen } from "../ui/BottomSheet";
 import { SendButton } from "../ui/Button";
 import { FadeIn, LoadError, Loading, Note } from "../ui/feedback";
 import { LinkCard } from "../ui/LinkCard";
+import { useResultBand } from "../ui/ResultBand";
 
 // 成立した予定（docs/specs/T-04-direct-invite.md「画面」、キャンバス「15 成立した予定」）。「やっぱり難しい」は確認なしで送る
 // 後ろに誘いタブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
 
-export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
+/** Google カレンダーの連携から戻ってきたときの結果（docs/specs/T-57-meetup-google-calendar.md「5.」） */
+const CALENDAR_RESULT_TEXT: Record<string, string> = {
+  connected: "連携しました。Googleカレンダーの『ここ暇』に入ります",
+  failed: "連携できませんでした。もう一度お試しください",
+};
+
+export function MeetupDetailPage({ meetupId, search = "" }: { meetupId: string; search?: string }) {
   const queryClient = useQueryClient();
   const meetup = useQuery(meetupQuery(meetupId));
   const [failed, setFailed] = useState(false);
@@ -28,6 +35,18 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
   // 表示した時点の時刻で判定する（描画のたびに時計を読まない）
   const [openedAt] = useState(() => Date.now());
   const key = keys.meetups.detail(meetupId);
+
+  // 連携の結果（?calendar=）は結果の帯に出す（T-56 M-09）。同じ結果は開いている間に1回だけ。連携の状態は読み直す
+  const calendarResult = new URLSearchParams(search).get("calendar");
+  const showBand = useResultBand();
+  const shownResult = useRef<string | null>(null);
+  useEffect(() => {
+    const text = calendarResult ? CALENDAR_RESULT_TEXT[calendarResult] : undefined;
+    if (!text || shownResult.current === calendarResult) return;
+    shownResult.current = calendarResult;
+    showBand({ text });
+    void queryClient.invalidateQueries({ queryKey: keys.calendar.connections() });
+  }, [calendarResult, showBand, queryClient]);
 
   const idempotency = useIdempotencyKey();
   const cancel = useMutation({
@@ -111,7 +130,7 @@ export function MeetupDetailPage({ meetupId }: { meetupId: string }) {
           </div>
           {m.message && <p className="whitespace-pre-wrap">{m.message}</p>}
           <LinkCard url={m.url} preview={m.linkPreview} />
-          <IcsButton meetupId={m.id} />
+          <MeetupCalendarActions meetup={m} />
           {cancellable && (
             <>
               <SendButton variant="ghost" block onClick={() => cancel.mutate()}>

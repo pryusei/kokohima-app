@@ -35,18 +35,37 @@ export async function findConnection(d1: D1Database, userId: string, provider: P
 /** 直近の行が limit 未満のときだけ足す。足せたら true（使った行も数える） */
 export async function insertOauthStateWithinLimit(
   d1: D1Database,
-  row: { stateHash: string; bindingHash: string; userId: string; provider: Provider; codeVerifier: string; now: number },
+  row: {
+    stateHash: string;
+    bindingHash: string;
+    userId: string;
+    provider: Provider;
+    codeVerifier: string;
+    returnMeetupId: string | null;
+    now: number;
+  },
   ttl: number,
   limit: number,
 ) {
   const result = await d1
     .prepare(
-      `INSERT INTO calendar_oauth_states (state_hash, binding_hash, user_id, provider, code_verifier, expires_at, created_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+      `INSERT INTO calendar_oauth_states (state_hash, binding_hash, user_id, provider, code_verifier, expires_at, created_at, return_meetup_id)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?10
        WHERE (SELECT COUNT(*) FROM calendar_oauth_states WHERE user_id = ?3 AND created_at > ?8) < ?9
          AND EXISTS (SELECT 1 FROM users WHERE id = ?3 AND withdrawn_at IS NULL)`,
     )
-    .bind(row.stateHash, row.bindingHash, row.userId, row.provider, row.codeVerifier, row.now + ttl, row.now, row.now - ttl, limit)
+    .bind(
+      row.stateHash,
+      row.bindingHash,
+      row.userId,
+      row.provider,
+      row.codeVerifier,
+      row.now + ttl,
+      row.now,
+      row.now - ttl,
+      limit,
+      row.returnMeetupId,
+    )
     .run();
   return result.meta.changes === 1;
 }
@@ -66,10 +85,10 @@ export async function takeOauthState(d1: D1Database, stateHash: string, now: num
     .prepare(
       `UPDATE calendar_oauth_states SET used_at = ?2
        WHERE state_hash = ?1 AND used_at IS NULL AND expires_at > ?2
-       RETURNING binding_hash, user_id, provider, code_verifier`,
+       RETURNING binding_hash, user_id, provider, code_verifier, return_meetup_id`,
     )
     .bind(stateHash, now)
-    .first<{ binding_hash: string; user_id: string; provider: Provider; code_verifier: string }>();
+    .first<{ binding_hash: string; user_id: string; provider: Provider; code_verifier: string; return_meetup_id: string | null }>();
 }
 
 /** 連携を書く（連携し直しでは calendar_id を残し、埋まりの記録を消す）。同じ batch で CalendarConnected */

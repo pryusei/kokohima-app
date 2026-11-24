@@ -30,12 +30,12 @@ const HOUR = 60 * MIN;
 const T = (s: string, day = "10") => `2026-10-${day}T${s}:00.000Z`;
 const ms = (s: string, day = "10") => Date.parse(T(s, day));
 
-async function authorize(who: User) {
-  const res = await u.call("POST", "/api/v1/calendar/google/authorizations", { token: who.token });
+async function authorize(who: User, request?: unknown) {
+  const res = await u.call("POST", "/api/v1/calendar/google/authorizations", { token: who.token, body: request });
   expect(res.status).toBe(200);
-  const { authorizeUrl } = (await res.json()) as { authorizeUrl: string };
-  const url = new URL(authorizeUrl);
-  return { res, url, state: url.searchParams.get("state") ?? "", binding: cookieValue(res, "__Host-kh_cal") ?? "" };
+  const body = (await res.json()) as { authorizeUrl: string };
+  const url = new URL(body.authorizeUrl);
+  return { res, body, url, state: url.searchParams.get("state") ?? "", binding: cookieValue(res, "__Host-kh_cal") ?? "" };
 }
 
 function callback(params: Record<string, string>, binding?: string) {
@@ -220,6 +220,162 @@ describe("コールバック", () => {
     expect(logged).not.toMatch(/secret-code|refresh-|access-|v1\.cal-1/);
     spy.mockRestore();
     err.mockRestore();
+  });
+});
+
+describe("成立した予定からの連携（T-57）", () => {
+  const MEETUP = "55555555-5555-4555-8555-555555555555";
+  const toMeetup = (result: string, id = MEETUP) => `https://app.test/meetups/${id}?calendar=${result}`;
+  const returnOf = async (who: User) =>
+    (
+      await env.DB.prepare("SELECT return_meetup_id FROM calendar_oauth_states WHERE user_id = ?1 ORDER BY created_at DESC, rowid DESC")
+        .bind(who.id)
+        .first<{ return_meetup_id: string | null }>()
+    )?.return_meetup_id;
+
+  /** 2人の成立した予定（a が誘い、b が「行く」） */
+  async function meetupBetween(a: User, b: User) {
+    await u.befriend(a, b);
+    const sent = await u.call("POST", "/api/v1/direct-invites", {
+      token: a.token,
+      body: { recipientId: b.id, startsAt: T("11:00", "11"), endsAt: T("13:00", "11") },
+    });
+    expect(sent.status).toBe(201);
+    const { id } = (await sent.json()) as { id: string };
+    const accepted = await u.call("POST", `/api/v1/direct-invites/${id}/responses`, { token: b.token, body: { response: "accept" } });
+    return ((await accepted.json()) as { meetupId: string }).meetupId;
+  }
+
+  it("meetupId 付きで始めると行に入り、成功で /meetups/<id>?calendar=connected へ303", async () => {
+    const a = await authenticated();
+    const s = await authorize(a, { meetupId: MEETUP });
+    expect(await returnOf(a)).toBe(MEETUP);
+    const res = await callback({ code: "c", state: s.state }, s.binding);
+    expect(res.status).toBe(303);
+    expect(res.headers.get("Location")).toBe(toMeetup("connected"));
+    expect((await status(a)).google.status).toBe("connected");
+    expect(await outbox("CalendarConnected", a.id)).toHaveLength(1);
+  });
+
+  it("行を取り出したあとの失敗（結びつけCookieの不一致・error・スコープ不足）は /meetups/<id>?calendar=failed", async () => {
+    const a = await authenticated();
+    const noCookie = await authorize(a, { meetupId: MEETUP });
+    expect((await callback({ code: "c", state: noCookie.state })).headers.get("Location")).toBe(toMeetup("failed"));
+    const otherCookie = await authorize(a, { meetupId: MEETUP });
+    expect((await callback({ code: "c", state: otherCookie.state }, "x".repeat(43))).headers.get("Location")).toBe(toMeetup("failed"));
+    const denied = await authorize(a, { meetupId: MEETUP });
+    expect((await callback({ error: "access_denied", state: denied.state }, denied.binding)).headers.get("Location")).toBe(toMeetup("failed"));
+    h.google.state.grantedScopes = ["https://www.googleapis.com/auth/calendar.freebusy"];
+    const scope = await authorize(a, { meetupId: MEETUP });
+    expect((await callback({ code: "c", state: scope.state }, scope.binding)).headers.get("Location")).toBe(toMeetup("failed"));
+    expect(await connectionRow(a)).toBeNull();
+  });
+
+  it("state がない・期限切れ・使用済みは、戻り先を知れないので /settings/calendar?calendar=failed", async () => {
+    const a = await authenticated();
+    const failed = "https://app.test/settings/calendar?calendar=failed";
+    expect((await callback({ code: "c" })).headers.get("Location")).toBe(failed);
+    const expired = await authorize(a, { meetupId: MEETUP });
+    h.clock.now += 10 * MIN;
+    expect((await callback({ code: "c", state: expired.state }, expired.binding)).headers.get("Location")).toBe(failed);
+    const reused = await authorize(a, { meetupId: MEETUP });
+    expect((await callback({ code: "c", state: reused.state }, reused.binding)).headers.get("Location")).toBe(toMeetup("connected"));
+    expect((await callback({ code: "c", state: reused.state }, reused.binding)).headers.get("Location")).toBe(failed);
+  });
+
+  it("本文なし・空の本文・{} は今までどおり設定へ戻る", async () => {
+    const a = await authenticated();
+    const none = await authorize(a);
+    expect(await returnOf(a)).toBeNull();
+    expect((await callback({ code: "c", state: none.state }, none.binding)).headers.get("Location")).toBe(
+      "https://app.test/settings/calendar?calendar=connected",
+    );
+    const emptyObject = await authorize(a, {});
+    expect((await callback({ error: "access_denied", state: emptyObject.state }, emptyObject.binding)).headers.get("Location")).toBe(
+      "https://app.test/settings/calendar?calendar=failed",
+    );
+    const blank = await h.request("/api/v1/calendar/google/authorizations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${a.token}`, Origin: "https://app.test", "Content-Type": "application/json" },
+      body: "",
+    });
+    expect(blank.status).toBe(200);
+  });
+
+  it("行を取り出したあとの想定外の例外でも /meetups/<id>?calendar=failed（設定にならない）", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const a = await authenticated();
+    const s = await authorize(a, { meetupId: MEETUP });
+    const batch = vi.spyOn(env.DB, "batch").mockRejectedValueOnce(new Error("boom"));
+    const res = await callback({ code: "c", state: s.state }, s.binding);
+    batch.mockRestore();
+    expect(res.status).toBe(303);
+    expect(res.headers.get("Location")).toBe(toMeetup("failed"));
+    expect(err.mock.calls.flat().join("\n")).toContain("unexpected");
+    expect(await connectionRow(a)).toBeNull();
+    err.mockRestore();
+  });
+
+  it("入力検証：UUID でない・知らない項目・JSON でない本文は400で、行を足さない（上限に数えない）", async () => {
+    const a = await authenticated();
+    const bad = [{ meetupId: "not-a-uuid" }, { meetupId: "//evil.example" }, { meetupId: `../${MEETUP}` }, { meetupId: MEETUP, returnTo: "https://evil.example" }, [], "x"];
+    for (const body of bad) {
+      const res = await u.call("POST", "/api/v1/calendar/google/authorizations", { token: a.token, body });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe("validation_failed");
+    }
+    const notJson = await h.request("/api/v1/calendar/google/authorizations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${a.token}`, Origin: "https://app.test", "Content-Type": "application/json" },
+      body: "{meetupId:",
+    });
+    expect(notJson.status).toBe(400);
+    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM calendar_oauth_states WHERE user_id = ?1").bind(a.id).first<{ n: number }>();
+    expect(count?.n).toBe(0);
+  });
+
+  it("戻り先はオープンリダイレクトにならない：Location は常に APP_ORIGIN の /meetups/<uuid> か /settings/calendar", async () => {
+    const a = await authenticated();
+    const locations: string[] = [];
+    for (const body of [{ meetupId: MEETUP }, {}, undefined]) {
+      const s = await authorize(a, body);
+      locations.push((await callback({ code: "c", state: s.state }, s.binding)).headers.get("Location") ?? "");
+      const t = await authorize(a, body);
+      locations.push((await callback({ error: "x", state: t.state }, t.binding)).headers.get("Location") ?? "");
+    }
+    locations.push((await callback({ code: "c", state: "unknown" })).headers.get("Location") ?? "");
+    for (const location of locations) {
+      expect(location).toMatch(/^https:\/\/app\.test\/(meetups\/[0-9a-f-]{36}|settings\/calendar)\?calendar=(connected|failed)$/);
+    }
+    // 保存した値が UUID でなくても（検証の前の行など）、パスにはしない
+    const s = await authorize(a, { meetupId: MEETUP });
+    await env.DB.prepare("UPDATE calendar_oauth_states SET return_meetup_id = '//evil.example' WHERE user_id = ?1 AND used_at IS NULL")
+      .bind(a.id)
+      .run();
+    expect((await callback({ code: "c", state: s.state }, s.binding)).headers.get("Location")).toBe(
+      "https://app.test/settings/calendar?calendar=connected",
+    );
+  });
+
+  it("他人のIDでは取得できない：他人の予定・存在しない ID でも応答は自分の予定と同じ200。戻った先の予定は404", async () => {
+    const a = await authenticated("あき");
+    const b = await authenticated("はる");
+    const c = await authenticated("なつ");
+    const own = await meetupBetween(a, b);
+    const others = await meetupBetween(b, c);
+    const shapes: string[] = [];
+    for (const meetupId of [own, others, crypto.randomUUID()]) {
+      const s = await authorize(a, { meetupId });
+      expect(s.res.status).toBe(200);
+      shapes.push(Object.keys(s.body).sort().join(","));
+      expect(s.res.headers.get("Set-Cookie")).toMatch(/__Host-kh_cal=/);
+      expect((await callback({ code: "c", state: s.state }, s.binding)).headers.get("Location")).toBe(toMeetup("connected", meetupId));
+    }
+    expect(new Set(shapes)).toEqual(new Set(["authorizeUrl"]));
+    expect((await u.call("GET", `/api/v1/meetups/${own}`, { token: a.token })).status).toBe(200);
+    expect((await u.call("GET", `/api/v1/meetups/${others}`, { token: a.token })).status).toBe(404);
+    // 連携の状態は閲覧者自身の行だけ（c は連携していない）
+    expect((await status(c)).google.status).toBe("none");
   });
 });
 
