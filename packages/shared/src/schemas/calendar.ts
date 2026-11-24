@@ -14,6 +14,10 @@ export const calendarConnectionsSchema = z.object({
 });
 export type CalendarConnections = z.infer<typeof calendarConnectionsSchema>;
 
+/** 連携の開始の本文（任意）。meetupId は戻り先 /meetups/<id> だけに使う（docs/specs/T-57-meetup-google-calendar.md「入力」） */
+export const calendarAuthorizationRequestSchema = z.object({ meetupId: z.uuid().optional() }).strict();
+export type CalendarAuthorizationRequest = z.infer<typeof calendarAuthorizationRequestSchema>;
+
 export const calendarAuthorizationSchema = z.object({ authorizeUrl: z.url() });
 
 export const freeSlotSchema = z.object({
