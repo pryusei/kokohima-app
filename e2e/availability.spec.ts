@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { addAvailability, befriend, expect, friendList, newUser, sheet, test } from "./fixtures";
+import { addAvailability, availabilityCell, befriend, expect, friendList, newUser, sheet, test } from "./fixtures";
 
 // T-03 ここ暇（docs/specs/T-03-availability.md「E2Eテスト」）
 // 夜の枠が過去にならないよう、日付は明日（Asia/Tokyo）を使う
@@ -17,7 +17,7 @@ function tokyoDate(offsetDays: number) {
 
 async function addNight(page: Page, date: string) {
   await addAvailability(page, date, "夜");
-  await expect(page.getByRole("list", { name: "自分のここ暇" }).getByText(/夜 19:00〜23:00/)).toBeVisible();
+  await expect(availabilityCell(page, date, "夜")).toHaveAccessibleName(/ ここ暇 19:00〜23:00/);
 }
 
 /** 「みんな」のここ暇の一覧（上の「誰を誘う？」の顔の列とは分けて探す。T-34） */
@@ -78,30 +78,47 @@ test("AがBに「見せない」にすると、Bの「みんな」と友達の�
   }
 });
 
-test("毎週のくり返しを作ると自分の一覧に出て、「この日だけ外す」とその日だけ消える", async ({ loggedInPage: page }) => {
+test("マスを押すとすぐここ暇になり、下の「取り消す」で消える。ここ暇のマスを押すと取り消せる（T-55）", async ({ loggedInPage: page }) => {
+  const tomorrow = tokyoDate(1);
+  const cell = availabilityCell(page, tomorrow.date, "夜");
+  await addAvailability(page, tomorrow.date, "夜");
+  await page.getByRole("status").filter({ hasText: `${tomorrow.label} 夜をここ暇にしました` }).getByRole("button", { name: "取り消す" }).click();
+  await expect(cell).toHaveAttribute("aria-pressed", "false");
+  await page.reload();
+  await expect(cell).toHaveAccessibleName(/押すとここ暇にする$/);
+
+  await addAvailability(page, tomorrow.date, "夜");
+  await cell.click();
+  await expect(page.getByText(`${tomorrow.label} 夜のここ暇を取り消しました`)).toBeVisible();
+  await expect(cell).toHaveAttribute("aria-pressed", "false");
+  await page.reload();
+  await expect(cell).toHaveAccessibleName(/押すとここ暇にする$/);
+});
+
+test("毎週のくり返しを作ると週の帯に点線で出て、押すとその日だけ外れる", async ({ loggedInPage: page }) => {
   const tomorrow = tokyoDate(1);
   const nextWeek = tokyoDate(8);
   await page.goto("/availability");
-  // くり返しの追加はシートで開く（docs/specs/T-11-design.md）
-  await page.getByRole("button", { name: "くり返しを追加する" }).click();
+  // くり返しは1行のリンクからシートで開く（docs/specs/T-55-availability-week-grid.md）
+  await page.getByRole("button", { name: /^くり返し/ }).click();
+  await sheet(page, "くり返し").getByRole("button", { name: "＋ くり返しを追加する" }).click();
   const dialog = sheet(page, "くり返しを追加");
   await dialog.getByLabel("曜日").selectOption(String(tomorrow.weekday));
   await dialog.getByLabel("時間帯", { exact: true }).selectOption("night");
   await dialog.getByRole("button", { name: "くり返しを追加" }).click();
-  await expect(page.getByRole("list", { name: "くり返し" })).toContainText(`毎週${WEEKDAYS[tomorrow.weekday]}曜 夜 19:00〜23:00`);
+  await expect(sheet(page, "くり返し").getByRole("list", { name: "くり返し" })).toContainText(`毎週${WEEKDAYS[tomorrow.weekday]}曜 夜 19:00〜23:00`);
   await page.keyboard.press("Escape");
+  await expect(sheet(page)).toHaveCount(0);
 
-  const mine = page.getByRole("list", { name: "自分のここ暇" });
-  const row = (label: string) => mine.getByRole("listitem").filter({ hasText: label }).filter({ hasText: "夜 19:00〜23:00" });
-  const first = row(tomorrow.label);
-  const second = row(nextWeek.label);
-  await expect(first).toBeVisible();
-  await expect(second).toBeVisible();
-
-  await first.getByRole("button", { name: "この日だけ外す" }).click();
-  await expect(first).toHaveCount(0);
+  const first = availabilityCell(page, tomorrow.date, "夜");
+  await expect(first).toHaveAccessibleName(/ くり返しのここ暇 19:00〜23:00。押すとこの日だけ外す$/);
+  await first.click();
+  await expect(page.getByText(`${tomorrow.label} 夜だけ外しました（毎週はそのまま）`)).toBeVisible();
+  await expect(first).toHaveAttribute("aria-pressed", "false");
   await page.reload();
-  await expect(second).toBeVisible();
-  await expect(first).toHaveCount(0);
-  await expect(page.getByText(`${tomorrow.label}は外しています`)).toBeVisible();
+  await expect(first).toHaveAccessibleName(/押すとここ暇にする$/);
+  await page.getByRole("button", { name: "次の7日 ›" }).click();
+  await expect(availabilityCell(page, nextWeek.date, "夜")).toHaveAccessibleName(/ くり返しのここ暇 19:00〜23:00/);
+  await page.getByRole("button", { name: /^くり返し/ }).click();
+  await expect(sheet(page, "くり返し").getByText(`${tomorrow.label}は外しています`)).toBeVisible();
 });

@@ -40,16 +40,33 @@ export async function createInviteUrl(page: Page) {
 
 export const friendList = (page: Page) => page.getByRole("list", { name: "友達一覧" });
 
-/** ここ暇タブの「ここ暇を追加」のシートで、日付とプリセットを押して作り、シートを閉じる */
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** 「YYYY-MM-DD」→ 画面の日付「11/25（水）」 */
+export function dateLabel(date: string) {
+  const [, m, d] = date.split("-").map(Number);
+  return `${m}/${d}（${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]}）`;
+}
+
+/**
+ * ここ暇タブの週の帯のマス（docs/specs/T-55-availability-week-grid.md）。名前は「11/25（水） 夜 …」で始まり、
+ * 続きに状態（ここ暇・くり返しのここ暇・カレンダーで空き）と押すと何が起きるかが入る
+ */
+export const availabilityCell = (page: Page, date: string, preset: "昼" | "夕方" | "夜") =>
+  page.getByRole("button", { name: new RegExp(`^${dateLabel(date)} ${preset} `) });
+
+/** ここ暇タブの週の帯で、その日付と時間帯のマスを押して作る（今日から7日より先なら「次の7日」に進む） */
 export async function addAvailability(page: Page, date: string, preset: "昼" | "夕方" | "夜" = "夜") {
   await page.goto("/availability");
-  await page.getByRole("button", { name: "ここ暇を追加" }).click();
-  const dialog = sheet(page, "ここ暇を追加");
-  await dialog.getByLabel("日付").fill(date);
-  await dialog.getByRole("button", { name: new RegExp(`^${preset} ?\\d`) }).click();
-  await expect(dialog.getByText("追加しました")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
+  const cell = availabilityCell(page, date, preset);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date());
+  if (Date.parse(date) - Date.parse(today) >= 7 * 24 * 60 * 60 * 1000) await page.getByRole("button", { name: "次の7日 ›" }).click();
+  await expect(cell).toHaveAttribute("aria-pressed", "false");
+  await expect(cell).toBeEnabled();
+  await cell.click();
+  // 作れたら下に「…をここ暇にしました」と「取り消す」が出る
+  await expect(page.getByText(`${dateLabel(date)} ${preset}をここ暇にしました`)).toBeVisible();
+  await expect(cell).toHaveAccessibleName(/ ここ暇 \d/);
 }
 
 /** inviter の招待リンクから invitee が友達になる */

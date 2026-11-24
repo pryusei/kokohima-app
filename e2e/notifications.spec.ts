@@ -1,5 +1,5 @@
 import type { Browser } from "@playwright/test";
-import { addAvailability, befriend, expect, loginAs, newUser, test, uniqueName, type E2EUser } from "./fixtures";
+import { addAvailability, availabilityCell, befriend, expect, loginAs, newUser, test, uniqueName, type E2EUser } from "./fixtures";
 
 // T-07 通知（docs/specs/T-07-notification.md「E2Eテスト」）、T-35 見え方（docs/specs/T-35-notification-visibility.md「E2Eテスト」）。
 // メール配信とプッシュは E2E のエントリの偽の実装に向く
@@ -118,7 +118,7 @@ test("友達追加と「見せない」：お知らせ一覧の「この人に�
   // 夜の枠が過去にならないよう、日付は明日（Asia/Tokyo）を使う（今日だと 23 時以降に作れない）
   const tomorrow = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(Date.now() + 24 * 60 * 60 * 1000));
   await addAvailability(a.page, tomorrow, "夜");
-  await expect(a.page.getByRole("list", { name: "自分のここ暇" }).getByText(/夜 19:00〜23:00/)).toBeVisible();
+  await expect(availabilityCell(a.page, tomorrow, "夜")).toHaveAccessibleName(/ ここ暇 19:00〜23:00/);
   await b.page.goto("/");
   await expect(b.page.getByRole("region", { name: "みんなのここ暇" }).getByRole("listitem").filter({ hasText: a.displayName })).toBeVisible();
 
