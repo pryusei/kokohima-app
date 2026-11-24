@@ -37,6 +37,38 @@ describe("UndoToast", () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
+  it("「取り消す」は一度だけ呼ぶ。次の一文で「取り消す」が消えたら、一文を出したときのフォーカスの場所に戻す", () => {
+    const undo = vi.fn();
+    const { rerender } = render(
+      <>
+        <button type="button">マス</button>
+        <UndoToast message={null} onDone={() => {}} />
+      </>,
+    );
+    const origin = screen.getByRole("button", { name: "マス" });
+    origin.focus();
+    const view = (message: Parameters<typeof UndoToast>[0]["message"]) => (
+      <>
+        <button type="button">マス</button>
+        <UndoToast message={message} onDone={() => {}} />
+      </>
+    );
+    rerender(view({ id: 1, text: "10/10（土） 夜をここ暇にしました", undo }));
+    const button = screen.getByRole("button", { name: "取り消す" });
+    button.focus();
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    rerender(view({ id: 2, text: "元に戻しました" }));
+    expect(origin).toHaveFocus();
+  });
+
+  it("シートの中に置くとき（inline）は、画面の下に固定しない", () => {
+    render(<UndoToast inline message={{ id: 1, text: "変更できませんでした。もう一度お試しください。" }} onDone={() => {}} />);
+    expect(screen.getByRole("status").className).not.toMatch(/\bfixed\b/);
+  });
+
   it("戻す操作がなければ「取り消す」を出さない。読み上げの場所はいつも置いておく", () => {
     const { rerender } = render(<UndoToast message={null} onDone={() => {}} />);
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
