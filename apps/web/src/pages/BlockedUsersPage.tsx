@@ -28,7 +28,7 @@ function Row({ item }: { item: BlockedUser }) {
       <div className="flex items-center gap-3">
         <Avatar name={item.user.displayName} src={item.user.avatarUrl} />
         <span className="min-w-0 flex-1 truncate">{name}</span>
-        <SendButton size="s" onClick={() => unblock.mutate()} disabled={unblock.isPending} aria-label={`${name}のブロックをやめる`}>
+        <SendButton onClick={() => unblock.mutate()} disabled={unblock.isPending} aria-label={`${name}のブロックをやめる`}>
           ブロックをやめる
         </SendButton>
       </div>
