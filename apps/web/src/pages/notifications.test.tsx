@@ -238,6 +238,81 @@ describe("通知の設定", () => {
     expect(group.innerHTML).not.toMatch(/red|rose|error/);
   });
 
+  it("ロック画面：今の設定を読み込むまでは、どちらにも印を付けず選べない（T-35）", async () => {
+    window.history.replaceState(null, "", "/settings/notifications");
+    let release: (r: Response) => void = () => undefined;
+    const pending = new Promise<Response>((resolve) => (release = resolve));
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/me/notification-preferences": () => pending,
+    });
+    renderApp();
+    const group = await screen.findByRole("group", { name: "ロック画面に出す中身" });
+    const radios = within(group).getAllByRole("radio");
+    for (const r of radios) {
+      expect(r).not.toBeChecked();
+      expect(r).toBeDisabled();
+      expect(r.closest("label")?.className).not.toMatch(/border-lamp-line/);
+    }
+    release(json({ ...prefs, lockScreen: "detailed" })());
+    await waitFor(() => expect(within(group).getByRole("radio", { name: "名前と日時を出す" })).toBeChecked());
+    expect(within(group).getByRole("radio", { name: "出さない" })).not.toBeChecked();
+  });
+
+  it("ロック画面：今の設定を読み込めなければ、静かな文と「もう一度」を出す（T-35）", async () => {
+    window.history.replaceState(null, "", "/settings/notifications");
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/me/notification-preferences": json({ code: "internal", message: "x" }, 500),
+    });
+    renderApp();
+    const group = await screen.findByRole("group", { name: "ロック画面に出す中身" });
+    const message = await within(group).findByText("今の設定を読み込めませんでした。もう一度お試しください");
+    expect(message.closest("div")?.className ?? "").not.toMatch(/red|rose|error/);
+    expect(within(group).getByRole("button", { name: /もう一度/ })).toBeVisible();
+    for (const r of within(group).getAllByRole("radio")) expect(r).not.toBeChecked();
+  });
+
+  it("ロック画面：保存できなければ元の選択に戻し、静かな色で「変更できませんでした」と出す（T-35）", async () => {
+    window.history.replaceState(null, "", "/settings/notifications");
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/me/notification-preferences": ({ init }) =>
+        init.method === "PATCH" ? json({ code: "internal", message: "x" }, 500)() : json(prefs)(),
+    });
+    renderApp();
+    const group = await screen.findByRole("group", { name: "ロック画面に出す中身" });
+    const hidden = within(group).getByRole("radio", { name: "出さない" });
+    const detailed = within(group).getByRole("radio", { name: "名前と日時を出す" });
+    await waitFor(() => expect(hidden).toBeChecked());
+    await userEvent.click(detailed);
+    const message = await within(group).findByText("変更できませんでした。もう一度お試しください");
+    expect(message).toHaveClass("text-ink-muted");
+    expect(message.className).not.toMatch(/red|rose|error|danger/);
+    await waitFor(() => expect(hidden).toBeChecked());
+    expect(detailed).not.toBeChecked();
+  });
+
+  it("ロック画面：オフラインの間は選べない（T-35）", async () => {
+    window.history.replaceState(null, "", "/settings/notifications");
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const { calls } = mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/notifications/unread-count": json({ count: 0 }),
+      "/api/v1/me/notification-preferences": json(prefs),
+    });
+    renderApp();
+    const group = await screen.findByRole("group", { name: "ロック画面に出す中身" });
+    await waitFor(() => expect(within(group).getByRole("radio", { name: "出さない" })).toBeChecked());
+    for (const r of within(group).getAllByRole("radio")) expect(r).toBeDisabled();
+    await userEvent.click(within(group).getByText("名前と日時を出す"));
+    expect(calls.some((c) => c.init.method === "PATCH")).toBe(false);
+    onLine.mockRestore();
+  });
+
   it("プッシュが使えない端末では、ホーム画面への追加とメールの案内を出す", async () => {
     window.history.replaceState(null, "", "/settings/notifications");
     mockFetch({

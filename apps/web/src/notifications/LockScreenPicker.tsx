@@ -1,6 +1,7 @@
 import type { LockScreen } from "@kokohima/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
+import { LoadError } from "../ui/feedback";
 import { useOnline } from "../ui/online";
 import { useUpdatePreferences } from "./preferences";
 import { preferencesQuery } from "./queries";
@@ -40,7 +41,8 @@ export function LockScreenPicker({ hint = true }: { hint?: boolean }) {
   const update = useUpdatePreferences(() => setFailed(true));
   const online = useOnline();
   const name = useId();
-  const current = preferences.data?.lockScreen ?? "hidden";
+  // 読み込むまでは、どちらにも印を付けない（保存した値と違う方が一瞬選ばれて見えないように）
+  const current = preferences.data?.lockScreen ?? null;
 
   return (
     <fieldset className="flex flex-col gap-2">
@@ -86,6 +88,9 @@ export function LockScreenPicker({ hint = true }: { hint?: boolean }) {
           見本：{o.sample.join(" ")}
         </span>
       ))}
+      {preferences.isError && !preferences.data && (
+        <LoadError text="今の設定を読み込めませんでした。もう一度お試しください" retry={() => void preferences.refetch()} />
+      )}
       {hint && <p className="text-s text-ink-muted">どちらでも、ひとこと・場所・リンクは出ません</p>}
       {failed && (
         <p role="status" className="text-s text-ink-muted">
