@@ -136,6 +136,7 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
   - `MeetupConfirmed`：`{ meetupId, inviteId, participantIds, occurredAt }`（通知とカレンダーの両方が読むので、受け取り手は参加者全員）
   - `MeetupCancelled`：`{ meetupId, actorId: キャンセルした人, participantIds, occurredAt }`
 - 友達の解除は、すでにある誘いと予定を変えない（参加者は見られ、返答もできる）。解除で返答できなくなると、解除が相手に伝わってしまうため（F-09）
+- ブロック（T-33）も解除と同じで、すでにある誘いと予定を変えない。新しい誘いは、友達でないので送れない（404）。届いた誘いの詳細の「…」から、送り主をブロック・通報できる（docs/specs/T-33-block-report.md）
 
 ### 成立した予定
 - 参加者だけが見られる。一覧はこれからの `confirmed` の予定を開始日時の古い順
@@ -247,3 +248,4 @@ pending ──accept──▶ confirmed ──やっぱり難しい──▶ can
 | 2026-11-23 | 誘いの作成画面の `?wish=`（T-22）を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |
 | 2026-11-23 | 友達の詳細の入口を「誘う」にし、「みんな」の「誰を誘う？」から開く入口を足した | T-34（docs/specs/T-34-kokodou-entry.md） |
 | 2026-11-23 | 「この時間なら」の送信者の表示を直した：バッジは短い語だけ、代わりの時間を大きく、元の時間を小さく、決めるボタンに時刻 | T-46（docs/specs/T-46-countered-card-focus-ring.md。pryusei/kokohima-app#194） |
+| 2026-11-24 | ブロックしても、すでにある誘いと予定を変えないこと（解除と同じ）と、届いた誘いの「…」を足した | T-33 実装PR（docs/specs/T-33-block-report.md） |

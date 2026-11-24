@@ -26,6 +26,9 @@ description: 誘い（DirectInvite）と募集（Broadcast）の用語・状態�
 | 見せない相手（行きたいの） | WishExclusion | その行きたいを見せない友達。行きたいごとに選ぶ。SharingPolicy とは別 |
 | 問い合わせ | ContactMessage | 設定から運営に送る問い合わせ（contact コンテキスト。docs/specs/T-24-contact.md）。Slack の非公開のチャンネルに届く |
 | 受付番号 | receiptId | 問い合わせの outbox の id。T-13 の問い合わせ番号（requestId）とは別 |
+| ブロック | Block | 相手を切る。友達の解除と同じことをし、ブロックの間はどちらの向きの招待リンクでも友達にならない（social。docs/specs/T-33-block-report.md）。相手には知らせない |
+| 通報 | Report | 運営に知らせる（contact。outbox の型は UserReported）。問い合わせと同じ Slack に届く。相手には知らせない |
+| 「…」のシート | PersonActions | 相手への操作（見せる／見せない → 友達を解除 → ブロック → 通報）。友達の詳細・届いた誘い・届いた募集から開く |
 | 退会したユーザー | （プロフィールの withdrawn） | 履歴の相手が退会した人。「名前未設定の友達」と区別し、「さん」を付けない（docs/specs/T-16-withdrawal.md） |
 
 ## DirectInvite の状態
@@ -78,3 +81,4 @@ open →（募集者が退会：退会による打ち切りで期限を今にす
 | MeetupCancelled | カレンダーから削除（T-06）、押した人を除く参加者に定型文で通知（T-07） |
 | UserWithdrew | 退会の後始末（T-16）。これからの予定は本人の「やっぱり難しい」、受けた pending は「今回は難しい」、送った pending と open の募集は退会による打ち切り、送った counter_proposed は skipped、書いた内容を消す。相手への知らせは MeetupCancelled・MeetupLeft・DirectInviteDeclined で行う |
 | ContactMessageSubmitted | 問い合わせを受け付けた。Slack の問い合わせのチャンネルに届ける（T-24。Queue のメッセージは受付番号だけ） |
+| UserReported | 通報を受け付けた。同じ Slack のチャンネルに届ける（T-33。Queue のメッセージは受付番号だけ。通報された人には何も送らない） |
