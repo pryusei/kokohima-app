@@ -19,7 +19,7 @@
 
 ## データ
 - サーバー：なし（マイグレーションなし）。
-- 端末：新しく保存するものはない。タブごとのスクロールの位置（M-07）、灯りをともした枠（M-12）、新しく増えた行の印（M-10）は、どれも JavaScript のメモリだけに持ち、localStorage・sessionStorage には置かない。成立の演出の「見た」の記録は T-43 の `kokohima.meetMomentSeen` をそのまま使い、増やさない。プライバシー ポリシーは変えない。
+- 端末：新しく保存するものはない。タブごとのスクロールの位置（M-07）、灯りをともした枠（M-12）、新しく増えた行の印（M-10）は、どれも JavaScript のメモリだけに持ち、localStorage・sessionStorage には置かない。ブラウザの履歴の印（`history.state`）に足すのは、深さ（`depth`、M-13）とエントリの印（`key`、M-07。中身のない無作為の文字列）だけで、個人の情報・ID・位置は入れない。成立の演出の「見た」の記録は T-43 の `kokohima.meetMomentSeen` をそのまま使い、増やさない。プライバシー ポリシーは変えない。
 
 ## 振る舞い
 
@@ -34,8 +34,13 @@
    - 読み込みの時間差を演出で目立たせない。骨組みの数と形は、件数や相手によって変えない（M-06）。
    - 募集の応答者の有無を動きで匂わせない。募集の人数（`HeadCount`）の増減、「締め切りました」、募集の宛先の人の画面には、新しい動きを付けない。成立の動き（M-04）は、T-43 と同じく予定の参加者（`meetupId` を受け取った人）にだけ出る。
 4. **`prefers-reduced-motion: reduce` では動きを止める**。CSS の動きは `apps/web/src/index.css` の末尾の共通の指定（すべての `transition` と `animation` を `none !important`）で止まる。JavaScript で動きの終わりを待つところ・View Transitions・`element.animate()`・`scrollTo({ behavior: "smooth" })` は、この共通の指定では止まらないので、`prefersReducedMotion()`（下の 0-3）で確かめて即時にする。**終わりの動きを `animationend`・`transitionend` だけで待つ作りにしない**（この設定と jsdom では届かず、永遠に終わらない）。
+   - **入る動き（`animation`）は、止まった状態の見た目を最終形にする**。要素の普段の指定は `opacity: 1`・`transform: none` のままにし、`opacity: 0` などの始まりの形はキーフレームの `from` にだけ書いて、`animation-fill-mode: backwards`（遅れ `animation-delay` の間も `from` を保つ）で付ける。共通の指定で `animation: none` になっても最終形が見える。普段の指定に `opacity-0` を置き、動きで 1 にする作りは禁止（動きを止める設定の利用者には、骨組み・空の状態・結果の帯がずっと見えなくなる）。M-06 の骨組み・M-19 の空の状態・`FadeIn`・M-09 の結果の帯・M-12 の灯り・M-15 のぽんのすべてに当てはまる。
+   - `@starting-style` で書く入る動き（M-01 のシートなど）は、もともと普段の指定が最終形なので、この形になっている。
 5. 色・角丸・影はトークン（`bg-surface`、`shadow-sheet` など）だけ。Tailwind の既定の色は書かない（`apps/web/src/ui/colors.test.ts` の検査のまま）。長さと曲線は下の動きのトークンだけで書き、`duration-300` などの直書きを散らさない。
-6. 依存を増やさない（「判断してほしいこと」1）。CSS（`@starting-style`、`transition-behavior: allow-discrete`、`linear()` のばねの曲線、`interpolate-size`）と View Transitions API（Chrome 111 以降・Safari 18 以降）で作る。使えない端末では即時に切り替わるだけでよい。指につく引っぱり（M-02）だけは小さな自前のフックで書く。
+   - 今あるものも移す：`Button` と今ひまのボタン（`availability/FreeNowCard.tsx`）の `transition-transform`（Tailwind の既定の 150ms と曲線）は `duration-(--duration-press) ease-out` にする。`Switch` は M-18。T-55 の `kh-pop`・`kh-rise`（`animate-[kh-pop_.35s_ease-out]` など）は M-09 のとおりトークンにする。
+   - **例外**：T-43 の成立の演出（`index.css` の `.kh-meet-dot`・`.kh-meet-pair`・`.kh-meet-reveal` と `kh-meet-*` のキーフレーム。1200ms・1300ms・`cubic-bezier(.45,0,.25,1)` など）は、T-43 の決めた長さと曲線のまま残し、トークンに置き換えない（M-04「変えないこと」）。直書きの検査（下のテスト計画）では、この3つのクラスとキーフレームだけを除く。
+6. 依存を増やさない（「判断してほしいこと」1）。CSS（`@starting-style`、`transition-behavior: allow-discrete`、`linear()` のばねの曲線）と View Transitions API（Chrome 111 以降・Safari 18 以降）で作る。使えない端末では即時に切り替わるだけでよい。指につく引っぱり（M-02）だけは小さな自前のフックで書く。
+   - `height: auto` への transition（`interpolate-size`）は Chromium にしかなく、Safari・Firefox では動かず元の高さのまま止まってから一気に変わるので、**使わない**。高さを動かすところは、`Collapse`（`grid-template-rows`）か、JavaScript で測った px から px への transition（M-03）で書く。
 7. 動かすのは `transform` と `opacity` が基本。高さの開閉は `grid-template-rows: 0fr ↔ 1fr`（`Collapse`。下の 0-4）で書く。
 
 #### 0-2. 動きのトークン
@@ -56,16 +61,20 @@
 - `linear()` を使えない端末では `--ease-spring` を `--ease-out` にする（`@supports not (transition-timing-function: linear(0, 1))`）。
 - JavaScript から長さを使うところ（`useExitAnimation` の保険のタイマーなど）のために、同じ値を `apps/web/src/ui/motion.ts` の `MOTION_MS`（`{ press: 100, fast: 160, base: 240, sheet: 360 }`）に置く。CSS と値がずれないことを単体テストで確かめる。
 - **出る動きは入る動きの約7割の長さにする**（iOS・Material と同じ）。トークンでは「入る動きの1段下」を使う：`sheet`(360)で入るものは `base`(240)で出る、`base`(240)で入るものは `fast`(160)で出る、`fast`(160)で入るものは `press`(100)で出る。出る動きの曲線は `--ease-in`。
-  - 指示書の叩き台では、シートの出る動きを `--duration-fast`（160ms）にしていたが、この決まりにそろえて `--duration-base`（240ms）にする。E2E は Playwright が要素の消えるのを待つ（`toHaveCount(0)` は既定の待ち時間の中で何度も確かめる）ので、240ms でも通る。
+  - 指示書の叩き台では、シートの出る動きを `--duration-fast`（160ms）にしていたが、この決まりにそろえて `--duration-base`（240ms）にする（叩き台と違うので「判断してほしいこと」11 に並べる）。E2E は Playwright が要素の消えるのを待つ（`toHaveCount(0)` は既定の待ち時間の中で何度も確かめる）ので、240ms でも通る。
 
 #### 0-3. 動きの部品（`apps/web/src/ui/motion.ts` ほか）
-- `prefersReducedMotion(): boolean`：`window.matchMedia("(prefers-reduced-motion: reduce)").matches`。`matchMedia` がない環境（jsdom）では **true**（＝即時）を返す。これで既存の単体テストは、動きを待たずに今までどおり通る。動きを確かめるテストだけ、`matchMedia` を差し替えて false にする。
+- `prefersReducedMotion(): boolean`：`window.matchMedia("(prefers-reduced-motion: reduce)").matches`。`matchMedia` がない環境（jsdom の既定）では **true**（＝即時）を返す。動きを確かめるテストだけ、`matchMedia` を差し替えて false にする。
+  - **`matchMedia` を差し替えている既存のテストは、そのままでは「動きあり」になる**。`apps/web/src/ui/navigation.test.tsx` の `stubMatchMedia`（PC の幅の問い合わせ以外にすべて `matches: false` を返す）、`apps/web/src/pages/contact.test.tsx`（PC の幅の問い合わせだけ true）、`apps/web/src/install/install.test.tsx` の `stubMatchMedia`（`display-mode: standalone` 以外は false）がそれで、たとえば navigation.test.tsx の「PC の配置では、つまみを隠し（lg:hidden）、右上の『閉じる』で閉じる」は、M-01 を入れると保険のタイマーまで `onClose` が呼ばれず落ちる。実装PR①で、この3つの差し替えを **`(prefers-reduced-motion: reduce)` の問い合わせには `matches: true` を返す**ように直す（動きを確かめるテストは、そのテストの中で false を返す差し替えを使う）。実装PR②・③で新しく `matchMedia` を差し替えるテストも同じにする。
+  - 判定の決め方をアプリの中でそろえる：`apps/web/src/pages/SettingsPage.tsx` の新しい端末のログインから開いたときの `scrollIntoView` の判定（今は「`matchMedia` がなければ reduce ではない」）を `prefersReducedMotion()` に置き換える（jsdom では `behavior: "auto"` になる。既存のテストは `scrollIntoView` が呼ばれたことだけを見ているので、引数を見ているなら合わせて直す）。
 - `useExitAnimation(durationMs)`：出る動きを走らせてから、本当に消す（閉じる・外す）ためのフック。
-  - 返すもの：`{ exiting: boolean; start(done: () => void): void; ref }`。`exiting` が true のあいだ、呼び出し側は出る動きのクラス（`data-exiting`）を付ける。
+  - 返すもの：`{ exiting: boolean; start(done: () => void): void; cancel(): void; ref }`。`exiting` が true のあいだ、呼び出し側は出る動きのクラス（`data-exiting`）を付ける。
   - `start(done)`：
     - すでに出る動きの途中なら、何もしない（**二度押しで `done` が2回にならない**。シートでは `history.back()` が2回にならない）。
     - `prefersReducedMotion()` が true なら、その場で `done()` を1回呼ぶ（即時）。
-    - それ以外は `exiting` を true にし、`ref` の要素自身の `transitionend`・`animationend`（子の要素から泡立ってきたものは数えない）か、保険のタイマー（`durationMs + 50ms`）の早いほうで `done()` を1回だけ呼ぶ。
+    - それ以外は `exiting` を true にし、`ref` の要素自身の `transitionend`・`animationend`（子の要素から泡立ってきたものは数えない）か、保険のタイマー（`durationMs + 50ms`）の早いほうで `done()` を1回だけ呼ぶ。`durationMs` には、その部品の出る動きのうち**一番長いもの**を渡す。`ref` は、その一番長い動きをする要素に付ける（短い動きの要素に付けると、そちらの `transitionend` で先に `done` が呼ばれる）。
+  - `done()` を呼んだあと（タイマーとイベントを外したあと）、`exiting` は false に戻る。同じ部品で、また `start` できる（`Collapse`・M-15 の未読のバッジ・M-10 のように、同じ要素が閉じて開いてまた閉じる使い方のため）。
+  - `cancel()`：出る動きの途中なら、タイマーとイベントを外し、`done()` を呼ばずに `exiting` を false に戻す（元の見た目へ戻る）。途中でなければ何もしない。`Collapse` は、閉じる途中で `show` が true に戻ったら（M-04・M-10 の、送れなかったときの戻し。応答が出る動きより早く失敗したとき）`cancel()` を呼び、中身を消さない。
   - 出る動きの途中でアンマウントされたら（ブラウザの戻るで URL が先に変わったときなど）、タイマーを止め、`done()` は呼ばない（呼ぶと戻るが2回になる）。
 - `useViewTransition`（`apps/web/src/router.ts` の中）：View Transitions を使う画面の切り替え（M-07・M-13）。`document.startViewTransition` がない・`prefersReducedMotion()` が true なら、更新をそのまま行う（即時）。ある場合は、更新の関数の中で React の `flushSync` で描き切る。
 
@@ -81,11 +90,13 @@
 #### M-01 シートの出入り
 - **今**：`apps/web/src/ui/BottomSheet.tsx` に出入りの動きがない。暗幕（`data-testid="sheet-scrim"`、`bg-scrim`）とシート（`role="dialog"`）は、描いた瞬間に完成形で、`onClose` を呼ぶとすぐ消える（`SheetScreen` は `goBack(parent)`）。PC（`lg:`）の中央のダイアログも同じ。
 - **振る舞い**：
-  - 入る（スマホ）：シートは `translateY(100%) → 0`（`--duration-sheet`・`--ease-spring`）、暗幕は `opacity 0 → 1`（`--duration-fast`・`--ease-out`）。`@starting-style` で書き、React の状態は使わない。
+  - **暗い背景を別の層にする**：今は `bg-scrim` が暗幕（`sheet-scrim`）の要素そのものに付いていて、シートはその子なので、暗幕の `opacity` を下げるとシートも一緒に薄くなる。暗い背景は、暗幕の中にシートより後ろの別の要素（`absolute inset-0 bg-scrim`、`aria-hidden`、`data-testid="sheet-backdrop"`）として置き、薄くする・濃さを変える（M-02）のはこの層だけにする。暗幕の要素（`sheet-scrim`）は、今の押し始めと離しの判定（暗い部分を押して離したときだけ閉じる）の受け口のまま残す（背景の層は `pointer-events: none`）。
+  - 入る（スマホ）：シートは `translateY(100%) → 0`（`--duration-sheet`・`--ease-spring`）、暗い背景の層は `opacity 0 → 1`（`--duration-fast`・`--ease-out`）。`@starting-style` で書き、React の状態は使わない。
   - 入る（PC、幅1024px以上）：下からではなく `scale(.96)`＋`opacity 0` → `scale(1)`＋`opacity 1`（`--duration-base`・`--ease-out`）。暗幕はスマホと同じ。
   - 出る：「閉じる」のボタン・暗幕・`Esc`・つまみ（M-02 の閉じる判定を含む）のどれで閉じても、`onClose` をすぐ呼ばず、`useExitAnimation` で出る動きを走らせてから `onClose` を1回だけ呼ぶ。
-    - スマホ：シートは下へ抜ける（`translateY(100%)`、`--duration-base`・`--ease-in`）。暗幕は先に薄くなる（`opacity → 0`、`--duration-fast`・`--ease-in`）。
+    - スマホ：シートは下へ抜ける（`translateY(100%)`、`--duration-base`・`--ease-in`）。暗い背景の層は先に薄くなる（`opacity → 0`、`--duration-fast`・`--ease-in`）。
     - PC：`scale(.96)`＋`opacity 0`（`--duration-fast`・`--ease-in`）。
+    - `useExitAnimation` の `ref` は**シート（`role="dialog"`）に付ける**（暗い背景の層の160msの `transitionend` で、シートが抜け切る前に閉じないように）。保険のタイマーは一番長い出る動き＝`--duration-base`（240ms）＋50ms。PC でも同じ値でよい（PC のシートの `transitionend` が160msで先に届く）。
     - 出る動きの途中は、シートと暗幕に `pointer-events: none` を付け、もう一度閉じる操作が届いても何もしない（`useExitAnimation` の二度押しの決まり）。
     - `prefersReducedMotion()` が true（jsdom を含む）なら即時（今と同じ）。
   - ブラウザの戻る（popstate）と Android の戻るで閉じたときは、URL が先に変わってシートが即座に消える今のまま（**即時**。「判断してほしいこと」6）。View Transitions で下へ抜く動きは付けない（戻るの反応が遅れるため）。
@@ -97,19 +108,19 @@
 #### M-02 つまみと見出しの行を引くと、シートが指についてくる（スマホだけ）
 - **今**：`BottomSheet.tsx` の `onGripDown`/`onGripUp` は、離した位置が60px（`DRAG_CLOSE_PX`）以上下なら閉じ、10px（`TAP_SLOP_PX`）未満ならタップとして閉じる。引いている間シートは動かない。反応するのは幅64pxのつまみだけ。
 - **振る舞い**：
-  - つかめる範囲を、つまみ＋見出しの行（`sticky` の帯。タイトル・オフラインの帯を含む）に広げる。帯の中のボタン（「閉じる」・「…」）と入力欄から始めた押し込みは、引っぱりにしない（今までどおりボタンとして働く）。帯には `touch-action: none` を付ける。
-  - 引いている間は、シートに `transform: translateY(移動量)` を直接当てる（transition なし）。上方向（移動量が負）は、移動量を1/3にする（ゴムのような抵抗）。暗幕の濃さは `1 - clamp(移動量 / シートの高さ, 0, 1)` にする。
+  - つかめる範囲を、つまみ＋見出しの行（`sticky` の帯。タイトル・オフラインの帯を含む）に広げる。帯の中の押せるもの（`button`・`a[href]`・`[role="button"]`・`input`・`select`・`textarea`。`closest()` で起点から見る。「閉じる」・「…」など）から始めた押し込みは、引っぱりにしない（今までどおりボタン・リンクとして働く）。帯には `touch-action: none` を付ける。
+  - 引いている間は、シートに `transform: translateY(移動量)` を直接当てる（transition なし）。上方向（移動量が負）は、移動量を1/3にする（ゴムのような抵抗）。暗い背景の層（M-01）の濃さは `1 - clamp(移動量 / シートの高さ, 0, 1)` にする。
   - 離したときは、下の判定の関数で決める：
     - 閉じる：M-01 の出る動きを、今の位置から続ける。
-    - 戻る：`translateY(0)` へ `--duration-base`・`--ease-spring` で戻す。暗幕も元の濃さへ。
-    - タップ：閉じる（今のまま）。
+    - 戻る：`translateY(0)` へ `--duration-base`・`--ease-spring` で戻す。暗い背景も元の濃さへ。
+    - タップ：**つまみ（`data-testid="sheet-grip"`）から始めたときだけ**閉じる（今のまま）。見出しの行（タイトル・アバター・バッジ・オフラインの帯）から始めたタップは何もしない（「戻る」と同じ扱い。今は見出しを触っても閉じないので、軽く触っただけで閉じることを増やさない）。
   - `pointercancel` では、閉じずに戻す。
   - PC の幅（つまみを隠している）では効かない（今と同じ）。見出しの行を引いても何もしない。
-  - 中身のスクロールが一番上のときに中身から下へ引いてシートごと下げる操作は、ブラウザのスクロールとぶつかる（`touchmove` を止める作りが要る）ので、このタスクではやらない（スコープ外）。
+  - 中身のスクロールが一番上のときに中身から下へ引いてシートごと下げる操作は、ブラウザのスクロールとぶつかる（`touchmove` を止める作りが要る）ので、このタスクではやらない（スコープ外。指示書は「やる（後回しも可）」としていたので「判断してほしいこと」12 に並べる）。
 - **判定の関数**（`apps/web/src/ui/sheetDrag.ts`。純粋な関数）：
-  - `sheetDragOutcome({ moved, maxMoved, velocity, height }): "tap" | "close" | "settle"`
-    - `moved`：離した位置 − 押した位置（px。下が正）。`maxMoved`：押してから離すまでで、押した位置から一番離れた距離（px。絶対値）。`velocity`：離す直前の100msの下向きの速さ（px/ms。下が正）。`height`：シートの高さ（px）。
-    - `maxMoved < 10`（`TAP_SLOP_PX`）なら `"tap"`。
+  - `sheetDragOutcome({ origin, moved, maxMoved, velocity, height }): "tap" | "close" | "settle"`
+    - `origin`：押し始めた場所（`"grip"`＝つまみ、`"header"`＝見出しの行のそれ以外）。`moved`：離した位置 − 押した位置（px。下が正）。`maxMoved`：押してから離すまでで、押した位置から一番離れた距離（px。絶対値）。`velocity`：離す直前の100msの下向きの速さ（px/ms。下が正）。`height`：シートの高さ（px）。
+    - `maxMoved < 10`（`TAP_SLOP_PX`）なら、`origin` が `"grip"` のとき `"tap"`、`"header"` のとき `"settle"`。
     - それ以外で、`moved >= height * 0.3`、または `moved > 0` かつ `velocity >= 0.5` なら `"close"`。
     - それ以外は `"settle"`。
   - `sheetDragOffset(moved): number`：`moved >= 0` ならそのまま、負なら `moved / 3`。
@@ -127,7 +138,7 @@
     - 元の色のまま `opacity: .7`（`--duration-fast`）。文言は呼び出し側が渡す送信中の文言（「送っています…」など）に替える。くるくる回る印は使わない（T-11）。
     - 押せない。ただし `disabled` ではなく `aria-disabled="true"` にし、押しても・Enter でフォームを送っても何もしない（フォーカスがボタンに残り、`body` に外れない。`BottomSheet.tsx` の Esc のコメントにある「送信中に押せなくなってフォーカスがシートの外に出る」ことが起きなくなる）。
   - 灰色（`disabled:` の色）は、オフラインのとき（今のまま）と、入力がそろっていないとき（相手を選んでいない・時間が正しくない、など今の条件）だけ。送信中とオフラインで見た目が違う。
-  - T-54 の `SaveButton`（`state: "saving"`）も同じ送信中の見た目にする（灰色にしない）。文言は「保存しています…」。T-54 の仕様書の「動き（アニメーション・トランジション）は付けない」は、実装PR②でこの節を指すように直す（「✓ 保存しました」の長さ2秒と色は T-54 のまま）。
+  - T-54 の `SaveButton`（`state: "saving"`）も同じ送信中の見た目にする（灰色にしない）。文言は「保存しています…」。T-54 の仕様書の「動き（アニメーション・トランジション）は付けない」には、この仕様書PRで「T-56 M-14 で変わる」と書き添えた（「✓ 保存しました」の長さ2秒と色は T-54 のまま）。`SaveButton.test.tsx` の「アニメーションのクラスがない」「送信中は押せない」の確かめは、実装PR②でこの節に合わせて直す。
 
 #### M-03 送った手応えと、シートの差し替え
 - **今**：誘いの作成（`apps/web/src/pages/InviteNewPage.tsx`）で「誘う」を押すと、送信中は灰色の押せないボタンになり、成功すると `navigate("/invites/{id}", { replace: true })` で誘いの詳細へ置き換わる。`App.tsx` の `sheetOf` では作成と詳細が別のページの部品なので、`BottomSheet` ごと作り直され、中身がすり替わり、シートの高さ（作成は `max-h-[92dvh]` いっぱい、詳細は中身の高さ）が瞬間で落ちる。募集の作成（`BroadcastNewPage.tsx`）も同じ。
@@ -141,9 +152,13 @@
     - 誘い・募集の作成：詳細へ置き換えて移る（今のまま）。送信中か `done` のあいだにシートを閉じていたら移らない（今の決まりを `done` のあとにも確かめる）。
     - 行きたいの作成（`wish/MyWishes.tsx`）・ここ暇の時間を決めて入れる（T-55 の `TimeRangeSheet`）：シートを閉じる（今のまま。M-01 の出る動きで閉じる）。
   - **シートの差し替え**（誘い・募集の作成 → 詳細）：
-    - `router.ts` に `swapSheet(to)` を足す。`navigate(to, { replace: true })` と同じに移り、移る前に今のシート（`role="dialog"`）の高さ（px）を覚える（モジュールの中の変数。1回読んだら消す）。
-    - 移った先の `BottomSheet` は、覚えた高さがあれば：入る動き（M-01）を走らせない。シートの高さを、覚えた高さから新しい中身の高さへ、`height` の transition（`--duration-sheet`・`--ease-spring`）で縮め、終わったら（`useExitAnimation` と同じ保険のタイマー）`height` の指定を外す。中身は `opacity 0 → 1`（`--duration-fast`・`--ease-out`）で入る。
-    - `prefersReducedMotion()` が true なら、高さも中身も即時。
+    - `router.ts` に `swapSheet(to)` を足す。`navigate(to, { replace: true })` と同じに移り、移る前に今のシート（`role="dialog"`）の高さ（px）を覚える。
+      - 覚え方：モジュールの中の変数に `{ to, height }` を入れる。**読んでも消さない**（`main.tsx` は `StrictMode` なので、開発中は初期化と effect が2回走る。2回読んでも同じ値になるようにする）。次の `navigate`・`swapSheet`・`popstate` で上書き（`navigate` と `popstate` では空に）する。`BottomSheet` は、`to` が今の URL と同じときだけ使う。
+    - 移った先の `BottomSheet` は、覚えた高さがあれば：入る動き（M-01）を走らせない。
+      - シートの高さを、覚えた高さ（px）に固定して描き始める。詳細はこのあと取りに行く（作成の `onSuccess` は `invalidateQueries` だけで、詳細のキャッシュはない）ので、最初の中身は骨組み（`Loading`）になる。**読み込み中は覚えた高さのまま保つ**（骨組みの高さへは縮めない）。
+      - 詳細の中身が描けたら（読み込み中が終わった最初の描画のあと。`ResizeObserver` で中身の大きさが決まったのを待つ）、中身の `scrollHeight` を測り、覚えた高さ（px）から測った高さ（px）へ、`height` の transition（`--duration-sheet`・`--ease-spring`）で縮める。**`height: auto` への transition（`interpolate-size`）は使わない**（Safari・Firefox で動かないため。0-1 の6）。終わったら（`useExitAnimation` と同じ保険のタイマー）`height` の指定を外す。中身は `opacity 0 → 1`（`--duration-fast`・`--ease-out`）で入る。
+      - 測った高さが画面の上限（`max-h-[92dvh]`）を超えるときは、上限の px までにする。詳細の取得が失敗したとき（「読み込めませんでした」）も、その中身の高さへ同じに縮める。
+    - `prefersReducedMotion()` が true なら、高さも中身も即時（高さを固定しない）。
     - フォーカスは今のまま（詳細のシートへ移る）。閉じると作成の前の画面に戻る（T-11）は今のまま。
   - 同じ部品を使う所：誘いの作成「誘う」、募集の作成「暇な人いる？と募る」（今の文言のまま）、行きたいの作成、ここ暇の「時間を決めて入れる」（T-55）。T-54 の `SaveButton` は保存のための別の部品のまま（✓ の部分だけを共有する）。
 
@@ -170,7 +185,8 @@
   1. **ボタン群の退場**：誘いの詳細の返答のボタン群（「行く」「今回は難しい」「この時間なら」と下の注記・「この時間なら」のフォーム）と、送信者の「決める」「見送る」のボタン群を `Collapse` で包む。押して楽観的更新で状態が変わったら、縮んで消える（`Collapse` の閉じる動き＝高さと `opacity`、`--duration-fast`・`--ease-in`。中身は `scale(.96)` も足す）。
      - 「今回は難しい」・「見送る」で消えるときも、同じ静かな動き（赤・揺れ・✕を使わない。決まり1）。
      - 送れなかったとき（楽観的更新を戻したとき）は、ボタン群が元の場所に `Collapse` の開く動きで戻り、今の静かな文言（「送れませんでした。もう一度お試しください」）が出る。T-43 の演出は応答を待つので、もともと流れていない（巻き戻す演出はない）。
-  2. **バッジの「ぽん」**：`Badge` の `tone` が、描いたあとで `meet` に変わったとき（＝自分の操作で成立に変わった瞬間。楽観的更新のときを含む）と、T-43 の演出が流れる最初の描画のときに、1回だけ `scale(.6) → scale(1.08) → scale(1)`（`--duration-sheet`・`--ease-spring`。キーフレーム `kh-badge-pop`）。
+  2. **バッジの「ぽん」**：**自分の操作**（「行く」・「決める」の楽観的更新、またはその操作の成功の応答）でバッジが `meet` に変わったときと、T-43 の演出が流れる最初の描画のときに、1回だけ `scale(.6) → scale(1.08) → scale(1)`（`--duration-sheet`・`--ease-spring`。キーフレーム `kh-badge-pop`）。
+     - 判定は `Badge` の `tone` の変化ではなく、詳細の画面が自分の操作の mutation（`onMutate`・`onSuccess`）で立てる印で決める。詳細を開いている間に、取り直し（ウィンドウに戻ったときの `refetch` など）で相手の操作により `meet` に変わったときは、ぽんしない（自分の操作ではないため。T-43 の演出が流れる条件に当たれば、そちらで流れる）。
      - `meet` 以外への変化（断り・見送り・期限切れ・締め切り・やっぱり難しい）では動かさない（決まり1）。送れなかったときに元のバッジに戻るのも動かさない。
      - 一覧のカード（`InviteCard`）のバッジでは動かさない（T-43 と同じく一覧での演出はしない）。
      - 対象の画面：誘いの詳細・募集の詳細（予定の参加者だけ）・成立した予定の詳細（T-43 の演出が流れるときだけ）。
@@ -184,6 +200,7 @@
   - 今ひま（T-40、`availability/FreeNowCard.tsx`）は、やめたあとに灯りのボタンの場所を、灰色の「今ひまをやめました」と「元に戻す」（5秒）に置き換える。
 - **振る舞い**：
   - 画面に1つだけの「結果の帯」を置く。部品は T-55 の `UndoToast` を正とし、アプリ全体で1つにする（`ResultBandProvider` を `App` に置き、`useResultBand().show({ text, undo? })` で出す。T-55 の `WeekPlanner` もこれを使うように直す）。
+    - context に渡すのは、変わらない `show` の関数だけにする。今出している帯の文言・タイマーなどの状態は `ResultBand` の部品の中だけで持ち（`show` は `ResultBand` の中の更新を呼ぶ）、帯を出すたびに `useResultBand` を使う画面が描き直されないようにする（`vercel-react-best-practices` の rerender の決まり）。
     - 位置：T-55 のとおり、下のタブの上（スマホ）・左のナビの右（PC）。シートを開いているときはシートの上に重ねる（重なりの順をシートより上にする）。中身を押し下げない（`position: fixed`）。
     - 読み上げ：`role="status"` の場所はいつも置いておき、中身だけを入れ替える（T-55 のまま）。
     - 入る：`translateY(8px)`＋`opacity 0` → `0`・`1`（`--duration-base`・`--ease-out`）。出る：`opacity → 0`（`--duration-fast`・`--ease-in`）。T-55 の `kh-rise .2s ease-out` を、このトークンに置き換える。
@@ -215,7 +232,7 @@
     - 下のタブ（左のナビ）は描くが、確認が終わるまで `inert` にする（押しても動かない。見た目は今のタブと同じ）。今いるタブの印（M-07）は付ける。
     - 部品：`TabScreen` に真偽の引数を足さず、殻だけの部品（`TabShell`。ヘッダーと下のタブの置き方を `TabScreen` と共有する）を分けて作る（`vercel-composition-patterns`）。
   - それ以外の URL（設定・お知らせ・ログイン・招待の受け口など）の確認中は、今のまま `PageLoading`。
-  - 確認中と確認後で、ヘッダーと下のタブの位置が1pxも動かない（同じ部品の同じ置き方で描く）。
+  - 確認中と確認後で、ヘッダーと下のタブの位置が1pxも動かない（同じ部品の同じ置き方で描く）。jsdom には配置がないので、これは E2E の `boundingBox()` で確かめる（テスト計画）。
   - ログインしていない人にも、確認が終わるまで殻を見せてよい（**見せてよい**。確認は通常すぐ終わる。「判断してほしいこと」7）。確認の結果が `anonymous` ならログイン画面へ移る（今のまま）。表示名がない人は、確認のあと名前の画面（T-31）に替わる（今のまま）。
   - 殻に出すのはタブの名前だけで、個人の情報・未読の数・友達の情報は出さない。
 
@@ -227,7 +244,10 @@
     - `list`：友達一覧・お知らせ・ブロックした人・友達の詳細の行きたい。
     - `chips`：みんなタブのここ暇、ここ暇タブ（T-55 の週の帯の画面の読み込み中に合わせる）。
     - `card`：誘いタブの各一覧・誘いと募集の詳細・成立した予定の詳細・そのほか。
-  - 200ms 未満で読み終わるときは骨組みを見せない：骨組みは `opacity 0` から、200msの遅れ（`animation-delay`）のあとに `--duration-fast` で出る（CSS だけ。タイマーを使わない）。`role="status"` と `aria-label="読み込み中"` は最初の描画から置く（テストと読み上げのため）。
+  - 200ms 未満で読み終わるときは骨組みを見せない：骨組みは、200msの遅れ（`animation-delay`）のあとに `--duration-fast` で出る（CSS だけ。タイマーを使わない）。`role="status"` と `aria-label="読み込み中"` は最初の描画から置く（テストと読み上げのため）。
+    - 書き方（0-1 の4）：骨組みの普段の指定は `opacity: 1`（見える形）のまま。出る動きはキーフレーム `kh-fade-in`（`from { opacity: 0 }` だけを書く）を `animation: kh-fade-in var(--duration-fast) var(--ease-out) 200ms backwards` で付け、遅れの200msの間も `from` の透明を保つ。
+    - 明滅（`kh-breathe`）は、同じ要素に2つめの動きとして並べる（`animation: kh-fade-in …, kh-breathe 1.4s ease-in-out calc(200ms + var(--duration-fast)) infinite`）。`kh-breathe` は `opacity: 1 → .55 → 1` で、出終わってから始まる。
+    - 動きを止める設定では、共通の指定（`animation: none`）で両方が外れ、骨組みは**すぐに・明滅せずに**見える（200msの待ちもしない）。
   - 中身への置き換え：読み込み中のあと最初に描く中身を `FadeIn`（描いたときに `opacity 0 → 1`、`--duration-fast`・`--ease-out`）で包む。取り直し（`refetch`）では動かさない。
   - `role="status"`・`aria-label="読み込み中"` は今のまま（テストが頼っている）。
 
@@ -239,9 +259,12 @@
   - 押したら、アイコンが `scale(.88)`（`--duration-press`）→ `scale(1)`（`--duration-base`・`--ease-spring`）。
   - 今いるタブを押したら、一番上までスクロールする（`window.scrollTo({ top: 0, behavior: "smooth" })`。動きを止める設定では `behavior: "auto"`）。URL は変えない（`?tab=` も変えない）。
   - タブを移るときは、移る先のタブで最後に見ていた位置へ（初めてなら一番上へ）。
-    - 位置はタブの URL（`pathname`。誘いタブは `?tab=` によらず1つ）ごとにメモリの `Map` に持つ（localStorage・sessionStorage に置かない）。ブラウザの戻る・進むでタブを移ったときも同じ（`history.scrollRestoration = "manual"` にする）。
+    - 位置はタブの URL（`pathname`。誘いタブは `?tab=` によらず1つ）ごとにメモリの `Map` に持つ（localStorage・sessionStorage に置かない）。ブラウザの戻る・進むでタブを移ったときも同じ。
+    - `history.scrollRestoration = "manual"` にするので、ブラウザの復元はアプリ全体で止まる。そのため、タブ以外の画面への戻る・進む（`popstate`）も自分で戻す：`router.ts` の履歴の印（`HistoryState`）に、エントリごとの印（`key`。`navigate` で積むときに作る。置き換えるときは引き継がない）を足し、画面を離れるときにそのエントリの位置を同じメモリの `Map`（`key` ごと）に覚え、`popstate` で移った先のエントリの位置へ戻す。たとえば友達タブを下までスクロールして設定を開き、戻ると、友達タブの元の位置に戻る（今のブラウザの振る舞いと同じ）。設定 → その下の画面 → 戻るも同じ。
+      - 戻す位置の優先：`popstate` で戻った先に `key` の位置があればそれ、なければ（タブなら）タブの位置、どちらもなければ一番上。`navigate` で積んで進むときは、タブならタブの位置、それ以外は一番上（今と同じ）。
+      - 再読み込み（`key` の位置はメモリなので消える）と、外から直接開いたときは、一番上から（今はブラウザが再読み込みで位置を戻すが、これは戻らなくなる。メモリだけに持つ決まりを優先する）。
     - タブからシートを開いて閉じたときは、後ろのタブを描き直さないので、位置は今のまま。
-    - 純粋な関数（`apps/web/src/ui/tabScroll.ts`）：`rememberTabScroll(positions, from, y)`・`tabScrollTarget(positions, to)`（初めてなら0）。
+    - 純粋な関数（`apps/web/src/ui/tabScroll.ts`）：`rememberTabScroll(positions, from, y)`・`tabScrollTarget(positions, to)`（初めてなら0）。エントリごとの位置は `scrollTargetOnPop(entryPositions, tabPositions, to)`（上の優先の順）。
   - 中身の切り替え（タブ ↔ タブ）は、View Transitions で `--duration-fast` のクロスフェード（左右に滑らせない）。
   - `aria-current="page"` は今のまま。
 
@@ -284,10 +307,12 @@
   - 向きの決め方：`router.ts` の履歴の印（`HistoryState`）に深さ（`depth`）を足す。`navigate` で積むときは今の深さ＋1、置き換えるときは今の深さのまま、外から直接開いたとき（印がない）は0。`popstate` では、移った先の深さと直前の深さを比べ、小さければ戻る、大きければ進む。**ブラウザの戻る（popstate）でも向きが正しい**。
   - 動きの種類を決める純粋な関数（`apps/web/src/router.ts` の `transitionKind(from, to, direction)`）：
     - どちらかがシートの URL（`sheetOf` の表）なら `"none"`（シートは M-01 の動き。popstate で閉じたときも即時）。
+    - `popstate` で、`PopStateEvent.hasUAVisualTransition` が true なら `"none"`（iOS Safari の端からのスワイプで戻る・Chrome Android の戻るの操作は、ブラウザが自分で戻る動きを見せてから `popstate` を出すので、続けて動かすと二重になる）。`navigate` が自分で出す合成の `popstate` はこれが false なので影響しない。関数には `hasUAVisualTransition` を引数で渡す（`transitionKind(from, to, direction, uaTransition)`）。
     - 両方がタブなら `"fade"`（M-07）。
     - それ以外（タブ ↔ 設定・お知らせ、設定 ↔ 設定の下）は、向きで `"push"`／`"pop"`。
+  - 動かすのは中身の領域だけ：下のタブ（`TabBar`）と PC の左のナビ（T-20。`SubScreen` でも出る）に `view-transition-name`（`kh-tabbar`・`kh-sidenav`）を付け、その group の動きを `animation: none` にして動かさない。画面全体（`::view-transition-group(root)`）にも `animation: none` を当て、中身の領域（`main`）に `view-transition-name: kh-content` を付けて、push・pop・fade の動きは `::view-transition-old(kh-content)`・`::view-transition-new(kh-content)` にだけ当てる。M-07 のタブどうしのクロスフェードも同じ。
   - 対応しない端末・動きを止める設定では即時。
-  - フォーカスとスクロールの扱いは今のまま（M-07 のタブの位置の記憶はタブどうしだけ）。
+  - フォーカスは今のまま。スクロールの位置は M-07（`history.scrollRestoration = "manual"` にして、タブはタブごと、それ以外は履歴のエントリごとに自分で戻す）。
 
 #### M-15 未読のバッジ
 - `Navigation.tsx` の `UnreadBadge`：出るとき・数が増えたときに `kh-badge-pop`（M-04 と同じ。`scale(.6) → 1.08 → 1`、`--duration-sheet`・`--ease-spring`）。最初の描画（画面を開いたとき）では動かさない。数が減ったときは動かさない。
@@ -320,7 +345,7 @@
 
 ### 4. 置き場所
 - `apps/web/src/index.css`：動きのトークン、`kh-badge-pop`・`kh-lamp-on`・`kh-breathe`・`kh-fade-in` のキーフレーム、シートの出入りの指定、`-webkit-tap-highlight-color`。
-- `apps/web/src/ui/motion.ts`：`MOTION_MS`、`prefersReducedMotion`、`useExitAnimation`。
+- `apps/web/src/ui/motion.ts`：`MOTION_MS`、`prefersReducedMotion`、`useExitAnimation`（`start`・`cancel`）。
 - `apps/web/src/ui/Collapse.tsx`、`apps/web/src/ui/FadeIn.tsx`。
 - `apps/web/src/ui/sheetDrag.ts`：M-02 の判定の関数。
 - `apps/web/src/ui/SubmitButton.tsx`（M-03）、`apps/web/src/ui/SaveButton.tsx`（✓ の部分 `DoneLabel` を分ける）、`apps/web/src/ui/Button.tsx`（`SendButton` の送信中、variant `meet`）。
@@ -345,25 +370,30 @@
 #### 実装PR①：土台とシート
 - [ ] 動きのトークン：`index.css` の `--duration-*`・`--ease-*` と `MOTION_MS` の値が一致する。出る動きのトークンが入る動きの1段下（7割前後）になっている（`apps/web/src/ui/motion.test.ts`）
 - [ ] `prefersReducedMotion`：`matchMedia` がないと true、`matches` で true・false を返す
-- [ ] `useExitAnimation`（`vi.useFakeTimers()`）：動きを止める設定（`matchMedia` の `matches: true`）では `start` の中で即時に `done` を1回呼ぶ。止めない設定では、長さ＋50msまでは呼ばず、＋50msで1回だけ呼ぶ。要素自身の `transitionend` が先に来たらそこで1回だけ呼び、タイマーでは呼ばない。子から泡立った `transitionend` では呼ばない。途中で `start` をもう一度呼んでも1回だけ。途中でアンマウントしたら呼ばない
-- [ ] `BottomSheet`（`apps/web/src/ui/navigation.test.tsx` に足す）：止めない設定で「閉じる」・暗幕・Esc・つまみのどれでも、すぐには `onClose` を呼ばず、出る動きの印（`data-exiting`）が付き、保険のタイマーのあとに1回だけ呼ぶ。**閉じる動きの途中でもう一度「閉じる」・Esc・暗幕を押しても `onClose`（`goBack`）は1回だけ**。動きを止める設定では即時（既存のテストのまま通る）
+- [ ] `matchMedia` を差し替えている既存のテスト（`navigation.test.tsx` の `stubMatchMedia`、`contact.test.tsx`、`install.test.tsx` の `stubMatchMedia`）を、`(prefers-reduced-motion: reduce)` には `matches: true` を返すように直す（0-3）。とくに navigation.test.tsx の PC の配置の `BottomSheet` のテスト（「PC の配置では、つまみを隠し（lg:hidden）、右上の『閉じる』で閉じる」など、閉じた直後に `onClose` を確かめるもの）が、直したあとも今のまま通る
+- [ ] `SettingsPage`：新しい端末のログインから開いたときの `scrollIntoView` が `prefersReducedMotion()` で決まる（`matchMedia` がないと `behavior: "auto"`）
+- [ ] `useExitAnimation`（`vi.useFakeTimers()`）：動きを止める設定（`matchMedia` の `matches: true`）では `start` の中で即時に `done` を1回呼ぶ。止めない設定では、長さ＋50msまでは呼ばず、＋50msで1回だけ呼ぶ。要素自身の `transitionend` が先に来たらそこで1回だけ呼び、タイマーでは呼ばない。子から泡立った `transitionend` では呼ばない。途中で `start` をもう一度呼んでも1回だけ。途中でアンマウントしたら呼ばない。`done` のあと `exiting` が false に戻り、もう一度 `start` すると、また1回だけ `done` を呼ぶ（閉じて開いてもう一度閉じる）。途中で `cancel()` すると `done` は呼ばれず（タイマーが過ぎても）、`exiting` が false に戻る
+- [ ] `Collapse`：閉じる途中で `show` が true に戻ると、中身が残り（保険のタイマーが過ぎても消えない）、開いた見た目に戻る。閉じて・開いて・もう一度閉じても、閉じ終わると中身が消える
+- [ ] `BottomSheet`（`apps/web/src/ui/navigation.test.tsx` に足す）：止めない設定で「閉じる」・暗幕・Esc・つまみのどれでも、すぐには `onClose` を呼ばず、出る動きの印（`data-exiting`）が付き、保険のタイマー（240＋50ms）のあとに1回だけ呼ぶ。暗い背景の層（`sheet-backdrop`）の `transitionend` が先に来ても、`onClose` は呼ばない（`ref` はシート）。**閉じる動きの途中でもう一度「閉じる」・Esc・暗幕を押しても `onClose`（`goBack`）は1回だけ**。動きを止める設定では即時（既存のテストのまま通る）
+- [ ] `BottomSheet`：暗い背景は暗幕の要素とは別の層で、シートはその層の子ではない（暗い背景の `opacity` でシートが薄くならない）
 - [ ] `BottomSheet`：出る動きの途中もフォーカスがシートの外に出ず、`onClose` のあと開いたボタンにフォーカスが戻る（既存のテストのまま）
 - [ ] `BottomSheet`：PC の幅では、入る・出る動きのクラスが下からではなく縮みとフェードの側になる
-- [ ] `sheetDragOutcome`（`apps/web/src/ui/sheetDrag.test.ts`）：`maxMoved` 9px は tap、10px は tap でない。高さ600pxで `moved` 179px・速さ0.4は settle、180px は close。`moved` 30px・速さ0.5は close、0.49は settle。上へ引いて（`moved` 負）速さが大きくても close にしない
+- [ ] `sheetDragOutcome`（`apps/web/src/ui/sheetDrag.test.ts`）：つまみから始めて `maxMoved` 9px は tap、10px は tap でない。見出しの行から始めて `maxMoved` 9px は settle（tap にならない）。高さ600pxで `moved` 179px・速さ0.4は settle、180px は close。`moved` 30px・速さ0.5は close、0.49は settle。上へ引いて（`moved` 負）速さが大きくても close にしない
 - [ ] `sheetDragOffset`：下はそのまま、上は1/3
-- [ ] つまみと見出しの行：引いている間 `transform` が付き、離すと判定どおりに閉じる・戻る。「閉じる」のボタンから始めた押し込みは引っぱりにならない。`pointercancel` では閉じない。PC の幅では効かない
+- [ ] つまみと見出しの行：引いている間 `transform` が付き、離すと判定どおりに閉じる・戻る。「閉じる」のボタン・リンク（`a[href]`）・`[role="button"]` から始めた押し込みは引っぱりにならない。**シートのタイトル（見出しの文字）を押して離しても閉じない**（つまみを押して離すと閉じる）。`pointercancel` では閉じない。PC の幅では効かない
 - [ ] シートに `overscroll-behavior: contain` が付いている（M-16）
-- [ ] 色の直書きがない（`colors.test.ts` のまま）。動きの長さの直書き（`duration-[0-9]`・`ease-\[`）がない検査を足す
+- [ ] 色の直書きがない（`colors.test.ts` のまま）。動きの長さと曲線の直書きがない検査を足す（`apps/web/src` の `.tsx`・`.ts` と `index.css`）：クラスの `duration-[0-9]`・`duration-\[`・`ease-\[`・`animate-\[`・`delay-\[`、Tailwind の既定の `transition`・`transition-*` で長さを付けていないもの、CSS の `[0-9.]+m?s` の秒・ミリ秒の数（`@theme` の `--duration-*` の定義と、`kh-breathe` の 1.4s、T-43 の `.kh-meet-dot`・`.kh-meet-pair`・`.kh-meet-reveal` と `kh-meet-*` のキーフレームだけを除く。0-1 の5）
+- [ ] `Button` と今ひまのボタンの `transition-transform` が `--duration-press` で書かれている
 - 他人のIDでは取得・更新できない：API を変えないので対象外
 
 #### 実装PR②：送る・成立・結果
 - [ ] `SendButton`（M-14）：送信中は `aria-disabled="true"` で、`disabled` ではなく、`disabled:` の灰色にならず `opacity` が下がる。送信中に押してもフォームを送っても何も起きない。オフラインでは `disabled` の灰色。送信中とオフラインでクラスが違う
 - [ ] `SubmitButton`（M-03。フェイクタイマー）：`ready`→`sending`（「送っています…」）→`done`（「✓ 送りました」、variant `saved`、「✓」は `aria-hidden`、status が「送りました」）。止めない設定では500msまで `done` を見せてから次へ進み、動きを止める設定では即時に次へ進む。失敗は静かな文言で、ボタンは `ready` に戻る
 - [ ] 誘いの作成（`apps/web/src/pages/invites.test.tsx`）：送ると「送っています…」のあと詳細へ置き換わる。`done` のあいだにシートを閉じたら詳細へ移らない。募集の作成（`broadcasts.test.tsx`）・行きたいの作成（`wishes.test.tsx`）も同じ部品の状態になる
-- [ ] シートの差し替え：`swapSheet` で移った先の `BottomSheet` は入る動きの印を持たず、止めない設定では前の高さ（px）の `height` から始まり、保険のタイマーのあとに `height` の指定が外れる。動きを止める設定では `height` を付けない
-- [ ] M-04（`apps/web/src/pages/meetMoment.test.tsx` に足す）：「行く」を押すと、返答のボタン群が `Collapse` の閉じる側になり、バッジに `kh-badge-pop` が1回付く（楽観的更新のとき）。送れなかったときはボタン群が戻り、静かな文言が出て、バッジは動かない。「今回は難しい」ではバッジが動かない。T-43 の演出の条件（応答を待つ・1回だけ・見た記録）は既存のテストのまま通る
+- [ ] シートの差し替え：`swapSheet` で移った先の `BottomSheet` は入る動きの印を持たず、止めない設定では前の高さ（px）の `height` から始まり、詳細の読み込み中（骨組み）のあいだはその高さのまま、中身が描けたら測った高さ（px）の `height` に替わり（`auto` にしない）、保険のタイマーのあとに `height` の指定が外れる。動きを止める設定では `height` を付けない。覚えた高さは2回読んでも同じ値（`StrictMode` で初期化が2回走っても）で、次の `navigate` のあとは使われない
+- [ ] M-04（`apps/web/src/pages/meetMoment.test.tsx` に足す）：「行く」を押すと、返答のボタン群が `Collapse` の閉じる側になり、バッジに `kh-badge-pop` が1回付く（楽観的更新のとき）。送れなかったときはボタン群が戻り、静かな文言が出て、バッジは動かない（応答が閉じる動きより早く失敗しても、ボタン群が消えない）。「今回は難しい」ではバッジが動かない。**詳細を開いたまま、取り直し（`refetch`）で相手の操作により成立に変わったときは、バッジに `kh-badge-pop` が付かない**（自分の操作のときだけ）。T-43 の演出の条件（応答を待つ・1回だけ・見た記録）は既存のテストのまま通る
 - [ ] M-04：成立した予定を見るが `meet` の塗りのボタン（`ButtonLink`、`bg-meet`）で1つだけ（誘いの詳細・募集の詳細）。一覧のカードのバッジは動かない。募集の宛先の人で予定の参加者でない人には、ぽんも予定を見るボタンも出ない
-- [ ] 結果の帯（`apps/web/src/ui/ResultBand.test.tsx`。T-55 の `UndoToast.test.tsx` を移して足す）：画面に1つだけ。`show` で出て、文だけは3.5秒・「取り消す」つきは6秒で消える。同じ文を2回 `show` すると、入る動きからもう一度出る（要素が作り直される）。乗せている間・フォーカスの間は消えない。`role="status"` の場所はいつもある。シートを開いているときもシートの上に出る
+- [ ] 結果の帯（`apps/web/src/ui/ResultBand.test.tsx`。T-55 の `UndoToast.test.tsx` を移して足す）：画面に1つだけ。`show` で出て、文だけは3.5秒・「取り消す」つきは6秒で消える。同じ文を2回 `show` すると、入る動きからもう一度出る（要素が作り直される）。乗せている間・フォーカスの間は消えない。`role="status"` の場所はいつもある。シートを開いているときもシートの上に出る。`show` を呼んでも、`useResultBand` を使う部品は描き直されない（描いた回数を数える）。動きを止める設定では、入る動きなしにすぐ見える（普段の指定に `opacity-0` がない）
 - [ ] お知らせの「見せないにしました」とカレンダー連携の結果が、結果の帯に出て、本文の流れに `Toast` を置かない（`notifications.test.tsx`・`calendar.test.tsx`）
 - [ ] 今ひま（`freeNow.test.tsx`）：「元に戻す」の5秒と文言は今のまま（既存のテストが通る）
 - [ ] M-12（`AvailabilityChip`）：止めない設定で、重なる枠が画面に入ったら1回だけ灯る印が付き、同じ枠を描き直しても・見えなくなってまた入っても、もう一度付かない。重ならない枠には付かない。動きを止める設定・`IntersectionObserver` がない環境では、最初から灯った見た目
@@ -371,11 +401,12 @@
 
 #### 実装PR③：一覧とナビ
 - [ ] M-05（`apps/web/src/App.test.tsx` か `login.test.tsx`）：確認中に `/invites` を開くと、ヘッダー「誘い」と下のタブ（`inert`）と骨組みが出て、未読の数の API を呼ばない。確認が終わったあともヘッダーと下のタブが同じ要素の位置に出る（作り直さない、または同じクラスで同じ並び）。`/settings` の確認中は今の `PageLoading`
-- [ ] M-06：`Loading` の3つの形。`role="status"`・`aria-label="読み込み中"` が最初の描画からある。骨組みの数は件数によらず同じ
+- [ ] M-06：`Loading` の3つの形。`role="status"`・`aria-label="読み込み中"` が最初の描画からある。骨組みの数は件数によらず同じ。骨組みの普段のクラスに `opacity-0` がなく（動きを止める設定で `animation: none` になっても見える）、`index.css` の `kh-fade-in` は `from` だけ・`backwards` で付いている。`FadeIn`・`EmptyState`（M-19）も同じ
 - [ ] M-07（`navigation.test.tsx`）：今いるタブのアイコンが塗りの版で、線は `bg-ink`、`lamp` 系のクラスがない（PC の左のナビも）。今いるタブを押すと `scrollTo` が `top: 0` で呼ばれ（動きを止める設定では `behavior: "auto"`）、URL は変わらない。別のタブから戻ると前の位置で `scrollTo` が呼ばれ、初めてのタブは0。`aria-current="page"` は今のまま
-- [ ] `tabScroll` の関数：覚える・初めては0・タブごとに別
-- [ ] `transitionKind`：シートが関わると none、タブどうしは fade、設定へは push、戻るは pop。`depth` の比べ方（popstate で戻ると pop、進むと push、外から直接開いたときは0）
-- [ ] View Transitions：`startViewTransition` がない・動きを止める設定では、そのまま移る（既存のテストのまま通る）。ある場合は呼ばれ、向きの印（`data-nav`）が付く
+- [ ] `tabScroll` の関数：覚える・初めては0・タブごとに別。`scrollTargetOnPop`：エントリの位置があればそれ、なければタブの位置、どちらもなければ0
+- [ ] M-07（`navigation.test.tsx`）：友達タブでスクロールして設定を開き、戻る（`history.back()`→`popstate`）と、友達タブの前の位置で `scrollTo` が呼ばれる。設定 → 設定の下の画面 → 戻るでも、設定の前の位置に戻る。`history.scrollRestoration` が `"manual"`
+- [ ] `transitionKind`：シートが関わると none、タブどうしは fade、設定へは push、戻るは pop。`depth` の比べ方（popstate で戻ると pop、進むと push、外から直接開いたときは0）。`hasUAVisualTransition` が true の popstate は none
+- [ ] View Transitions：`startViewTransition` がない・動きを止める設定では、そのまま移る（既存のテストのまま通る）。ある場合は呼ばれ、向きの印（`data-nav`）が付く。下のタブ・左のナビに `view-transition-name` が付き、中身の領域に `kh-content` が付く
 - [ ] M-08（`invites.test.tsx`）：白い板が1枚で、`?tab=` に合わせた番号の位置になる。URL と `aria-current` は今のまま
 - [ ] M-10：自分の操作（くり返しの削除・行きたいの削除・招待リンクの無効化）で消える行が `Collapse` の閉じる側になり、止めない設定では保険のタイマーのあとに消える。失敗して戻ると、元の場所に戻る。増えた行は1回だけ光る。友達の側の一覧（みんなタブ）では、行が消えても `Collapse` を使わない
 - [ ] M-11：カード・行・顔に押した感触のクラスがあり、`outline` を書き換えない（`focus.test.ts` に足す）。`index.css` に `-webkit-tap-highlight-color: transparent`
@@ -388,9 +419,11 @@
 - 他人のIDでは取得・更新できない：API を変えないので対象外
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 実装PR①：既存の E2E（`e2e/navigation.spec.ts` ほか、`toHaveCount(0)` でシートが閉じたことを見ているもの）が、動きを付けたまま通る。通らなければ待ち方を直すのではなく、動きの長さを見直す。`e2e/navigation.spec.ts` に、シートを「閉じる」で閉じたあと開いたボタンにフォーカスが戻ることを、動きのある設定で確かめる（今のテストが動きを止めていないことを確かめる）
+- [ ] 実装PR①：既存の E2E（`e2e/navigation.spec.ts` ほか、`toHaveCount(0)` でシートが閉じたことを見ているもの）が、動きを付けたまま通る。通らなければ待ち方を直すのではなく、動きの長さを見直す。
+  - **例外**：`e2e/desktop.spec.ts` の PC の中央のダイアログの大きさの確かめ（シートが見えた直後に `boundingBox()` を取り、幅が512pxかを見ている）は、入る動き（`scale(.96) → 1`）の途中だと `transform` のぶん幅が小さく測れるので、長さを変えても直らない。ここだけは、入る動きが終わってから測るように直す（`await expect.poll(async () => (await detail.boundingBox())?.width).toBe(512)`、または `detail.evaluate((el) => el.getAnimations().length === 0)` を待ってから測る）。ほかに見つかった大きさ・位置の確かめも同じ扱いにし、実装PRの説明に挙げる。
+  - `e2e/navigation.spec.ts` に、シートを「閉じる」で閉じたあと開いたボタンにフォーカスが戻ることを、動きのある設定で確かめる（今のテストが動きを止めていないことを確かめる）
 - [ ] 実装PR②：`e2e/invites.spec.ts` の誘い〜成立の流れで、「誘う」のあと詳細のシートが開き（シートが1つだけ）、「行く」のあと「成立した予定を見る」のボタン（`getByRole("link", { name: "成立した予定を見る" })`）から予定を開ける。既存の T-43 の演出の確かめはそのまま
-- [ ] 実装PR③：`e2e/navigation.spec.ts` に、みんなタブを下へスクロールして誘いタブへ移り、みんなタブに戻ると位置が戻ること、今いるタブを押すと一番上に戻ることを足す。ログインの確認中（`page.route` で確認の応答を遅らせる）に、ヘッダーと下のタブが出ていることを足す
+- [ ] 実装PR③：`e2e/navigation.spec.ts` に、みんなタブを下へスクロールして誘いタブへ移り、みんなタブに戻ると位置が戻ること、今いるタブを押すと一番上に戻ることを足す。ログインの確認中（`page.route` で確認の応答を遅らせる）に、ヘッダーと下のタブが出ていることと、確認中と確認後でヘッダーと下のタブの `boundingBox()`（x・y・幅・高さ）が同じこと（M-05 の「1pxも動かない」。スマホの幅と PC の幅の左のナビの両方）を足す
 - WebKit（`@iphone`）では新しく回さない（動きは CSS と View Transitions で、対応しない端末では即時になるだけ。ブラウザごとの差は単体テストと Chromium で足りる）
 - 動きの見た目そのものは自動のテストにしにくいので、各実装PRの説明に「前／後」の画面の連番か動画を付ける
 
@@ -419,8 +452,11 @@
 8. M-04 楽観的更新との関係。成功を待たずに出す／成功を待つ。推奨：成功を待たずに出し、失敗したら静かに戻す（ボタン群の退場とバッジのぽんは楽観的更新のときに出し、送れなかったらボタン群を元の場所に戻す）。T-43 の丸の演出は、予定の ID がサーバーの応答で入るので、今までどおり応答を待つ。
 9. 「ついでに見つけた見た目の崩れ」（V-1 誘いの詳細のヘッダーで名前が切れる、V-2 オフラインの帯で中身が下がる）を、このタスクの流れ（実装PR③）で直すか。推奨：直す。どちらも同じ部品（`Collapse`・詳細の見出し）を触るので、別のタスクに分けると二度手間になる。
 10. PC の左のナビの「今いる場所」の `bg-lamp-soft`（T-20）もやめるか（指示書は「黄色はタブには使わない」）。推奨：やめて `bg-head`＋塗りのアイコンにする（スマホの下のタブと同じ考え方。T-20 の記述も直す）。
+11. シートの出る動きの長さ（0-2・M-01。指示書の叩き台と違う）。(a) `--duration-base`（240ms。入る動き 360ms の1段下）／(b) 叩き台どおり `--duration-fast`（160ms）。推奨：(a)。出る動きは入る動きの約7割という決まりにそろう。E2E は消えるのを待つので 240ms でも通る。閉じる反応をもっと軽くしたいなら (b)（決まりの例外になる）。
+12. M-02 の、中身のスクロールが一番上のときに中身から下へ引いてシートごと下げる操作（指示書は「やる。後回しも可」）。(a) このタスクではやらない（スコープ外）／(b) 実装PR①でやる。推奨：(a)。ブラウザのスクロールとぶつかり、`touchmove` を止める作り（iOS の慣性スクロールとの調整）が要るので、つまみと見出しの行の引っぱりを入れて使われ方を見てから、別のタスクで決める。
 
 ## 変更履歴
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-24 | 初版 | 持ち主の指示書「ここ暇のUIの『動き』と『手触り』を、よくできたアプリの水準に上げる」 |
+| 2026-11-24 | 仕様書PRのレビューで直した：`matchMedia` を差し替えている既存のテストと SettingsPage の判定を `prefersReducedMotion` にそろえる（0-3）。`useExitAnimation` に `cancel()` と、`done` のあとまた `start` できることを足した。シートの `ref` はシートに付け、暗い背景を別の層にした（M-01）。見出しの行からのタップでは閉じない・リンクも引っぱりにしない（M-02）。差し替えの高さは px から px で、読み込み中は高さを保つ・`StrictMode` で2回読んでも同じ（M-03）。入る動きは普段の指定を最終形にし、骨組みは動きを止める設定ですぐ見える（0-1 の4・M-06）。バッジのぽんは自分の操作のときだけ（M-04）。結果の帯の context は `show` だけ（M-09）。スクロールの位置を履歴のエントリごとにも戻す（M-07・M-13）。`hasUAVisualTransition` では動かさない・ナビは動かさない（M-13）。トークンへ移す今の動きと T-43 の例外、直書きの検査を広げた（0-1 の5）。E2E の大きさの確かめと M-05 の位置の確かめを足した。判断してほしいこと 11・12 を足した。T-11・T-54 に T-56 で変わるところの注記を足した | 仕様書PRのレビュー（pryusei/kokohima-app#216） |
