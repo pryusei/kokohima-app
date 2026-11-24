@@ -50,6 +50,7 @@ const everyoneTab = (over: Routes = {}) => {
     "/api/v1/friends": json({ items: [friend(1, "あき"), friend(2, "はる")], nextCursor: null }),
     "/api/v1/friend-availabilities": empty,
     "/api/v1/friend-wishes": empty,
+    "/api/v1/availabilities": empty,
     ...over,
   });
 };

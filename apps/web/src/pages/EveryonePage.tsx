@@ -1,8 +1,10 @@
 import type { Friend, FriendAvailability } from "@kokohima/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { formatDate, formatSlot, localDateOf } from "../availability/format";
+import { formatDate, formatSlot, isNow, localDateOf } from "../availability/format";
+import { FreeNowCard } from "../availability/FreeNowCard";
 import { everyoneQuery, isRateLimited, today } from "../availability/queries";
+import { useNow } from "../availability/useNow";
 import { initialRange } from "../invitations/format";
 import { AvailabilityChip } from "../ui/AvailabilityChip";
 import { Avatar } from "../ui/Avatar";
@@ -16,7 +18,8 @@ import { displayNameOf } from "../account/me";
 import { FriendWishes } from "../wish/FriendWishes";
 
 // ホーム＝「みんな」（docs/specs/T-03-availability.md「画面」、キャンバス「4 みんな」）
-// 一番上の「誰を誘う？」と、友達の有無で分けた空の状態は docs/specs/T-34-kokodou-entry.md
+// 「誰を誘う？」と、友達の有無で分けた空の状態は docs/specs/T-34-kokodou-entry.md
+// 一番上の今ひまのボタンと、友達の行の「今」の印は docs/specs/T-40-ima-hima.md
 
 /** 枠の時間を入れた誘いの作成へ（開始は次の15分の区切り以降、長さは24時間まで）。終わりかけの枠は null */
 function inviteLink(item: FriendAvailability) {
@@ -79,8 +82,18 @@ function WhoToInvite({ friends }: { friends: Friend[] }) {
   );
 }
 
+/** 「今」の印（今ひま。T-40）。見えている枠のうち、今を15分で切り上げた時刻までに始まり、まだ終わっていない枠にだけ付ける */
+function NowMark() {
+  return (
+    <span className="rounded-full bg-lamp px-1.5 text-xs font-bold text-on-lamp">
+      今<span className="sr-only">ひま</span>
+    </span>
+  );
+}
+
 export function EveryonePage() {
   const date = today();
+  const now = useNow();
   // 友達とここ暇は並列に読む（取得の連鎖を作らない。data-fetching スキル）
   const friends = useQuery(everyFriendQuery());
   const everyone = useQuery(everyoneQuery(date));
@@ -106,6 +119,7 @@ export function EveryonePage() {
 
   return (
     <TabScreen title="みんな">
+      <FreeNowCard now={now} />
       {friends.data && <WhoToInvite friends={friends.data} />}
       {friends.isError && <LoadError text="友達を読み込めませんでした" retry={() => void friends.refetch()} />}
       <ButtonLink to="/broadcasts/new" variant="lamp" block>
@@ -135,9 +149,12 @@ export function EveryonePage() {
                   <li key={`${item.friend.id}|${item.startsAt}`} className="flex gap-2 border-b border-line py-3 last:border-b-0">
                     <Avatar name={item.friend.displayName} src={item.friend.avatarUrl} />
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                      <Link to={`/friends/${item.friend.id}`} className="font-bold text-ink no-underline">
-                        {displayNameOf(item.friend.displayName)}
-                      </Link>
+                      <span className="flex items-center gap-2">
+                        <Link to={`/friends/${item.friend.id}`} className="font-bold text-ink no-underline">
+                          {displayNameOf(item.friend.displayName)}
+                        </Link>
+                        {isNow(item, now) && <NowMark />}
+                      </span>
                       <AvailabilityChip text={formatSlot(item)} overlaps={item.overlapsMine} />
                       <InviteFromSlot item={item} />
                     </div>
