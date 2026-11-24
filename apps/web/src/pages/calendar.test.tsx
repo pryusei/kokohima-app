@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -85,7 +85,7 @@ describe("設定のカレンダー連携", () => {
   });
 });
 
-describe("ここ暇タブの「カレンダーの空き」", () => {
+describe("ここ暇タブの週の帯の「カレンダーで空き」の点（docs/specs/T-55-availability-week-grid.md）", () => {
   const tab = (over: Record<string, Parameters<typeof mockFetch>[0][string]>) => {
     window.history.replaceState(null, "", "/availability");
     return mockFetch({
@@ -96,49 +96,48 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
       ...over,
     });
   };
+  const cell = (prefix: string) => screen.findByRole("button", { name: (name) => name.startsWith(`${prefix} `) });
+  const slot = (date: string, preset: "day" | "evening" | "night", start: string, end: string) => ({
+    date,
+    preset,
+    startsAt: `${date}T${start}:00:00.000Z`,
+    endsAt: `${date}T${end}:00:00.000Z`,
+  });
 
-  it("連携していなければ出さず、候補も読まない", async () => {
+  it("連携していなければ点も凡例も出さず、候補も読まない（マスの見た目は同じ）", async () => {
     const { calls } = tab({ "/api/v1/calendar/connections": none });
     renderApp();
     await screen.findByRole("heading", { name: /^自分のここ暇/ });
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/calendar/connections")).toBe(true));
-    expect(screen.queryByRole("heading", { name: "カレンダーの空き" })).toBeNull();
+    expect(screen.queryByText("カレンダーで空き")).toBeNull();
     expect(calls.some((c) => c.url.startsWith("/api/v1/calendar/free-slots"))).toBe(false);
   });
 
-  it("候補は日ごとに1行にまとめ、空いている時間帯だけをボタンで並べる。空きのない日の行は出さない", async () => {
-    const slot = (date: string, preset: "day" | "evening" | "night", start: string, end: string) => ({
-      date,
-      preset,
-      startsAt: `${date}T${start}:00:00.000Z`,
-      endsAt: `${date}T${end}:00:00.000Z`,
-    });
-    tab({
+  it("空いているマスに点。名前に「カレンダーで空き」。今日から14日分を読み、次の7日にも出す", async () => {
+    const { calls } = tab({
       "/api/v1/calendar/connections": connected,
       "/api/v1/calendar/free-slots": json({
         status: "ok",
-        items: [
-          slot("2026-10-10", "day", "02", "06"),
-          slot("2026-10-10", "evening", "07", "10"),
-          slot("2026-10-10", "night", "10", "14"),
-          slot("2026-10-12", "night", "10", "14"),
-        ],
+        items: [slot("2026-10-10", "night", "10", "14"), slot("2026-10-12", "day", "02", "06"), slot("2026-10-19", "evening", "07", "10")],
         nextCursor: null,
       }),
     });
     renderApp();
-    const list = await screen.findByRole("list", { name: "カレンダーの空き" });
-    const rows = within(list).getAllByRole("listitem");
-    expect(rows).toHaveLength(2);
-    expect(within(rows[0]!).getByText("10/10（土）")).toBeVisible();
-    expect(within(rows[0]!).getAllByRole("button").map((b) => b.textContent)).toEqual(["昼", "夕方", "夜"]);
-    expect(within(rows[0]!).getByRole("button", { name: "10/10（土） 昼 11:00〜15:00をここ暇にする" })).toBeVisible();
-    expect(within(rows[1]!).getByText("10/12（月）")).toBeVisible();
-    expect(within(rows[1]!).getAllByRole("button").map((b) => b.textContent)).toEqual(["夜"]);
-    expect(screen.queryByText("10/11（日）")).toBeNull();
+    const night = await cell("10/10（土） 夜");
+    await waitFor(() => expect(night).toHaveAccessibleName("10/10（土） 夜 19:00〜23:00 カレンダーで空き。押すとここ暇にする"));
+    expect((await cell("10/12（月） 昼")).getAttribute("aria-label")).toContain("カレンダーで空き");
+    expect((await cell("10/12（月） 夕方")).getAttribute("aria-label")).not.toContain("カレンダーで空き");
+    expect(screen.getByText("カレンダーで空き")).toBeInTheDocument();
+    // 予定の中身（タイトル・場所・参加者）は受け取らないので、出しようがない。点は見た目の印だけ
+    expect(night.querySelector(".bg-meet")).not.toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "次の7日 ›" }));
+    expect((await cell("10/19（月） 夕方")).getAttribute("aria-label")).toContain("カレンダーで空き");
+    const url = new URL(calls.find((c) => c.url.startsWith("/api/v1/calendar/free-slots"))?.url ?? "", "http://x");
+    expect(url.searchParams.get("from")).toBe("2026-10-09T15:00:00.000Z");
+    expect(url.searchParams.get("to")).toBe("2026-10-23T15:00:00.000Z");
   });
 
-  it("候補を「10/10（土） 夜 19:00〜23:00」の形で並べ、押すとその日付とプリセットでここ暇を作る", async () => {
+  it("点のマスを押すと、その日付とプリセットでここ暇を作る", async () => {
     const created = {
       source: "manual",
       id: "33333333-3333-4333-8333-333333333333",
@@ -149,28 +148,19 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
     };
     const { calls } = tab({
       "/api/v1/calendar/connections": connected,
-      "/api/v1/calendar/free-slots": [
-        json({
-          status: "ok",
-          items: [{ date: "2026-10-10", preset: "night", startsAt: "2026-10-10T10:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z" }],
-          nextCursor: null,
-        }),
-        json({ status: "ok", items: [], nextCursor: null }),
-      ],
-      "/api/v1/availabilities": [empty, json(created, 201), json({ items: [created], nextCursor: null })],
+      "/api/v1/calendar/free-slots": json({ status: "ok", items: [slot("2026-10-10", "night", "10", "14")], nextCursor: null }),
+      "/api/v1/availabilities": ({ init }) => (init.method === "POST" ? json(created, 201)() : empty()),
     });
     renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "10/10（土） 夜 19:00〜23:00をここ暇にする" }));
+    const night = await cell("10/10（土） 夜");
+    await waitFor(() => expect(night.getAttribute("aria-label")).toContain("カレンダーで空き"));
+    await userEvent.click(night);
     const post = await waitFor(() => {
       const c = calls.find((x) => x.url === "/api/v1/availabilities" && x.init.method === "POST");
       if (!c) throw new Error("not yet");
       return c;
     });
     expect(JSON.parse(String(post.init.body))).toEqual({ date: "2026-10-10", preset: "night" });
-    expect(await screen.findByText("この先7日間に空いている時間帯はありません")).toBeVisible();
-    const url = new URL(calls.find((c) => c.url.startsWith("/api/v1/calendar/free-slots"))?.url ?? "", "http://x");
-    expect(url.searchParams.get("from")).toBe("2026-10-09T15:00:00.000Z");
-    expect(url.searchParams.get("to")).toBe("2026-10-16T15:00:00.000Z");
   });
 
   it("unavailable は「カレンダーを読み込めませんでした」を静かに出す", async () => {
@@ -183,14 +173,13 @@ describe("ここ暇タブの「カレンダーの空き」", () => {
     expect(text.className).not.toMatch(/red|rose/);
   });
 
-  it("回数の上限（429）は候補を出さず、静かに待ってもらう。取り直さない", async () => {
+  it("回数の上限（429）は点を出さず、静かに待ってもらう。取り直さない", async () => {
     const { calls } = tab({
       "/api/v1/calendar/connections": connected,
       "/api/v1/calendar/free-slots": json({ type: "about:blank", title: "x", status: 429, code: "rate_limited", requestId: "r" }, 429),
     });
     renderApp();
-    const text = await screen.findByText("少し待ってから、もう一度開いてください");
-    expect(text.className).not.toMatch(/red|rose/);
+    const text = await screen.findByText("カレンダーの空きは、少し待ってからもう一度開くと出ます");
     expect(text.className).not.toMatch(/red|rose/);
     expect(calls.filter((c) => c.url.startsWith("/api/v1/calendar/free-slots"))).toHaveLength(1);
   });

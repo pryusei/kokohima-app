@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -113,6 +113,8 @@ describe("誘いの作成の Idempotency-Key", () => {
   });
 });
 
+const SLOT = "66666666-6666-4666-8666-666666666666";
+
 describe("ほかの操作の Idempotency-Key", () => {
   it("ここ暇の作成：成功したあとは、同じ内容でも新しいキー", async () => {
     window.history.replaceState(null, "", "/availability");
@@ -121,17 +123,24 @@ describe("ほかの操作の Idempotency-Key", () => {
       "/api/v1/me/presets": presets,
       "/api/v1/availabilities": ({ init }) =>
         init.method === "POST"
-          ? json({ id: crypto.randomUUID(), startsAt: "2026-10-10T10:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z", label: "night", source: "manual", date: null }, 201)()
+          ? json({ id: SLOT, startsAt: "2026-10-10T10:00:00.000Z", endsAt: "2026-10-10T14:00:00.000Z", label: "night", source: "manual", date: null }, 201)()
           : json({ items: [], nextCursor: null })(),
+      [`/api/v1/availabilities/${SLOT}`]: () => new Response(null, { status: 204 }),
       "/api/v1/recurrence-rules": json({ items: [], nextCursor: null }),
       "/api/v1/calendar/connections": json({ google: { status: "none", connectedAt: null } }),
     });
     renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "ここ暇を追加" }));
-    const night = await screen.findByRole("button", { name: /^夜/ });
-    await userEvent.click(night);
+    // 週の帯の夜のマスを押す →「取り消す」→ もう一度押す（docs/specs/T-55-availability-week-grid.md）
+    const night = () => screen.findByRole("button", { name: /^10\/10（土） 夜 / });
+    await waitFor(async () => expect(await night()).toBeEnabled());
+    await userEvent.click(await night());
     await waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/availabilities" && c.init.method === "POST")).toHaveLength(1));
-    await userEvent.click(night);
+    const toast = (await screen.findByText("10/10（土） 夜をここ暇にしました")).parentElement as HTMLElement;
+    await userEvent.click(within(toast).getByRole("button", { name: "取り消す" }));
+    await waitFor(() => expect(calls.filter((c) => c.init.method === "DELETE")).toHaveLength(1));
+    await waitFor(async () => expect(await night()).toHaveAttribute("aria-pressed", "false"));
+    await waitFor(async () => expect(await night()).not.toHaveAttribute("aria-disabled"));
+    await userEvent.click(await night());
     await waitFor(() => expect(calls.filter((c) => c.url === "/api/v1/availabilities" && c.init.method === "POST")).toHaveLength(2));
     const [k1, k2] = calls
       .filter((c) => c.url === "/api/v1/availabilities" && c.init.method === "POST")

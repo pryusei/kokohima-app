@@ -10,13 +10,13 @@ export const connectionsQuery = () => ({
   queryFn: () => apiGet("/api/v1/calendar/connections", calendarConnectionsSchema),
 });
 
-/** 今日から7日分の候補 */
+/** 今日から14日分の候補（ここ暇タブの週の帯の点。docs/specs/T-55-availability-week-grid.md） */
 export const freeSlotsQuery = (date: string) => ({
   queryKey: keys.availability.calendarFree(date),
   // 回数の上限（429。T-10）のあとは取り直さない（取り直すとさらに上限を使う）
   retry: (count: number, error: unknown) => !(error instanceof ApiError && error.status === 429) && count < 3,
   queryFn: () => {
-    const range = rangeFrom(date, 7);
+    const range = rangeFrom(date, 14);
     return apiGet(
       `/api/v1/calendar/free-slots?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`,
       freeSlotsSchema,
