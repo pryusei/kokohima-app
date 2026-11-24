@@ -62,7 +62,7 @@ function Actions({ b, onDecided }: { b: Broadcast; onDecided: () => void }) {
   });
 
   const button = (action: Action, label: string, primary = false) => (
-    <SendButton variant={primary ? "primary" : "ghost"} block disabled={act.isPending} onClick={() => act.mutate(action)}>
+    <SendButton variant={primary ? "primary" : "ghost"} block pending={act.isPending} onClick={() => act.mutate(action)}>
       {label}
     </SendButton>
   );

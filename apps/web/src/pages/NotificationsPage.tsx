@@ -34,7 +34,7 @@ function HideFromFriend({ friendId }: { friendId: string }) {
   return (
     <Collapse show={state !== "done"}>
       <div className="flex flex-col gap-1">
-        <SendButton size="s" className="self-start" disabled={hide.isPending} onClick={() => hide.mutate()}>
+        <SendButton size="s" className="self-start" pending={hide.isPending} onClick={() => hide.mutate()}>
           この人に見せない
         </SendButton>
         {state === "failed" && (

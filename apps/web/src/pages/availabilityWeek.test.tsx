@@ -420,6 +420,29 @@ describe("1行のリンク", () => {
     expect(await screen.findByText("元に戻しました")).toBeVisible();
   });
 
+  it("「時間を細かく決めて入れる」は「入れています…」、「✓ 入れました」を見せてから、出る動きでシートを閉じる（T-56 M-03）", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+    );
+    const custom = { ...manual, id: NEW_ID, label: null };
+    let respond: (r: Response) => void = () => {};
+    tab({
+      "/api/v1/availabilities": ({ init }) =>
+        init.method === "POST" ? new Promise<Response>((resolve) => (respond = resolve)) : empty(),
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: /^時間を細かく決めて入れる/ }));
+    const sheet = screen.getByRole("dialog", { name: "時間を決めて入れる" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "入れる" }));
+    expect(await within(sheet).findByRole("button", { name: "入れています…" })).toHaveAttribute("aria-disabled", "true");
+    respond(new Response(JSON.stringify(custom), { status: 201, headers: { "Content-Type": "application/json" } }));
+    expect(await within(sheet).findByRole("button", { name: "入れました" })).toHaveTextContent("✓入れました");
+    await waitFor(() => expect(screen.getByTestId("sheet-scrim")).toHaveAttribute("data-exiting"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "時間を決めて入れる" })).toBeNull());
+    expect(await undoOf(/を入れました$/)).toBeVisible();
+  });
+
   it("「時間を細かく決めて入れる」で作れなければ、シートに静かな文言", async () => {
     tab({ "/api/v1/availabilities": ({ init }) => (init.method === "POST" ? json({}, 400)() : empty()) });
     renderApp();

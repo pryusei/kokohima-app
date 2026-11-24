@@ -241,11 +241,12 @@ describe("やめる・元に戻す・おしまい", () => {
     renderApp();
     await user.click(await within(await card()).findByRole("button", { name: "やめる" }));
     const undo = await screen.findByRole("button", { name: "元に戻す" });
-    await waitFor(() => expect(undo).toBeEnabled());
+    await waitFor(() => expect(undo).not.toHaveAttribute("aria-disabled"));
     await user.click(undo);
     await advance(6_000);
     expect(screen.getByText("今ひまをやめました")).toBeVisible();
-    expect(screen.getByRole("button", { name: "元に戻す" })).toBeDisabled();
+    // 送信中は灰色にせず aria-disabled（T-56 M-14）
+    expect(screen.getByRole("button", { name: "元に戻す" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("button", { name: /今から3時間ひま/ })).toBeNull();
   });
 
@@ -279,7 +280,8 @@ describe("やめる・元に戻す・おしまい", () => {
     });
     renderApp();
     await userEvent.click(await within(await card()).findByRole("button", { name: "やめる" }));
-    expect(await screen.findByRole("button", { name: "元に戻す" })).toBeDisabled();
+    // 送信中は灰色にせず aria-disabled（T-56 M-14）
+    expect(await screen.findByRole("button", { name: "元に戻す" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("オフラインの間は、灯りのボタンも「元に戻す」も押せない", async () => {

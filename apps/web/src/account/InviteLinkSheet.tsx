@@ -56,7 +56,7 @@ export function InviteLinkSheet({ onClose, onCreated }: { onClose: () => void; o
           ))}
         </select>
       </Field>
-      <SendButton variant="primary" block disabled={create.isPending} onClick={() => create.mutate()}>
+      <SendButton variant="primary" block pending={create.isPending} onClick={() => create.mutate()}>
         招待リンクを作る
       </SendButton>
       {create.isError && (

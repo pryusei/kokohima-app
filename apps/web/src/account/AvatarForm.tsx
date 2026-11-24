@@ -90,7 +90,7 @@ export function AvatarForm({ me }: { me: MeResponse }) {
       </div>
       {draft ? (
         <div className="flex gap-2">
-          <SendButton variant="primary" disabled={busy || !online} onClick={() => upload.mutate(draft.blob)}>
+          <SendButton variant="primary" pending={busy} onClick={() => upload.mutate(draft.blob)}>
             この画像にする
           </SendButton>
           <Button disabled={busy} onClick={() => setDraft(null)}>

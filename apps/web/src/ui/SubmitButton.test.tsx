@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SendButton } from "./Button";
@@ -47,6 +49,24 @@ describe("SendButton の送信中（M-14）", () => {
     expect(onClick).not.toHaveBeenCalled();
     expect(onSubmit).not.toHaveBeenCalled();
     expect(button).toHaveFocus();
+  });
+
+  it("押した縮みは押せるときだけの条件で付け、送信中に打ち消しのクラスを後ろに足さない（Tailwind は後ろのクラスが勝つとは限らない）", () => {
+    render(
+      <SendButton variant="primary" pending>
+        送っています…
+      </SendButton>,
+    );
+    const classes = screen.getByRole("button").className.split(/\s+/);
+    expect(classes).toContain("not-disabled:not-aria-disabled:active:scale-[.98]");
+    expect(classes.filter((c) => /(^|:)active:scale-/.test(c))).toEqual(["not-disabled:not-aria-disabled:active:scale-[.98]"]);
+  });
+
+  it("送るボタンの transition は、Tailwind v4 の active:scale-* が動かす scale を含む（transform だけにしない）", () => {
+    const css = readFileSync(join(import.meta.dirname, "../index.css"), "utf8");
+    const rules = [...css.matchAll(/\n\.kh-send-motion(?:\.kh-submit-motion)? \{([^}]*)\}/g)].map((m) => m[1] ?? "");
+    expect(rules).toHaveLength(2);
+    for (const rule of rules) expect(rule).toMatch(/\bscale var\(--duration-press\) var\(--ease-out\)/);
   });
 
   it("オフラインでは disabled の灰色。送信中とオフラインでクラスが違う", () => {
