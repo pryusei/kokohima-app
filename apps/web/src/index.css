@@ -202,14 +202,14 @@
     opacity: 0;
     transition: opacity var(--duration-fast) var(--ease-in);
   }
-  .kh-sheet-scrim[data-drag="dragging"] > .kh-sheet,
-  .kh-sheet-scrim[data-drag="dragging"] > .kh-sheet-backdrop {
+  .kh-sheet-scrim[data-drag="dragging"]:not([data-exiting]) > .kh-sheet,
+  .kh-sheet-scrim[data-drag="dragging"]:not([data-exiting]) > .kh-sheet-backdrop {
     transition: none;
   }
-  .kh-sheet-scrim[data-drag="settling"] > .kh-sheet {
+  .kh-sheet-scrim[data-drag="settling"]:not([data-exiting]) > .kh-sheet {
     transition: transform var(--duration-base) var(--ease-spring);
   }
-  .kh-sheet-scrim[data-drag="settling"] > .kh-sheet-backdrop {
+  .kh-sheet-scrim[data-drag="settling"]:not([data-exiting]) > .kh-sheet-backdrop {
     transition: opacity var(--duration-base) var(--ease-out);
   }
   /* PC（幅1024px以上。T-20）の中央のダイアログは、下からではなく、小さく縮んだところからフェードで出る */

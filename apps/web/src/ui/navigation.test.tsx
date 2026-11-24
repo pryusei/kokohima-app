@@ -209,30 +209,30 @@ describe("BottomSheet", () => {
   });
 
   it("つまみを押しても下に引いても、onClose は1回だけ呼ぶ（引いたあとに届く click で2回にならない）", () => {
-    const onClose = vi.fn();
-    const { unmount } = render(
-      <BottomSheet title="試し" label="試し" onClose={onClose}>
-        <p>本文</p>
-      </BottomSheet>,
-    );
     sheetHeight(600);
     slowClock();
-    const grip = screen.getByTestId("sheet-grip");
-    const release = (fromY: number, toY: number) =>
+    // 1つのシートが閉じるのは1回だけなので、確かめるたびに開き直す
+    const release = (fromY: number, toY: number) => {
+      const onClose = vi.fn();
+      const { unmount } = render(
+        <BottomSheet title="試し" label="試し" onClose={onClose}>
+          <p>本文</p>
+        </BottomSheet>,
+      );
+      const grip = screen.getByTestId("sheet-grip");
       act(() => {
         grip.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientY: fromY }));
         grip.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientY: toY }));
         grip.dispatchEvent(new MouseEvent("click", { bubbles: true, clientY: toY }));
       });
+      unmount();
+      return onClose.mock.calls.length;
+    };
 
-    release(100, 300); // 下に引く（高さの3割以上）
-    expect(onClose).toHaveBeenCalledTimes(1);
-    release(100, 102); // 押す
-    expect(onClose).toHaveBeenCalledTimes(2);
-    release(100, 130); // 少しだけ引いて戻す・上に引く：閉じない
-    release(200, 100);
-    expect(onClose).toHaveBeenCalledTimes(2);
-    unmount();
+    expect(release(100, 300)).toBe(1); // 下に引く（高さの3割以上）
+    expect(release(100, 102)).toBe(1); // 押す
+    expect(release(100, 130)).toBe(0); // 少しだけ引いて戻す
+    expect(release(200, 100)).toBe(0); // 上に引く：閉じない
   });
 
   it("オフラインの帯は、スクロールしても上に残る行（つまみとタイトルの行）の中に出す", () => {
@@ -655,6 +655,19 @@ describe("シートの動き（docs/specs/T-56-motion.md「M-01」「M-02」「M
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
+    it.each(closers)("出る動きが終わって onClose を呼んだあと、外れるまでに %s が届いても、onClose（goBack）は1回だけ", (_, close) => {
+      const onClose = vi.fn();
+      renderSheet(onClose);
+      act(() => closeButton());
+      act(() => vi.advanceTimersByTime(290));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      // SheetScreen は goBack の popstate が後から届くので、まだ外れていない
+      act(() => close());
+      pressEscape();
+      act(() => vi.advanceTimersByTime(1000));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
     it("暗い背景の層や中身の transitionend が先に来ても onClose は呼ばず、シートの transitionend で1回だけ呼ぶ", () => {
       const onClose = vi.fn();
       renderSheet(onClose);
@@ -708,6 +721,15 @@ describe("シートの動き（docs/specs/T-56-motion.md「M-01」「M-02」「M
       act(() => closeButton());
       expect(leaving()).toBe(true);
     });
+  });
+
+  it("動きを止める設定でも、外れるまでに続けて Esc・「閉じる」を押したとき、onClose は1回だけ", () => {
+    const onClose = vi.fn();
+    renderSheet(onClose);
+    act(() => pressEscape());
+    act(() => pressEscape());
+    act(() => closeButton());
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("動きを止める設定（matchMedia がない jsdom を含む）では、閉じるとすぐ onClose を呼ぶ", () => {
@@ -817,6 +839,68 @@ describe("シートの動き（docs/specs/T-56-motion.md「M-01」「M-02」「M
         expect(dialog.style.transform).toBe("");
         pointer(el, "pointerup", 400);
       }
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("引いている途中に Esc で閉じても、出る動きの前に引いている見た目（data-drag・transform・濃さ）を外す", () => {
+      const onClose = vi.fn();
+      renderSheet(onClose);
+      const title = screen.getByRole("heading", { name: "試し" });
+      pointer(title, "pointerdown", 100);
+      pointer(title, "pointermove", 250);
+      act(() => fireEvent.keyDown(document, { key: "Escape" }));
+      const scrim = screen.getByTestId("sheet-scrim");
+      expect(scrim).toHaveAttribute("data-exiting");
+      expect(scrim).not.toHaveAttribute("data-drag");
+      expect(screen.getByRole("dialog").style.transform).toBe("");
+      expect(screen.getByTestId("sheet-backdrop").style.opacity).toBe("");
+      // そのあと指を動かして離しても、もう一度は閉じない
+      pointer(title, "pointermove", 400);
+      pointer(title, "pointerup", 400);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("離して戻している途中（settling）に「閉じる」で閉じても、data-drag を外してから出る", () => {
+      renderSheet(() => {});
+      press(screen.getByRole("heading", { name: "試し" }), 100, 150);
+      const scrim = screen.getByTestId("sheet-scrim");
+      expect(scrim).toHaveAttribute("data-drag", "settling");
+      act(() => fireEvent.click(screen.getByRole("button", { name: "閉じる" })));
+      expect(scrim).toHaveAttribute("data-exiting");
+      expect(scrim).not.toHaveAttribute("data-drag");
+    });
+
+    it("出る動きの指定は、引いている・戻している指定より優先する（index.css）", () => {
+      const css = readFileSync(join(import.meta.dirname, "../index.css"), "utf8");
+      for (const m of css.matchAll(/\.kh-sheet-scrim\[data-drag="(?:dragging|settling)"\][^{,]*/g)) expect(m[0]).toContain(":not([data-exiting])");
+    });
+
+    it("2本めの指や、マウスの左以外のボタンでは引っぱりにしない", () => {
+      const onClose = vi.fn();
+      renderSheet(onClose);
+      const title = screen.getByRole("heading", { name: "試し" });
+      const grip = screen.getByTestId("sheet-grip");
+      const send = (el: Element, type: string, clientY: number, init: { pointerId?: number; isPrimary?: boolean; button?: number } = {}) =>
+        act(() => {
+          const ev = new MouseEvent(type, { bubbles: true, clientY, button: init.button ?? 0 });
+          Object.defineProperties(ev, { pointerId: { value: init.pointerId ?? 1 }, isPrimary: { value: init.isPrimary ?? true } });
+          el.dispatchEvent(ev);
+        });
+      // 1本めで押し、2本めが触れても、1本めの押した位置から測る
+      send(title, "pointerdown", 100, { pointerId: 1 });
+      send(title, "pointerdown", 400, { pointerId: 2, isPrimary: false });
+      send(title, "pointermove", 130, { pointerId: 1 });
+      expect(screen.getByRole("dialog").style.transform).toBe("translateY(30px)");
+      // 2本めの動き・離しは無視する
+      send(title, "pointermove", 600, { pointerId: 2, isPrimary: false });
+      expect(screen.getByRole("dialog").style.transform).toBe("translateY(30px)");
+      send(title, "pointerup", 600, { pointerId: 2, isPrimary: false });
+      expect(screen.getByTestId("sheet-scrim")).toHaveAttribute("data-drag", "dragging");
+      send(title, "pointerup", 130, { pointerId: 1 });
+      expect(onClose).not.toHaveBeenCalled();
+      // つまみを右クリックしても閉じない
+      send(grip, "pointerdown", 100, { button: 2 });
+      send(grip, "pointerup", 100, { button: 2 });
       expect(onClose).not.toHaveBeenCalled();
     });
 

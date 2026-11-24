@@ -24,7 +24,7 @@ const EXIT_MS = MOTION_MS.base;
 /** 離して元へ戻す動き（--duration-base）のあと、data-drag を外すまで */
 const SETTLE_MS = MOTION_MS.base + 50;
 
-type Drag = { startY: number; origin: DragOrigin; maxMoved: number; samples: DragSample[]; height: number };
+type Drag = { pointerId: number; startY: number; origin: DragOrigin; maxMoved: number; samples: DragSample[]; height: number };
 
 // シートが閉じる途中か（閉じる操作のあと、onClose を呼ぶまでの出る動きのあいだも true）。
 // 送信中に閉じたら、成功しても詳細へ移らない（T-11）ことを、出る動きの途中にも守るため
@@ -51,13 +51,25 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   useEffect(() => {
     latestClose.current = onClose;
   }, [onClose]);
+  // 引いている見た目（data-drag・直接当てた transform と濃さ）を外す。閉じる操作はどれも、ここから出る動きを始める
+  // （data-drag が残ると、index.css で出る動きの指定より後ろにある data-drag の指定が勝ってしまう）
+  const clearDrag = useCallback(() => {
+    drag.current = null;
+    window.clearTimeout(settleTimer.current);
+    if (scrim.current) delete scrim.current.dataset.drag;
+    dialog.current?.style.removeProperty("transform");
+    if (backdrop.current) backdrop.current.style.opacity = "";
+  }, [dialog]);
   const requestClose = useCallback(() => {
+    // 閉じる操作のあとは、出る動きのあいだも onClose のあと外れるまでも、何もしない（goBack が2回にならないように）
+    if (leaving.current) return;
     leaving.current = true;
+    clearDrag();
     start(() => {
       setGone(true);
       latestClose.current();
     });
-  }, [start]);
+  }, [start, clearDrag]);
   const isLeaving = useCallback(() => leaving.current, []);
 
   // Esc は、押したボタンが送信中に押せなくなってフォーカスがシートの外（body）に出たときも効くように、文書全体で受ける
@@ -125,17 +137,18 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   // つまみと見出しの行を押す・引く（M-02）。マウスでも外で離したときに pointerup が届くように、pointer を捕まえる。
   // 閉じるのは pointerup の1か所だけにする。onClick でも閉じると、引いたあとに届く click で onClose が2回呼ばれ、history.back() が2回になる
   const onHeaderDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (desktop || animating) return;
+    // 引いている間に触れた2本めの指（drag.current がある）・マウスの左以外のボタンでは引っぱりにしない
+    if (desktop || animating || leaving.current || e.button > 0 || drag.current) return;
     const target = e.target instanceof Element ? e.target : null;
     if (target?.closest(PRESSABLE)) return;
     const origin: DragOrigin = target?.closest('[data-testid="sheet-grip"]') ? "grip" : "header";
     const now = performance.now();
-    drag.current = { startY: e.clientY, origin, maxMoved: 0, samples: [{ t: now, y: e.clientY }], height: dialog.current?.offsetHeight ?? 0 };
+    drag.current = { pointerId: e.pointerId, startY: e.clientY, origin, maxMoved: 0, samples: [{ t: now, y: e.clientY }], height: dialog.current?.offsetHeight ?? 0 };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const onHeaderMove = (e: PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
-    if (!d) return;
+    if (!d || e.pointerId !== d.pointerId) return;
     const now = performance.now();
     const moved = e.clientY - d.startY;
     d.maxMoved = Math.max(d.maxMoved, Math.abs(moved));
@@ -145,8 +158,8 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   };
   const onHeaderUp = (e: PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
+    if (!d || e.pointerId !== d.pointerId) return;
     drag.current = null;
-    if (!d) return;
     const moved = e.clientY - d.startY;
     const outcome = sheetDragOutcome({
       origin: d.origin,
@@ -159,13 +172,11 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
       settle();
       return;
     }
-    // 閉じる：今の位置から、出る動きを続ける（直接当てた transform を外すと同時に data-exiting が付く）
-    if (scrim.current) delete scrim.current.dataset.drag;
-    paintDrag(null, 0);
+    // 閉じる：今の位置から、出る動きを続ける（requestClose が直接当てた transform を外すと同時に data-exiting が付く）
     requestClose();
   };
-  const onHeaderCancel = () => {
-    if (!drag.current) return;
+  const onHeaderCancel = (e: PointerEvent<HTMLDivElement>) => {
+    if (!drag.current || e.pointerId !== drag.current.pointerId) return;
     drag.current = null;
     settle();
   };
