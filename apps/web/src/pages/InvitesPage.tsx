@@ -3,6 +3,7 @@ import {
   broadcastStatusText,
   broadcastStatusTone,
   formatRange,
+  inviteTimes,
   KIND_LABELS,
   statusText,
   statusTone,
@@ -36,6 +37,7 @@ function InviteList({ box }: { box: "received" | "sent" }) {
     <ul aria-label={box === "received" ? "受信した誘い" : "送信した誘い"} className="flex flex-col gap-4">
       {invites.data.items.map((invite) => {
         const name = nameOfProfile(invite.counterpart);
+        const times = inviteTimes(invite);
         return (
           <li key={invite.id}>
             <InviteCard
@@ -44,7 +46,8 @@ function InviteList({ box }: { box: "received" | "sent" }) {
               avatarUrl={invite.counterpart.avatarUrl}
               title={box === "sent" ? `${honorificOf(invite.counterpart)}へ` : name}
               subtitle={KIND_LABELS[invite.kind]}
-              when={formatRange(invite)}
+              when={times.when}
+              whenNote={times.original}
               note={invite.message}
               status={statusText(invite)}
               tone={statusTone(invite.status)}

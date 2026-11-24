@@ -13,13 +13,15 @@ type CardProps = {
   title: string;
   subtitle: string;
   when: string;
+  /** when の下に小さく添える時間（「この時間なら」が返った送信の誘いの「最初の時間 15:00〜17:00」。T-46） */
+  whenNote?: string | null;
   note?: string | null;
   status: string;
   tone: Tone;
   children?: ReactNode;
 };
 
-function Card({ to, avatarName, avatarUrl = null, title, subtitle, when, note, status, tone, children }: CardProps) {
+function Card({ to, avatarName, avatarUrl = null, title, subtitle, when, whenNote, note, status, tone, children }: CardProps) {
   const look =
     tone === "quiet"
       ? "border border-line bg-surface"
@@ -33,11 +35,14 @@ function Card({ to, avatarName, avatarUrl = null, title, subtitle, when, note, s
         <Avatar name={avatarName} src={avatarUrl} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className={`truncate font-bold ${ink}`}>{title}</span>
-          <span className="text-s text-ink-muted">{subtitle}</span>
+          <span className="truncate text-s text-ink-muted">{subtitle}</span>
         </span>
         <Badge tone={tone}>{status}</Badge>
       </span>
-      <span className={`text-l font-bold tabular-nums ${ink}`}>{when}</span>
+      <span className="flex flex-col">
+        <span className={`text-l font-bold tabular-nums ${ink}`}>{when}</span>
+        {whenNote && <span className="text-s text-ink-muted tabular-nums">{whenNote}</span>}
+      </span>
       {note && <span className={`line-clamp-2 whitespace-pre-wrap ${ink}`}>{note}</span>}
       {children}
     </Link>
