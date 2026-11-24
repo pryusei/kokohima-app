@@ -217,6 +217,37 @@ export function contactStartProblems(texts, { startDate, deploy, today, noticeAl
   return problems;
 }
 
+const SAFETY_START_JSON = "packages/shared/src/safetyStart.json";
+
+/**
+ * ブロックと通報を始める日（docs/specs/T-33-block-report.md「振る舞い 8.」）の検査。startDate は safetyStart.json の値（"YYYY-MM-DD" か null）。
+ * いつも：null か暦にある日付でなければ止める。deploy が真で、今日（日本時間）が startDate より前なら、
+ * 予告の行（「公表日：」）がちょうど1つあり、改定日（効力が生じる日）が startDate と同じこと（前もって知らせてから始める）。
+ * 予告の途中で足していないことは、予告の行の日付を変えるので effectiveDateProblems（初めて出す予告は公表日＝今日）が確かめる
+ */
+export function safetyStartProblems(texts, { startDate, deploy, today }) {
+  if (startDate === null) return [];
+  const m = typeof startDate === "string" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate) : null;
+  const start = m ? { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) } : null;
+  if (!start || !isCalendarDate(start.year, start.month, start.day)) {
+    return [`ブロックと通報を始める日が日付になっていません（${SAFETY_START_JSON} の startDate を null か "YYYY-MM-DD" の暦にある日付にする）`];
+  }
+  if (!deploy) return [];
+  if (!today) return ["今日の日付がないので、ブロックと通報を始める日を確かめられません"];
+  if (daysBetween(today, start) <= 0) return [];
+  const problems = [];
+  const revisions = texts.flatMap((t) => realDates(t, REVISION_DATE_LABEL));
+  if (!(revisions.length === 1 && daysBetween(revisions[0], start) === 0)) {
+    problems.push(
+      `ブロックと通報を始める日（${format(start)}）が、プライバシー ポリシーの改定日（効力が生じる日）と違います（${SAFETY_START_JSON} の startDate と ${LEGAL_TS} の REVISION_DATE_LINE を同じ日にする）`,
+    );
+  }
+  if (sum(texts, countRevisionNoticeLines) !== 1) {
+    problems.push(`ブロックと通報を始める日（${format(start)}）より前なのに、予告の行（「公表日：」）がありません（${LEGAL_TS} の REVISION_NOTICE_LINE で前もって知らせる）`);
+  }
+  return problems;
+}
+
 /** 日本時間の今日（{ year, month, day }）。now はミリ秒の時刻 */
 export function jstToday(now) {
   const d = new Date(now + 9 * 60 * 60 * 1000);

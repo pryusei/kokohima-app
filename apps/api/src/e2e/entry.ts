@@ -24,6 +24,8 @@ const { app, handler } = createWorker({
   // 偽の Slack（slack.e2e.invalid）だけを許す。公開の日によらずに回す（T-24「振る舞い 11.」）
   contactWebhookTarget: E2E_CONTACT_WEBHOOK_TARGET,
   contactStartAt: 0,
+  // ブロックと通報も始める日によらずに回す（T-33「振る舞い 8.」）
+  safetyStartAt: 0,
 });
 
 app.use("/__e2e__/*", async (c, next) => {

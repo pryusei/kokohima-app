@@ -1,5 +1,6 @@
 import {
   acceptInviteRequestSchema,
+  createBlockRequestSchema,
   createInviteLinkRequestSchema,
   inviteLookupRequestSchema,
   listQuerySchema,
@@ -8,11 +9,13 @@ import {
 import { Hono, type Context } from "hono";
 import * as z from "zod";
 import type { AppEnv } from "../env";
-import { requireActiveSession, requireAuth, requireSameOrigin } from "../identity/middleware";
+import { optionalViewerId, requireActiveSession, requireAuth, requireSameOrigin } from "../identity/middleware";
 import { clearInviteCookie, getInviteCookie, setInviteCookie } from "../http/inviteCookie";
 import { problem, problemFrom } from "../http/problem";
 import { rateLimit } from "../http/rateLimit";
+import { requireSafetyOpen } from "../http/safetyOpen";
 import { validationFailed } from "../http/validation";
+import * as blocks from "./application/blocks";
 import * as social from "./application/social";
 
 // 友達と招待リンクのAPI（docs/specs/T-02-friends.md「API」）
@@ -64,7 +67,8 @@ export function socialRoutes() {
     if (!body.success) return validationFailed(c, body.error);
     // 本文のトークン（最初に開いたとき）か、招待Cookieのトークン（ログインをはさんだ後）
     const token = body.data.token ?? getInviteCookie(c);
-    const found = await social.lookupInvite(ctx(c), token);
+    // ログインしていれば、発行者との間のブロックを確かめる（使えないリンクと同じ404。T-33）
+    const found = await social.lookupInvite(ctx(c), token, (await optionalViewerId(c)) ?? undefined);
     if (!found || !token) {
       clearInviteCookie(c);
       return notFound(c);
@@ -131,6 +135,32 @@ export function socialRoutes() {
   app.delete("/friends/:friendId", requireAuth, requireActiveSession, async (c) => {
     const friendId = uuid.safeParse(c.req.param("friendId"));
     if (!friendId.success || !(await social.unfriend(ctx(c), c.var.viewer.userId, friendId.data))) return notFound(c);
+    return c.body(null, 204);
+  });
+
+  // ブロック（docs/specs/T-33-block-report.md「API」）。始める日より前は、認証より前に知らない経路と同じ404
+  app.post("/blocks", requireSafetyOpen, requireAuth, requireActiveSession, async (c) => {
+    const body = createBlockRequestSchema.safeParse(await json(c));
+    if (!body.success) return validationFailed(c, body.error);
+    const ok = await blocks.block(ctx(c), c.var.viewer.userId, body.data.userId, body.data.subject);
+    return ok ? c.body(null, 204) : notFound(c);
+  });
+
+  app.get("/blocks", requireSafetyOpen, requireAuth, async (c) => {
+    const query = listQuerySchema.safeParse(c.req.query());
+    if (!query.success) return validationFailed(c, query.error);
+    try {
+      c.header("Cache-Control", "no-store");
+      return c.json(await blocks.listBlocked(ctx(c), c.var.viewer.userId, query.data.limit, query.data.cursor));
+    } catch (err) {
+      if (err instanceof blocks.BadCursor) return validationFailed(c, null);
+      throw err;
+    }
+  });
+
+  app.delete("/blocks/:userId", requireSafetyOpen, requireAuth, requireActiveSession, async (c) => {
+    const userId = uuid.safeParse(c.req.param("userId"));
+    if (!userId.success || !(await blocks.unblock(ctx(c), c.var.viewer.userId, userId.data))) return notFound(c);
     return c.body(null, 204);
   });
 

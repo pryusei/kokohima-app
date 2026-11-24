@@ -66,7 +66,10 @@
 | 処理済みの outbox | 処理から7日 | T-12 データの増加 |
 | 問い合わせの outbox の payload の種類・内容（`ContactMessageSubmitted`） | Slack に届けたとき（届かなかった行は、処理から7日で行ごと消える） | T-24 |
 | 問い合わせの outbox の行（`userId`・`occurredAt`・`delivered` だけ） | 処理から7日（`RETENTION.processedOutboxDays`） | T-24 |
-| 問い合わせの Slack のメッセージ（`#kokohima-contact`） | 運営者が対応を終えたら手で消す。Slack の保持の設定で投稿から90日（`PLATFORM_RETENTION.contactSlackDays`。人が設定する） | T-24 |
+| ブロック（`blocks`） | ブロックをやめたとき・どちらかが退会したとき（期限なし） | T-33 |
+| 通報の outbox の payload の中身（`UserReported`。理由・くわしく・相手・対象の写し） | Slack に届けたとき（届かなかった行は、処理から7日で行ごと消える） | T-33 |
+| 通報の outbox の行（`userId`・`occurredAt`・`delivered` だけ） | 処理から7日（`RETENTION.processedOutboxDays`） | T-33 |
+| 問い合わせと通報（T-33）の Slack のメッセージ（`#kokohima-contact`） | 運営者が対応を終えたら手で消す。Slack の保持の設定で投稿から90日（`PLATFORM_RETENTION.contactSlackDays`。人が設定する） | T-24 |
 | 流れないままの通知だけの型の outbox（`NOTIFICATION_START_AT` が未設定の間） | 作ってから30日 | この仕様書 |
 | 退避キュー（Queue `kokohima-*-outbox-dlq`） | Queues の保持期間（既定4日）。問い合わせのメッセージは受付番号だけ（T-24） | T-13 の手順書 |
 | セッション・更新用トークン | 失効・期限切れから30日（利用者ごとに最初の1行を残す） | T-01、pryusei/kokohima-app#82 |
@@ -267,3 +270,4 @@
 | 2026-11-23 | 保持期間の一覧に問い合わせの outbox と Slack のメッセージを足した | T-24 実装PR（docs/specs/T-24-contact.md） |
 | 2026-11-23 | 表にアイコンの画像（`avatarImageGraceHours`）を足した | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |
 | 2026-11-23 | 表に行きたいのAI提案の回数の記録（`wishSuggestionAttemptsDaysBefore`）を足した | T-29 実装PR（docs/specs/T-29-wish-suggestion.md） |
+| 2026-11-24 | 保持期間の一覧にブロックと通報を足した（Slack のメッセージは問い合わせと同じ行。`retention.ts` の値は増やさない） | T-33 実装PR（docs/specs/T-33-block-report.md） |

@@ -5,6 +5,8 @@ export const keys = {
     all: () => ["friends"] as const,
     list: () => ["friends", "list"] as const,
     detail: (id: string) => ["friends", "detail", id] as const,
+    /** 今も友達か（友達でなければ null。相手への操作のシート。T-33） */
+    status: (id: string) => ["friends", "status", id] as const,
     /** 友達全員（募集の宛先を選ぶため、続きのページも読む） */
     everyone: () => ["friends", "everyone"] as const,
   },
@@ -54,6 +56,10 @@ export const keys = {
     friend: (id: string) => ["wishes", "friend", id] as const,
     /** 行きたいのAI提案の今日の残りの回数（T-29） */
     suggestionQuota: () => ["wishes", "suggestion-quota"] as const,
+  },
+  // ブロックした人（docs/specs/T-33-block-report.md）
+  blocks: {
+    list: () => ["blocks", "list"] as const,
   },
   inviteLinks: {
     list: () => ["invite-links", "list"] as const,

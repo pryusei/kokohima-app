@@ -7,3 +7,5 @@ interface ImportMetaEnv {
 
 /** 問い合わせを公開の日によらずに開く（E2E=1 の vite だけ true。本番のビルドでは false。docs/specs/T-24-contact.md「振る舞い 11.」） */
 declare const __CONTACT_FORCE_OPEN__: boolean;
+/** ブロックと通報を始める日によらずに開く（E2E の画面だけ true。docs/specs/T-33-block-report.md「振る舞い 8.」） */
+declare const __SAFETY_FORCE_OPEN__: boolean;

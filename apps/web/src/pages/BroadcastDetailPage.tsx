@@ -15,6 +15,8 @@ import { LoadError, Loading, Note } from "../ui/feedback";
 import { HeadCount } from "../ui/HeadCount";
 import { Link } from "../ui/Link";
 import { LinkCard } from "../ui/LinkCard";
+import { MoreButton, usePersonActionsToggle } from "../safety/MoreButton";
+import { PersonActions } from "../safety/PersonActions";
 
 // 募集の詳細（docs/specs/T-05-broadcast.md「画面」、キャンバス「14 募集の詳細」）。宛先の人には人数・名前・ほかの宛先を出さない
 // 後ろに誘いタブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
@@ -100,6 +102,8 @@ function Actions({ b }: { b: Broadcast }) {
 
 export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
   const broadcast = useQuery(broadcastQuery(broadcastId));
+  // 届いた募集の「…」（相手への操作。docs/specs/T-33-block-report.md「振る舞い 1.」）
+  const { acting, open: openActions, close: closeActions, moreRef } = usePersonActionsToggle();
 
   if (broadcast.error instanceof ApiError && broadcast.error.status === 404) {
     return (
@@ -129,14 +133,25 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
               {b.direction === "sent" && b.status === "open" ? "募集中" : broadcastStatusText(b)}
             </Badge>
           )}
+          {b?.direction === "received" && owner && !b.owner.withdrawn && !acting && (
+            <MoreButton ref={moreRef} name={owner} onClick={openActions} />
+          )}
         </div>
       }
     >
+      {acting && b?.direction === "received" && owner && (
+        <PersonActions
+          person={{ id: b.owner.id, name: owner }}
+          subject={{ type: "broadcast", id: b.id }}
+          onBack={closeActions}
+          onDone={closeActions}
+        />
+      )}
       {broadcast.isPending && <Loading />}
       {broadcast.isError && !(broadcast.error instanceof ApiError && broadcast.error.status === 404) && (
         <LoadError retry={() => void broadcast.refetch()} />
       )}
-      {b && (
+      {b && !acting && (
         <>
           <p className="text-ink-muted">
             {b.direction === "received" ? <>募集した人：{owner}</> : <>宛先：{b.recipients?.length ?? 0}人</>}

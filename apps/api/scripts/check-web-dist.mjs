@@ -7,6 +7,7 @@ import {
   CONTACT_NOTICE_MARKER,
   CONTACT_POLICY_MARKER,
   contactStartProblems,
+  safetyStartProblems,
   effectiveDateProblems,
   jstToday,
   revisionNoticeLine,
@@ -82,6 +83,9 @@ errors.push(...effectiveDateProblems(texts, { deploy, today, noticeAlreadyPublis
 const contactStartPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "shared", "src", "contactStart.json");
 const { startDate } = JSON.parse(readFileSync(contactStartPath, "utf8"));
 errors.push(...contactStartProblems(texts, { startDate, deploy, today, noticeAlreadyPublished, production }));
+// ブロックと通報を始める日は、改定日（効力が生じる日）と同じ日（docs/specs/T-33-block-report.md「振る舞い 8.」）
+const safetyStartPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "shared", "src", "safetyStart.json");
+errors.push(...safetyStartProblems(texts, { startDate: JSON.parse(readFileSync(safetyStartPath, "utf8")).startDate, deploy, today }));
 
 if (errors.length > 0) {
   for (const e of errors) console.error(`::error::${e}`);

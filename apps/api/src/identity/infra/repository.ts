@@ -474,6 +474,8 @@ export const PERSONAL_OUTBOX_TYPES = [
   "AvailabilityCancelledByCalendar",
   // 問い合わせ（内容が入る。処理済み・未処理とも消し、まだ届けていなければ届かない。T-24「振る舞い 5.」）
   "ContactMessageSubmitted",
+  // 通報（通報した人の ID で消す。まだ届けていなければ届かない。T-33「振る舞い 6.」）
+  "UserReported",
 ] as const;
 
 /**

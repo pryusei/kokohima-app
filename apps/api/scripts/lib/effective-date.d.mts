@@ -38,4 +38,8 @@ export declare function contactStartProblems(
     production?: { notice: boolean; policy: boolean };
   },
 ): string[];
+export declare function safetyStartProblems(
+  texts: string[],
+  options: { startDate: unknown; deploy: boolean; today?: CalendarDay },
+): string[];
 export declare function jstToday(now: number): CalendarDay;

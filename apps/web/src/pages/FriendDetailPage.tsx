@@ -1,7 +1,6 @@
-import { friendSchema, type Friend } from "@kokohima/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { ApiError, apiGet, apiSend } from "../api/client";
+import { friendSchema } from "@kokohima/shared";
+import { useQuery } from "@tanstack/react-query";
+import { ApiError, apiGet } from "../api/client";
 import { keys } from "../api/keys";
 import { formatDate, formatSlot, localDateOf } from "../availability/format";
 import { friendSlotsQuery, today } from "../availability/queries";
@@ -9,84 +8,17 @@ import { navigate } from "../router";
 import { AvailabilityChip } from "../ui/AvailabilityChip";
 import { Avatar } from "../ui/Avatar";
 import { SheetScreen } from "../ui/BottomSheet";
-import { Button, ButtonLink, SendButton } from "../ui/Button";
-import { LoadError, Loading, Note } from "../ui/feedback";
+import { ButtonLink } from "../ui/Button";
+import { LoadError, Loading } from "../ui/feedback";
 import { Section } from "../ui/Navigation";
-import { Switch } from "../ui/Switch";
+import { MoreButton, usePersonActionsToggle } from "../safety/MoreButton";
+import { PersonActions } from "../safety/PersonActions";
 import { displayNameOf } from "../account/me";
 import { FriendWishList } from "../wish/FriendWishes";
 
 // 友達の詳細（docs/specs/T-03-availability.md「画面」、キャンバス「16 友達の詳細」）
 // 後ろに友達タブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
-
-function Settings({ friend }: { friend: Friend }) {
-  const queryClient = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const name = displayNameOf(friend.displayName);
-
-  // 「自分の暇を見せる」は楽観的更新（data-fetching スキル）
-  const toggle = useMutation({
-    mutationFn: (sharesMyAvailability: boolean) =>
-      apiSend("PATCH", `/api/v1/friends/${friend.id}`, { sharesMyAvailability }),
-    onMutate: async (sharesMyAvailability) => {
-      setFailed(false);
-      await queryClient.cancelQueries({ queryKey: keys.friends.detail(friend.id) });
-      const previous = queryClient.getQueryData<Friend>(keys.friends.detail(friend.id));
-      queryClient.setQueryData<Friend>(keys.friends.detail(friend.id), (f) => f && { ...f, sharesMyAvailability });
-      return { previous };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.previous) queryClient.setQueryData(keys.friends.detail(friend.id), context.previous);
-      setFailed(true);
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: keys.friends.all() }),
-  });
-
-  const unfriend = useMutation({
-    mutationFn: () => apiSend("DELETE", `/api/v1/friends/${friend.id}`, undefined),
-    onSuccess: () => {
-      // 先に友達タブへ移る。解除した友達の詳細を読み直すと404になり、再試行を待つことになるので、その行は捨てる
-      navigate("/friends", { replace: true });
-      queryClient.removeQueries({ queryKey: keys.friends.detail(friend.id) });
-      void queryClient.invalidateQueries({ queryKey: keys.friends.all() });
-      void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
-      // 解除した友達の行きたいが「みんな」に残らないように（T-22）
-      void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
-    },
-    onError: () => setFailed(true),
-  });
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Switch checked={friend.sharesMyAvailability} onChange={(v) => toggle.mutate(v)} description="オフにしても、相手には通知されません">
-        自分の暇を見せる
-      </Switch>
-      <div className="flex flex-col gap-2 border-t border-line pt-4">
-        {confirming ? (
-          <>
-            <Note>解除しても相手には通知されません。</Note>
-            <SendButton block onClick={() => unfriend.mutate()}>
-              {name}さんとの友達を解除する
-            </SendButton>
-            <Button variant="ghost" block onClick={() => setConfirming(false)}>
-              やめる
-            </Button>
-          </>
-        ) : (
-          <Button variant="ghost" block onClick={() => setConfirming(true)}>
-            友達を解除
-          </Button>
-        )}
-      </div>
-      {failed && (
-        <p role="status" className="text-s text-ink-muted">
-          保存できませんでした。もう一度お試しください。
-        </p>
-      )}
-    </div>
-  );
-}
+// 「自分の暇を見せる」と「友達を解除」は、名前の横の「…」のシートに置く（ブロック・通報と同じ所。docs/specs/T-33-block-report.md「振る舞い 1.」）
 
 export function FriendDetailPage({ friendId }: { friendId: string }) {
   const date = today();
@@ -95,6 +27,7 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
     queryFn: () => apiGet(`/api/v1/friends/${encodeURIComponent(friendId)}`, friendSchema),
   });
   const slots = useQuery({ ...friendSlotsQuery(friendId, date), enabled: friend.isSuccess });
+  const { acting, open: openActions, close: closeActions, moreRef } = usePersonActionsToggle();
 
   if (friend.error instanceof ApiError && friend.error.status === 404) {
     return (
@@ -113,13 +46,25 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
       title={
         <div className="flex items-center gap-4">
           {friend.data && <Avatar name={friend.data.displayName} src={friend.data.avatarUrl} size="l" />}
-          <h2 className="text-xl font-bold">{name}</h2>
+          <h2 className="min-w-0 flex-1 truncate text-xl font-bold">{name}</h2>
+          {friend.data && !acting && <MoreButton ref={moreRef} name={name} onClick={openActions} />}
         </div>
       }
     >
-      {friend.isPending && <Loading />}
-      {friend.isError && <LoadError text="読み込めませんでした。通信状態を確認して、もう一度お試しください。" retry={() => void friend.refetch()} />}
-      {friend.data && (
+      {acting && friend.data && (
+        <PersonActions
+          person={{ id: friendId, name }}
+          onBack={closeActions}
+          onDone={(result) => {
+            if (result === "reported") closeActions();
+            // 友達でなくなったら友達タブへ（解除と同じ）
+            else navigate("/friends", { replace: true });
+          }}
+        />
+      )}
+      {!acting && friend.isPending && <Loading />}
+      {!acting && friend.isError && <LoadError text="読み込めませんでした。通信状態を確認して、もう一度お試しください。" retry={() => void friend.refetch()} />}
+      {!acting && friend.data && (
         <Section title="見えているここ暇" aside="今日から14日">
           {slots.data?.items.length === 0 && <p className="text-ink-muted">見えているここ暇はありません</p>}
           <ul aria-label="友達のここ暇" className="flex flex-col">
@@ -132,14 +77,13 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
           </ul>
         </Section>
       )}
-      {friend.data && <FriendWishList friendId={friendId} />}
+      {!acting && friend.data && <FriendWishList friendId={friendId} />}
       {/* 重なれば「あそぼ」、重ならなければ「ここどう？」になるので「誘う」とだけ書く（T-34） */}
-      {friend.data && (
+      {!acting && friend.data && (
         <ButtonLink to={`/invites/new?friend=${encodeURIComponent(friendId)}`} variant="primary" block>
           誘う
         </ButtonLink>
       )}
-      {friend.data && <Settings friend={friend.data} />}
     </SheetScreen>
   );
 }

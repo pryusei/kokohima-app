@@ -34,7 +34,6 @@ afterEach(async () => {
 
 const CHANGES = "この改定で変わるところ";
 const PRIVACY_SECTIONS = [
-  CHANGES,
   "1. 運営者と連絡先",
   "2. 預かる情報",
   "3. 使う目的",
@@ -51,7 +50,6 @@ const PRIVACY_SECTIONS = [
   "14. このポリシーの変更",
 ];
 const TERMS_SECTIONS = [
-  CHANGES,
   "第1条（同意）",
   "第2条（使える人）",
   "第3条（アカウント）",
@@ -66,19 +64,10 @@ const TERMS_SECTIONS = [
   "第12条（連絡）",
   "第13条（準拠法と裁判所）",
 ];
-// 「この改定で変わるところ」の箇条書き（仕様書の6節・7節の文案）
-const PRIVACY_CHANGES = [
-  "「5.」「6.」「7.」：外国の事業者に取り扱いを任せるときの書き方を直し、「7.」に、外国の名称、事業者がとる措置、その確かめ方などを書きました。",
-  "「12.」：「7.」の情報の提供を求められることを書きました。",
-  "「2.」「4.」「8.」と退会したとき：行きたい（ひとこと・エリア・リンク・見せない相手）を預かる情報に足し、見える相手と保存する期間を書きました。",
-  "「2.」「3.」「5.」「7.」「8.」「12.」：アプリの中の問い合わせのフォームを足したことに合わせて、預かる情報（問い合わせの種類と内容）、使う目的、任せる事業者（Slack）、保存する期間、開示などの求め方を書きました。問い合わせのフォームについてのこれらの定めは、フォームを使い始める2026年11月23日から適用します。",
-  "「2.」「4.」「8.」と退会したとき：アイコンに画像を設定できるようにしたことに合わせて、預かる情報（アイコンの画像）、見える相手（友達と、招待リンクを開いた人）、保存する期間を書きました。",
-  "「2.」「3.」「5.」「7.」「8.」と退会したとき：行きたいをAIで探せるようにしたことに合わせて、預かる情報（探した回数の記録。入力した言葉と候補は残しません）、使う目的、任せる事業者（Anthropic）、保存する期間を書きました。",
-];
-const TERMS_CHANGES = [
-  "第5条3：リンクのプレビューの画像の削除を求めるときの連絡先を足しました。",
-  "第5条4・第6条：アイコンの画像の削除を求めるときの連絡先と、ほかの人の写真などを同意なくアイコンにしないことを足しました。",
-];
+// 予告の間の形を確かめるための見本（本格稼働までは予告なしで改定するので、legal.ts の値は null。T-19 決めたこと17）
+const SAMPLE_NOTICE = "公表日：2026年12月1日（この版は改定日から適用します。それまでは、前の版を適用します）";
+const PRIVACY_CHANGES = ["「2.」：見本の変わるところ。"];
+const TERMS_CHANGES = ["第6条：見本の変わるところ。"];
 const pages = [
   { path: "/privacy", title: "プライバシー ポリシー", section: "1. 運営者と連絡先", sections: PRIVACY_SECTIONS, changes: PRIVACY_CHANGES },
   { path: "/terms", title: "利用規約", section: "第1条（同意）", sections: TERMS_SECTIONS, changes: TERMS_CHANGES },
@@ -102,7 +91,7 @@ const refreshStates: [string, Route][] = [
   ["ログインしている（authenticated）", json(tokenBody())],
 ];
 
-describe.each(pages)("$path", ({ path, title, section, sections, changes }) => {
+describe.each(pages)("$path", ({ path, title, section, sections }) => {
   it("見出し：h1 は SubScreen の題の1つだけ、h2 は文案のすべての節（順も同じ）", async () => {
     window.history.replaceState(null, "", path);
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
@@ -112,33 +101,17 @@ describe.each(pages)("$path", ({ path, title, section, sections, changes }) => {
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(sections);
   });
 
-  it("制定日の下に、改定日の行と予告の行がこの順で1つずつ出る", async () => {
+  it("制定日の下に、改定日の行だけが出る（予告の行と「この改定で変わるところ」はない）", async () => {
     window.history.replaceState(null, "", path);
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
     renderApp();
     await screen.findByRole("heading", { name: title, level: 1 });
     expect(REVISION_DATE_LINE).toMatch(DATE_LINE);
-    expect(REVISION_NOTICE_LINE).toMatch(DATE_LINE);
-    expect(REVISION_NOTICE_LINE).toMatch(/（この版は改定日から適用します。それまでは、前の版を適用します）$/);
+    expect(REVISION_NOTICE_LINE).toBeNull();
     const dates = screen.getByText(EFFECTIVE_DATE_LINE).parentElement as HTMLElement;
-    expect(Array.from(dates.children).map((p) => p.textContent)).toEqual([EFFECTIVE_DATE_LINE, REVISION_DATE_LINE, REVISION_NOTICE_LINE]);
-    expect(screen.getAllByText(/^改定日（効力が生じる日）：/)).toHaveLength(1);
-    expect(screen.getAllByText(/^公表日：/)).toHaveLength(1);
-  });
-
-  it("予告の行があるとき、日付の行と本文の間に「この改定で変わるところ」と、そのページの箇条書きを出す", async () => {
-    window.history.replaceState(null, "", path);
-    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
-    renderApp();
-    await screen.findByRole("heading", { name: title, level: 1 });
-    const notice = clause(CHANGES);
-    expect(within(notice).getAllByRole("listitem").map((li) => li.textContent)).toEqual(changes);
-    // 日付の行の次、本文の最初の節より前
-    const dates = screen.getByText(EFFECTIVE_DATE_LINE).parentElement as HTMLElement;
-    expect(dates.nextElementSibling).toBe(notice);
-    expect(notice.compareDocumentPosition(clause(section)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // 箇条書きに日付の見出しの文字を入れない（ビルドの検査の数がずれないように）
-    for (const c of changes) expect(c).not.toMatch(/制定日：|改定日（効力が生じる日）：|公表日：|改定日：/);
+    expect(Array.from(dates.children).map((p) => p.textContent)).toEqual([EFFECTIVE_DATE_LINE, REVISION_DATE_LINE]);
+    expect(screen.queryByText(/^公表日：/)).toBeNull();
+    expect(screen.queryByRole("heading", { name: CHANGES })).toBeNull();
   });
 
   it("連絡先は mailto: のリンク", async () => {
@@ -198,9 +171,39 @@ describe.each(pages)("$path", ({ path, title, section, sections, changes }) => {
 });
 
 describe("legal.ts の箇条書き", () => {
-  it("仕様書の6節・7節の「この改定で変わるところ」と同じ", () => {
-    expect(PRIVACY_REVISION_CHANGES).toEqual(PRIVACY_CHANGES);
-    expect(TERMS_REVISION_CHANGES).toEqual(TERMS_CHANGES);
+  it("予告なしで改定しているので、2つの箇条書きも null（T-19 決めたこと17）", () => {
+    expect(PRIVACY_REVISION_CHANGES).toBeNull();
+    expect(TERMS_REVISION_CHANGES).toBeNull();
+  });
+});
+
+describe("予告の行があるとき（一般公開のあとの改定）", () => {
+  afterEach(() => {
+    vi.doUnmock("./legal");
+    vi.resetModules();
+  });
+
+  it.each(pages)("$path：改定日・予告の行の順に出し、日付の行と本文の間に「この改定で変わるところ」を出す", async ({ path, title, section, sections, changes }) => {
+    vi.resetModules();
+    vi.doMock("./legal", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("./legal")>()),
+      REVISION_NOTICE_LINE: SAMPLE_NOTICE,
+      PRIVACY_REVISION_CHANGES: PRIVACY_CHANGES,
+      TERMS_REVISION_CHANGES: TERMS_CHANGES,
+    }));
+    const helpers = await import("../test/helpers");
+    const legal = await import("./legal");
+    window.history.replaceState(null, "", path);
+    helpers.mockFetch({ "/api/v1/auth/refresh": helpers.json({}, 401) });
+    helpers.renderApp();
+    await screen.findByRole("heading", { name: title, level: 1 });
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([CHANGES, ...sections]);
+    const dates = screen.getByText(EFFECTIVE_DATE_LINE).parentElement as HTMLElement;
+    expect(Array.from(dates.children).map((p) => p.textContent)).toEqual([EFFECTIVE_DATE_LINE, legal.REVISION_DATE_LINE, SAMPLE_NOTICE]);
+    const notice = clause(CHANGES);
+    expect(within(notice).getAllByRole("listitem").map((li) => li.textContent)).toEqual(changes);
+    expect(dates.nextElementSibling).toBe(notice);
+    expect(notice.compareDocumentPosition(clause(section)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -212,7 +215,12 @@ describe("予告の行がないとき（改定日のあと）", () => {
 
   it.each(pages)("$path：箇条書きがあっても「この改定で変わるところ」を出さず、改定日の行は残す", async ({ path, title }) => {
     vi.resetModules();
-    vi.doMock("./legal", async (importOriginal) => ({ ...(await importOriginal<typeof import("./legal")>()), REVISION_NOTICE_LINE: null }));
+    vi.doMock("./legal", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("./legal")>()),
+      REVISION_NOTICE_LINE: null,
+      PRIVACY_REVISION_CHANGES: PRIVACY_CHANGES,
+      TERMS_REVISION_CHANGES: TERMS_CHANGES,
+    }));
     const helpers = await import("../test/helpers");
     const legal = await import("./legal");
     expect(legal.REVISION_NOTICE_LINE).toBeNull();
@@ -306,7 +314,7 @@ describe("プライバシー ポリシーの本文", () => {
     const items = (name: string) => Array.from(sub(name).querySelectorAll("li")).map(own);
     expect(Array.from(seven.querySelectorAll(":scope > p")).map((p) => p.textContent)).toEqual([
       "「5.」の事業者のうち、Cloudflare・Google・Resend・Slack・Anthropic・ブラウザのプッシュ通知の事業者は、外国の事業者です。運営は、個人情報保護法の基準に適合する体制（日本の法律の定めに沿った措置を続けてとるための体制）を整えている事業者にだけ、個人データの取り扱いを任せます。本人の同意によらずに任せるため、外国にある第三者に個人データを渡すときに本人の求めに応じて知らせることになっている事項を、求めを待たずにここに書きます。",
-      "監視のための障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません（問い合わせを届ける Slack は含めます）。",
+      "監視のための障害の知らせ（Slack）と外からの動作の確認（Better Stack）は、「5.」のとおり、利用者の情報を渡さない使い方にしているので、ここには含めません（問い合わせと通報を届ける Slack は含めます）。",
     ]);
     expect(items("外国の名称")).toEqual([
       "米国：Cloudflare・Google・Resend・Slack・Anthropic・ブラウザのプッシュ通知の事業者",
@@ -377,7 +385,9 @@ describe("プライバシー ポリシーの本文", () => {
     );
     const three = clause("3. 使う目的");
     const purposes = Array.from(three.querySelectorAll("ol > li")).map((li) => li.textContent);
-    expect(purposes[6]).toBe("不正な利用を防ぎ、障害に気づいて直すため。問い合わせで知らせてもらった不具合を直すため");
+    expect(purposes[6]).toBe(
+      "不正な利用を防ぎ、障害に気づいて直すため。問い合わせで知らせてもらった不具合を直すため。通報を受けて、危ない使い方や規約に反する使い方に対応するため",
+    );
     expect(purposes[8]).toBe("問い合わせでもらったご意見をもとに、このサービスを良くするため");
     expect(three.textContent).toContain("問い合わせのときは、返信先として運営の連絡用の Slack に届けます");
     // 仕様書の6節の文案と同じ並び（Slack は Resend とプッシュ通知の事業者の間）
@@ -395,15 +405,16 @@ describe("プライバシー ポリシーの本文", () => {
       .getByRole("heading", { name: "Slack Technologies, LLC（米国）", level: 3 })
       .closest("section") as HTMLElement;
     expect(within(slack).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "任せること：問い合わせを運営者に届けて、保管すること",
+      "任せること：問い合わせと通報を運営者に届けて、保管すること",
       "渡すもの：問い合わせの種類・内容・受け付けた時刻・利用者を区別する番号・返信先のメールアドレス",
+      "通報で渡すもの：理由・くわしく・受け付けた時刻・通報した人と通報された人を区別する番号・ブロックもしたか。誘い・募集から通報したときは、その誘い・募集の日時・エリア・ひとこと・リンク。メールアドレスと名前は渡しません。",
     ]);
     const eight = clause("8. 保存する期間").textContent ?? "";
     expect(eight).toContain(
       `問い合わせ：運営に届けたら、このサービスのデータベースから内容を消します。うまく届かなかったものは、処理の記録として${RETENTION.processedOutboxDays}日で消えます。運営の連絡用の Slack に届いたものは、対応を終えたら消し、遅くとも Slack に届いてから${PLATFORM_RETENTION.contactSlackDays}日で消えます。`,
     );
     expect(eight).toContain("遅くとも Slack に届いてから90日で消えます");
-    expect(eight).toContain("まだ運営に届いていない問い合わせは、届けずに消します。");
+    expect(eight).toContain("まだ運営に届いていない問い合わせと通報は、届けずに消します。");
     expect(clause("12. 開示・訂正・削除などの求め").textContent).toContain(
       "ログインしているなら、アプリの「設定 → 問い合わせ」（種類「個人情報の開示・削除の請求」）からも求められます。",
     );
@@ -411,8 +422,10 @@ describe("プライバシー ポリシーの本文", () => {
 
   // 公開の日と改定日が同じかは、デプロイの検査（apps/api/scripts/lib/effective-date.mjs の contactStartProblems）で確かめる。
   // ここで常に同じことを求めると、次の改定で改定日を変えるたびに問い合わせを閉じることになるため
-  it("デプロイの検査が本番の JS で探す問い合わせの目印が、「この改定で変わるところ」の行と本文にある（T-24「11.」）", async () => {
-    expect(PRIVACY_REVISION_CHANGES?.some((line) => line.includes(CONTACT_NOTICE_MARKER))).toBe(true);
+  // 問い合わせを知らせた改定（2026-11-30）は終わったので、「この改定で変わるところ」の行の目印は、今の箇条書きにはない。
+  // デプロイの検査は、本番の本文の目印（CONTACT_POLICY_MARKER）で「前の改定で知らせ済み」と判断する（T-24「11.」）
+  it("デプロイの検査が本番の JS で探す問い合わせの目印が本文にある。前の改定の行の目印は、今の箇条書きにない（T-24「11.」）", async () => {
+    expect((PRIVACY_REVISION_CHANGES ?? []).some((line) => line.includes(CONTACT_NOTICE_MARKER))).toBe(false);
     window.history.replaceState(null, "", "/privacy");
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
     renderApp();
@@ -592,5 +605,32 @@ describe("リンクの置き場所", () => {
     expect(section).not.toBeNull();
     expect(within(section as HTMLElement).getByRole("link", { name: /プライバシー ポリシー/ })).toHaveAttribute("href", "/privacy");
     expect(within(section as HTMLElement).getByRole("link", { name: /利用規約/ })).toHaveAttribute("href", "/terms");
+  });
+});
+
+// ブロックと通報（docs/specs/T-33-block-report.md「振る舞い 7.」）
+describe("ブロックと通報の本文", () => {
+  it("プライバシー ポリシー：「2.」の預かる情報、「4.」の見え方、「8.」の期間と退会。日数は retention.ts から", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    const two = clause("2. 預かる情報").textContent ?? "";
+    expect(two).toContain("ブロックした相手と、ブロックした時刻");
+    expect(two).toContain("通報の理由と、くわしく（書いたときだけ）、通報した相手。");
+    expect(clause("4. ほかの利用者に見えるもの").textContent).toContain("ブロックや通報をしたことは、相手に知らせません。");
+    const eight = clause("8. 保存する期間").textContent ?? "";
+    expect(eight).toContain("ブロック：ブロックをやめたとき、どちらかが退会したときに消します（期限はありません）。");
+    expect(eight).toContain(`遅くとも Slack に届いてから${PLATFORM_RETENTION.contactSlackDays}日で消えます。`);
+    expect(eight).toContain("あなたについての通報は、通報した人のものなので");
+  });
+
+  it("利用規約：第6条に事実でない通報、第7条に通報を受けたときの扱い", async () => {
+    window.history.replaceState(null, "", "/terms");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "利用規約", level: 1 });
+    expect(clause("第6条（してはいけないこと）").textContent).toContain("事実でない通報をくり返すこと");
+    expect(clause("第7条（利用の停止）").textContent).toContain("通報を受けたときは、運営が内容を確かめ");
   });
 });

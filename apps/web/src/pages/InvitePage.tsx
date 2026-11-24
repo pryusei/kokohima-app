@@ -11,6 +11,7 @@ import { meGateQuery } from "../account/me";
 import { ApiError, apiFetch, apiSend } from "../api/client";
 import { keys } from "../api/keys";
 import { useAuth } from "../auth/AuthProvider";
+import { tokenStore } from "../auth/tokenStore";
 import { isLineInAppBrowser, withOpenExternalBrowser } from "../line/line";
 import { LineBrowserNotice } from "../line/LineBrowserNotice";
 import { navigate } from "../router";
@@ -51,18 +52,28 @@ export function InvitePage() {
   // LINEのアプリ内ブラウザから開き直すために、読んだトークンを画面のメモリにだけ持つ（ストレージに置かない。T-28）
   const [token, setToken] = useState<string | null>(null);
   const started = useRef(false);
+  const read = useRef<{ token: string | null } | null>(null);
 
+  // トークンは開いてすぐ URL から消す（ログインの確かめを待たない）
   useEffect(() => {
-    if (started.current) return;
+    if (read.current) return;
+    read.current = { token: readAndClearInviteToken() };
+    setToken(read.current.token);
+  }, []);
+
+  // lookup はログインの確かめが終わってから。ログインしていればアクセストークンを付け、
+  // 発行者との間にブロックがあれば、使えないリンクと同じ表示にする（docs/specs/T-33-block-report.md「振る舞い 2.」）
+  useEffect(() => {
+    if (started.current || status === "checking" || !read.current) return;
     started.current = true;
-    const token = readAndClearInviteToken();
-    setToken(token);
+    const token = read.current.token;
+    const access = status === "authenticated" ? tokenStore.get() : null;
     void (async () => {
       try {
         const res = await fetch("/api/v1/invite-links/lookup", {
           method: "POST",
           credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(access ? { Authorization: `Bearer ${access}` } : {}) },
           body: JSON.stringify(token ? { token } : {}),
         });
         if (res.status === 429) {
@@ -75,7 +86,7 @@ export function InvitePage() {
         setState({ kind: "lookupNetwork" });
       }
     })();
-  }, []);
+  }, [status]);
 
   const queryClient = useQueryClient();
   // 名前があるか（docs/specs/T-31-display-name-first-step.md「名前の画面（招待リンクの受け口）」）
