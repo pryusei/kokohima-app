@@ -89,9 +89,10 @@
 
 ### 6. 画面
 - ボタンの並び（ログインの画面 `/login` と、招待の受け口 `/invite` の未ログインのとき。共通の部品 `apps/web/src/auth/LoginButtons.tsx`）：
-  1. 「LINEでログイン」（地 `bg-brand-line`、文字 `text-on-brand-line`。決めたこと8）
+  1. 「LINEでログイン」（`Button` の variant `line`：地 `bg-brand-line`、文字 `text-on-brand-line`。決めたこと8）
   2. 「Googleでログイン」（副ボタン。今のまま）
-  3. 「Appleでログイン」（`VITE_APPLE_LOGIN_ENABLED` が `"1"` のときだけ。T-12）
+  3. 「Appleでログイン」（`Button` の variant `apple`：地 `bg-ink`、文字 `text-surface`。`VITE_APPLE_LOGIN_ENABLED` が `"1"` のときだけ。T-12）
+- 色は variant の中だけで決め、副ボタン（`secondary`）のクラスに色のクラスを足して上書きしない。Tailwind v4 は同じ性質のクラスをクラス名の順に出すので、足したほうが勝つとは限らない（副ボタンの `bg-surface` が勝ち、白の地に白の文字になった。T-11「共通の部品」）。
 - 行き先は `/api/v1/auth/<provider>/start?returnTo=<returnTo>`（受け口は `/invite`）。
 - LINE の中のブラウザの帯（T-28）：文と副ボタン（決めたこと9）。出す条件は変えない。
 - 退会のログインし直しで `reauthProvider` が `"line"` なら、`/api/v1/auth/line/start?returnTo=...` へ移る。
@@ -161,11 +162,11 @@
 - [x] 退会のログインし直しの `reauthProvider` が `line`。画面は LINE のログインし直しへ移る
 - [x] 通知：メールアドレスのない利用者の新しい端末のログインは `no_address` で、メール・プッシュを送らず、お知らせ一覧に残る。ほかの種類は購読があればプッシュ、なければ `no_address`
 - [x] E2E の偽の LINE：開始から完了まで通る。認可画面は `E2E_MODE=1` のときだけで、`APP_ORIGIN` の外へ戻さない。verify はチャネル ID・nonce が違えば 400
-- [x] 画面：ログインの画面と受け口で LINE が最初、Google が次（Apple を出す設定でも LINE が最初）。行き先と `returnTo`。色はトークン。LINE の中のブラウザの帯の文と副ボタン
+- [x] 画面：ログインの画面と受け口で LINE が最初、Google が次（Apple を出す設定でも LINE が最初）。行き先と `returnTo`。色はトークン。LINE と Apple のボタンに副ボタンの色のクラス（`bg-surface`・`text-ink`・`border-line-strong`）が混ざらない。LINE の中のブラウザの帯の文と副ボタン
 - [x] プライバシー ポリシー・利用規約の本文（2.・3.・5.・7.・8.・12.・第3条）
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [x] ログイン画面の最初のボタンは「LINEでログイン」。押すと（偽の LINE）名前の画面になり、決めると「みんな」が開き、再読み込みしても続く（`e2e/auth.spec.ts`。`mobile` のプロジェクトだけ。偽の認可画面が `:8787` の API にあるため `@iphone` にしない）
+- [x] ログイン画面の最初のボタンは「LINEでログイン」。押すと（偽の LINE）名前の画面になり、決めると「みんな」が開き、再読み込みしても続く。描かれた色が地 `rgb(6, 199, 85)`・文字 `rgb(255, 255, 255)`（`e2e/auth.spec.ts`。`mobile` のプロジェクトだけ。偽の認可画面が `:8787` の API にあるため `@iphone` にしない）
 - [x] LINE の中のブラウザで招待リンクを開くと、「LINEでログイン」が最初に出る（`e2e/friends.spec.ts` の T-28 の流れに足す）
 - 本物の LINE でのログインは対象外（`e2e-testing` スキル）。持ち主が実機で確かめる（「持ち主の作業」5）
 
@@ -185,3 +186,4 @@
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-24 | 初版（仕様書と実装を同じ PR にした） | pryusei/kokohima-app#180 |
+| 2026-11-24 | LINE と Apple のボタンの色を `Button` の variant（`line`・`apple`）にした。副ボタンのクラスに色を足す書き方では、Tailwind v4 のクラスの順で副ボタンの白が勝ち、白の地に白の文字になっていた。単体テストに副ボタンの色のクラスが混ざらないこと、E2E に描かれた色を足した | 実装PRのレビュー（pryusei/kokohima-app#212） |

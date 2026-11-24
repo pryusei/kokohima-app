@@ -51,6 +51,9 @@ test("ログイン画面の最初のボタンは「LINEでログイン」。押�
   const buttons = page.getByRole("link", { name: /でログイン$/ });
   await expect(buttons.first()).toHaveText("LINEでログイン");
   await expect(buttons.nth(1)).toHaveText("Googleでログイン");
+  // 描かれた色が LINE の決まり（地 #06C755、文字は白）になっている（クラスが重なって副ボタンの白に負けない）
+  await expect(buttons.first()).toHaveCSS("background-color", "rgb(6, 199, 85)");
+  await expect(buttons.first()).toHaveCSS("color", "rgb(255, 255, 255)");
   // LINE の認可画面へ、state・nonce・PKCE（S256）・scope=openid つきで移る
   const authorize = page.waitForRequest((req) => req.url().includes("/__e2e__/line/authorize"));
   await buttons.first().click();

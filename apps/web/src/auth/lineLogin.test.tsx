@@ -61,6 +61,20 @@ describe("LINE のログインのボタン", () => {
     expect(line.className).not.toMatch(/green|emerald/);
   });
 
+  // Tailwind v4 は同じ性質のクラスをクラス名の順に出すため、副ボタンの色（bg-surface・text-ink）が残ると緑の地が白に負ける
+  it("LINE と Apple のボタンに、副ボタンの色のクラスが混ざらない", async () => {
+    vi.stubEnv("VITE_APPLE_LOGIN_ENABLED", "1");
+    await loginPage();
+    for (const name of ["LINEでログイン", "Appleでログイン"]) {
+      const classes = screen.getByRole("link", { name }).className.split(/\s+/);
+      expect(classes).not.toContain("bg-surface");
+      expect(classes).not.toContain("text-ink");
+      expect(classes).not.toContain("border-line-strong");
+    }
+    const apple = screen.getByRole("link", { name: "Appleでログイン" }).className.split(/\s+/);
+    expect(apple).toEqual(expect.arrayContaining(["bg-ink", "text-surface"]));
+  });
+
   it("LINE の中のブラウザ：帯は「LINEでログイン」ならこのまま続けられると伝え、開き直しは副ボタンにする", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue(LINE_UA);
     await loginPage();

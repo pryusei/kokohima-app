@@ -11,10 +11,10 @@ export const loginStartUrl = (provider: LoginProvider, returnTo: string) =>
 export function LoginButtons({ returnTo }: { returnTo: string }) {
   return (
     <div className="flex flex-col gap-2">
-      {/* LINE の決まりの色（緑の地に白の太字）。トークンは index.css の brand-line */}
+      {/* LINE の決まりの色（緑の地に白の太字）。トークンは index.css の brand-line。色は variant だけで決め、クラスを重ねない */}
       <a
         data-provider="line-login"
-        className={`${buttonClass("secondary", { block: true })} border-transparent bg-brand-line text-on-brand-line`}
+        className={buttonClass("line", { block: true })}
         href={loginStartUrl("line", returnTo)}
       >
         LINEでログイン
@@ -26,7 +26,7 @@ export function LoginButtons({ returnTo }: { returnTo: string }) {
       {import.meta.env.VITE_APPLE_LOGIN_ENABLED === "1" && (
         <a
           data-provider="apple-login"
-          className={`${buttonClass("secondary", { block: true })} border-transparent bg-ink text-surface`}
+          className={buttonClass("apple", { block: true })}
           href={loginStartUrl("apple", returnTo)}
         >
           Appleでログイン
