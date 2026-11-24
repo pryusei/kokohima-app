@@ -442,6 +442,41 @@ describe("成立の瞬間に足す部分（docs/specs/T-56-motion.md「M-04」�
   });
 });
 
+describe("演出の中のカレンダーへの入れ方（docs/specs/T-57-meetup-google-calendar.md）", () => {
+  const none = json({ google: { status: "none", connectedAt: null } });
+  const connected = json({ google: { status: "connected", connectedAt: "2026-10-01T00:00:00.000Z" } });
+
+  it("誘いの「行く」：連携していなければ、演出の中に Google のボタンと「ほかのカレンダーに追加（.ics）」。予定を見るは1つだけ", async () => {
+    open(`/invites/${INVITE_ID}`, {
+      [`/api/v1/direct-invites/${INVITE_ID}`]: [json(invite()), json(invite({ status: "confirmed", meetupId: MEETUP_ID }))],
+      [`/api/v1/direct-invites/${INVITE_ID}/responses`]: json(invite({ status: "confirmed", meetupId: MEETUP_ID })),
+      [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup()),
+      "/api/v1/calendar/connections": none,
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "行く" }));
+    const region = await screen.findByRole("region", { name: "決まった！" });
+    expect(await within(region).findByRole("button", { name: "Googleカレンダーに自動で入れる" })).toBeVisible();
+    expect(within(region).getByRole("button", { name: "ほかのカレンダーに追加（.ics）" })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: "成立した予定を見る" })).toHaveLength(1);
+  });
+
+  it("募集で決めたとき：連携中なら演出の中に「自動で入ります」の1行", async () => {
+    open(`/broadcasts/${BROADCAST_ID}`, {
+      [`/api/v1/broadcasts/${BROADCAST_ID}`]: [json(broadcast()), json(broadcast({ status: "decided", meetupId: MEETUP_ID }))],
+      [`/api/v1/broadcasts/${BROADCAST_ID}/decide`]: json(broadcast({ status: "decided", meetupId: MEETUP_ID })),
+      [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup({ directInviteId: null, broadcastId: BROADCAST_ID })),
+      "/api/v1/calendar/connections": connected,
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "決める" }));
+    const region = await screen.findByRole("region", { name: "決まった！" });
+    expect(await within(region).findByText("連携中なので、Googleカレンダーの『ここ暇』に自動で入ります")).toBeVisible();
+    expect(within(region).getByRole("button", { name: "ほかのカレンダーに追加（.ics）" })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: "成立した予定を見る" })).toHaveLength(1);
+  });
+});
+
 describe("丸の並べ方と名前", () => {
   const people = (n: number) => Array.from({ length: n }, (_, i) => person(uuid(i + 1), `友${i + 1}`));
 

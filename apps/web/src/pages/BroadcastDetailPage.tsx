@@ -7,7 +7,7 @@ import { keys } from "../api/keys";
 import { broadcastStatusText, broadcastStatusTone, formatRange } from "../invitations/format";
 import { MeetMoment, useMeetMoment } from "../invitations/MeetMoment";
 import { broadcastQuery } from "../invitations/queries";
-import { IcsButton } from "../calendar/IcsButton";
+import { MeetupCalendarActions } from "../calendar/MeetupCalendarActions";
 import { honorificOf, nameOfProfile } from "../account/me";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
@@ -165,7 +165,7 @@ export function BroadcastDetailPage({ broadcastId }: { broadcastId: string }) {
           </p>
           {moment ? (
             <MeetMoment meetup={moment}>
-              <IcsButton meetupId={moment.id} />
+              <MeetupCalendarActions meetup={moment} />
             </MeetMoment>
           ) : (
             <div className="flex flex-col gap-1">

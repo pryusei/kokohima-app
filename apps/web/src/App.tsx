@@ -71,7 +71,7 @@ function sheetOf(pathname: string, search: string): { tab: TabPath; sheet: React
   const invite = id(/^\/invites\/([^/]+)$/);
   if (invite) return { tab: "/invites", sheet: <InviteDetailPage key={invite} inviteId={invite} /> };
   const meetup = id(/^\/meetups\/([^/]+)$/);
-  if (meetup) return { tab: "/invites", sheet: <MeetupDetailPage key={meetup} meetupId={meetup} /> };
+  if (meetup) return { tab: "/invites", sheet: <MeetupDetailPage key={meetup} meetupId={meetup} search={search} /> };
   const friend = id(/^\/friends\/([^/]+)$/);
   if (friend) return { tab: "/friends", sheet: <FriendDetailPage key={friend} friendId={friend} /> };
   return null;
