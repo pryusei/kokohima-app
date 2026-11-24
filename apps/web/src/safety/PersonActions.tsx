@@ -74,7 +74,7 @@ export function PersonActions(props: Props) {
     region.current?.focus();
   }, [view, done]);
   return (
-    <div ref={region} tabIndex={-1} role="group" aria-label={`${props.person.name}さんへの操作`} className="outline-none">
+    <div ref={region} tabIndex={-1} role="group" aria-label={`${props.person.name}さんへの操作`}>
       <PersonActionsBody {...props} view={view} setView={setView} done={done} setDone={setDone} />
     </div>
   );
