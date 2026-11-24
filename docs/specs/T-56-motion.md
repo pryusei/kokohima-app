@@ -38,7 +38,8 @@
    - `@starting-style` で書く入る動き（M-01 のシートなど）は、もともと普段の指定が最終形なので、この形になっている。
 5. 色・角丸・影はトークン（`bg-surface`、`shadow-sheet` など）だけ。Tailwind の既定の色は書かない（`apps/web/src/ui/colors.test.ts` の検査のまま）。長さと曲線は下の動きのトークンだけで書き、`duration-300` などの直書きを散らさない。
    - 今あるものも移す：`Button` と今ひまのボタン（`availability/FreeNowCard.tsx`）の `transition-transform`（Tailwind の既定の 150ms と曲線）は `duration-(--duration-press) ease-out` にする。`Switch` は M-18。T-55 の `kh-pop`・`kh-rise`（`animate-[kh-pop_.35s_ease-out]` など）は M-09 のとおりトークンにする。
-   - `Switch`（`ui/Switch.tsx`）の `transition-colors`・`after:transition-transform` は、M-18（実装PR③）でトークンにするまで、Tailwind の既定の長さのまま残す。直書きの検査は、それまで `Switch.tsx` だけを除く（実装PR③で除くのをやめる）。
+   - `Switch`（`ui/Switch.tsx`）の動きは、M-18（実装PR③）でトークンにした（直書きの検査で `Switch.tsx` を除くのもやめた）。
+   - **例外**：M-06 の骨組み（`index.css` の `.kh-skeleton`）の 200ms の遅れと `kh-breathe` の 1.4s は、M-06 が決めた長さなので、直書きの検査で `.kh-skeleton` の指定だけを除く。
    - **例外**：T-43 の成立の演出（`index.css` の `.kh-meet-dot`・`.kh-meet-pair`・`.kh-meet-reveal` と `kh-meet-*` のキーフレーム。1200ms・1300ms・`cubic-bezier(.45,0,.25,1)` など）は、T-43 の決めた長さと曲線のまま残し、トークンに置き換えない（M-04「変えないこと」）。直書きの検査（下のテスト計画）では、この3つのクラスとキーフレームだけを除く。
 6. 依存を増やさない（「判断してほしいこと」1）。CSS（`@starting-style`、`transition-behavior: allow-discrete`、`linear()` のばねの曲線）と View Transitions API（Chrome 111 以降・Safari 18 以降）で作る。使えない端末では即時に切り替わるだけでよい。指につく引っぱり（M-02）だけは小さな自前のフックで書く。
    - `height: auto` への transition（`interpolate-size`）は Chromium にしかなく、Safari・Firefox では動かず元の高さのまま止まってから一気に変わるので、**使わない**。高さを動かすところは、`Collapse`（`grid-template-rows`）か、JavaScript で測った px から px への transition（M-03）で書く。
@@ -236,6 +237,7 @@
     - 鐘は、同じ大きさの押せない印（未読の数なし）にする。**お知らせの未読の数は読みに行かない**（ログインの前に API を叩かない）。PC の左のナビの「お知らせ」「設定」も、未読の数なしで描く。
     - 下のタブ（左のナビ）は描くが、確認が終わるまで `inert` にする（押しても動かない。見た目は今のタブと同じ）。今いるタブの印（M-07）は付ける。
     - 部品：`TabScreen` に真偽の引数を足さず、殻だけの部品（`TabShell`。ヘッダーと下のタブの置き方を `TabScreen` と共有する）を分けて作る（`vercel-composition-patterns`）。
+  - 確認のあと、表示名の確認（T-31 の `NameGate` が `GET /me` を読み込むあいだ）も、同じ URL では同じ殻を出す（殻が消えて `PageLoading` に戻り、また殻が出る、というちらつきを作らない）。
   - それ以外の URL（設定・お知らせ・ログイン・招待の受け口など）の確認中は、今のまま `PageLoading`。
   - 確認中と確認後で、ヘッダーと下のタブの位置が1pxも動かない（同じ部品の同じ置き方で描く）。jsdom には配置がないので、これは E2E の `boundingBox()` で確かめる（テスト計画）。
   - ログインしていない人にも、確認が終わるまで殻を見せてよい（**見せてよい**。確認は通常すぐ終わる。「判断してほしいこと」7）。確認の結果が `anonymous` ならログイン画面へ移る（今のまま）。表示名がない人は、確認のあと名前の画面（T-31）に替わる（今のまま）。
@@ -313,6 +315,7 @@
   - 動きの種類を決める純粋な関数（`apps/web/src/router.ts` の `transitionKind(from, to, direction)`）：
     - どちらかがシートの URL（`sheetOf` の表）なら `"none"`（シートは M-01 の動き。popstate で閉じたときも即時）。
     - `popstate` で、`PopStateEvent.hasUAVisualTransition` が true なら `"none"`（iOS Safari の端からのスワイプで戻る・Chrome Android の戻るの操作は、ブラウザが自分で戻る動きを見せてから `popstate` を出すので、続けて動かすと二重になる）。`navigate` が自分で出す合成の `popstate` はこれが false なので影響しない。関数には `hasUAVisualTransition` を引数で渡す（`transitionKind(from, to, direction, uaTransition)`）。
+    - 同じ画面の中（`pathname` が同じ。誘いタブの `?tab=` だけが変わるとき）は `"none"`（中身は M-08 の `FadeIn`、白い板は M-08 の滑る動き）。
     - 両方がタブなら `"fade"`（M-07）。
     - それ以外（タブ ↔ 設定・お知らせ、設定 ↔ 設定の下）は、向きで `"push"`／`"pop"`。
   - 動かすのは中身の領域だけ：下のタブ（`TabBar`）と PC の左のナビ（T-20。`SubScreen` でも出る）に `view-transition-name`（`kh-tabbar`・`kh-sidenav`）を付け、その group の動きを `animation: none` にして動かさない。画面全体（`::view-transition-group(root)`）にも `animation: none` を当て、中身の領域（`main`）に `view-transition-name: kh-content` を付けて、push・pop・fade の動きは `::view-transition-old(kh-content)`・`::view-transition-new(kh-content)` にだけ当てる。M-07 のタブどうしのクロスフェードも同じ。
@@ -329,7 +332,7 @@
 - タブの画面のヘッダー（`TabScreen` の `header`）はスクロールで流れる今のまま。
 
 #### M-18 スイッチ
-- `ui/Switch.tsx`：つまみの移動（`after:transition-transform`）を `--duration-fast`・`--ease-spring`、地の色（`transition-colors`）を `--duration-fast` にする。
+- `ui/Switch.tsx`：つまみの移動を `--duration-fast`・`--ease-spring`、地の色を `--duration-fast` にする。フォーカスの輪（`outline`）を transition に含めないよう、`transition-colors`・`transition-all` ではなく、動かす性質を並べる（地は `transition-[background-color,border-color]`、つまみは `after:transition-[translate,width,background-color]`。M-11 と同じ）。
 - 押している間（`peer-active`）、つまみを横に4px伸ばす（オンのときは左へ伸ばし、右の端の位置を変えない）。押せないときは伸ばさない。
 
 #### M-19 空の状態
@@ -340,7 +343,7 @@
 
 #### V-1 誘いの詳細のヘッダーで、名前が数文字で切れる
 - **今**：`InviteDetailPage.tsx` のシートの見出しは、アバター・名前と種類（`truncate`）・バッジ（`shrink-0`）・「…」（受信だけ）が1行に並び、その右に `BottomSheet` の「閉じる」が付く。受信の誘いではバッジ「返事をしてください」が長く、名前とひとことが数文字で切れる。`BroadcastDetailPage.tsx`（受け取った募集）も、見出しの名前・バッジ・「…」が同じ並び。
-- **振る舞い**：バッジを名前の下の行（種類の文字「あそぼ」「ここどう？」などの横。募集では「暇な人いる？」の横）に回し、1行めは「アバター・名前・（…）」だけにする。名前の `truncate` は今のまま（それでも長い名前は切れる）。
+- **振る舞い**：バッジを名前の下の行（種類の文字「あそぼ」「ここどう？」などの横。募集では「暇な人いる？」の横）に回し、1行めは「アバター・名前・（…）」だけにする。名前の `truncate` は今のまま（それでも長い名前は切れる）。2行めに種類の文字とバッジが入らない幅では、バッジを次の行へ折り返す（`flex-wrap`。種類の文字は T-46 のとおり1行で、それ自体が入らないときだけ切り詰める）。
 - 動きではないが、同じ流れ（実装PR③）で直す（「判断してほしいこと」9）。
 
 #### V-2 オフラインの帯が出るとき、中身全体がガタッと下がる
@@ -406,22 +409,22 @@
 - 他人のIDでは取得・更新できない：API を変えないので対象外
 
 #### 実装PR③：一覧とナビ
-- [ ] M-05（`apps/web/src/App.test.tsx` か `login.test.tsx`）：確認中に `/invites` を開くと、ヘッダー「誘い」と下のタブ（`inert`）と骨組みが出て、未読の数の API を呼ばない。確認が終わったあともヘッダーと下のタブが同じ要素の位置に出る（作り直さない、または同じクラスで同じ並び）。`/settings` の確認中は今の `PageLoading`
-- [ ] M-06：`Loading` の3つの形。`role="status"`・`aria-label="読み込み中"` が最初の描画からある。骨組みの数は件数によらず同じ。骨組みの普段のクラスに `opacity-0` がなく（動きを止める設定で `animation: none` になっても見える）、`index.css` の `kh-fade-in` は `from` だけ・`backwards` で付いている。`FadeIn`・`EmptyState`（M-19）も同じ
-- [ ] M-07（`navigation.test.tsx`）：今いるタブのアイコンが塗りの版で、線は `bg-ink`、`lamp` 系のクラスがない（PC の左のナビも）。今いるタブを押すと `scrollTo` が `top: 0` で呼ばれ（動きを止める設定では `behavior: "auto"`）、URL は変わらない。別のタブから戻ると前の位置で `scrollTo` が呼ばれ、初めてのタブは0。`aria-current="page"` は今のまま
-- [ ] `tabScroll` の関数：覚える・初めては0・タブごとに別。`scrollTargetOnPop`：エントリの位置があればそれ、なければタブの位置、どちらもなければ0
-- [ ] M-07（`navigation.test.tsx`）：友達タブでスクロールして設定を開き、戻る（`history.back()`→`popstate`）と、友達タブの前の位置で `scrollTo` が呼ばれる。設定 → 設定の下の画面 → 戻るでも、設定の前の位置に戻る。`history.scrollRestoration` が `"manual"`
-- [ ] `transitionKind`：シートが関わると none、タブどうしは fade、設定へは push、戻るは pop。`depth` の比べ方（popstate で戻ると pop、進むと push、外から直接開いたときは0）。`hasUAVisualTransition` が true の popstate は none
-- [ ] View Transitions：`startViewTransition` がない・動きを止める設定では、そのまま移る（既存のテストのまま通る）。ある場合は呼ばれ、向きの印（`data-nav`）が付く。下のタブ・左のナビに `view-transition-name` が付き、中身の領域に `kh-content` が付く
-- [ ] M-08（`invites.test.tsx`）：白い板が1枚で、`?tab=` に合わせた番号の位置になる。URL と `aria-current` は今のまま
-- [ ] M-10：自分の操作（くり返しの削除・行きたいの削除・招待リンクの無効化）で消える行が `Collapse` の閉じる側になり、止めない設定では保険のタイマーのあとに消える。失敗して戻ると、元の場所に戻る。増えた行は1回だけ光る。友達の側の一覧（みんなタブ）では、行が消えても `Collapse` を使わない
-- [ ] M-11：カード・行・顔に押した感触のクラスがあり、`outline` を書き換えない（`focus.test.ts` に足す）。`index.css` に `-webkit-tap-highlight-color: transparent`
-- [ ] M-15：未読の数が増えたときだけぽんの印が付き、最初の描画と減ったときは付かない
-- [ ] M-17：日付の見出しに `sticky` が付く（`everyone.test.tsx`）
-- [ ] M-18：スイッチのつまみの動きがトークンで書かれている
-- [ ] M-19：`EmptyState` に入る動きのクラスが付く
-- [ ] V-1：受信の誘いの詳細で、バッジが名前と同じ行ではなく、種類の文字の行にある（募集の詳細も）
-- [ ] V-2：オフラインになると帯が `Collapse` の開く側で出る
+- [x] M-05（`apps/web/src/App.test.tsx` か `login.test.tsx`）：確認中に `/invites` を開くと、ヘッダー「誘い」と下のタブ（`inert`）と骨組みが出て、未読の数の API を呼ばない。確認が終わったあともヘッダーと下のタブが同じ要素の位置に出る（作り直さない、または同じクラスで同じ並び）。`/settings` の確認中は今の `PageLoading`
+- [x] M-06：`Loading` の3つの形。`role="status"`・`aria-label="読み込み中"` が最初の描画からある。骨組みの数は件数によらず同じ。骨組みの普段のクラスに `opacity-0` がなく（動きを止める設定で `animation: none` になっても見える）、`index.css` の `kh-fade-in` は `from` だけ・`backwards` で付いている。`FadeIn`・`EmptyState`（M-19）も同じ
+- [x] M-07（`navigation.test.tsx`）：今いるタブのアイコンが塗りの版で、線は `bg-ink`、`lamp` 系のクラスがない（PC の左のナビも）。今いるタブを押すと `scrollTo` が `top: 0` で呼ばれ（動きを止める設定では `behavior: "auto"`）、URL は変わらない。別のタブから戻ると前の位置で `scrollTo` が呼ばれ、初めてのタブは0。`aria-current="page"` は今のまま
+- [x] `tabScroll` の関数：覚える・初めては0・タブごとに別。`scrollTargetOnPop`：エントリの位置があればそれ、なければタブの位置、どちらもなければ0
+- [x] M-07（`navigation.test.tsx`）：友達タブでスクロールして設定を開き、戻る（`history.back()`→`popstate`）と、友達タブの前の位置で `scrollTo` が呼ばれる。設定 → 設定の下の画面 → 戻るでも、設定の前の位置に戻る。`history.scrollRestoration` が `"manual"`
+- [x] `transitionKind`：シートが関わると none、タブどうしは fade、設定へは push、戻るは pop。`depth` の比べ方（popstate で戻ると pop、進むと push、外から直接開いたときは0）。`hasUAVisualTransition` が true の popstate は none
+- [x] View Transitions：`startViewTransition` がない・動きを止める設定では、そのまま移る（既存のテストのまま通る）。ある場合は呼ばれ、向きの印（`data-nav`）が付く。下のタブ・左のナビに `view-transition-name` が付き、中身の領域に `kh-content` が付く
+- [x] M-08（`invites.test.tsx`）：白い板が1枚で、`?tab=` に合わせた番号の位置になる。URL と `aria-current` は今のまま
+- [x] M-10：自分の操作（くり返しの削除・行きたいの削除・招待リンクの無効化）で消える行が `Collapse` の閉じる側になり、止めない設定では保険のタイマーのあとに消える。失敗して戻ると、元の場所に戻る。増えた行は1回だけ光る。友達の側の一覧（みんなタブ）では、行が消えても `Collapse` を使わない
+- [x] M-11：カード・行・顔に押した感触のクラスがあり、`outline` を書き換えない（`focus.test.ts` に足す）。`index.css` に `-webkit-tap-highlight-color: transparent`
+- [x] M-15：未読の数が増えたときだけぽんの印が付き、最初の描画と減ったときは付かない
+- [x] M-17：日付の見出しに `sticky` が付く（`everyone.test.tsx`）
+- [x] M-18：スイッチのつまみの動きがトークンで書かれている
+- [x] M-19：`EmptyState` に入る動きのクラスが付く
+- [x] V-1：受信の誘いの詳細で、バッジが名前と同じ行ではなく、種類の文字の行にある（募集の詳細も）
+- [x] V-2：オフラインになると帯が `Collapse` の開く側で出る
 - 他人のIDでは取得・更新できない：API を変えないので対象外
 
 ### E2Eテスト（対象にする利用者の流れ）
@@ -430,7 +433,7 @@
   - `e2e/navigation.spec.ts` に、シートを「閉じる」で閉じたあと開いたボタンにフォーカスが戻ることを、動きのある設定で確かめる（今のテストが動きを止めていないことを確かめる）
   - 実装PR①で直した大きさ・位置の確かめは `e2e/desktop.spec.ts` の中央のダイアログの1か所だけ（入る動きが終わる＝`getAnimations()` が0になるのを待ってから測る）。`e2e/navigation.spec.ts` の入力欄の右端の確かめは、スマホの入る動きが `translateY` だけで横の位置と幅が変わらないので、そのまま。
 - [ ] 実装PR②：`e2e/invites.spec.ts` の誘い〜成立の流れで、「誘う」のあと詳細のシートが開き（シートが1つだけ）、「行く」のあと「成立した予定を見る」のボタン（`getByRole("link", { name: "成立した予定を見る" })`）から予定を開ける。既存の T-43 の演出の確かめはそのまま
-- [ ] 実装PR③：`e2e/navigation.spec.ts` に、みんなタブを下へスクロールして誘いタブへ移り、みんなタブに戻ると位置が戻ること、今いるタブを押すと一番上に戻ることを足す。ログインの確認中（`page.route` で確認の応答を遅らせる）に、ヘッダーと下のタブが出ていることと、確認中と確認後でヘッダーと下のタブの `boundingBox()`（x・y・幅・高さ）が同じこと（M-05 の「1pxも動かない」。スマホの幅と PC の幅の左のナビの両方）を足す
+- [x] 実装PR③：`e2e/navigation.spec.ts` に、みんなタブを下へスクロールして誘いタブへ移り、みんなタブに戻ると位置が戻ること、今いるタブを押すと一番上に戻ることを足す。ログインの確認中（`page.route` で確認の応答を遅らせる）に、ヘッダーと下のタブが出ていることと、確認中と確認後でヘッダーと下のタブの `boundingBox()`（x・y・幅・高さ）が同じこと（M-05 の「1pxも動かない」。スマホの幅と PC の幅の左のナビの両方）を足す
 - WebKit（`@iphone`）では新しく回さない（動きは CSS と View Transitions で、対応しない端末では即時になるだけ。ブラウザごとの差は単体テストと Chromium で足りる）
 - 動きの見た目そのものは自動のテストにしにくいので、各実装PRの説明に「前／後」の画面の連番か動画を付ける
 
@@ -470,3 +473,4 @@
 | 2026-11-24 | 仕様書PRのレビューで直した：`matchMedia` を差し替えている既存のテストと SettingsPage の判定を `prefersReducedMotion` にそろえる（0-3）。`useExitAnimation` に `cancel()` と、`done` のあとまた `start` できることを足した。シートの `ref` はシートに付け、暗い背景を別の層にした（M-01）。見出しの行からのタップでは閉じない・リンクも引っぱりにしない（M-02）。差し替えの高さは px から px で、読み込み中は高さを保つ・`StrictMode` で2回読んでも同じ（M-03）。入る動きは普段の指定を最終形にし、骨組みは動きを止める設定ですぐ見える（0-1 の4・M-06）。バッジのぽんは自分の操作のときだけ（M-04）。結果の帯の context は `show` だけ（M-09）。スクロールの位置を履歴のエントリごとにも戻す（M-07・M-13）。`hasUAVisualTransition` では動かさない・ナビは動かさない（M-13）。トークンへ移す今の動きと T-43 の例外、直書きの検査を広げた（0-1 の5）。E2E の大きさの確かめと M-05 の位置の確かめを足した。判断してほしいこと 11・12 を足した。T-11・T-54 に T-56 で変わるところの注記を足した | 仕様書PRのレビュー（pryusei/kokohima-app#216） |
 | 2026-11-24 | 実装PR①のレビューで直した：`onClose` のあと外れるまでの閉じる操作（`Esc` など）も何もしない。引いている・戻している途中に閉じても `data-drag` を外してから出る（M-01）。2本めの指と左以外のボタンでは引っぱりにしない（M-02） | 実装PR①のレビュー（pryusei/kokohima-app#218） |
 | 2026-11-24 | main の取り込み（T-55）で入った `animate-[kh-pop_.35s_ease-out]`・`animate-[kh-rise_.2s_ease-out]` を、`@theme` の `--animate-kh-pop`（sheet・ease-out）・`--animate-kh-rise`（base・ease-out）に移した（「0-1. の5」の直書きの検査を通すため。M-09 の結果の帯の作り直しは実装PR②のまま） | 実装PR①（#218）に main を取り込んだとき |
+| 2026-11-24 | 実装PR③：表示名の確認中（`NameGate`）も同じ殻を出す（M-05）。同じ画面の中（`?tab=` だけ）は `transitionKind` を none にした（M-13）。スイッチは `transition-colors` をやめ、動かす性質を並べた（M-18）。骨組みの 200ms・1.4s を直書きの検査から除いた（0-1 の5）。詳細の見出しの2行めは入らなければ折り返す（V-1）。T-20 の今いる場所の記述を `bg-head` に直した | 実装PR③で決めたこと |
