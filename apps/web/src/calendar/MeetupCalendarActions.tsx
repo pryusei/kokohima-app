@@ -50,7 +50,9 @@ function GoogleRow({ meetupId, status }: { meetupId: string; status: CalendarCon
   if (status === "needs_reauth") {
     return (
       <p className="text-s text-ink-muted">
-        Googleカレンダーに入れるには、もう一度連携してください。<Link to="/settings/calendar">カレンダー連携へ</Link>
+        Googleカレンダーに入れるには、もう一度連携してください。<Link to="/settings/calendar" className="text-action underline">
+          カレンダー連携へ
+        </Link>
       </p>
     );
   }
