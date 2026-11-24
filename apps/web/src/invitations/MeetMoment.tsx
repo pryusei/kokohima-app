@@ -129,8 +129,6 @@ function MeetDot({ dot, index, count }: { dot: MeetMomentDot; index: number; cou
         <img
           src={dot.src ?? undefined}
           alt=""
-          width={60}
-          height={60}
           loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
