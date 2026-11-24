@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render } from "@testing-library/react";
-import { vi } from "vitest";
+import { render, waitFor } from "@testing-library/react";
+import { expect, vi } from "vitest";
 import { App } from "../App";
 import { AuthProvider } from "../auth/AuthProvider";
 
@@ -46,4 +46,12 @@ export function renderApp(client = new QueryClient({ defaultOptions: { queries: 
       </AuthProvider>
     </QueryClientProvider>,
   );
+}
+
+/**
+ * ログインの確認中（と表示名の確認中）の殻（docs/specs/T-56-motion.md「M-05」）が、いつもの画面に替わるのを待つ。
+ * 殻にも同じ名前の見出しと下のタブがあるので、見出しを探す前にこれを待つ
+ */
+export async function waitForShellGone() {
+  await waitFor(() => expect(document.querySelector('nav[aria-label="タブ"][inert]')).toBeNull());
 }

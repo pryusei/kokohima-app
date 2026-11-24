@@ -7,11 +7,11 @@ import { useLayoutEffect, useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
 import { goBack, navigate } from "../router";
-import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
+import { json, mockFetch, renderApp, tokenBody, waitForShellGone } from "../test/helpers";
 import { AvailabilityChip } from "./AvailabilityChip";
 import { BottomSheet, useSheetLeaving } from "./BottomSheet";
 import { HeadCount } from "./HeadCount";
-import { TabScreen } from "./Navigation";
+import { TabScreen, UnreadBadge } from "./Navigation";
 import { Switch } from "./Switch";
 import { DESKTOP_QUERY, useDesktop } from "./useDesktop";
 
@@ -58,6 +58,7 @@ describe("下のタブ", () => {
   it("タブは4つ（お知らせはタブにしない）。今の URL のタブにだけ aria-current", async () => {
     mockFetch(tabs);
     renderApp();
+    await waitForShellGone();
     const nav = await screen.findByRole("navigation", { name: "タブ" });
     const links = within(nav).getAllByRole("link");
     expect(links.map((l) => l.textContent)).toEqual(["みんな", "ここ暇", "誘い", "友達"]);
@@ -109,7 +110,7 @@ describe("router", () => {
   it("navigate は history.state に印を付ける。goBack は印があるときだけ戻る", () => {
     const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
     navigate("/invites");
-    expect(window.history.state).toEqual({ inApp: true, behind: "/" });
+    expect(window.history.state).toEqual({ inApp: true, behind: "/", depth: 1, key: expect.any(String) });
     goBack("/");
     expect(back).toHaveBeenCalledTimes(1);
     window.history.replaceState(null, "", "/meetups/x");
@@ -465,6 +466,7 @@ describe("PC の配置（docs/specs/T-20-desktop-layout.md）", () => {
     stubMatchMedia(true);
     mockFetch(tabs);
     renderApp();
+    await waitForShellGone();
     const nav = await screen.findByRole("navigation", { name: "タブ" });
     const links = within(nav).getAllByRole("link");
     expect(links.map((l) => l.getAttribute("aria-label"))).toEqual(["みんな", "ここ暇", "誘い", "友達", "お知らせ", "設定"]);
@@ -497,6 +499,7 @@ describe("PC の配置（docs/specs/T-20-desktop-layout.md）", () => {
     stubMatchMedia(true);
     mockFetch({ ...tabs, "/api/v1/notifications/unread-count": json({ count }) });
     renderApp();
+    await waitForShellGone();
     const nav = await screen.findByRole("navigation", { name: "タブ" });
     const link = await within(nav).findByRole("link", { name: label });
     if (badge) expect(within(link).getByText(badge)).toBeInTheDocument();
@@ -517,6 +520,7 @@ describe("PC の配置（docs/specs/T-20-desktop-layout.md）", () => {
     stubMatchMedia(false);
     mockFetch(tabs);
     renderApp();
+    await waitForShellGone();
     const nav = await screen.findByRole("navigation", { name: "タブ" });
     expect(within(nav).getAllByRole("link")).toHaveLength(4);
     expect(within(screen.getByRole("banner")).getByRole("link", { name: "お知らせ" })).toBeVisible();
@@ -928,5 +932,295 @@ describe("シートの動き（docs/specs/T-56-motion.md「M-01」「M-02」「M
       renderSheet(() => {});
       expect(screen.getByTestId("sheet-header")).toHaveClass("touch-none", "sticky");
     });
+  });
+});
+
+describe("下のタブ・画面の切り替え・未読のバッジ・スイッチ（docs/specs/T-56-motion.md「M-07」「M-13」「M-15」「M-18」）", () => {
+  // スクロールの位置（jsdom には配置がないので、scrollY と scrollTo を差し替える）
+  let scrollY = 0;
+  const scrollTo = vi.fn((arg: ScrollToOptions) => {
+    scrollY = arg.top ?? 0;
+  });
+  beforeEach(() => {
+    scrollY = 0;
+    scrollTo.mockClear();
+    vi.spyOn(window, "scrollY", "get").mockImplementation(() => scrollY);
+    vi.stubGlobal("scrollTo", scrollTo);
+    onlineManager.setOnline(true);
+  });
+
+  const page = {
+    ...tabs,
+    "/api/v1/me": json({ id: FRIEND_ID, displayName: "あき", avatarUrl: null }),
+    "/api/v1/broadcasts": empty,
+    "/api/v1/meetups": empty,
+    "/api/v1/wishes": empty,
+    "/api/v1/wishes/suggestions/quota": json({ limit: 0, used: 0, remaining: 0 }),
+  };
+
+  /** ブラウザの戻る（jsdom の history.back は popstate を後から出す） */
+  async function browserBack() {
+    const popped = new Promise((resolve) => window.addEventListener("popstate", resolve, { once: true }));
+    window.history.back();
+    await act(async () => {
+      await popped;
+    });
+  }
+
+  it("今いるタブのアイコンは塗りの版で、下の線は bg-ink。lamp 系のクラスはタブに使わない", async () => {
+    mockFetch(page);
+    renderApp();
+    await waitForShellGone();
+    const nav = screen.getByRole("navigation", { name: "タブ" });
+    const current = within(nav).getByRole("link", { name: "みんな" });
+    expect(current).toHaveAttribute("aria-current", "page");
+    expect(current.querySelector("svg[data-filled]")).not.toBeNull();
+    expect(within(current).getByTestId("nav-current-line")).toHaveClass("bg-ink");
+    const other = within(nav).getByRole("link", { name: "友達" });
+    expect(other.querySelector("svg[data-filled]")).toBeNull();
+    expect(nav.innerHTML).not.toMatch(/lamp/);
+  });
+
+  it("PC の左のナビの今いる場所は bg-head と塗りのアイコン（bg-lamp-soft を使わない）", async () => {
+    stubMatchMedia(true);
+    mockFetch(page);
+    renderApp();
+    await waitForShellGone();
+    const nav = screen.getByRole("navigation", { name: "タブ" });
+    const current = within(nav).getByRole("link", { name: "みんな" });
+    expect(current).toHaveClass("lg:bg-head", "text-ink");
+    expect(current.querySelector("svg[data-filled]")).not.toBeNull();
+    expect(nav.innerHTML).not.toMatch(/lamp-soft|lamp-line/);
+  });
+
+  it("今いるタブを押すと一番上までスクロールし、URL は変えない（動きを止める設定では behavior: auto）", async () => {
+    window.history.replaceState(null, "", "/invites?tab=sent");
+    mockFetch(page);
+    renderApp();
+    await waitForShellGone();
+    scrollY = 640;
+    await userEvent.click(within(screen.getByRole("navigation", { name: "タブ" })).getByRole("link", { name: "誘い" }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "auto" });
+    expect(window.location.pathname + window.location.search).toBe("/invites?tab=sent");
+  });
+
+  it("動きのある設定では、今いるタブを押すと smooth で一番上へ", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+    );
+    mockFetch(page);
+    renderApp();
+    await waitForShellGone();
+    scrollY = 200;
+    await userEvent.click(within(screen.getByRole("navigation", { name: "タブ" })).getByRole("link", { name: "みんな" }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "smooth" });
+  });
+
+  it("タブを移ると、移る先で最後に見ていた位置へ（初めてのタブは一番上）。history.scrollRestoration は manual", async () => {
+    // jsdom の history には scrollRestoration がないので、置き方をソースで確かめる
+    expect(readFileSync(join(import.meta.dirname, "../router.ts"), "utf8")).toMatch(/window\.history\.scrollRestoration = "manual"/);
+    mockFetch(page);
+    renderApp();
+    await waitForShellGone();
+    const nav = () => screen.getByRole("navigation", { name: "タブ" });
+    scrollY = 400;
+    await userEvent.click(within(nav()).getByRole("link", { name: "友達" }));
+    expect(await screen.findByRole("heading", { name: "友達", level: 1 })).toBeVisible();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "auto" });
+    scrollY = 120;
+    await userEvent.click(within(nav()).getByRole("link", { name: "みんな" }));
+    expect(await screen.findByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 400, behavior: "auto" });
+    await userEvent.click(within(nav()).getByRole("link", { name: "友達" }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 120, behavior: "auto" });
+  });
+
+  it("友達タブでスクロールして設定を開き、戻る（popstate）と友達タブの前の位置に戻る。設定 → 下の画面 → 戻るでも設定の位置に戻る", async () => {
+    window.history.replaceState(null, "", "/friends");
+    mockFetch({ ...page, "/api/v1/calendar/connections": json({ google: { status: "none", connectedAt: null } }) });
+    renderApp();
+    await waitForShellGone();
+    scrollY = 500;
+    await userEvent.click(await screen.findByRole("link", { name: /^設定/ }));
+    expect(await screen.findByRole("heading", { name: "設定", level: 1 })).toBeVisible();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "auto" });
+    scrollY = 300;
+    await userEvent.click(screen.getByRole("link", { name: /カレンダー連携/ }));
+    expect(await screen.findByRole("heading", { name: "カレンダー連携", level: 1 })).toBeVisible();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "auto" });
+    await browserBack();
+    expect(await screen.findByRole("heading", { name: "設定", level: 1 })).toBeVisible();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 300, behavior: "auto" });
+    await browserBack();
+    expect(await screen.findByRole("heading", { name: "友達", level: 1 })).toBeVisible();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 500, behavior: "auto" });
+  });
+
+  it("タブからシートを開いて閉じても、後ろのタブの位置は動かさない", async () => {
+    window.history.replaceState(null, "", "/friends");
+    mockFetch({ ...page, [`/api/v1/friends/${FRIEND_ID}`]: json({}, 404) });
+    renderApp();
+    await waitForShellGone();
+    scrollY = 260;
+    act(() => navigate(`/friends/${FRIEND_ID}`));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await browserBack();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("navigate は深さ（depth）を積み、置き換えでは深さを変えずにエントリの印（key）を替える。外から直接開いたときは0", () => {
+    window.history.replaceState(null, "", "/");
+    navigate("/friends");
+    const first = window.history.state as { depth: number; key: string };
+    expect(first.depth).toBe(1);
+    navigate("/settings");
+    expect((window.history.state as { depth: number }).depth).toBe(2);
+    const before = (window.history.state as { key: string }).key;
+    navigate("/settings/calendar", { replace: true });
+    expect((window.history.state as { depth: number; key: string }).depth).toBe(2);
+    expect((window.history.state as { key: string }).key).not.toBe(before);
+    expect(first.key).not.toBe(before);
+  });
+
+  describe("View Transitions（M-13）", () => {
+    function stubViewTransition() {
+      const kinds: (string | undefined)[] = [];
+      const start = vi.fn((update: () => void) => {
+        kinds.push(document.documentElement.dataset.nav);
+        update();
+        return { finished: Promise.resolve() };
+      });
+      Object.defineProperty(document, "startViewTransition", { configurable: true, value: start });
+      return { start, kinds };
+    }
+    afterEach(() => {
+      delete (document as { startViewTransition?: unknown }).startViewTransition;
+      delete document.documentElement.dataset.nav;
+    });
+    const motion = () =>
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn((q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+      );
+
+    it("startViewTransition があれば呼び、向きの印（data-nav）を付ける：タブどうしは fade、設定へは push、戻るは pop", async () => {
+      motion();
+      const { start, kinds } = stubViewTransition();
+      window.history.replaceState(null, "", "/friends");
+      mockFetch({ ...page, "/api/v1/calendar/connections": json({ google: { status: "none", connectedAt: null } }) });
+      renderApp();
+      await waitForShellGone();
+      await userEvent.click(within(screen.getByRole("navigation", { name: "タブ" })).getByRole("link", { name: "みんな" }));
+      expect(await screen.findByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
+      expect(kinds).toEqual(["fade"]);
+      await userEvent.click(within(screen.getByRole("navigation", { name: "タブ" })).getByRole("link", { name: "友達" }));
+      await userEvent.click(await screen.findByRole("link", { name: /^設定/ }));
+      expect(await screen.findByRole("heading", { name: "設定", level: 1 })).toBeVisible();
+      expect(kinds).toEqual(["fade", "fade", "push"]);
+      await browserBack();
+      expect(await screen.findByRole("heading", { name: "友達", level: 1 })).toBeVisible();
+      expect(kinds).toEqual(["fade", "fade", "push", "pop"]);
+      expect(start).toHaveBeenCalledTimes(4);
+      await waitFor(() => expect(document.documentElement.dataset.nav).toBeUndefined());
+    });
+
+    it("シートが関わる移動・動きを止める設定では、startViewTransition を呼ばずにそのまま移る", async () => {
+      const { start } = stubViewTransition();
+      window.history.replaceState(null, "", "/friends");
+      mockFetch({ ...page, [`/api/v1/friends/${FRIEND_ID}`]: json({}, 404) });
+      renderApp();
+      await waitForShellGone();
+      // 動きを止める設定（jsdom の既定）
+      await userEvent.click(within(screen.getByRole("navigation", { name: "タブ" })).getByRole("link", { name: "みんな" }));
+      expect(await screen.findByRole("heading", { name: "みんな", level: 1 })).toBeVisible();
+      motion();
+      act(() => navigate(`/friends/${FRIEND_ID}`));
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      expect(start).not.toHaveBeenCalled();
+    });
+
+    it("下のタブ・左のナビは動かさない名前、中身の領域は kh-content（index.css では kh-content にだけ動きを当てる）", async () => {
+      mockFetch(page);
+      renderApp();
+      await waitForShellGone();
+      const nav = screen.getByRole("navigation", { name: "タブ" });
+      expect(nav).toHaveClass("[view-transition-name:kh-tabbar]", "lg:[view-transition-name:kh-sidenav]");
+      expect(screen.getByRole("main")).toHaveClass("[view-transition-name:kh-content]");
+      const css = readFileSync(join(import.meta.dirname, "../index.css"), "utf8");
+      expect(css).toMatch(/::view-transition-group\(root\),[\s\S]*?::view-transition-group\(kh-tabbar\),[\s\S]*?\{\s*animation: none;/);
+      expect(css).toMatch(/html\[data-nav="fade"\]::view-transition-new\(kh-content\)\s*\{\s*animation: kh-vt-in var\(--duration-fast\) var\(--ease-out\) both;/);
+      expect(css).toMatch(/html\[data-nav="push"\]::view-transition-new\(kh-content\)\s*\{\s*--kh-vt-x: 30%;\s*animation: kh-vt-in var\(--duration-base\) var\(--ease-out\) both;/);
+      expect(css).toMatch(/html\[data-nav="pop"\]::view-transition-old\(kh-content\)\s*\{\s*--kh-vt-x: 30%;\s*animation: kh-vt-out var\(--duration-fast\) var\(--ease-in\) both;/);
+    });
+  });
+
+  describe("未読のバッジ（M-15）", () => {
+    const motion = () =>
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn((q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+      );
+
+    it("最初の描画・読み終わった最初の数・減ったときはぽんしない。増えたときだけぽんの印が付く", () => {
+      const view = render(<UnreadBadge count={undefined} />);
+      expect(screen.queryByTestId("unread-badge")).toBeNull();
+      view.rerender(<UnreadBadge count={3} />);
+      expect(screen.getByTestId("unread-badge")).toHaveTextContent("3");
+      expect(screen.getByTestId("unread-badge")).not.toHaveAttribute("data-pop");
+      view.rerender(<UnreadBadge count={2} />);
+      expect(screen.getByTestId("unread-badge")).not.toHaveAttribute("data-pop");
+      view.rerender(<UnreadBadge count={4} />);
+      const popped = screen.getByTestId("unread-badge");
+      expect(popped).toHaveAttribute("data-pop");
+      expect(popped).toHaveClass("kh-badge");
+      // 減ったときは要素を作り直さない（もう一度動かない）
+      view.rerender(<UnreadBadge count={1} />);
+      expect(screen.getByTestId("unread-badge")).toBe(popped);
+      view.unmount();
+      render(<UnreadBadge count={5} />);
+      expect(screen.getByTestId("unread-badge")).not.toHaveAttribute("data-pop");
+    });
+
+    it("0 になったら、縮んで薄くなる印（data-exiting）を付け、保険のタイマー（160＋50ms）のあとに消える", () => {
+      vi.useFakeTimers();
+      motion();
+      const view = render(<UnreadBadge count={2} />);
+      view.rerender(<UnreadBadge count={0} />);
+      expect(screen.getByTestId("unread-badge")).toHaveAttribute("data-exiting");
+      expect(screen.getByTestId("unread-badge")).toHaveTextContent("2");
+      act(() => vi.advanceTimersByTime(210));
+      expect(screen.queryByTestId("unread-badge")).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it("動きを止める設定では、0 になったらすぐ消える。index.css の kh-badge-pop は scale(.6) → 1.08 → 1（sheet・spring）", () => {
+      const view = render(<UnreadBadge count={2} />);
+      view.rerender(<UnreadBadge count={0} />);
+      expect(screen.queryByTestId("unread-badge")).toBeNull();
+      const css = readFileSync(join(import.meta.dirname, "../index.css"), "utf8");
+      expect(css).toMatch(/\.kh-badge\[data-pop\]\s*\{\s*animation: kh-badge-pop var\(--duration-sheet\) var\(--ease-spring\);/);
+      expect(/@keyframes kh-badge-pop\s*\{([\s\S]*?)\n\}/.exec(css)?.[1]).toMatch(/scale\(0\.6\)[\s\S]*scale\(1\.08\)[\s\S]*scale\(1\)/);
+    });
+  });
+
+  it("スイッチ（M-18）：つまみの移動は fast・ばね、地の色は fast。押している間は4px伸ばし、オンでは右の端を変えない。押せないときは伸ばさない", () => {
+    render(
+      <Switch checked onChange={() => {}}>
+        見せる
+      </Switch>,
+    );
+    const track = screen.getByRole("switch").nextElementSibling as HTMLElement;
+    expect(track).toHaveClass(
+      "transition-[background-color,border-color]",
+      "duration-(--duration-fast)",
+      "after:transition-[translate,width,background-color]",
+      "after:duration-(--duration-fast)",
+      "after:ease-spring",
+      "peer-enabled:peer-active:after:w-6",
+      "peer-enabled:peer-active:peer-checked:after:translate-x-4",
+    );
+    expect(track.className).not.toMatch(/(?:^|\s)peer-active:/);
   });
 });

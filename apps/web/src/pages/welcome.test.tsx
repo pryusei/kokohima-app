@@ -3,7 +3,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
-import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
+import { json, mockFetch, renderApp, tokenBody, waitForShellGone } from "../test/helpers";
 
 // 名前の画面と、友達になった直後の1画面（docs/specs/T-31-display-name-first-step.md）
 
@@ -124,6 +124,7 @@ describe("名前の画面（招待を経由しないとき）", () => {
     window.history.replaceState(null, "", "/availability");
     mockFetch({ ...availabilityTab, "/api/v1/me": problem(500, "internal") });
     renderApp();
+    await waitForShellGone();
     expect(await screen.findByRole("heading", { name: "ここ暇", level: 1 })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "表示名を決めてください" })).toBeNull();
   });
@@ -132,6 +133,7 @@ describe("名前の画面（招待を経由しないとき）", () => {
     window.history.replaceState(null, "", "/availability");
     const { calls } = mockFetch({ ...availabilityTab, "/api/v1/me": () => Promise.reject(new TypeError("Failed to fetch")) });
     renderApp(new QueryClient());
+    await waitForShellGone();
     expect(await screen.findByRole("heading", { name: "ここ暇", level: 1 })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "表示名を決めてください" })).toBeNull();
     expect(calls.filter((c) => c.url === "/api/v1/me").length).toBeLessThanOrEqual(2);
@@ -144,7 +146,9 @@ describe("名前の画面（招待を経由しないとき）", () => {
     // ログインの確かめが済んで GET /me を読み始めたあと
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/me")).toBe(true));
     expect(screen.getByRole("status", { name: "読み込み中" })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "ここ暇", level: 1 })).toBeNull();
+    // 読み込み中は、ログインの確認中と同じ殻（押せない下のタブ）。いつもの画面（週の帯）はまだ出さない（docs/specs/T-56-motion.md「M-05」）
+    expect(screen.getByRole("navigation", { name: "タブ" })).toHaveAttribute("inert");
+    expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByRole("heading", { name: "表示名を決めてください" })).toBeNull();
   });
 
@@ -152,6 +156,7 @@ describe("名前の画面（招待を経由しないとき）", () => {
     window.history.replaceState(null, "", "/availability");
     mockFetch({ ...availabilityTab, "/api/v1/me": json(me("ゆう")) });
     renderApp();
+    await waitForShellGone();
     expect(await screen.findByRole("heading", { name: "ここ暇", level: 1 })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "表示名を決めてください" })).toBeNull();
   });
