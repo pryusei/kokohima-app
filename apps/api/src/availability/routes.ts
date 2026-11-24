@@ -71,14 +71,20 @@ export function availabilityRoutes() {
     const result = await av.createAvailability(ctx(c), c.var.viewer.userId, body.data);
     if (result.kind === "invalid") return validationFailed(c, null);
     if (result.kind === "conflict") return conflict(c);
-    return c.json({ ...slotDto(result.slot), source: "manual", id: result.slot.id, date: null }, 201);
+    return c.json(
+      { ...slotDto(result.slot), source: "manual", id: result.slot.id, date: null, freeNow: result.slot.freeNow },
+      201,
+    );
   });
 
   app.get("/availabilities", async (c) => {
     const range = parseRange(c, 31);
     if ("error" in range) return validationFailed(c, range.error ?? null);
     const items = await av.listMine(ctx(c), c.var.viewer.userId, range.from, range.to);
-    return c.json({ items: items.map((i) => ({ ...slotDto(i), source: i.source, id: i.id, date: i.date })), nextCursor: null });
+    return c.json({
+      items: items.map((i) => ({ ...slotDto(i), source: i.source, id: i.id, date: i.date, freeNow: i.freeNow })),
+      nextCursor: null,
+    });
   });
 
   app.delete("/availabilities/:id", async (c) => {

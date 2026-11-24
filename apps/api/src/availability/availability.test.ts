@@ -523,3 +523,130 @@ describe("ルートの振り分けと他人のID", () => {
     expect((await u.call("GET", "/api/v1/me/presets")).status).toBe(401);
   });
 });
+
+describe("今ひま（docs/specs/T-40-ima-hima.md）", () => {
+  const MIN = 60 * 1000;
+  const freeNow = (owner: User, body: Record<string, unknown> = {}) =>
+    u.call("POST", "/api/v1/availabilities", { token: owner.token, body: { freeNow: true, ...body } });
+
+  it("今を15分で切り上げた時刻から3時間の枠を作る。label は null、本人の一覧では freeNow", async () => {
+    const a = await u.user();
+    await u.advance(20 * MIN, a); // 09:20（東京）
+    const res = await freeNow(a);
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({
+      startsAt: "2026-10-10T00:30:00.000Z",
+      endsAt: "2026-10-10T03:30:00.000Z",
+      label: null,
+      source: "manual",
+      date: null,
+      freeNow: true,
+    });
+    const items = await mine(a, 1);
+    expect(items.map((i) => [i.startsAt, i.freeNow])).toEqual([["2026-10-10T00:30:00.000Z", true]]);
+    const row = await env.DB.prepare("SELECT label FROM availabilities WHERE user_id = ?").bind(a.id).first<{ label: string }>();
+    expect(row?.label).toBe("free_now");
+  });
+
+  it("ちょうど15分の区切りならその時刻から。ほかの作り方の枠は freeNow が false", async () => {
+    const a = await u.user();
+    expect(await (await freeNow(a)).json()).toMatchObject({
+      startsAt: "2026-10-10T00:00:00.000Z",
+      endsAt: "2026-10-10T03:00:00.000Z",
+    });
+    expect(await (await addPreset(a, "2026-10-10", "night")).json()).toMatchObject({ freeNow: false });
+    await u.call("POST", "/api/v1/recurrence-rules", { token: a.token, body: { weekday: 0, preset: "night" } });
+    const items = await mine(a, 2);
+    expect(items.map((i) => [i.source, i.freeNow])).toEqual([
+      ["manual", true],
+      ["manual", false],
+      ["recurrence", false],
+    ]);
+  });
+
+  it("日付をまたいでも3時間のまま（22:10 に押すと 22:15〜翌 1:15）", async () => {
+    const a = await u.user();
+    h.clock.now = Date.parse("2026-10-10T13:10:00Z"); // 東京 22:10
+    await u.advance(0, a);
+    expect(await (await freeNow(a)).json()).toMatchObject({
+      startsAt: "2026-10-10T13:15:00.000Z", // 22:15
+      endsAt: "2026-10-10T16:15:00.000Z", // 翌 1:15
+    });
+  });
+
+  it("元に戻す：開始を渡すと同じ時刻で作り直す。先の時刻・区切りでない・終わった時刻は400", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    await u.advance(20 * MIN, a, b);
+    const created = (await (await freeNow(a)).json()) as { id: string; startsAt: string; endsAt: string };
+    expect((await u.call("DELETE", `/api/v1/availabilities/${created.id}`, { token: a.token })).status).toBe(204);
+    await u.advance(3 * MIN, a, b);
+    const restored = await freeNow(a, { startsAt: created.startsAt });
+    expect(restored.status).toBe(201);
+    expect(await restored.json()).toMatchObject({ startsAt: created.startsAt, endsAt: created.endsAt, freeNow: true });
+
+    for (const startsAt of [
+      "2026-10-10T00:45:00Z", // 今（09:23）を切り上げた 09:30 より先
+      "2026-10-10T00:10:00Z", // 15分の区切りでない
+      "2026-10-09T21:15:00Z", // 終わりが今以前（06:15〜09:15）
+    ]) {
+      expect((await freeNow(b, { startsAt })).status).toBe(400);
+    }
+    expect(await mine(b, 1)).toHaveLength(0);
+  });
+
+  it("自分の終わっていない手動の枠と重なれば409（2回押しても1つ）", async () => {
+    const a = await u.user();
+    const results = await Promise.all([freeNow(a), freeNow(a)]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(await mine(a, 1)).toHaveLength(1);
+  });
+
+  it("友達には、見せている相手にだけ、ほかの枠と同じ形（時刻と label: null）で出る。freeNow も作り方も返さない", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    const c = await u.user();
+    await u.befriend(a, b);
+    await u.befriend(a, c);
+    await hide(a, c);
+    expect((await freeNow(a)).status).toBe(201);
+    const page = await everyone(b, 1);
+    expect(page.items).toHaveLength(1);
+    expect(Object.keys(page.items[0] ?? {}).sort()).toEqual(["endsAt", "friend", "label", "overlapsMine", "startsAt"]);
+    expect(page.items[0]).toMatchObject({
+      startsAt: "2026-10-10T00:00:00.000Z",
+      endsAt: "2026-10-10T03:00:00.000Z",
+      label: null,
+    });
+    const detail = await (await friendSlots(b, a.id, 1)).json();
+    expect(detail).toEqual({
+      items: [{ startsAt: "2026-10-10T00:00:00.000Z", endsAt: "2026-10-10T03:00:00.000Z", label: null }],
+      nextCursor: null,
+    });
+    // 見せない相手には、ここ暇がない相手と同じく何も出ない
+    expect((await everyone(c, 1)).items).toHaveLength(0);
+    expect(slotListSchema.parse(await (await friendSlots(c, a.id, 1)).json()).items).toHaveLength(0);
+  });
+
+  it("他人のIDでは作れず、取り消せない（本文で他人を指すと400、他人の今ひまの取り消しは存在しないIDと同じ404）", async () => {
+    const a = await u.user();
+    const b = await u.user();
+    await u.befriend(a, b);
+    expect((await freeNow(b, { userId: a.id })).status).toBe(400);
+    expect((await freeNow(b, { ownerId: a.id })).status).toBe(400);
+    expect(await mine(a, 1)).toHaveLength(0);
+    const created = (await (await freeNow(a)).json()) as { id: string };
+    expect((await u.call("DELETE", `/api/v1/availabilities/${created.id}`, { token: b.token })).status).toBe(404);
+    expect((await u.call("DELETE", `/api/v1/availabilities/${crypto.randomUUID()}`, { token: b.token })).status).toBe(404);
+    expect(await mine(a, 1)).toHaveLength(1);
+    // b の今ひまは b の一覧にだけ出る
+    expect((await freeNow(b)).status).toBe(201);
+    expect((await mine(a, 1)).map((i) => i.id)).toEqual([created.id]);
+  });
+
+  it("freeNow は true だけ。認証がなければ401", async () => {
+    const a = await u.user();
+    expect((await u.call("POST", "/api/v1/availabilities", { token: a.token, body: { freeNow: false } })).status).toBe(400);
+    expect((await u.call("POST", "/api/v1/availabilities", { body: { freeNow: true } })).status).toBe(401);
+  });
+});

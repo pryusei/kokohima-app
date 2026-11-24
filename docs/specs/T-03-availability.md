@@ -52,6 +52,7 @@
 - `createAvailabilityRequestSchema`：次のどちらか
   - `{ date: "YYYY-MM-DD", preset: "day" | "evening" | "night" }`：その日の、閲覧者の現在のプリセットの時刻で作る
   - `{ startsAt, endsAt }`（ISO 8601 UTC）：開始〜終了を指定する
+  - `{ freeNow: true, startsAt? }`：今ひま。サーバーの今を15分で切り上げた時刻から3時間で作る（`startsAt` は「元に戻す」のときだけ。docs/specs/T-40-ima-hima.md）
 - `createRecurrenceRuleRequestSchema`：`weekday`（0＝日〜6＝土）と、`preset` か `start`・`end`（現地の `"HH:MM"`）のどちらか
 - 時刻は15分単位（`HH:MM` の分は 00・15・30・45、`startsAt`・`endsAt` も15分の倍数）。長さは30分以上、24時間以下。プリセットとくり返しは同じ日の中（`00:00`〜`24:00`）で、日をまたがない（決定事項3）
 - `HH:MM` は `00:00`〜`23:45`。終了だけは `24:00` も受け付ける（現地の0時からの分で1440）
@@ -59,7 +60,7 @@
 
 ### 出力
 - `slotSchema`：`{ startsAt, endsAt, label }`。`label` はプリセット名（`day`・`evening`・`night`）か `null`（開始〜終了で作った枠）
-- `myAvailabilitySchema`：`slotSchema` ＋ `{ source: "manual" | "recurrence", id, date }`。`manual` の `id` は枠のUUIDで `date` は `null`。`recurrence` の `id` はルールのUUID（取り消すには `exceptions` を使う）で、`date` はルールのタイムゾーンでの日付
+- `myAvailabilitySchema`：`slotSchema` ＋ `{ source: "manual" | "recurrence", id, date, freeNow }`。`freeNow` は今ひまで作った手動の枠だけ `true`（T-40。本人の一覧だけに出し、友達の枠には返さない）。`manual` の `id` は枠のUUIDで `date` は `null`。`recurrence` の `id` はルールのUUID（取り消すには `exceptions` を使う）で、`date` はルールのタイムゾーンでの日付
   - 同じルールから展開した枠は同じ `id` で複数並ぶので、項目を一意に見分けるキーは `(source, id, date)`。フロントの React の `key` と、楽観的更新で消す対象の判定にはこの組を使う
 - `friendAvailabilitySchema`：`{ friend: publicProfile, startsAt, endsAt, label, overlapsMine }`。`overlapsMine` は、まとめた後の枠が、閲覧者の自分の枠（手動とくり返しの展開の両方）と1分以上重なるか
 - 友達の枠には、枠やルールのIDを返さない（相手の内部の構成を見せない。誘いはT-04で時刻を指定して作る）
@@ -142,6 +143,7 @@
 ### 画面（仮。最終的なデザインはデザインのタスクで差し替える）
 - 最終的な見た目と画面のつながりは T-11（docs/specs/T-11-design.md）で置き換えた。下の記述は機能の決まりとして残し、置き場所が変わったものは注記する。
 - ログアウト・全端末ログアウトのボタンは、T-01の仮のホームから友達タブの下（「アカウント」の節）に移す（T-11 で設定のアカウント `/settings/account` へ移した）
+- ホーム（`/`）の一番上の今ひまのボタンと、友達の行の「今」の印は T-40（docs/specs/T-40-ima-hima.md）
 - ホーム（`/`）を「みんな」にする：今日から7日分を日付ごとに並べ、友達の表示名と「夜 19:00〜23:00」のような表示（プリセット名がなければ時刻だけ）。自分と重なる枠は目立たせ、「自分のここ暇と重なっています」と添える（ここ暇・重なりの色。赤は使わない）。空のときは「まだ友達のここ暇はありません」。ここ暇の下に「友達の行きたい」の欄（T-22）。一番上の「誰を誘う？」の顔の列と、友達の有無で分けた空の状態（友達が0人なら「まだ友達はいません」と「友達を招待する」だけ）は T-34（docs/specs/T-34-kokodou-entry.md）
 - ここ暇タブ（`/availability`）：
   - 追加：日付を選び、「昼」「夕方」「夜」のボタン（押すとすぐ作る）か、開始・終了を指定（終了が開始以前なら翌日の時刻とみなす。例：22:00〜02:00）
@@ -234,3 +236,4 @@
 | 2026-11-23 | ここ暇・みんなのタブと友達の詳細に、行きたいの欄（T-22）を足した | T-22 実装PR（docs/specs/T-22-wishlist.md） |
 | 2026-11-23 | 「みんな」の「誰を誘う？」と友達の有無で分けた空の状態、友達の詳細の「誘う」を書いた | T-34（docs/specs/T-34-kokodou-entry.md） |
 | 2026-11-24 | 友達の詳細の「自分の暇を見せる」と解除を「…」のシートに移したことを注記した | T-33 実装PR（docs/specs/T-33-block-report.md） |
+| 2026-11-24 | 追加の入力に今ひま（`{ freeNow: true, startsAt? }`）、自分の一覧に `freeNow` を足した | T-40 実装PR（docs/specs/T-40-ima-hima.md） |

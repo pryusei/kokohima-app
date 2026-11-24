@@ -10,7 +10,15 @@ import { getPublicProfiles, getUserTimezone } from "../../identity/application/a
 import type { Cursor } from "../../shared/cursor";
 import { expandRule, type RecurrenceRule } from "../domain/recurrence";
 import { buildFriendSlots, mergeSlots, pageAfter, type Label, type Slot } from "../domain/slots";
-import { checkLocalRange, checkManualSlot, HORIZON_MS, MAX_FUTURE_MANUAL, MAX_RULES } from "../domain/validation";
+import {
+  checkLocalRange,
+  checkManualSlot,
+  FREE_NOW_LABEL,
+  freeNowSlot,
+  HORIZON_MS,
+  MAX_FUTURE_MANUAL,
+  MAX_RULES,
+} from "../domain/validation";
 import { addDays, DAY_MS, formatHhmm, localDateOf, localToUtc, parseHhmm, weekdayOf } from "../domain/zonedTime";
 import * as repo from "../infra/repository";
 
@@ -65,7 +73,7 @@ export async function putPresets(ctx: Ctx, viewerId: string, presets: Presets): 
 // ---- 自分のここ暇 ----
 
 export type CreateResult =
-  | { kind: "created"; slot: { id: string; startsAt: number; endsAt: number; label: Label | null } }
+  | { kind: "created"; slot: { id: string; startsAt: number; endsAt: number; label: Label | null; freeNow: boolean } }
   | { kind: "invalid" }
   | { kind: "conflict" };
 
@@ -74,7 +82,13 @@ export async function createAvailability(ctx: Ctx, viewerId: string, input: Crea
   let startsAt: number;
   let endsAt: number;
   let label: Label | null = null;
-  if ("preset" in input) {
+  const freeNow = "freeNow" in input;
+  if ("freeNow" in input) {
+    // 今ひま（docs/specs/T-40-ima-hima.md）：時刻はサーバーの今から決める。startsAt は「元に戻す」のときだけ
+    const slot = freeNowSlot(now, input.startsAt === undefined ? undefined : Date.parse(input.startsAt));
+    if (!slot) return { kind: "invalid" };
+    ({ startsAt, endsAt } = slot);
+  } else if ("preset" in input) {
     const timezone = await getUserTimezone(ctx.env, viewerId);
     const preset = (await getPresets(ctx, viewerId))[input.preset];
     const start = parseHhmm(preset.start);
@@ -92,12 +106,13 @@ export async function createAvailability(ctx: Ctx, viewerId: string, input: Crea
   if (checkManualSlot(startsAt, endsAt, now) !== null) return { kind: "invalid" };
   const id = crypto.randomUUID();
   // 重なりと上限の判定は追加と1つの文で行う（二重押しでも重複しない）
+  // 今ひまの目印は label の列に保存する（API の label には出さず、本人の一覧の freeNow にだけ出す）
   const inserted = await repo.insertManualWithinLimits(
     ctx.env.DB,
-    { id, userId: viewerId, startsAt, endsAt, label, now },
+    { id, userId: viewerId, startsAt, endsAt, label: freeNow ? FREE_NOW_LABEL : label, now },
     MAX_FUTURE_MANUAL,
   );
-  return inserted ? { kind: "created", slot: { id, startsAt, endsAt, label } } : { kind: "conflict" };
+  return inserted ? { kind: "created", slot: { id, startsAt, endsAt, label, freeNow } } : { kind: "conflict" };
 }
 
 function isValidDate(date: string) {
@@ -116,6 +131,7 @@ export type MyItem = {
   startsAt: number;
   endsAt: number;
   label: Label | null;
+  freeNow: boolean;
 };
 
 async function rulesWithExceptions(ctx: Ctx, rows: repo.RuleRow[], sinceDate: string): Promise<RecurrenceRule[]> {
@@ -154,6 +170,7 @@ export async function listMine(ctx: Ctx, viewerId: string, from: number, to: num
       startsAt: m.starts_at,
       endsAt: m.ends_at,
       label: asLabel(m.label),
+      freeNow: m.label === FREE_NOW_LABEL,
     })),
     ...rules.flatMap((rule) =>
       expandRule(rule, from, to, now).map((e) => ({
@@ -163,6 +180,7 @@ export async function listMine(ctx: Ctx, viewerId: string, from: number, to: num
         startsAt: e.startsAt,
         endsAt: e.endsAt,
         label: e.label,
+        freeNow: false,
       })),
     ),
   ];

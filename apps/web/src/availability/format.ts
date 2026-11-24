@@ -68,3 +68,27 @@ export function formatSlot(slot: { startsAt: string; endsAt: string; label: Pres
 
 /** 時刻の入力の "00:00" を終了に使うときは 24:00 とみなす */
 export const asEnd = (hhmm: string) => (hhmm === "00:00" ? "24:00" : hhmm);
+
+// ---- 今ひま（docs/specs/T-40-ima-hima.md） ----
+
+const QUARTER_MS = 15 * 60 * 1000;
+export const FREE_NOW_LENGTH_MS = 3 * 60 * 60 * 1000;
+
+/** 15分の区切りに切り上げる（ちょうど区切りならそのまま）。サーバーの freeNowSlot と同じ規則 */
+export const ceilQuarter = (ms: number) => Math.ceil(ms / QUARTER_MS) * QUARTER_MS;
+
+/** 今押したときの今ひまの枠（表示の目安。時刻を決めるのはサーバー） */
+export function freeNowRange(now: number) {
+  const startsAt = ceilQuarter(now);
+  return { startsAt, endsAt: startsAt + FREE_NOW_LENGTH_MS };
+}
+
+/** 終わりの時刻。基準（ボタンの目安では開始、灯っている間は今）と日付が違えば「翌」を付ける（22:15〜翌01:15。0:00 を過ぎたら「〜01:15」） */
+export function formatUntil(base: number | string, endsAt: number | string) {
+  const next = localDateOf(endsAt) !== localDateOf(base);
+  return `${next ? "翌" : ""}${formatTime(endsAt)}`;
+}
+
+/** 「今」の印：今ひまを今押したときの開始（今を15分で切り上げた時刻）までに始まり、まだ終わっていない枠 */
+export const isNow = (slot: { startsAt: string; endsAt: string }, now: number) =>
+  Date.parse(slot.startsAt) <= ceilQuarter(now) && Date.parse(slot.endsAt) > now;

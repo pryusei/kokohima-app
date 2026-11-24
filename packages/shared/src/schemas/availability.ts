@@ -28,6 +28,8 @@ const localDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 export const createAvailabilityRequestSchema = z.union([
   z.object({ date: localDateSchema, preset: presetNameSchema }).strict(),
   z.object({ startsAt: z.iso.datetime(), endsAt: z.iso.datetime() }).strict(),
+  // 今ひま（docs/specs/T-40-ima-hima.md）：今を15分で切り上げた時刻から3時間。startsAt は「元に戻す」のときだけ送る
+  z.object({ freeNow: z.literal(true), startsAt: z.iso.datetime().optional() }).strict(),
 ]);
 export type CreateAvailabilityRequest = z.infer<typeof createAvailabilityRequestSchema>;
 
@@ -43,6 +45,8 @@ export const myAvailabilitySchema = slotSchema.extend({
   source: z.enum(["manual", "recurrence"]),
   id: z.uuid(),
   date: localDateSchema.nullable(),
+  /** 今ひまで作った枠か（本人の一覧だけに出す。友達の枠には返さない。T-40） */
+  freeNow: z.boolean().default(false),
 });
 export type MyAvailability = z.infer<typeof myAvailabilitySchema>;
 
