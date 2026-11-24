@@ -66,6 +66,7 @@
 
 ### 画面のつながり（決定事項3）
 - 下のタブは「みんな（`/`）・ここ暇（`/availability`）・誘い（`/invites`）・友達（`/friends`）」の4つ。今いるタブに `aria-current="page"`。
+- 未ログインで `/` を開くと、SPA ではなく紹介のページ（静的な HTML `apps/web/landing.html`。JavaScript なし）が出る。Worker がログインの Cookie の有無で分ける（T-44。docs/specs/T-44-landing.md）。
 - お知らせ（`/notifications`）はタブから外す。各タブのヘッダーの鐘のボタンから開く。未読があれば数を出す。
   - 0のときは数を出さない。`aria-label` は「お知らせ」。
   - 1〜98のときは数を出す。`aria-label` は「お知らせ N件の未読」。

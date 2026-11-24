@@ -447,6 +447,45 @@ export function PrivacyPage() {
           </li>
           <li>運営の人がカレンダーの情報を読むのは、あなたの同意があるとき、セキュリティの調査、法令に従うときだけです。</li>
         </Bullets>
+        {/* Google の審査をする人が読めるように（docs/specs/T-19-privacy-terms.md 決めたこと18、docs/specs/T-44-landing.md「7.」）。
+            日本語の本文に書いていないことを書かない。本文を変えたら、ここも同じ PR で直す */}
+        <SubClause title="In English" lang="en">
+          <p>The Japanese text above is the authoritative version. This section summarizes how we handle Google user data.</p>
+          <p>
+            ここ暇 (Kokohima)&apos;s use and transfer to any other app of information received from Google APIs will adhere to the{" "}
+            <External href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</External>,
+            including the Limited Use requirements.
+          </p>
+          <Bullets>
+            <li>
+              Sign-in: we receive only your Google account ID and email address (scopes openid and email). We use your email address only
+              for notification emails (sent via our email provider), for important notices from us and replies to your inquiries (when you
+              contact us, it is delivered to our support Slack as the reply address), and to verify your identity when you make a request
+              about your personal information.
+            </li>
+            <li>
+              Google Calendar (only if you connect it): we read only free/busy times (the start and end of busy periods) on your primary
+              calendar. We never read event titles, locations, descriptions or attendees.
+            </li>
+            <li>
+              We write only to a calendar named &quot;ここ暇&quot; that the app creates in your Google Calendar, and only to add, update
+              and delete plans confirmed in the app. We never read, create or change events in any other calendar.
+            </li>
+            <li>
+              Calendar data (free/busy times and the permission to write to the &quot;ここ暇&quot; calendar) is used only to provide
+              these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or
+              machine learning models. Our staff read calendar data only with your consent, for security purposes, or to comply with the
+              law.
+            </li>
+            <li>
+              You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). When you disconnect, we delete the
+              stored token and the stored free/busy data (a temporary cache expires within {R.freeBusyCacheMinutes} minutes). We keep
+              only the record that you connected and the ID of the &quot;ここ暇&quot; calendar until you delete your account, so that
+              reconnecting uses the same calendar. The &quot;ここ暇&quot; calendar and the plans already written to it stay in your
+              Google Calendar. You can also remove access in your Google Account.
+            </li>
+          </Bullets>
+        </SubClause>
       </Clause>
 
       <Clause title="12. 開示・訂正・削除などの求め">

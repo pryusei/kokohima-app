@@ -12,6 +12,7 @@ import {
   jstToday,
   revisionNoticeLine,
 } from "./lib/effective-date.mjs";
+import { landingProblems } from "./lib/landing.mjs";
 import { findPublishedStrings, PRODUCTION_ORIGIN } from "./lib/published-notice.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
@@ -31,6 +32,10 @@ for (const m of html.matchAll(/<script\b([^>]*)>/gi)) {
 }
 if (/<style\b/i.test(html)) errors.push("index.html にインラインの style 要素があります");
 if (/\sstyle\s*=/i.test(html)) errors.push("index.html に style 属性があります");
+
+// 紹介のページ（JavaScript なし。docs/specs/T-44-landing.md「5.」）
+const landing = join(dist, "landing.html");
+errors.push(...landingProblems(existsSync(landing) ? readFileSync(landing, "utf8") : null));
 
 // ヘッダーと振り分けはコードだけで決める
 for (const name of ["_headers", "_redirects"]) {

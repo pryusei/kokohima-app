@@ -1,6 +1,6 @@
 # T-19 仕様書：プライバシー ポリシーと利用規約のページ
 
-- 状態：実装済み（改定：外国にある第三者への提供ほか。決めたこと11〜15を実装PRで画面とデプロイの検査に入れた。公表日・改定日は、デプロイする予定の日の仮の値（最初の改定は公表日 2026年11月23日・改定日 2026年11月30日。決めたこと16。今の値は T-33 のブロックと通報の改定日 2026年11月24日（予告なし。決めたこと17）。docs/specs/T-33-block-report.md「7.」。T-32 の LINE ログインも同じ改定に入れた）で、デプロイの日が決まったら `legal.ts` の日付だけを直す（仕様書の8節の3）。改定日を過ぎたら予告の行と「この改定で変わるところ」を外す（仕様書の8節の5））
+- 状態：実装済み（改定：外国にある第三者への提供ほか。決めたこと11〜15を実装PRで画面とデプロイの検査に入れた。公表日・改定日は、デプロイする予定の日の仮の値（最初の改定は公表日 2026年11月23日・改定日 2026年11月30日。決めたこと16。今の値は T-33 のブロックと通報の改定日 2026年11月24日（予告なし。決めたこと17。T-44 の本文の11.の英語の段落も同じ改定日）。docs/specs/T-33-block-report.md「7.」。T-32 の LINE ログインも同じ改定に入れた）で、デプロイの日が決まったら `legal.ts` の日付だけを直す（仕様書の8節の3）。改定日を過ぎたら予告の行と「この改定で変わるところ」を外す（仕様書の8節の5））
 - タスク票：docs/tasks/T-19-privacy-terms.md
 - 関係する要件：要求定義書「残りの論点」（Googleの審査要件とプライバシーポリシーへの反映）、「AI時代の攻撃を前提にした運用」（保存するデータを減らす）、「受容したリスク」（Google の OAuth を本番にしたこと）、F-01・F-02・F-15・F-16・F-17、T-12 決定事項7。issue pryusei/kokohima-app#89・#90・#91 の一部
 
@@ -416,13 +416,13 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 
 The Japanese text above is the authoritative version. This section summarizes how we handle Google user data.
 
-The use and transfer to any other app of information received from Google APIs by ここ暇 (Kokohima) will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
+ここ暇 (Kokohima)'s use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
 
-- Sign-in: we receive only your Google account ID and email address (scopes `openid` and `email`).
+- Sign-in: we receive only your Google account ID and email address (scopes openid and email). We use your email address only for notification emails (sent via our email provider), for important notices from us and replies to your inquiries (when you contact us, it is delivered to our support Slack as the reply address), and to verify your identity when you make a request about your personal information.
 - Google Calendar (only if you connect it): we read only free/busy times (the start and end of busy periods) on your primary calendar. We never read event titles, locations, descriptions or attendees.
 - We write only to a calendar named "ここ暇" that the app creates in your Google Calendar, and only to add, update and delete plans confirmed in the app. We never read, create or change events in any other calendar.
-- We use this data only to provide these features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or machine learning models. Our staff read it only with your consent, for security purposes, or to comply with the law.
-- You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). We then delete the stored token and free/busy data. You can also remove access in your Google Account.
+- Calendar data (free/busy times and the permission to write to the "ここ暇" calendar) is used only to provide these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or machine learning models. Our staff read calendar data only with your consent, for security purposes, or to comply with the law.
+- You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). When you disconnect, we delete the stored token and the stored free/busy data (a temporary cache expires within 5 minutes). We keep only the record that you connected and the ID of the "ここ暇" calendar until you delete your account, so that reconnecting uses the same calendar. The "ここ暇" calendar and the plans already written to it stay in your Google Calendar. You can also remove access in your Google Account.
 
 ## 12. 開示・訂正・削除などの求め
 - 本人は、運営が持つあなたの個人情報について、利用目的の通知、開示（第三者に提供した記録を含みます）、訂正・追加・削除、利用の停止・消去、第三者への提供の停止、外国の事業者に任せることについての情報（「7.」）の提供を求められます。
@@ -715,3 +715,4 @@ The use and transfer to any other app of information received from Google APIs b
 | 2026-11-24 | 通知の見え方（T-35）を同じ形（予告なし、改定日はマージしてデプロイする日）で改定にした：本文の文案の2.（通知の設定に見え方、購読の暗号化の鍵）・5.と7.（プッシュの事業者に渡すのは暗号化した中身）・8.・安全の措置（宛先と鍵の暗号化） | T-35 実装PR（docs/specs/T-35-notification-visibility.md） |
 | 2026-11-24 | 本文の文案の10.に、成立の演出を見た予定の番号（50件まで）をブラウザのストレージに置くことを足した（同じ改定日。予告なし。決めたこと17） | T-43 実装PR（docs/specs/T-43-meet-moment.md「2.」） |
 | 2026-11-24 | 決めたこと18：本文の11.に Google のユーザーデータの扱いの英語の段落（6節の文案）を足す。決めたこと5・10とスコープ外を T-44 の紹介のページに合わせた。予告なし（決めたこと17）、改定日は T-44 の実装PRをデプロイする日 | T-44 仕様書PR（docs/specs/T-44-landing.md）。Google の審査（#199） |
+| 2026-11-24 | 6節の11.の英語の段落を実装した。限定使用の文を公式の形のままにし、使い道と運営が読む場面をカレンダーの情報に絞り、メールアドレスの使い道（3.）と解除で消えるもの・残るもの（8.）を日本語の本文に合わせた。改定日は 2026年11月24日のまま（T-33 と同じ日。予告なし） | T-44 実装PR（docs/specs/T-44-landing.md「7.」）。仕様書PR #219 のレビュー |

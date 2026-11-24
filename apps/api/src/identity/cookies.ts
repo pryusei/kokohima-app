@@ -8,6 +8,9 @@ import type { AppEnv } from "../env";
 const REFRESH = "kh_rt";
 const BINDING = "kh_oauth";
 
+/** 更新用トークンの Cookie の、ブラウザが送る名前（接頭辞つき）。Worker の `/` の振り分けが有無だけを見る（docs/specs/T-44-landing.md「1.」） */
+export const REFRESH_COOKIE_NAME = `__Host-${REFRESH}`;
+
 export function getRefreshCookie(c: Context<AppEnv>) {
   return getCookie(c, REFRESH, "host");
 }
