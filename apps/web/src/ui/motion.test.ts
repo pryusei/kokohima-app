@@ -64,8 +64,6 @@ describe("動きの長さと曲線の直書きがない（docs/specs/T-56-motion
   const TRANSITION = /(?:^|[\s"'`:])transition(?:-[a-z]+)?(?=[\s"'`]|$)/;
   /** クラスの文字列（className="…" と、文字列の定数） */
   const CLASS_STRINGS = /(["'`])((?:(?!\1).)*\btransition\b(?:(?!\1).)*)\1/g;
-  // M-18（実装PR③）でスイッチの動きをトークンにするまで、スイッチだけは今の Tailwind の既定の長さのまま
-  const PENDING = new Set(["./Switch.tsx"]);
 
   it("クラスに長さ・曲線・アニメーションの直書きがない", () => {
     const found = Object.entries(sources).flatMap(([path, text]) => (text.match(CLASS_LITERAL) ?? []).map((m) => `${path}: ${m.trim()}`));
@@ -73,9 +71,7 @@ describe("動きの長さと曲線の直書きがない（docs/specs/T-56-motion
   });
 
   it("transition・transition-* のクラスには、長さのトークン（duration-(--duration-*)）を付けている", () => {
-    const found = Object.entries(sources)
-      .filter(([path]) => !PENDING.has(path))
-      .flatMap(([path, text]) =>
+    const found = Object.entries(sources).flatMap(([path, text]) =>
         [...text.matchAll(CLASS_STRINGS)]
           .map((m) => m[2] ?? "")
           .filter((cls) => TRANSITION.test(cls) && !/duration-\(--duration-(?:press|fast|base|sheet)\)/.test(cls))
@@ -84,8 +80,9 @@ describe("動きの長さと曲線の直書きがない（docs/specs/T-56-motion
     expect(found).toEqual([]);
   });
 
-  it("index.css に秒・ミリ秒の数を直書きしない（トークンの定義と T-43 の成立の演出、M-12 の灯りの 500ms だけを除く）", () => {
-    const rest = withoutBlocks(css, [/@theme static\s*\{/, /\.kh-meet-(?:dot|pair|reveal)\s*\{/, /@keyframes kh-meet-[\w-]+\s*\{/]).replace(
+  it("index.css に秒・ミリ秒の数を直書きしない（トークンの定義と、骨組みの遅れと明滅、T-43 の成立の演出、M-12 の灯りの 500ms だけを除く）", () => {
+    // 骨組み（.kh-skeleton）の 200ms の遅れと kh-breathe の 1.4s は、M-06 が決めた長さ
+    const rest = withoutBlocks(css, [/@theme static\s*\{/, /\.kh-skeleton\s*\{/, /\.kh-meet-(?:dot|pair|reveal)\s*\{/, /@keyframes kh-meet-[\w-]+\s*\{/]).replace(
       "--animate-kh-lamp-on: kh-lamp-on 500ms",
       "",
     );

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch, ApiError, setUnauthenticatedHandler } from "../api/client";
 import { readAndClearCode } from "../pages/AuthCompletePage";
-import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
+import { json, mockFetch, renderApp, tokenBody, waitForShellGone } from "../test/helpers";
 import { tokenStore } from "./tokenStore";
 
 const me = { id: "6f1c1f9e-6c2a-4c55-9b7e-2d1f0b0c4a11", displayName: "ゆう", avatarUrl: null };
@@ -11,7 +11,11 @@ const empty = json({ items: [], nextCursor: null });
 // ログイン後のホーム（みんな）と、ログアウトのボタンがある設定のアカウント（docs/specs/T-11-design.md）が読むもの
 const home = { "/api/v1/friend-availabilities": empty };
 const accountPage = { "/api/v1/me": json(me) };
-const loggedIn = () => screen.findByRole("heading", { name: "みんな" });
+// ログインの確認中の殻（docs/specs/T-56-motion.md「M-05」）にも同じ見出しがあるので、殻が替わるのを待ってから探す
+const loggedIn = async () => {
+  await waitForShellGone();
+  return screen.findByRole("heading", { name: "みんな" });
+};
 
 beforeEach(() => {
   tokenStore.clear();

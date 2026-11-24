@@ -314,7 +314,7 @@ export function BottomSheet({ title, label, onClose, dismiss = false, children }
             <span className="h-1 w-9 rounded-full bg-line-strong" />
           </div>
           {/* オフラインの帯も上に残す（スクロールしても、送る操作が止まっている理由が見える） */}
-          <OfflineBanner />
+          <OfflineBanner gap="s" />
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
               {typeof title === "string" ? <h2 className="text-xl font-bold">{title}</h2> : title}

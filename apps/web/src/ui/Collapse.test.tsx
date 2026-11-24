@@ -30,6 +30,28 @@ describe("Collapse", () => {
     expect(screen.queryByText("中身")).toBeNull();
   });
 
+  it("開き終わったら data-settled（中身を切らない）。閉じている・開く途中（base＋50ms）は付けない", () => {
+    const view = render(<Collapse show>中身</Collapse>);
+    expect(box(view)).toHaveAttribute("data-settled");
+    view.rerender(<Collapse show={false}>中身</Collapse>);
+    expect(box(view)).not.toHaveAttribute("data-settled");
+    act(() => vi.advanceTimersByTime(210));
+    view.rerender(<Collapse show>中身</Collapse>);
+    expect(box(view)).not.toHaveAttribute("data-settled");
+    act(() => vi.advanceTimersByTime(289));
+    expect(box(view)).not.toHaveAttribute("data-settled");
+    act(() => vi.advanceTimersByTime(1));
+    expect(box(view)).toHaveAttribute("data-settled");
+  });
+
+  it("axis=\"x\" は幅の開閉の印（data-axis）を付ける。既定は高さ", () => {
+    const x = render(<Collapse show axis="x">中身</Collapse>);
+    expect(box(x)).toHaveAttribute("data-axis", "x");
+    x.unmount();
+    const y = render(<Collapse show>中身</Collapse>);
+    expect(box(y)).not.toHaveAttribute("data-axis");
+  });
+
   it("閉じる動きのあいだは中身を描き（inert）、保険のタイマー（160＋50ms）のあとに描かない", () => {
     const view = render(<Collapse show>中身</Collapse>);
     view.rerender(<Collapse show={false}>中身</Collapse>);

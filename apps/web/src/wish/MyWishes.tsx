@@ -13,6 +13,7 @@ import { LoadError, Loading, Note } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { LinkCard } from "../ui/LinkCard";
 import { Section } from "../ui/Navigation";
+import { markCreatedRow, MotionRow, useRowExits, type MotionRowState } from "../ui/RowMotion";
 import { myWishesQuery } from "./queries";
 import { suggestionQuotaQuery } from "./suggest";
 import { SuggestSheet, type PlaceDraft } from "./SuggestSheet";
@@ -105,7 +106,9 @@ function AddWishSheet({ onClose, draft }: { onClose: () => void; draft?: PlaceDr
       return apiSend("POST", path, body, wishSchema, { idempotencyKey: idempotency.keyFor(signatureOf(path, body)) });
     },
     onSettled: (_data, error) => idempotency.settle(error),
-    onSuccess: () => {
+    onSuccess: (wish) => {
+      // シートを閉じたあと、置いた1枚を開いて一度だけ光らせる（docs/specs/T-56-motion.md「M-10」）
+      if (wish) markCreatedRow(wish.id);
       void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
       // 「✓ 置きました」を短く見せてから、出る動きで閉じる（docs/specs/T-56-motion.md「M-03」）
       submit.succeed(() => setDismiss(true));
@@ -203,11 +206,13 @@ function AudienceSheet({ wish, onClose }: { wish: Wish; onClose: () => void }) {
   );
 }
 
-function DeleteSheet({ wish, onClose }: { wish: Wish; onClose: () => void }) {
+function DeleteSheet({ wish, onClose, onDeleted }: { wish: Wish; onClose: () => void; onDeleted: (id: string) => void }) {
   const queryClient = useQueryClient();
   const remove = useMutation({
     mutationFn: () => apiSend("DELETE", `/api/v1/wishes/${wish.id}`, undefined),
     onSuccess: () => {
+      // 消した1枚は閉じて消える（docs/specs/T-56-motion.md「M-10」）
+      onDeleted(wish.id);
       void queryClient.invalidateQueries({ queryKey: keys.wishes.all() });
       onClose();
     },
@@ -271,30 +276,52 @@ function SuggestCard({ disabled, onClick }: { disabled: boolean; onClick: () => 
   );
 }
 
-/** 横にめくる1枚。ボタンは2列×2行に固定し、幅で折り返さない */
-function MyWishCard({ wish, onAudience, onDelete }: { wish: Wish; onAudience: () => void; onDelete: () => void }) {
+type WishExits = ReturnType<typeof useRowExits<Wish>>;
+
+/**
+ * 横にめくる1枚。ボタンは2列×2行に固定し、幅で折り返さない。
+ * 増えた・消えた1枚は開閉する（M-10）。開閉の入れ物は影を切るので、影の分（4px）だけ広げて負の余白で打ち消す
+ */
+function MyWishCard({ row, exits, onAudience, onDelete }: { row: MotionRowState<Wish>; exits: WishExits; onAudience: () => void; onDelete: () => void }) {
+  const wish = row.item;
   return (
-    <li className="flex w-56 shrink-0 snap-start flex-col gap-2 rounded-l bg-surface p-3 shadow-card">
-      <p className="line-clamp-3 font-bold whitespace-pre-line">{wish.message}</p>
-      {wish.area && <p className="truncate text-s text-ink-muted">エリア：{wish.area}</p>}
-      <LinkCard url={wish.url} preview={wish.linkPreview} compact />
-      <div className="mt-auto grid grid-cols-2 gap-2 pt-1">
-        <ButtonLink to={`/invites/new?wish=${encodeURIComponent(wish.id)}`} size="s">
-          誘う
-        </ButtonLink>
-        <ButtonLink to={`/broadcasts/new?wish=${encodeURIComponent(wish.id)}`} size="s">
-          募集する
-        </ButtonLink>
-        <Button variant="ghost" size="s" onClick={onAudience}>
-          見せる相手
-        </Button>
-        <Button variant="ghost" size="s" onClick={onDelete}>
-          消す
-        </Button>
-      </div>
-    </li>
+    // 横に並ぶので幅を開閉する。カードの間（12px）は ul の gap ではなく中の右の余白に持つ（閉じると間も一緒に詰まる）。
+    // 光るのはカードの地（docs/specs/T-56-motion.md「M-10」）
+    <MotionRow
+      row={row}
+      axis="x"
+      onHidden={exits.hidden}
+      onAppeared={exits.appeared}
+      itemClassName="-m-1 shrink-0 snap-start"
+      className="h-full py-1 pr-4 pl-1 group-last:pr-1"
+    >
+      {(glow) => (
+        <div className={`flex h-full w-56 flex-col gap-2 rounded-l bg-surface p-3 shadow-card${glow ? ` ${glow}` : ""}`}>
+          <p className="line-clamp-3 font-bold whitespace-pre-line">{wish.message}</p>
+          {wish.area && <p className="truncate text-s text-ink-muted">エリア：{wish.area}</p>}
+          <LinkCard url={wish.url} preview={wish.linkPreview} compact />
+          <div className="mt-auto grid grid-cols-2 gap-2 pt-1">
+            <ButtonLink to={`/invites/new?wish=${encodeURIComponent(wish.id)}`} size="s">
+              誘う
+            </ButtonLink>
+            <ButtonLink to={`/broadcasts/new?wish=${encodeURIComponent(wish.id)}`} size="s">
+              募集する
+            </ButtonLink>
+            <Button variant="ghost" size="s" onClick={onAudience}>
+              見せる相手
+            </Button>
+            <Button variant="ghost" size="s" onClick={onDelete}>
+              消す
+            </Button>
+          </div>
+        </div>
+      )}
+    </MotionRow>
   );
 }
+
+const wishKey = (wish: Wish) => wish.id;
+const NO_WISHES: Wish[] = [];
 
 export function MyWishes() {
   const wishes = useQuery(myWishesQuery());
@@ -302,7 +329,8 @@ export function MyWishes() {
   const quota = useQuery(suggestionQuotaQuery());
   const canSuggest = (quota.data?.limit ?? 0) > 0;
   const [open, setOpen] = useState<Open>(null);
-  const items = wishes.data?.items ?? [];
+  const items = wishes.data?.items ?? NO_WISHES;
+  const exits = useRowExits(items, wishKey);
   const full = items.length >= WISH_MAX_ACTIVE;
   const close = () => setOpen(null);
 
@@ -325,15 +353,16 @@ export function MyWishes() {
           <Note>行きたい店やしたいことを置いておくと、友達がそれを見て誘えます</Note>
         </div>
       )}
-      {items.length > 0 && (
+      {exits.rows.length > 0 && (
         // 横にめくる。件数で縦に伸びない（docs/specs/T-55-availability-week-grid.md「振る舞い 5.」）
-        <ul aria-label="自分の行きたい" className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pt-0.5 pb-2 lg:-mx-6 lg:scroll-px-6 lg:px-6">
-          {items.map((wish) => (
+        <ul aria-label="自分の行きたい" className="kh-fade -mx-4 flex snap-x snap-mandatory scroll-px-4 overflow-x-auto px-4 pt-0.5 pb-2 lg:-mx-6 lg:scroll-px-6 lg:px-6">
+          {exits.rows.map((row) => (
             <MyWishCard
-              key={wish.id}
-              wish={wish}
-              onAudience={() => setOpen({ kind: "audience", wish })}
-              onDelete={() => setOpen({ kind: "delete", wish })}
+              key={row.key}
+              row={row}
+              exits={exits}
+              onAudience={() => setOpen({ kind: "audience", wish: row.item })}
+              onDelete={() => setOpen({ kind: "delete", wish: row.item })}
             />
           ))}
         </ul>
@@ -341,7 +370,7 @@ export function MyWishes() {
       {open?.kind === "add" && <AddWishSheet onClose={close} draft={open.draft} />}
       {open?.kind === "suggest" && <SuggestSheet onClose={close} onPlace={(draft) => setOpen({ kind: "add", draft })} />}
       {open?.kind === "audience" && <AudienceSheet wish={open.wish} onClose={close} />}
-      {open?.kind === "delete" && <DeleteSheet wish={open.wish} onClose={close} />}
+      {open?.kind === "delete" && <DeleteSheet wish={open.wish} onClose={close} onDeleted={exits.leave} />}
     </Section>
   );
 }

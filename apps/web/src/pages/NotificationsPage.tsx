@@ -75,13 +75,13 @@ export function NotificationsPage() {
 
   return (
     <SubScreen title="お知らせ" back="/">
-      {notifications.isPending && <Loading />}
+      {notifications.isPending && <Loading variant="list" />}
       {notifications.isError && (
         <LoadError text="読み込めませんでした。通信状態を確認して、もう一度お試しください" retry={() => void notifications.refetch()} />
       )}
       {notifications.data && notifications.data.items.length === 0 && <EmptyState title="お知らせはありません" />}
       {notifications.data && notifications.data.items.length > 0 && (
-        <ul className="-mx-4 flex flex-col border-t border-line">
+        <ul className="kh-fade -mx-4 flex flex-col border-t border-line">
           {notifications.data.items.map((n) => (
             <Item key={n.id} n={n} />
           ))}

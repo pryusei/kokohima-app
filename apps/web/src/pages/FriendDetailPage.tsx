@@ -9,7 +9,7 @@ import { AvailabilityChip } from "../ui/AvailabilityChip";
 import { Avatar } from "../ui/Avatar";
 import { SheetScreen } from "../ui/BottomSheet";
 import { ButtonLink } from "../ui/Button";
-import { LoadError, Loading } from "../ui/feedback";
+import { FadeIn, LoadError, Loading } from "../ui/feedback";
 import { Section } from "../ui/Navigation";
 import { MoreButton, usePersonActionsToggle } from "../safety/MoreButton";
 import { PersonActions } from "../safety/PersonActions";
@@ -62,27 +62,28 @@ export function FriendDetailPage({ friendId }: { friendId: string }) {
           }}
         />
       )}
-      {!acting && friend.isPending && <Loading />}
+      {!acting && friend.isPending && <Loading variant="list" />}
       {!acting && friend.isError && <LoadError text="読み込めませんでした。通信状態を確認して、もう一度お試しください。" retry={() => void friend.refetch()} />}
+      {/* 読み込みのあと最初に描く中身はフェードで入る（docs/specs/T-56-motion.md「M-06」） */}
       {!acting && friend.data && (
-        <Section title="見えているここ暇" aside="今日から14日">
-          {slots.data?.items.length === 0 && <p className="text-ink-muted">見えているここ暇はありません</p>}
-          <ul aria-label="友達のここ暇" className="flex flex-col">
-            {slots.data?.items.map((s) => (
-              <li key={s.startsAt} className="flex items-center gap-3 border-b border-line py-2 last:border-b-0">
-                <span className="w-24 shrink-0 tabular-nums">{formatDate(localDateOf(s.startsAt))}</span>
-                <AvailabilityChip text={formatSlot(s)} />
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-      {!acting && friend.data && <FriendWishList friendId={friendId} />}
-      {/* 重なれば「あそぼ」、重ならなければ「ここどう？」になるので「誘う」とだけ書く（T-34） */}
-      {!acting && friend.data && (
-        <ButtonLink to={`/invites/new?friend=${encodeURIComponent(friendId)}`} variant="primary" block>
-          誘う
-        </ButtonLink>
+        <FadeIn className="flex flex-col gap-4">
+          <Section title="見えているここ暇" aside="今日から14日">
+            {slots.data?.items.length === 0 && <p className="text-ink-muted">見えているここ暇はありません</p>}
+            <ul aria-label="友達のここ暇" className="flex flex-col">
+              {slots.data?.items.map((s) => (
+                <li key={s.startsAt} className="flex items-center gap-3 border-b border-line py-2 last:border-b-0">
+                  <span className="w-24 shrink-0 tabular-nums">{formatDate(localDateOf(s.startsAt))}</span>
+                  <AvailabilityChip text={formatSlot(s)} />
+                </li>
+              ))}
+            </ul>
+          </Section>
+          <FriendWishList friendId={friendId} />
+          {/* 重なれば「あそぼ」、重ならなければ「ここどう？」になるので「誘う」とだけ書く（T-34） */}
+          <ButtonLink to={`/invites/new?friend=${encodeURIComponent(friendId)}`} variant="primary" block>
+            誘う
+          </ButtonLink>
+        </FadeIn>
       )}
     </SheetScreen>
   );

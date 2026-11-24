@@ -21,10 +21,11 @@ import { isSafetyOpenNow } from "../safety/open";
 // 設定（docs/specs/T-11-design.md「画面のつながり」、キャンバス「19 設定」「21 時間帯プリセット」「23 アカウント」）
 // 友達タブの「アカウント」の節から開く。初回設定・ログインの方法の連携は、それぞれのタスクで作る（#43・#45）。退会は T-16
 
+// 行を押している間は地を沈める（docs/specs/T-56-motion.md「M-11」）。一覧の左右の余白まで沈むよう、行を余白の分だけ広げる
 function Row({ to, label, value }: { to: string; label: string; value?: string }) {
   return (
-    <li className="border-b border-line last:border-b-0">
-      <Link to={to} className="flex min-h-12 items-center gap-2 text-ink no-underline">
+    <li className="-mx-4 border-b border-line last:border-b-0">
+      <Link to={to} className="flex min-h-12 items-center gap-2 px-4 text-ink no-underline transition-[background-color] duration-(--duration-press) active:bg-surface-sunken lg:hover:bg-surface-sunken">
         <span className="flex-1">{label}</span>
         {value && <span className="text-s text-ink-muted">{value}</span>}
         <span aria-hidden="true" className="text-ink-muted">

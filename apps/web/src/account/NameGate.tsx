@@ -42,13 +42,17 @@ function NamePage() {
   );
 }
 
-/** ログイン済みの画面の前に置く。読み込めなかったときは止めない */
-export function NameGate({ children }: { children: ReactNode }) {
+/**
+ * ログイン済みの画面の前に置く。読み込めなかったときは止めない。
+ * fallback は読み込み中に出すもの（タブの URL では、ログインの確認中と同じ殻。docs/specs/T-56-motion.md「M-05」）
+ */
+export function NameGate({ children, fallback }: { children: ReactNode; fallback?: ReactNode }) {
   const me = useQuery(meGateQuery());
   // 読み込み中で止めるのは最初の1回だけ。読み込めなかったあとに、ほかの画面の取り直しで止めて画面を描き直さないため
   const [settled, setSettled] = useState(false);
   if (!me.isPending && !settled) setSettled(true);
   if (me.isPending && !settled) {
+    if (fallback) return fallback;
     return (
       <main className="mx-auto max-w-md p-6">
         <Loading />

@@ -15,7 +15,7 @@ import { Badge } from "../ui/Badge";
 import { SheetScreen } from "../ui/BottomSheet";
 import { Button, ButtonLink, SendButton } from "../ui/Button";
 import { Collapse } from "../ui/Collapse";
-import { LoadError, Loading, Note } from "../ui/feedback";
+import { FadeIn, LoadError, Loading, Note } from "../ui/feedback";
 import { Field, inputClass } from "../ui/form";
 import { ResponseButtons } from "../ui/HeadCount";
 import { LinkCard } from "../ui/LinkCard";
@@ -146,11 +146,14 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
             <Avatar name={d.counterpart.displayName} src={d.counterpart.avatarUrl} />
             <div className="flex min-w-0 flex-1 flex-col">
               <h2 className="truncate text-l font-bold">{d.direction === "received" ? name : `${named}へ`}</h2>
-              <span className="truncate text-s text-ink-muted">{KIND_LABELS[d.kind]}</span>
+              {/* バッジは種類の文字の横（1行めに置くと、名前が数文字で切れる。入らなければ種類の文字の下へ折り返す。docs/specs/T-56-motion.md「V-1」） */}
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="min-w-0 truncate text-s text-ink-muted">{KIND_LABELS[d.kind]}</span>
+                <Badge tone={statusTone(d.status)} pop={metByMe || moment !== null}>
+                  {statusText(d)}
+                </Badge>
+              </span>
             </div>
-            <Badge tone={statusTone(d.status)} pop={metByMe || moment !== null}>
-              {statusText(d)}
-            </Badge>
             {d.direction === "received" && !d.counterpart.withdrawn && !acting && (
               <MoreButton ref={moreRef} name={name} onClick={openActions} />
             )}
@@ -173,7 +176,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
         <LoadError retry={() => void invite.refetch()} />
       )}
       {d && !acting && (
-        <>
+        <FadeIn className="flex flex-col gap-4">
           <p className="sr-only">
             {d.direction === "received" ? "誘ってくれた人" : "誘った相手"}：{name}
           </p>
@@ -254,7 +257,7 @@ export function InviteDetailPage({ inviteId }: { inviteId: string }) {
               {failed}
             </p>
           )}
-        </>
+        </FadeIn>
       )}
     </SheetScreen>
   );

@@ -24,10 +24,10 @@ import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { WelcomePage } from "./pages/WelcomePage";
 import { AccountSettingsPage, PresetSettingsPage, SettingsPage } from "./pages/SettingsPage";
-import { behindTab, navigate, useLocation } from "./router";
+import { behindTab, navigate, useLocation, useNavigationScroll } from "./router";
 import { Button } from "./ui/Button";
 import { Loading } from "./ui/feedback";
-import type { TabPath } from "./ui/Navigation";
+import { TabShell, type TabPath } from "./ui/Navigation";
 import { lazyPage } from "./ui/lazyPage";
 import { ResultBandProvider } from "./ui/ResultBand";
 
@@ -100,6 +100,14 @@ function behindOf(fallback: TabPath) {
   return isTab(url.pathname) ? { tab: url.pathname, search: url.search } : { tab: fallback, search: "" };
 }
 
+/** ログインの確認中（と表示名の確認中）に出すタブの殻。タブと、後ろにタブを出すシートの URL だけ（docs/specs/T-56-motion.md「M-05」） */
+function shellOf(pathname: string, search: string): ReactNode | null {
+  const sheet = sheetOf(pathname, search);
+  if (sheet) return <TabShell tab={behindOf(sheet.tab).tab} />;
+  if (isTab(pathname)) return <TabShell tab={pathname} />;
+  return null;
+}
+
 /** 操作の結果の帯は、アプリに1つだけ置く（docs/specs/T-56-motion.md「M-09」） */
 export function App() {
   return (
@@ -112,6 +120,7 @@ export function App() {
 function Routes() {
   const { pathname, search } = useLocation();
   const { status, retry } = useAuth();
+  useNavigationScroll();
 
   if (pathname === "/auth/complete") return <AuthCompletePage />;
   // 招待リンクの受け口は未ログインでも描画する（振り分けると、フラグメントのトークンを失う）
@@ -121,7 +130,9 @@ function Routes() {
     return <Suspense fallback={<PageLoading />}>{pathname === "/privacy" ? <PrivacyPage /> : <TermsPage />}</Suspense>;
   }
 
-  if (status === "checking") return <PageLoading />;
+  // タブと、後ろにタブを出すシートの URL では、確認中もそのタブの殻を出す（シートは確認のあとに描く。docs/specs/T-56-motion.md「M-05」）
+  const shell = shellOf(pathname, search);
+  if (status === "checking") return shell ?? <PageLoading />;
 
   if (status === "error") {
     return (
@@ -144,7 +155,7 @@ function Routes() {
 
   // 表示名が空のあいだは、どの画面の代わりにも名前の画面を出す（docs/specs/T-31-display-name-first-step.md）
   return (
-    <NameGate>
+    <NameGate fallback={shell}>
       <SignedIn pathname={pathname} search={search} />
     </NameGate>
   );

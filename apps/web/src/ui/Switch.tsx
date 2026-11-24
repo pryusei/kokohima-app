@@ -24,9 +24,11 @@ export function Switch({ checked, onChange, disabled, children, description }: P
           disabled={disabled || !online}
           onChange={(e) => onChange(e.target.checked)}
         />
+        {/* 動き（docs/specs/T-56-motion.md「M-18」）：地の色は fast、つまみの移動は fast・ばね（フォーカスの輪の outline は transition に含めない）。
+            押している間はつまみを横に4px伸ばす（オンのときは左へ伸ばし、右の端の位置を変えない）。押せないときは伸ばさない */}
         <span
           aria-hidden="true"
-          className="absolute inset-0 rounded-full border border-line-strong bg-surface-sunken transition-colors peer-checked:border-action peer-checked:bg-action peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus after:absolute after:top-[3px] after:left-[3px] after:size-5 after:rounded-full after:bg-surface after:shadow-card after:transition-transform peer-checked:after:translate-x-5 peer-checked:after:bg-on-action peer-disabled:opacity-50"
+          className="absolute inset-0 rounded-full border border-line-strong bg-surface-sunken transition-[background-color,border-color] duration-(--duration-fast) peer-checked:border-action peer-checked:bg-action peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus after:absolute after:top-[3px] after:left-[3px] after:h-5 after:w-5 after:rounded-full after:bg-surface after:shadow-card after:transition-[translate,width,background-color] after:duration-(--duration-fast) after:ease-spring peer-checked:after:translate-x-5 peer-checked:after:bg-on-action peer-enabled:peer-active:after:w-6 peer-enabled:peer-active:peer-checked:after:translate-x-4 peer-disabled:opacity-50"
         />
       </span>
     </label>

@@ -45,3 +45,47 @@ describe("フォーカスの輪", () => {
     expect(' className="peer-focus-visible:outline-2 peer-focus-visible:outline-focus shadow-card"'.match(HIDES_RING)).toBeNull();
   });
 });
+
+describe("押したときの感触（docs/specs/T-56-motion.md「M-11」）", () => {
+  /** active: で見た目を変えるクラスの文字列 */
+  const pressStrings = (text: string) => [...text.matchAll(/(["'`])((?:(?!\1).)*\b(?:group-)?active:(?:(?!\1).)*)\1/g)].map((m) => m[2] ?? "");
+
+  it.each([
+    ["./InviteCard.tsx", "active:scale-[.98]"],
+    ["../pages/SettingsPage.tsx", "active:bg-surface-sunken"],
+    ["../pages/FriendsPage.tsx", "active:bg-surface-sunken"],
+    ["./NotificationRow.tsx", "active:bg-surface-sunken"],
+    ["../pages/BlockedUsersPage.tsx", "active:bg-surface-sunken"],
+    ["../pages/EveryonePage.tsx", "active:scale-[.95]"],
+  ])("%s に押した感触（%s）があり、press の長さで動く", (path, press) => {
+    const text = sources[path] ?? "";
+    expect(text).toContain(press);
+    expect(text).toMatch(/duration-\(--duration-press\)/);
+  });
+
+  it("行は PC でマウスを乗せたときも沈み、カードはマウスを乗せると影を shadow-float に（静かなカードは影を足さない）", () => {
+    for (const path of ["../pages/SettingsPage.tsx", "./NotificationRow.tsx", "../pages/BlockedUsersPage.tsx", "../pages/FriendsPage.tsx"]) {
+      expect(sources[path], path).toContain("lg:hover:bg-surface-sunken");
+    }
+    const card = sources["./InviteCard.tsx"] ?? "";
+    expect(card).toContain("active:shadow-none lg:hover:not-active:shadow-float");
+    expect(card).toMatch(/tone === "quiet"\s*\?\s*"border border-line bg-surface"/);
+  });
+
+  it("押した感触のクラスは outline を書き換えず、transition に outline を含めない（transition-colors・transition-all を使わない）", () => {
+    const found = Object.entries(sources).flatMap(([path, text]) =>
+      pressStrings(text)
+        .filter((cls) =>
+          cls
+            .split(/\s+/)
+            .some((token) => (/active:/.test(token) && /outline/.test(token)) || /^(?:[\w-]+:)*transition(?:-colors|-all)?$/.test(token)),
+        )
+        .map((cls) => `${path}: ${cls}`),
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("index.css で、タップしたときの既定の色（-webkit-tap-highlight-color）を消す", () => {
+    expect(css).toMatch(/-webkit-tap-highlight-color: transparent;/);
+  });
+});

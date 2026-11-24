@@ -218,3 +218,23 @@ describe("募集の詳細", () => {
     expect(screen.queryByRole("button", { name: "応じる" })).toBeNull();
   });
 });
+
+describe("募集の詳細の見出し（docs/specs/T-56-motion.md「V-1」）", () => {
+  it("受け取った募集：バッジは名前の行ではなく、「暇な人いる？」の横に置く", async () => {
+    window.history.replaceState(null, "", `/broadcasts/${ID}`);
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/broadcasts": json({ items: [], nextCursor: null }),
+      "/api/v1/meetups": json({ items: [], nextCursor: null }),
+      [`/api/v1/broadcasts/${ID}`]: json(received()),
+    });
+    renderApp();
+    const sheet = await screen.findByRole("dialog", { name: "あきさんの募集" });
+    const name = await within(sheet).findByRole("heading", { name: "あきさんの募集" });
+    const badge = within(sheet).getByText("募集中");
+    const row = badge.parentElement as HTMLElement;
+    expect(within(row).getByText("暇な人いる？")).toBeVisible();
+    expect(row.parentElement).toBe(name.parentElement);
+    expect([...(name.parentElement?.parentElement?.children ?? [])]).not.toContain(badge);
+  });
+});
