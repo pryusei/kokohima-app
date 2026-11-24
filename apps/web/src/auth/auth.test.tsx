@@ -6,7 +6,7 @@ import { readAndClearCode } from "../pages/AuthCompletePage";
 import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
 import { tokenStore } from "./tokenStore";
 
-const me = { id: "6f1c1f9e-6c2a-4c55-9b7e-2d1f0b0c4a11", displayName: null, avatarUrl: null };
+const me = { id: "6f1c1f9e-6c2a-4c55-9b7e-2d1f0b0c4a11", displayName: "ゆう", avatarUrl: null };
 const empty = json({ items: [], nextCursor: null });
 // ログイン後のホーム（みんな）と、ログアウトのボタンがある設定のアカウント（docs/specs/T-11-design.md）が読むもの
 const home = { "/api/v1/friend-availabilities": empty };

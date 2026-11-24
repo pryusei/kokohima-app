@@ -547,7 +547,11 @@ describe("リンクの置き場所", () => {
 
   it("招待リンクの受け口：ログインしていれば、同意の1行でなくリンクだけ", async () => {
     window.history.replaceState(null, "", "/invite");
-    mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/invite-links/lookup": lookupOk });
+    mockFetch({
+      "/api/v1/auth/refresh": json(tokenBody()),
+      "/api/v1/invite-links/lookup": lookupOk,
+      "/api/v1/me": json({ id: "6f1c1f9e-6c2a-4c55-9b7e-2d1f0b0c4a11", displayName: "ゆう", avatarUrl: null }),
+    });
     renderApp();
     expect(await screen.findByRole("button", { name: "友達になる" })).toBeVisible();
     expect(screen.getByRole("link", { name: "利用規約" })).toHaveAttribute("href", "/terms");

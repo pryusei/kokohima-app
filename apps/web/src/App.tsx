@@ -1,4 +1,5 @@
 import { Suspense, useEffect, type ReactNode } from "react";
+import { NameGate } from "./account/NameGate";
 import { useAuth } from "./auth/AuthProvider";
 import { AuthCompletePage } from "./pages/AuthCompletePage";
 import { AvailabilityPage } from "./pages/AvailabilityPage";
@@ -19,6 +20,7 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { MeetupDetailPage } from "./pages/MeetupDetailPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
+import { WelcomePage } from "./pages/WelcomePage";
 import { AccountSettingsPage, PresetSettingsPage, SettingsPage } from "./pages/SettingsPage";
 import { behindTab, navigate, useLocation } from "./router";
 import { Button } from "./ui/Button";
@@ -128,6 +130,17 @@ export function App() {
     return <Redirect to={returnTo === "/" ? "/login" : `/login?returnTo=${encodeURIComponent(returnTo)}`} />;
   }
 
+  // 表示名が空のあいだは、どの画面の代わりにも名前の画面を出す（docs/specs/T-31-display-name-first-step.md）
+  return (
+    <NameGate>
+      <SignedIn pathname={pathname} search={search} />
+    </NameGate>
+  );
+}
+
+/** ログイン済みで、表示名がある人の画面 */
+function SignedIn({ pathname, search }: { pathname: string; search: string }) {
+  if (pathname === "/welcome") return <WelcomePage />;
   if (pathname === "/notifications") return <NotificationsPage />;
   if (pathname === "/settings") return <SettingsPage />;
   if (pathname === "/settings/calendar") return <CalendarSettingsPage search={search} />;

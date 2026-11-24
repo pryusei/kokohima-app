@@ -110,7 +110,9 @@ export type AcceptResult =
   | { kind: "created" | "already_friends"; friend: { id: string; displayName: string | null; avatarUrl: string | null } }
   /** keepCookie：表示したリンクと招待Cookieのリンクが違う（別のタブで上書きされた）ので、Cookieは消さない */
   | { kind: "not_found"; keepCookie?: boolean }
-  | { kind: "own_link" };
+  | { kind: "own_link" }
+  /** 閲覧者の表示名が未設定（docs/specs/T-31-display-name-first-step.md）。名前を決めてからやり直せるよう、Cookieは消さない */
+  | { kind: "display_name_required" };
 
 /** 「友達になる」の手順（仕様書の手順1〜4） */
 export async function acceptInvite(
@@ -130,9 +132,11 @@ export async function acceptInvite(
   if (link.id !== linkId) return { kind: "not_found", keepCookie: true };
   // 3. 自分のリンク
   if (link.ownerId === viewerId) return { kind: "own_link" };
-
   const inviter = await getInviterProfile(ctx, link.ownerId);
   if (!inviter) return { kind: "not_found" };
+  // 表示名が空の友達を新しく作らない（T-31）。使えないリンク（発行者がいない場合を含む）の404より後に判定する
+  const me = (await getPublicProfiles(ctx, viewerId, [viewerId])).get(viewerId);
+  if (!me?.displayName) return { kind: "display_name_required" };
 
   // 4. 人数の消費・両方向の行・イベントを1つのバッチで書く
   const outcome = await repo.acceptInBatch(ctx.env.DB, {

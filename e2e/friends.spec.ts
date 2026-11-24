@@ -51,6 +51,52 @@ test("未ログインでリンクを開くとログインを求められ、ロ�
   await expect(friendList(page).getByText(a.displayName)).toBeVisible();
 });
 
+// T-31 表示名を最初のログインで必須にし、友達になった直後の1画面を出す（docs/specs/T-31-display-name-first-step.md「E2Eテスト」）
+test("名前のないユーザーが招待を開くと、名前を入れて「これで友達になる」→ 直後の画面でここ暇を1つ出す → 友達一覧に発行者が出る", async ({ browser }) => {
+  const a = await newUser(browser, "A");
+  const url = await createInviteUrl(a.page);
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(url);
+  await expect(page.getByText(a.displayName)).toBeVisible();
+  // 表示名のないテスト用ユーザーでログインする（招待Cookieが残っている）
+  await loginAs(context, "n");
+  await page.goto("/invite");
+  await expect(page.getByText(a.displayName)).toBeVisible();
+  await expect(page.getByRole("button", { name: "友達になる", exact: true })).toHaveCount(0);
+  const name = uniqueName("N");
+  await page.getByLabel("あなたの表示名").fill(name);
+  await page.getByRole("button", { name: "これで友達になる" }).click();
+
+  await expect(page).toHaveURL(/\/welcome$/);
+  await expect(page.getByRole("heading", { name: "友達になりました" })).toBeVisible();
+  // 今日のプリセットがすべて終わっていれば明日になる。押せる最初のチップを押す
+  await page.getByRole("button", { name: /^(昼|夕方|夜) ?\d/, disabled: false }).first().click();
+  await expect(page.getByText("出しました")).toBeVisible();
+  await page.getByRole("button", { name: "友達の一覧へ" }).click();
+  await expect(page).toHaveURL(/\/friends$/);
+  await expect(friendList(page).getByText(a.displayName)).toBeVisible();
+
+  // 発行者の友達一覧には、入れた名前が出る（「名前未設定の友達」にならない）
+  await a.page.keyboard.press("Escape");
+  await a.page.reload();
+  await expect(friendList(a.page).getByText(name)).toBeVisible();
+  await context.close();
+});
+
+test("名前のないユーザーでアプリを開くと名前の画面が出て、決めると「みんな」が開く", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await loginAs(context, "n");
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "表示名を決めてください" })).toBeVisible();
+  await page.getByLabel("表示名").fill(uniqueName("N"));
+  await page.getByRole("button", { name: "これで始める" }).click();
+  await expect(page.getByRole("heading", { name: "みんな" })).toBeVisible();
+  await context.close();
+});
+
 test("無効化したリンクを開くと「このリンクは使えません」が表示される", async ({ browser }) => {
   const a = await newUser(browser, "A");
   const b = await newUser(browser, "B");

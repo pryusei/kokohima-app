@@ -84,6 +84,7 @@ describe("招待リンクの受け口", () => {
       "/api/v1/auth/refresh": json(tokenBody()),
       "/api/v1/invite-links/lookup": lookupOk,
       "/api/v1/invite-links/accept": json({}, status),
+      "/api/v1/me": json(me("ゆう")),
     });
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: "友達になる" }));
@@ -96,6 +97,7 @@ describe("招待リンクの受け口", () => {
       "/api/v1/auth/refresh": json(tokenBody()),
       "/api/v1/invite-links/lookup": lookupOk,
       "/api/v1/invite-links/accept": () => Promise.reject(new TypeError("Failed to fetch")),
+      "/api/v1/me": json(me("ゆう")),
     });
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: "友達になる" }));
@@ -134,7 +136,7 @@ describe("招待リンクの受け口", () => {
     it("ログイン済みなら帯を出さない", async () => {
       vi.spyOn(navigator, "userAgent", "get").mockReturnValue(LINE_UA);
       window.history.replaceState(null, "", "/invite#t=x");
-      mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/invite-links/lookup": lookupOk });
+      mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/invite-links/lookup": lookupOk, "/api/v1/me": json(me("ゆう")) });
       renderApp();
       expect(await screen.findByRole("button", { name: "友達になる" })).toBeVisible();
       expect(screen.queryByRole("link", { name: "ブラウザで開き直す" })).toBeNull();
@@ -162,6 +164,94 @@ describe("招待リンクの受け口", () => {
       renderApp();
       expect(await screen.findByRole("link", { name: "Googleでログイン" })).toBeVisible();
       expect(screen.queryByRole("link", { name: "ブラウザで開き直す" })).toBeNull();
+    });
+  });
+
+  describe("名前の画面と兼ねた「友達になる」（T-31）", () => {
+    it("名前がなければ、欄と「これで友達になる」を出し、押すと PATCH /me → accept の順に呼んで /welcome へ移る", async () => {
+      window.history.replaceState(null, "", "/invite");
+      const { calls } = mockFetch({
+        "/api/v1/auth/refresh": json(tokenBody()),
+        "/api/v1/invite-links/lookup": lookupOk,
+        "/api/v1/me": [json(me(null)), json(me("ゆう"))],
+        "/api/v1/invite-links/accept": json({ friend: friend(), alreadyFriends: false }, 201),
+        "/api/v1/me/presets": json({ day: { start: "11:00", end: "15:00" }, evening: { start: "16:00", end: "19:00" }, night: { start: "19:00", end: "23:00" } }),
+      });
+      renderApp();
+      expect(await screen.findByText("あきさんから、ここ暇の友達の招待が届いています。")).toBeVisible();
+      expect(screen.queryByRole("button", { name: "友達になる" })).toBeNull();
+      const button = await screen.findByRole("button", { name: "これで友達になる" });
+      expect(button).toBeDisabled();
+      await userEvent.type(screen.getByLabelText("あなたの表示名"), "  ");
+      expect(button).toBeDisabled();
+      await userEvent.type(screen.getByLabelText("あなたの表示名"), "ゆう");
+      await userEvent.click(button);
+      await waitFor(() => expect(window.location.pathname).toBe("/welcome"));
+      expect(await screen.findByRole("heading", { name: "友達になりました" })).toBeVisible();
+      const order = calls.map((c) => `${c.init.method ?? "GET"} ${c.url}`).filter((c) => /PATCH \/api\/v1\/me$|accept$/.test(c));
+      expect(order).toEqual(["PATCH /api/v1/me", "POST /api/v1/invite-links/accept"]);
+      const patch = calls.find((c) => c.init.method === "PATCH");
+      expect(JSON.parse(String(patch?.init.body))).toEqual({ displayName: "  ゆう" });
+    });
+
+    it("名前を保存できなければ accept を呼ばず、静かな文言を出して欄に留まる", async () => {
+      window.history.replaceState(null, "", "/invite");
+      const { calls } = mockFetch({
+        "/api/v1/auth/refresh": json(tokenBody()),
+        "/api/v1/invite-links/lookup": lookupOk,
+        "/api/v1/me": [
+          json(me(null)),
+          json({ type: "about:blank", title: "x", status: 400, code: "validation_failed", requestId: "r" }, 400),
+        ],
+      });
+      renderApp();
+      await userEvent.type(await screen.findByLabelText("あなたの表示名"), "ゆう");
+      await userEvent.click(screen.getByRole("button", { name: "これで友達になる" }));
+      const text = await screen.findByText("保存できませんでした。1〜20文字で入力してください。");
+      expect(text.className).not.toMatch(/red|rose|error/);
+      expect(screen.getByLabelText("あなたの表示名")).toBeVisible();
+      expect(calls.some((c) => c.url === "/api/v1/invite-links/accept")).toBe(false);
+      expect(window.location.pathname).toBe("/invite");
+    });
+
+    it("名前を保存して accept が404なら、今の受け口と同じ文言を出す", async () => {
+      window.history.replaceState(null, "", "/invite");
+      mockFetch({
+        "/api/v1/auth/refresh": json(tokenBody()),
+        "/api/v1/invite-links/lookup": lookupOk,
+        "/api/v1/me": [json(me(null)), json(me("ゆう"))],
+        "/api/v1/invite-links/accept": json({}, 404),
+      });
+      renderApp();
+      await userEvent.type(await screen.findByLabelText("あなたの表示名"), "ゆう");
+      await userEvent.click(screen.getByRole("button", { name: "これで友達になる" }));
+      expect(await screen.findByText(/友達になれませんでした。招待リンクをもう一度開いてください/)).toBeVisible();
+    });
+
+    it("GET /me を読み込むあいだは、ボタンの位置に読み込み中の表示を出す", async () => {
+      window.history.replaceState(null, "", "/invite");
+      mockFetch({
+        "/api/v1/auth/refresh": json(tokenBody()),
+        "/api/v1/invite-links/lookup": lookupOk,
+        "/api/v1/me": () => new Promise<Response>(() => {}),
+      });
+      renderApp();
+      expect(await screen.findByText("あきさんから、ここ暇の友達の招待が届いています。")).toBeVisible();
+      expect(screen.getByRole("status", { name: "読み込み中" })).toBeVisible();
+      expect(screen.queryByRole("button", { name: /友達になる/ })).toBeNull();
+    });
+
+    it("GET /me が読めなければ、ボタンを出さずに開き直しを促す", async () => {
+      window.history.replaceState(null, "", "/invite");
+      const { calls } = mockFetch({
+        "/api/v1/auth/refresh": json(tokenBody()),
+        "/api/v1/invite-links/lookup": lookupOk,
+        "/api/v1/me": () => Promise.reject(new TypeError("Failed to fetch")),
+      });
+      renderApp();
+      expect(await screen.findByText(/通信できませんでした。通信状態を確認して、リンクをもう一度開いてください/)).toBeVisible();
+      expect(screen.queryByRole("button", { name: /友達になる/ })).toBeNull();
+      expect(calls.some((c) => c.url === "/api/v1/invite-links/accept")).toBe(false);
     });
   });
 
@@ -216,21 +306,6 @@ describe("友達タブ", () => {
     await userEvent.click(toggle as HTMLElement);
     expect(await screen.findByText(/保存できませんでした/)).toBeVisible();
     await waitFor(() => expect(toggle).toBeChecked());
-  });
-
-  it("表示名が未設定なら、招待リンクを作る前に表示名の入力を出す", async () => {
-    renderFriends({
-      "/api/v1/me": [json(me(null)), json(me("ゆう"))],
-    });
-    renderApp();
-    // 招待リンクの発行はシートで開く（docs/specs/T-11-design.md）
-    await userEvent.click(await screen.findByRole("button", { name: "招待リンクを作る" }));
-    const sheet = screen.getByRole("dialog", { name: "招待リンクを作る" });
-    const input = await within(sheet).findByLabelText("表示名");
-    expect(within(sheet).queryByRole("button", { name: "招待リンクを作る" })).toBeNull();
-    await userEvent.type(input, "ゆう");
-    await userEvent.click(within(sheet).getByRole("button", { name: "保存する" }));
-    expect(await within(sheet).findByRole("button", { name: "招待リンクを作る" })).toBeVisible();
   });
 
   it("招待リンクを作ると、URLを一度だけ表示する", async () => {

@@ -61,9 +61,9 @@ export async function befriend(inviter: E2EUser, invitee: E2EUser) {
 }
 
 export const test = base.extend<{ loggedInPage: Page }>({
-  /** ユーザーAとしてログイン済みのページ */
+  /** ユーザーAとしてログイン済みのページ。名前の画面（docs/specs/T-31-display-name-first-step.md）を通らないよう表示名を付ける */
   loggedInPage: async ({ context, page }, use) => {
-    await loginAs(context, "a");
+    await loginAs(context, "a", uniqueName("A"));
     await use(page);
   },
 });
