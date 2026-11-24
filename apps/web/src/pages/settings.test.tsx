@@ -130,7 +130,9 @@ describe("設定", () => {
     // 保存してもフォームは作り直されず、ボタンが「✓ 保存しました」になり、入力した値が残る
     const saved = await within(section).findByRole("button", { name: "保存しました" });
     expect(saved).toBeDisabled();
-    expect(saved.className).toContain("bg-meet-soft");
+    // 「✓ 保存しました」は操作の青（成立の青緑は成立だけ。T-56 M-03）
+    expect(saved.className).toContain("text-action");
+    expect(saved.className).not.toContain("bg-meet-soft");
     expect(within(section).getByText("保存しました", { selector: "[role=status]" })).toBeInTheDocument();
     expect(within(section).getByLabelText("表示名")).toHaveValue("ゆうき");
   });

@@ -11,9 +11,15 @@ const TONE: Record<Tone, string> = {
   quiet: "bg-quiet-bg text-quiet-ink",
 };
 
-export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
+/** pop：自分の操作で成立したときに1回だけ「ぽん」とする（docs/specs/T-56-motion.md「M-04」。meet のときだけ効く） */
+export function Badge({ tone, pop = false, children }: { tone: Tone; pop?: boolean; children: ReactNode }) {
+  const popping = pop && tone === "meet";
   return (
-    <span data-tone={tone} className={`inline-flex shrink-0 items-center rounded-s px-2 text-s leading-6 ${TONE[tone]}`}>
+    <span
+      data-tone={tone}
+      data-pop={popping || undefined}
+      className={`inline-flex shrink-0 items-center rounded-s px-2 text-s leading-6 ${TONE[tone]} ${popping ? "animate-kh-badge-pop" : ""}`}
+    >
       {children}
     </span>
   );

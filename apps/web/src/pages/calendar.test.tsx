@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -70,8 +70,11 @@ describe("設定のカレンダー連携", () => {
       "/api/v1/calendar/connections": json({ google: { status: "needs_reauth", connectedAt: "2026-10-01T00:00:00.000Z" } }),
     });
     renderApp();
-    const failed = await screen.findByText("連携できませんでした。もう一度お試しください");
-    expect(failed.className).not.toMatch(/red|rose/);
+    // 結果の帯に出し、本文の流れには置かない（docs/specs/T-56-motion.md「M-09」）
+    const band = screen.getByTestId("result-band");
+    expect(await within(band).findByText("連携できませんでした。もう一度お試しください")).toBeVisible();
+    expect(band.innerHTML).not.toMatch(/red|rose/);
+    expect(within(screen.getByRole("main")).queryByText("連携できませんでした。もう一度お試しください")).toBeNull();
     expect(await screen.findByText("もう一度連携してください")).toBeVisible();
     expect(screen.getByRole("button", { name: "Googleカレンダーと連携" })).toBeVisible();
     expect(screen.getByRole("button", { name: "連携をやめる" })).toBeVisible();
@@ -81,7 +84,8 @@ describe("設定のカレンダー連携", () => {
     window.history.replaceState(null, "", "/settings/calendar?calendar=connected");
     mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/calendar/connections": connected });
     renderApp();
-    expect(await screen.findByText("連携しました")).toBeVisible();
+    expect(await within(screen.getByTestId("result-band")).findByText("連携しました")).toBeVisible();
+    expect(screen.getAllByText("連携しました")).toHaveLength(1);
   });
 });
 

@@ -1,8 +1,19 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
-import { goBack } from "../router";
+import { goBack, swappedSheetHeight } from "../router";
 import { OfflineBanner } from "./feedback";
-import { MOTION_MS, useExitAnimation } from "./motion";
+import { MOTION_MS, prefersReducedMotion, useExitAnimation } from "./motion";
 import { dragVelocity, sheetDragOffset, sheetDragOutcome, type DragOrigin, type DragSample } from "./sheetDrag";
 import { useDesktop } from "./useDesktop";
 
@@ -15,6 +26,8 @@ import { useDesktop } from "./useDesktop";
 // 出入りの動き（docs/specs/T-56-motion.md「M-01」）：入るのは CSS（index.css の .kh-sheet・@starting-style）。
 // 閉じる操作では onClose をすぐ呼ばず、出る動き（data-exiting）を走らせてから1回だけ呼ぶ。動きを止める設定（jsdom を含む）では即時。
 // 引っぱり（M-02）：つまみと見出しの行を引くと、シートが指についてくる（スマホだけ）
+// 差し替え（M-03）：swapSheet で作成から詳細へ移ったときは、入る動きを走らせず、前のシートの高さのまま描き始め、
+// 読み込み中が終わったら、測った中身の高さ（px）へ縮める。height: auto への transition は使わない（Safari・Firefox で動かない）
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 /** 見出しの行の中で、押し込みを引っぱりにしないもの（ボタン・リンクとして働く） */
@@ -33,9 +46,19 @@ const SheetLeavingContext = createContext<() => boolean>(() => false);
 /** シートの中から、そのシートが閉じる操作のあとかを確かめる関数を返す（シートの外では常に false） */
 export const useSheetLeaving = () => useContext(SheetLeavingContext);
 
-type Props = { title: ReactNode; label: string; onClose: () => void; children: ReactNode };
+/** 読み込み中の骨組み（feedback.tsx の Loading）が中身にあるか */
+const isLoading = (el: HTMLElement) => el.querySelector('[role="status"][aria-label="読み込み中"]') !== null;
 
-export function BottomSheet({ title, label, onClose, children }: Props) {
+type Props = {
+  title: ReactNode;
+  label: string;
+  onClose: () => void;
+  /** true になったら、閉じる操作と同じに出る動き（M-01）を走らせてから onClose を呼ぶ（送れたあとに閉じる。M-03） */
+  dismiss?: boolean;
+  children: ReactNode;
+};
+
+export function BottomSheet({ title, label, onClose, dismiss = false, children }: Props) {
   const { exiting: animating, start, ref: dialog } = useExitAnimation<HTMLDivElement>(EXIT_MS);
   const scrim = useRef<HTMLDivElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
@@ -46,6 +69,10 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
   // onClose を呼んだあと、外す（アンマウント）までは、出た形のまま描く（goBack は popstate が後から届くので、その間に戻って見えないように）
   const [gone, setGone] = useState(false);
   const desktop = useDesktop();
+  // 差し替えの前のシートの高さ（M-03）。最初の描画で1回だけ読む。動きを止める設定では使わない（高さも中身も即時）
+  const [swapFrom] = useState(() => (prefersReducedMotion() ? null : swappedSheetHeight()));
+  // hold＝前の高さのまま（読み込み中）、reveal＝測った高さへ縮めている、null＝ふつう
+  const [swap, setSwap] = useState<"hold" | "reveal" | null>(swapFrom === null ? null : "hold");
 
   const latestClose = useRef(onClose);
   useEffect(() => {
@@ -71,6 +98,50 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
     });
   }, [start, clearDrag]);
   const isLeaving = useCallback(() => leaving.current, []);
+  useEffect(() => {
+    if (dismiss) requestClose();
+  }, [dismiss, requestClose]);
+
+  // 差し替え（M-03）：描く前に前の高さを当てる。読み込み中が終わった最初の描画のあと、中身の大きさが決まったら（ResizeObserver）、
+  // 中身の高さ（max-h の上限まで）を測って、前の高さから縮める。終わったら（保険のタイマー）高さの指定を外す
+  useLayoutEffect(() => {
+    if (swapFrom !== null) dialog.current?.style.setProperty("height", `${swapFrom}px`);
+  }, [swapFrom, dialog]);
+  useLayoutEffect(() => {
+    // 毎回の描画のあとに、読み込み中が終わったかを見る（中身は呼び出し側が描くので、印は DOM で確かめる）
+    const el = dialog.current;
+    if (swap === "hold" && el && !isLoading(el)) setSwap("reveal");
+  }, [swap, dialog, children]);
+  useLayoutEffect(() => {
+    const el = dialog.current;
+    if (swap !== "reveal" || swapFrom === null || !el) return;
+    let timer: number | undefined;
+    const shrink = () => {
+      el.style.removeProperty("height");
+      const to = el.offsetHeight;
+      el.style.setProperty("height", `${swapFrom}px`);
+      // 前の高さを描いたことにしてから、測った高さへ（同じフレームで替えると transition にならない）
+      void el.offsetHeight;
+      el.style.setProperty("height", `${to}px`);
+      timer = window.setTimeout(() => {
+        el.style.removeProperty("height");
+        setSwap(null);
+      }, MOTION_MS.sheet + 50);
+    };
+    if (typeof ResizeObserver === "undefined") {
+      shrink();
+      return () => window.clearTimeout(timer);
+    }
+    const observer = new ResizeObserver(() => {
+      observer.disconnect();
+      shrink();
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [swap, swapFrom, dialog]);
 
   // Esc は、押したボタンが送信中に押せなくなってフォーカスがシートの外（body）に出たときも効くように、文書全体で受ける
   const close = useRef(requestClose);
@@ -187,6 +258,7 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
       ref={scrim}
       data-testid="sheet-scrim"
       data-exiting={exiting ? "" : undefined}
+      data-swap={swap ?? undefined}
       className="kh-sheet-scrim fixed inset-0 z-30 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6"
       // 押し始めも離したのも暗い部分のときだけ閉じる（シートの中で文字を選んで外で離したときに閉じない）
       onPointerDown={(e) => {
@@ -211,7 +283,7 @@ export function BottomSheet({ title, label, onClose, children }: Props) {
         {/* つまみと見出しの行（つかんで引ける。帯の中のボタン・リンクから始めた押し込みは引っぱりにしない） */}
         <div
           data-testid="sheet-header"
-          className="sticky top-0 z-10 -mx-6 -mt-2 flex touch-none flex-col gap-2 bg-surface px-6 pt-2 pb-1"
+          className="kh-sheet-header sticky top-0 z-10 -mx-6 -mt-2 flex touch-none flex-col gap-2 bg-surface px-6 pt-2 pb-1"
           onPointerDown={onHeaderDown}
           onPointerMove={onHeaderMove}
           onPointerUp={onHeaderUp}
