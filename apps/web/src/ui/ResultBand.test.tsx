@@ -229,4 +229,41 @@ describe("結果の帯", () => {
     expect(screen.getByRole("button", { name: "取り消す" })).toBeVisible();
     root.remove();
   });
+
+  it("シートを開いているときは、Tab がシートの中と帯の「取り消す」のあいだで回る（後ろの #root には出ない）", () => {
+    const root = document.createElement("div");
+    root.id = "root";
+    document.body.append(root);
+    function WithSheet() {
+      const show = useResultBand();
+      return (
+        <BottomSheet title="マス" label="マス" onClose={() => {}}>
+          <button type="button" onClick={() => show({ text: "取り消しました", undo: () => {} })}>
+            外す
+          </button>
+        </BottomSheet>
+      );
+    }
+    render(
+      <ResultBandProvider>
+        <WithSheet />
+      </ResultBandProvider>,
+      { container: root },
+    );
+    const last = screen.getByRole("button", { name: "外す" });
+    fireEvent.click(last);
+    const undo = screen.getByRole("button", { name: "取り消す" });
+    const first = screen.getByRole("button", { name: "閉じる" });
+    const tab = (shiftKey = false) => fireEvent.keyDown(document.activeElement ?? document.body, { key: "Tab", shiftKey });
+    last.focus();
+    tab();
+    expect(undo).toHaveFocus();
+    tab();
+    expect(first).toHaveFocus();
+    tab(true);
+    expect(undo).toHaveFocus();
+    tab(true);
+    expect(last).toHaveFocus();
+    root.remove();
+  });
 });

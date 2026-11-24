@@ -65,12 +65,12 @@ function PushSection() {
           </>
         )}
         {supported && enabled === false && (
-          <SendButton variant="primary" block disabled={toggle.isPending} onClick={() => toggle.mutate(true)}>
+          <SendButton variant="primary" block pending={toggle.isPending} onClick={() => toggle.mutate(true)}>
             この端末でプッシュ通知を受け取る
           </SendButton>
         )}
         {supported && enabled === true && (
-          <SendButton block disabled={toggle.isPending} onClick={() => toggle.mutate(false)}>
+          <SendButton block pending={toggle.isPending} onClick={() => toggle.mutate(false)}>
             この端末でのプッシュ通知をやめる
           </SendButton>
         )}

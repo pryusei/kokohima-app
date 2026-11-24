@@ -1,9 +1,9 @@
 # T-56 仕様書：UIの「動き」と「手触り」
 
-- 状態：合意済み（仕様書PRマージ。pryusei/kokohima-app#216）。実装PR①（土台とシート）を実装した。実装PR②・③は T-55 の main 入りを待つ
+- 状態：合意済み（仕様書PRマージ。pryusei/kokohima-app#216）。実装PR①（土台とシート。#218）を実装した。実装PR②（送る・成立・結果）を実装した
 - タスク票：docs/tasks/T-56-motion.md
 - 関係する要件：要求定義書「デザイン原則」（断り・期限切れ・キャンセルを赤やエラー色で出さない）、アクセシビリティ（動き・フォーカス）
-- 関係する仕様書：T-11（docs/specs/T-11-design.md。画面のつながり・シート・読み込み中）、T-20（docs/specs/T-20-desktop-layout.md。PC のナビとダイアログ）、T-43（docs/specs/T-43-meet-moment.md。成立の演出）、T-54（docs/specs/T-54-save-and-goodbye-copy.md。保存のボタン）、T-40（docs/specs/T-40-ima-hima.md。今ひまの「元に戻す」）、T-55（ここ暇タブの週の帯。作業中のブランチ `feat/T-55-availability-week-grid`）、T-46（フォーカスの輪）
+- 関係する仕様書：T-11（docs/specs/T-11-design.md。画面のつながり・シート・読み込み中）、T-20（docs/specs/T-20-desktop-layout.md。PC のナビとダイアログ）、T-43（docs/specs/T-43-meet-moment.md。成立の演出）、T-54（docs/specs/T-54-save-and-goodbye-copy.md。保存のボタン）、T-40（docs/specs/T-40-ima-hima.md。今ひまの「元に戻す」）、T-55（docs/specs/T-55-availability-week-grid.md。ここ暇タブの週の帯。#217）、T-46（フォーカスの輪）
 
 ## 概要
 画面（`apps/web`）の動きは、今は成立の演出（T-43）と、ボタンの `active:scale-[.98]`・スイッチの既定の transition だけで、シートは「パッ」と出て消え、送った・成立した・追加したという手応えがどこにも出ない。持ち主の指示書（スマホの幅 390×844 で触って確かめた20の指摘）をもとに、アプリ全体の動きを、動きのトークンと少数の部品（`useExitAnimation`・`Collapse`・結果の帯など）でそろえる。依存は増やさず、CSS と View Transitions API で作る。
@@ -80,7 +80,7 @@
 - `useViewTransition`（`apps/web/src/router.ts` の中）：View Transitions を使う画面の切り替え（M-07・M-13）。`document.startViewTransition` がない・`prefersReducedMotion()` が true なら、更新をそのまま行う（即時）。ある場合は、更新の関数の中で React の `flushSync` で描き切る。
 
 #### 0-4. 高さの開閉の部品 `Collapse`（`apps/web/src/ui/Collapse.tsx`）
-- `<Collapse show={boolean}>…</Collapse>`：`display: grid` の入れ物の `grid-template-rows` を `0fr ↔ 1fr`、中身の `opacity` を `0 ↔ 1` にする。中の要素は `min-height: 0; overflow: hidden`。
+- `<Collapse show={boolean}>…</Collapse>`：`display: grid` の入れ物の `grid-template-rows` を `0fr ↔ 1fr`、中身の `opacity` を `0 ↔ 1` にする。中の要素は `min-height: 0; overflow: hidden`。中身の端のボタンのフォーカスの輪（外側に約4px）が切れないよう、中の要素に `padding: 0.25rem` と同じ大きさの負の `margin` を付けて、切る箱だけを広げる（レイアウトは変えない）。
 - 開く：`--duration-base`・`--ease-out`。閉じる：`--duration-fast`・`--ease-in`。閉じる動きのあいだは中身を描き続け、終わったら描かない（`useExitAnimation`）。
 - 最初の描画で `show` が true のときは動かさない（開いた状態で出る）。動かすのは、描いたあとで `show` が変わったときだけ。
 - 閉じている途中と閉じたあとは、中身を `inert` にする（Tab で入らない・読み上げない）。
@@ -143,6 +143,8 @@
     - 元の色のまま `opacity: .7`（`--duration-fast`）。文言は呼び出し側が渡す送信中の文言（「送っています…」など）に替える。くるくる回る印は使わない（T-11）。
     - 押せない。ただし `disabled` ではなく `aria-disabled="true"` にし、押しても・Enter でフォームを送っても何もしない（フォーカスがボタンに残り、`body` に外れない。`BottomSheet.tsx` の Esc のコメントにある「送信中に押せなくなってフォーカスがシートの外に出る」ことが起きなくなる）。
   - 灰色（`disabled:` の色）は、オフラインのとき（今のまま）と、入力がそろっていないとき（相手を選んでいない・時間が正しくない、など今の条件）だけ。送信中とオフラインで見た目が違う。
+  - 対象は `SendButton` を使うすべての所（シートの中の送るボタン、募集の詳細の返答と「決める」、お知らせの「この人に見せない」、行きたいの保存と削除、安全の操作、通知の設定、招待リンク、くり返し、アイコン、今ひまの「やめる」「元に戻す」など）。送信中は `disabled` ではなく `pending` を渡し、`disabled` は入力がそろっていないときだけに使う。
+  - 押したときの縮み（`active:scale-[.98]`）は、押せるときだけの条件（`not-disabled:not-aria-disabled:`）で付ける。送信中と「✓ 送りました」のあいだは押しても縮まない（打ち消しのクラスを後ろに足すと、Tailwind の出力の順で負けることがあるため）。送るボタンの transition は、Tailwind v4 の `active:scale-*` が動かす `scale` を含める。
   - T-54 の `SaveButton`（`state: "saving"`）も同じ送信中の見た目にする（灰色にしない）。文言は「保存しています…」。T-54 の仕様書の「動き（アニメーション・トランジション）は付けない」には、この仕様書PRで「T-56 M-14 で変わる」と書き添えた（「✓ 保存しました」の長さ2秒は T-54 のまま。色は下の M-03 のとおり操作の青に変え、T-54 の仕様書も直した）。`SaveButton.test.tsx` の「アニメーションのクラスがない」「送信中は押せない」の確かめは、実装PR②でこの節に合わせて直す。
 
 #### M-03 送った手応えと、シートの差し替え
@@ -211,6 +213,7 @@
     - context に渡すのは、変わらない `show` の関数だけにする。今出している帯の文言・タイマーなどの状態は `ResultBand` の部品の中だけで持ち（`show` は `ResultBand` の中の更新を呼ぶ）、帯を出すたびに `useResultBand` を使う画面が描き直されないようにする（`vercel-react-best-practices` の rerender の決まり）。
     - 位置：T-55 のとおり、下のタブの上（スマホ）・左のナビの右（PC）。シートを開いているときはシートの上に重ねる（重なりの順をシートより上にする。`z-40`、シートは `z-30`）。中身を押し下げない（`position: fixed`）。シートの後ろの `#root` は `inert` なので、帯は `body` の直下に描く（T-55 のシートの中に出していた一文 `inline` はやめ、帯に一本化する）。
     - 読み上げ：`role="status"` の場所はいつも置いておき、中身だけを入れ替える（T-55 のまま）。
+    - キーボード：シートを開いているあいだ、シートの Tab の循環に帯の「取り消す」を入れる（シートの中の最後の要素 → 帯の「取り消す」→ シートの最初の要素。Shift+Tab は逆）。帯はシートの外（`body` の直下）にあるので、`BottomSheet` は Tab を文書全体で受け、フォーカスがシートの中か帯の中にあるときだけ回す。
     - 入る：`translateY(8px)`＋`opacity 0` → `0`・`1`（`--duration-base`・`--ease-out`）。出る：`opacity → 0`（`--duration-fast`・`--ease-in`。`useExitAnimation` と `kh-fade-exit`）。T-55 の `kh-rise .2s ease-out` を、このトークンに置き換える（`animate-kh-rise`。`motion-safe:` は付けず、動きを止める設定では共通の指定で止まって最終形が見える）。
     - 消えるまで：「取り消す」があるものは T-55 の6秒（`UNDO_TOAST_MS`）、文だけのものは3.5秒。指やマウスを乗せている間・フォーカスがある間は消さない（T-55 のまま）。
     - 新しい結果が来たら、今の帯を差し替えて入る動きからもう一度出す（同じ文でも、もう一度出たことが分かる）。
@@ -406,6 +409,10 @@
 - [x] 結果の帯（`apps/web/src/ui/ResultBand.test.tsx`。T-55 の `UndoToast.test.tsx` を移して足す）：画面に1つだけ。`show` で出て、文だけは3.5秒・「取り消す」つきは6秒で消える。同じ文を2回 `show` すると、入る動きからもう一度出る（要素が作り直される）。乗せている間・フォーカスの間は消えない。`role="status"` の場所はいつもある。シートを開いているときもシートの上に出る。`show` を呼んでも、`useResultBand` を使う部品は描き直されない（描いた回数を数える）。動きを止める設定では、入る動きなしにすぐ見える（普段の指定に `opacity-0` がない）
 - [x] お知らせの「見せないにしました」とカレンダー連携の結果が、結果の帯に出て、本文の流れに `Toast` を置かない（`notifications.test.tsx`・`calendar.test.tsx`。E2E の `e2e/notifications.spec.ts` も帯で確かめる）
 - [x] ここ暇のマスのシート（T-55 の `CellSheet`）の一文と「取り消す」は、シートの中ではなく、シートの上に重ねた結果の帯に出る（`availabilityWeek.test.tsx`）
+- [x] シートを開いているあいだ、Tab がシートの中と帯の「取り消す」のあいだで回る（`ResultBand.test.tsx`）
+- [x] 覚えた高さは、合成の `popstate` では残り、ブラウザの戻る・進む（`isTrusted`）で消える。`BottomSheet` の `dismiss` は出る動きのあと `onClose` を1回だけ呼び、閉じる途中の Esc と重なっても2回呼ばない（`sheetSwap.test.tsx`）
+- [x] ここ暇の「時間を決めて入れる」は「入れています…」→「✓ 入れました」→ 出る動きで閉じて結果の帯（`availabilityWeek.test.tsx`）
+- [x] 押した縮みは押せるときだけの条件で付き、送るボタンの transition は `scale` を含む（`SubmitButton.test.tsx`）
 - [x] 結果の帯の読み上げの場所がいつもあるので、画面の `role="status"` を1つだと決めて探していたテスト（`withdrawal.test.tsx`）は、文で探して status かを確かめる
 - [x] 今ひま（`freeNow.test.tsx`）：「元に戻す」の5秒と文言は今のまま（既存のテストが通る）
 - [x] M-12（`AvailabilityChip`。`apps/web/src/ui/AvailabilityChip.test.tsx`）：止めない設定で、重なる枠が画面に入ったら1回だけ灯る印が付き、同じ枠を描き直しても・見えなくなってまた入っても、もう一度付かない。重ならない枠には付かない。動きを止める設定・`IntersectionObserver` がない環境では、最初から灯った見た目
@@ -452,7 +459,7 @@
 - オフラインでも読めるキャッシュ、テーマを手で切り替える設定（T-11 のまま）。
 
 ## 確認事項（合意前に解消する）
-- T-55（ここ暇タブの週の帯）がまだ main に入っていない。M-03・M-09・M-10 のここ暇の部分は T-55 の画面（`WeekPlanner`・`TimeRangeSheet`・`CellSheet`・`UndoToast`）を前提に書いた。実装PR②・③は T-55 の実装PRが main に入ってから作る。T-55 の仕様が変わったら、この仕様書を実装PRで直す。
+- （解消）T-55（ここ暇タブの週の帯）は main に入った（#217）。M-03・M-09・M-10 のここ暇の部分は T-55 の画面（`WeekPlanner`・`TimeRangeSheet`・`CellSheet`）のとおりに実装する。
 
 ## 判断してほしいこと
 1. アニメーションのライブラリを入れるか。(a) 入れない／(b) `motion` を入れる。推奨：(a)。今の動きの量なら CSS と View Transitions で足り、バンドルも増えない。指につく引っぱり（M-02）だけ小さな自前のフックで書く。
@@ -477,3 +484,4 @@
 | 2026-11-24 | 実装PR①のレビューで直した：`onClose` のあと外れるまでの閉じる操作（`Esc` など）も何もしない。引いている・戻している途中に閉じても `data-drag` を外してから出る（M-01）。2本めの指と左以外のボタンでは引っぱりにしない（M-02） | 実装PR①のレビュー（pryusei/kokohima-app#218） |
 | 2026-11-24 | main の取り込み（T-55）で入った `animate-[kh-pop_.35s_ease-out]`・`animate-[kh-rise_.2s_ease-out]` を、`@theme` の `--animate-kh-pop`（sheet・ease-out）・`--animate-kh-rise`（base・ease-out）に移した（「0-1. の5」の直書きの検査を通すため。M-09 の結果の帯の作り直しは実装PR②のまま） | 実装PR①（#218）に main を取り込んだとき |
 | 2026-11-24 | 実装PR②：「✓ 送りました」「✓ 保存しました」の色を操作の青（`border-action`・`bg-surface`・`text-action`）にそろえた（成立の青緑は成立だけ。持ち主の決定。T-54 の仕様書も直した）。送れたあと出る動きで閉じる `BottomSheet` の `dismiss`、差し替えの印 `data-swap` と覚えた高さの消し方（ブラウザの `popstate` だけ）、ボタン群の余白の取り方、結果の帯を `body` の直下に描いてシートの中の一文（T-55 の `inline`）をやめること、灯りの印（友達の ID ＋開始・終了の時刻）と画面に入るまで待つ形、500ms の除外を書いた（M-03・M-04・M-09・M-12・0-1 の5） | 実装PR② |
+| 2026-11-24 | 実装PR②のレビューで直した：送信中を `disabled` にしていた `SendButton` の呼び出しを全部 `pending` に移し、M-14 に対象と押した縮みの条件・`scale` の transition を書いた。シートを開いているあいだの帯の「取り消す」へのキーボードの経路（M-09）を書いた。`kh-pop` の曲線を M-09 のとおり `--ease-spring` にした（上の PR① の行の ease-out から変わる）。`Collapse` の中身のフォーカスの輪が切れないようにした（0-4）。状態と確認事項の T-55 を、main に入ったことに合わせた | 実装PR②（#221）のレビュー |

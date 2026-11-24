@@ -191,7 +191,7 @@ function AudienceSheet({ wish, onClose }: { wish: Wish; onClose: () => void }) {
       {friends.isPending && <Loading />}
       {friends.isError && <LoadError retry={() => void friends.refetch()} />}
       {friends.data && <AudiencePicker friends={friends.data} excluded={excluded} onChange={setExcluded} restoredNote={restored} />}
-      <SendButton variant="primary" block disabled={save.isPending || !friends.data} onClick={() => save.mutate()}>
+      <SendButton variant="primary" block disabled={!friends.data} pending={save.isPending} onClick={() => save.mutate()}>
         保存する
       </SendButton>
       {save.isError && (
@@ -216,7 +216,7 @@ function DeleteSheet({ wish, onClose }: { wish: Wish; onClose: () => void }) {
     <BottomSheet title="行きたいを消す" label="行きたいを消す" onClose={onClose}>
       <p className="whitespace-pre-line">{wish.message}</p>
       <Note>消すと、友達にも見えなくなります。</Note>
-      <SendButton block disabled={remove.isPending} onClick={() => remove.mutate()}>
+      <SendButton block pending={remove.isPending} onClick={() => remove.mutate()}>
         消す
       </SendButton>
       <Button variant="ghost" block onClick={onClose}>

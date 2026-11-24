@@ -87,7 +87,7 @@ function AddRecurrenceForm({ onDone }: { onDone: () => void }) {
             </Field>
           </div>
         )}
-        <SendButton type="submit" variant="primary" block disabled={create.isPending}>
+        <SendButton type="submit" variant="primary" block pending={create.isPending}>
           くり返しを追加
         </SendButton>
       </form>

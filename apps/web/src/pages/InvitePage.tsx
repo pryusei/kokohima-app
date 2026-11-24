@@ -196,7 +196,7 @@ export function InvitePage() {
                 <Field label="あなたの表示名">
                   <input className={inputClass} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} />
                 </Field>
-                <SendButton type="submit" variant="primary" block disabled={sending || name.trim() === ""}>
+                <SendButton type="submit" variant="primary" block disabled={name.trim() === ""} pending={sending}>
                   これで友達になる
                 </SendButton>
                 {nameFailed && (
@@ -206,7 +206,7 @@ export function InvitePage() {
                 )}
               </form>
             ) : (
-              <SendButton variant="primary" block disabled={sending} onClick={() => void accept(state.invite.linkId)}>
+              <SendButton variant="primary" block pending={sending} onClick={() => void accept(state.invite.linkId)}>
                 友達になる
               </SendButton>
             )

@@ -132,3 +132,81 @@ describe("シートの差し替え", () => {
     expect(swappedSheetHeight()).toBeNull();
   });
 });
+
+describe("覚えた高さを消すのは、ブラウザの戻る・進むだけ", () => {
+  it("navigate が出す合成の popstate（isTrusted でない）では消さない", () => {
+    render(
+      <BottomSheet title="誘う" label="誘う" onClose={() => {}}>
+        <p>作成</p>
+      </BottomSheet>,
+    );
+    act(() => swapSheet("/invites/1"));
+    act(() => {
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(swappedSheetHeight()).toBe(700);
+  });
+
+  it("ブラウザの戻る（isTrusted の popstate）で消え、進むで同じ URL に戻っても使わない", async () => {
+    vi.useRealTimers();
+    window.history.pushState(null, "", "/invites/new");
+    render(
+      <BottomSheet title="誘う" label="誘う" onClose={() => {}}>
+        <p>作成</p>
+      </BottomSheet>,
+    );
+    act(() => swapSheet("/invites/1"));
+    expect(swappedSheetHeight()).toBe(700);
+    const popped = () => new Promise<PopStateEvent>((resolve) => window.addEventListener("popstate", resolve, { once: true }));
+    let event = popped();
+    window.history.back();
+    expect((await event).isTrusted).toBe(true);
+    event = popped();
+    window.history.forward();
+    await event;
+    expect(window.location.pathname).toBe("/invites/1");
+    expect(swappedSheetHeight()).toBeNull();
+  });
+});
+
+describe("BottomSheet の dismiss（送れたあと出る動きで閉じる。M-03）", () => {
+  it("dismiss が true になると、出る動き（data-exiting）のあとに onClose を1回だけ呼ぶ。閉じる途中の Esc と重なっても2回呼ばない", () => {
+    stubReducedMotion(false);
+    const onClose = vi.fn();
+    const view = render(
+      <BottomSheet title="行きたい" label="行きたい" onClose={onClose}>
+        <p>中身</p>
+      </BottomSheet>,
+    );
+    view.rerender(
+      <BottomSheet title="行きたい" label="行きたい" onClose={onClose} dismiss>
+        <p>中身</p>
+      </BottomSheet>,
+    );
+    expect(scrim()).toHaveAttribute("data-exiting");
+    expect(onClose).not.toHaveBeenCalled();
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("動きを止める設定では、dismiss ですぐ onClose を1回呼ぶ", () => {
+    stubReducedMotion(true);
+    const onClose = vi.fn();
+    const view = render(
+      <BottomSheet title="行きたい" label="行きたい" onClose={onClose}>
+        <p>中身</p>
+      </BottomSheet>,
+    );
+    view.rerender(
+      <BottomSheet title="行きたい" label="行きたい" onClose={onClose} dismiss>
+        <p>中身</p>
+      </BottomSheet>,
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
