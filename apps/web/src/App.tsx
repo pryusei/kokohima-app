@@ -29,6 +29,7 @@ import { Button } from "./ui/Button";
 import { Loading } from "./ui/feedback";
 import { TabShell, type TabPath } from "./ui/Navigation";
 import { lazyPage } from "./ui/lazyPage";
+import { ResultBandProvider } from "./ui/ResultBand";
 
 // プライバシー ポリシーと利用規約は本文が長く、開く人が少ないので、別のチャンクにする（docs/specs/T-49-perf-small-fixes.md「4.」）
 const PrivacyPage = lazyPage(() => import("./pages/PrivacyPage"), (m) => m.PrivacyPage);
@@ -107,7 +108,16 @@ function shellOf(pathname: string, search: string): ReactNode | null {
   return null;
 }
 
+/** 操作の結果の帯は、アプリに1つだけ置く（docs/specs/T-56-motion.md「M-09」） */
 export function App() {
+  return (
+    <ResultBandProvider>
+      <Routes />
+    </ResultBandProvider>
+  );
+}
+
+function Routes() {
   const { pathname, search } = useLocation();
   const { status, retry } = useAuth();
   useNavigationScroll();

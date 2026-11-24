@@ -251,6 +251,37 @@ describe("プライバシー ポリシーの本文", () => {
     expect(google).toHaveAttribute("rel", "noopener noreferrer");
   });
 
+  // Google の審査のための英語の段落（docs/specs/T-44-landing.md「7.」、T-19 決めたこと18）
+  it("「11.」：lang=\"en\" の In English の節に、限定使用の公式の形の英文と User Data Policy へのリンク、日本語と同じ範囲の数行がある", async () => {
+    window.history.replaceState(null, "", "/privacy");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: "プライバシー ポリシー", level: 1 });
+    const eleven = clause("11. Google から受け取った情報の扱い");
+    const en = within(eleven).getByRole("heading", { name: "In English", level: 3 }).closest("section") as HTMLElement;
+    expect(en).toHaveAttribute("lang", "en");
+    const text = en.textContent ?? "";
+    expect(text).toContain(
+      "ここ暇 (Kokohima)'s use and transfer to any other app of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.",
+    );
+    const policy = within(en).getByRole("link", { name: "Google API Services User Data Policy" });
+    expect(policy).toHaveAttribute("href", "https://developers.google.com/terms/api-services-user-data-policy");
+    expect(policy).toHaveAttribute("rel", "noopener noreferrer");
+    expect(text).toContain("The Japanese text above is the authoritative version.");
+    // 空き／埋まりだけを読む・書き込みは「ここ暇」カレンダーだけ
+    expect(text).toContain("we read only free/busy times");
+    expect(text).toContain('We write only to a calendar named "ここ暇"');
+    // 使い道と運営が読む場面は、日本語の 11. と同じくカレンダーの情報に絞る。メールアドレスは日本語の 3. と同じ使い道
+    expect(text).toContain("Calendar data (free/busy times and the permission to write to the \"ここ暇\" calendar) is used only");
+    expect(text).toContain("Our staff read calendar data only");
+    expect(text).not.toMatch(/We use this data only/);
+    expect(text).toContain("We use your email address only for notification emails");
+    // 解除で消えるもの・残るもの（日本語の 8. と同じ）
+    expect(text).toContain(`a temporary cache expires within ${RETENTION.freeBusyCacheMinutes} minutes`);
+    expect(text).toContain('The "ここ暇" calendar and the plans already written to it stay in your Google Calendar.');
+    expect(text).not.toMatch(/delete the stored token and free\/busy data\./);
+  });
+
   it("「5.」「6.」：外国の事業者は「7.」へ送り、監視は Slack の要約と Better Stack の2つの文", async () => {
     window.history.replaceState(null, "", "/privacy");
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });

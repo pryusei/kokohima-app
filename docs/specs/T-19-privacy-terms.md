@@ -1,6 +1,6 @@
 # T-19 仕様書：プライバシー ポリシーと利用規約のページ
 
-- 状態：実装済み（改定：外国にある第三者への提供ほか。決めたこと11〜15を実装PRで画面とデプロイの検査に入れた。公表日・改定日は、デプロイする予定の日の仮の値（最初の改定は公表日 2026年11月23日・改定日 2026年11月30日。決めたこと16。今の値は T-33 のブロックと通報の改定日 2026年11月24日（予告なし。決めたこと17）。docs/specs/T-33-block-report.md「7.」。T-32 の LINE ログインも同じ改定に入れた）で、デプロイの日が決まったら `legal.ts` の日付だけを直す（仕様書の8節の3）。改定日を過ぎたら予告の行と「この改定で変わるところ」を外す（仕様書の8節の5））
+- 状態：実装済み（改定：外国にある第三者への提供ほか。決めたこと11〜15を実装PRで画面とデプロイの検査に入れた。公表日・改定日は、デプロイする予定の日の仮の値（最初の改定は公表日 2026年11月23日・改定日 2026年11月30日。決めたこと16。今の値は T-33 のブロックと通報の改定日 2026年11月24日（予告なし。決めたこと17。T-44 の本文の11.の英語の段落も同じ改定日）。docs/specs/T-33-block-report.md「7.」。T-32 の LINE ログインも同じ改定に入れた）で、デプロイの日が決まったら `legal.ts` の日付だけを直す（仕様書の8節の3）。改定日を過ぎたら予告の行と「この改定で変わるところ」を外す（仕様書の8節の5））
 - タスク票：docs/tasks/T-19-privacy-terms.md
 - 関係する要件：要求定義書「残りの論点」（Googleの審査要件とプライバシーポリシーへの反映）、「AI時代の攻撃を前提にした運用」（保存するデータを減らす）、「受容したリスク」（Google の OAuth を本番にしたこと）、F-01・F-02・F-15・F-16・F-17、T-12 決定事項7。issue pryusei/kokohima-app#89・#90・#91 の一部
 
@@ -16,12 +16,12 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 2. 運営者の表示は「ここ暇 運営」だけにする（個人の名前は出さない）。連絡先は `ops@kokohima.app`（T-12 の人が行う作業1で、人のアドレスへ転送している）。
 3. 対象年齢は13歳以上。18歳未満は保護者の同意を得て使う。
 4. ログインの画面と招待リンクの受け口の下に、2つのページへのリンクを置く。
-5. 英語版・ロゴ・Cookie の同意の帯は作らない。
+5. 英語版・ロゴ・Cookie の同意の帯は作らない。ただし本文の11.にだけ、Google の審査のために英語の段落を置く（決めたこと18）。
 6. 制定日は「2026年11月23日」（利用者が決めた。仮の値「2026年◯月◯日」で実装し、デプロイの前に置き換えた）。
 7. 同意は、ログインの画面（と招待リンクの受け口）の1行「続けると利用規約とプライバシー ポリシーに同意したことになります」（2つのリンクつき）で取る。チェックボックスは置かず、同意の記録も保存しない。
 8. Google の同意画面のスコープから `profile` を外す（アプリが求めるのは `openid` と `email` だけ。T-01）。本文には `profile` を書かない。
 9. アイコンは、今の事実だけを書く：アイコンは、利用者が設定した画像か、なければ表示名の1文字め（`apps/web/src/ui/Avatar.tsx`）。画像は T-27 で入れ、その実装PRで本文の2.・4.・8.・退会と、利用規約の第5条4・第6条を直した（決めたこと14の改定に含め、「この改定で変わるところ」に1行ずつ足した）。
-10. ホームページ（`https://kokohima.app`）は、今は変えない（ログインの画面に2つのリンクがある）。JavaScript なしで読める版は、Google の審査を受けるときに見直す。
+10. ホームページ（`https://kokohima.app`）は、Google の審査を受けるときに、未ログインで読める JavaScript なしの紹介のページにする（T-44。docs/specs/T-44-landing.md）。紹介のページの下に、2つのページへのリンクを置く。2つのページ自体は SPA のまま（JavaScript なしの版は作らない）。
 11. 外国にある第三者への提供（個人情報保護法28条）は、「相当措置」の方法による（本人の同意は取らない）。利用者と決めた。
     - 外国の事業者に取り扱いを任せるのは、個人情報保護法の基準に適合する体制（相当措置を続けてとるための体制）を整えている事業者だけにする。
     - 相当措置をとる委託先が、28条1項の「外国にある第三者」から外れ、27条5項1号の委託として扱えるのか、28条の提供として扱うのかは、この仕様書では決めつけない（（b）4「28条の当てはめ」）。本文も、どちらとも言い切らない。
@@ -49,6 +49,10 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
     - 本文は、預かる情報・使う目的・任せる事業者・保存する期間に合わせて、これまでどおり同じ PR で直す（本文と実際を食い違わせない）。
     - デプロイの検査（5節）はそのまま。予告の行がなければ「制定日 ＜ 改定日 ≦ 今日」だけを見るので、この形で通る。
     - 一般公開の前に、この項目を外し、8節の予告（7日前）に戻す。
+18. 本文の11.に、Google のユーザーデータの扱いの英語の段落を足す（T-44。Google の審査をする人が読めるように。利用者の判断）。
+    - 中身は、限定使用の開示の公式の英文にアプリ名を入れた1文と、受け取るもの（`openid`・`email`）、カレンダーは主カレンダーの空き／埋まりだけを読むこと、書き込みはアプリが作った「ここ暇」カレンダーだけであること、広告・販売・汎用の AI の学習に使わないこと、運営の人が読む場合、連携の解除で消すもの。文は仕様書の6節の11.。
+    - 日本語の本文が正で、英語は同じことを書いた参考とする（段落の1行めに書く）。日本語の本文に書いていないことを英語に書かない。
+    - 決めたこと17のとおり予告なしで改定する。改定日は T-44 の実装PRをマージしてデプロイする日。利用規約は変えない。
 
 ## 前提
 
@@ -407,6 +411,19 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - カレンダーの情報とカレンダーへの書き込みの許可は、「3.」の3と4のためだけに使います。広告、情報の販売、汎用の AI のモデルの学習には使いません。
 - 運営の人がカレンダーの情報を読むのは、あなたの同意があるとき、セキュリティの調査、法令に従うときだけです。
 
+### In English
+（この小見出しの中は `lang="en"`。決めたこと18。T-44）
+
+The Japanese text above is the authoritative version. This section summarizes how we handle Google user data.
+
+ここ暇 (Kokohima)'s use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
+
+- Sign-in: we receive only your Google account ID and email address (scopes openid and email). We use your email address only for notification emails (sent via our email provider), for important notices from us and replies to your inquiries (when you contact us, it is delivered to our support Slack as the reply address), and to verify your identity when you make a request about your personal information.
+- Google Calendar (only if you connect it): we read only free/busy times (the start and end of busy periods) on your primary calendar. We never read event titles, locations, descriptions or attendees.
+- We write only to a calendar named "ここ暇" that the app creates in your Google Calendar, and only to add, update and delete plans confirmed in the app. We never read, create or change events in any other calendar.
+- Calendar data (free/busy times and the permission to write to the "ここ暇" calendar) is used only to provide these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or machine learning models. Our staff read calendar data only with your consent, for security purposes, or to comply with the law.
+- You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). When you disconnect, we delete the stored token and the stored free/busy data (a temporary cache expires within 5 minutes). We keep only the record that you connected and the ID of the "ここ暇" calendar until you delete your account, so that reconnecting uses the same calendar. The "ここ暇" calendar and the plans already written to it stay in your Google Calendar. You can also remove access in your Google Account.
+
 ## 12. 開示・訂正・削除などの求め
 - 本人は、運営が持つあなたの個人情報について、利用目的の通知、開示（第三者に提供した記録を含みます）、訂正・追加・削除、利用の停止・消去、第三者への提供の停止、外国の事業者に任せることについての情報（「7.」）の提供を求められます。
 - ops@kokohima.app に、ログインに使っている Google のメールアドレスから送ってください。本人であることを確かめてから、遅滞なく答えます。手数料はかかりません。LINE でログインしている人は、登録のメールアドレスがないので、次のアプリの問い合わせから求めてください。
@@ -623,13 +640,13 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - issue：#89 に、プライバシー ポリシーに書いた範囲（退会で残るもの、D1 の復元の最大30日、外部の事業者の記録）を書き、Resend の保持期間の確認が残っていることを残す。#90 に、窓口（`ops@kokohima.app`）を決めたことを書き、手順書・漏えいのときの手順は残す。#91 に、利用規約と対象年齢を決めたことを書き、障害のときの告知は残す。どれも閉じない（`Refs` で参照する）。
 
 ## スコープ外
-- 英語版。
+- 英語版（本文の11.の英語の段落だけは置く。決めたこと18）。
 - ロゴ（同意画面に入れない。T-12 決定事項7）。
 - Cookie の同意の帯（追跡・広告・解析の Cookie を使わず、使う Cookie はログイン・連携・招待のためのものだけなので）。
 - 開示・削除の請求（リンクのプレビューの画像の削除の求め、本文の7.の情報の求めを含む）に答える運営用の機能と手順書、漏えいのときの手順書（#90 の残り）。当面は運営がメールで受けて手で対応する。
 - 障害や規約の変更を、アプリの画面で全員に知らせる仕組み（#91 の残り）。
 - D1 のバックアップの方針と、Resend などに残る記録の消し方（#89 の残り）。
-- JavaScript なしで読める静的な HTML の版と、ホームページの変更（決めたこと10。今はログインの画面のリンクで足りるとし、Google の審査を受けるときに見直す）。
+- 2つのページの、JavaScript なしで読める静的な HTML の版（決めたこと10。ホームページは T-44 の紹介のページにする）。
 - Google の審査（一般公開のとき）。
 - 通報と利用の停止の運営用の機能（要求定義書「未決事項」#49。第7条の利用の停止は、当面は運営がメールで受けて手で対応する）。
 - 削除の求めのあった画像を写し直さないための T-08 の仕様の変更（仕様書の10節。T-08 の改定として別に行う）。
@@ -662,7 +679,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 6. **D1 の復元の記録**：Time Travel で、消した行が最大30日復元できる（#89 の記載）。本番の D1 での実際の期間を確かめる。
 7. **Cloudflare のセキュリティの記録**：「IP アドレスはこのサービスのデータベースには保存しません」と書いた。Cloudflare の WAF・レート制限などのセキュリティのイベントに、IP アドレスが一定の期間残るか、その期間を確かめ、残るなら本文の8.に足す。
 8. **監視の通知の中身**：Monitors の通知は件数とモニターの名前だけ。Workers Issues の通知には、例外のメッセージ・スタック・要求の情報が入りうる（T-13「4.」の通知の中身と、実装PRで確かめたこと）。本文の5.は「要約を送る。利用者の情報が入らないことを確かめてから送り、入るおそれがあるときは件数と名前だけにする」、本文の7.は「Slack には利用者の情報を渡さない」と書いた。T-13 の手順書（「1-4.」）で確かめた結果と合っているかを見る。Issues の Slack への通知を作っていない・やめたなら、本文の5.の要約の文を外す。要約に個人情報が入りうるのに送るなら、本文の5.・7.の両方を直す（Slack を外国の事業者として本文の7.に入れるかも決める）。
-9. **Google の限定使用の文**：本文の11.は Google API サービスのユーザーデータに関するポリシーの、限定使用の開示の文を日本語にしたもの。公式の英語の文と見比べる（審査のときは英語の文が求められることがある）。
+9. **Google の限定使用の文**：本文の11.は Google API サービスのユーザーデータに関するポリシーの、限定使用の開示の文を日本語にしたもの。公式の英語の文と見比べる（審査のときは英語の文が求められることがある）。英語の文は、T-44 で本文の11.に足す（決めたこと18）。デプロイの前に、英語の段落と日本語の本文が同じことを言っているかも見る。
 10. **運営のアカウントの保護**：要求定義書「残りの論点」の「開発・運営アカウントのパスキー化とAPIトークンの棚卸し」は済んでいない。本文の9.には書いていない。実際に Cloudflare・GitHub・Google Cloud・Resend などで多要素認証を有効にしていることを確かめたら、「運営のアカウントは多要素認証で守ります」を足すか決める（足すなら仕様書PRで）。
 
 ## 変更履歴
@@ -697,3 +714,5 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 | 2026-11-24 | LINE ログイン（T-32）を同じ改定日（2026年11月24日。予告なし。決めたこと17）の改定に入れた：本文の文案の2.・3.・5.（LINEヤフー株式会社）・8.・12.、利用規約の第3条。出典の表に1行足した | T-32 実装PR（docs/specs/T-32-line-login.md「7.」） |
 | 2026-11-24 | 通知の見え方（T-35）を同じ形（予告なし、改定日はマージしてデプロイする日）で改定にした：本文の文案の2.（通知の設定に見え方、購読の暗号化の鍵）・5.と7.（プッシュの事業者に渡すのは暗号化した中身）・8.・安全の措置（宛先と鍵の暗号化） | T-35 実装PR（docs/specs/T-35-notification-visibility.md） |
 | 2026-11-24 | 本文の文案の10.に、成立の演出を見た予定の番号（50件まで）をブラウザのストレージに置くことを足した（同じ改定日。予告なし。決めたこと17） | T-43 実装PR（docs/specs/T-43-meet-moment.md「2.」） |
+| 2026-11-24 | 決めたこと18：本文の11.に Google のユーザーデータの扱いの英語の段落（6節の文案）を足す。決めたこと5・10とスコープ外を T-44 の紹介のページに合わせた。予告なし（決めたこと17）、改定日は T-44 の実装PRをデプロイする日 | T-44 仕様書PR（docs/specs/T-44-landing.md）。Google の審査（#199） |
+| 2026-11-24 | 6節の11.の英語の段落を実装した。限定使用の文を公式の形のままにし、使い道と運営が読む場面をカレンダーの情報に絞り、メールアドレスの使い道（3.）と解除で消えるもの・残るもの（8.）を日本語の本文に合わせた。改定日は 2026年11月24日のまま（T-33 と同じ日。予告なし） | T-44 実装PR（docs/specs/T-44-landing.md「7.」）。仕様書PR #219 のレビュー |

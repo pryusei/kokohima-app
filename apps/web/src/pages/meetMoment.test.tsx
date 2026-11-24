@@ -1,6 +1,7 @@
+import { QueryClient } from "@tanstack/react-query";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -289,6 +290,155 @@ describe("募集で決めたとき（3人以上）", () => {
     renderApp();
     const region = await screen.findByRole("region", { name: "決まった！" });
     expect(within(region).getByText("あき・そらと会える")).toBeVisible();
+  });
+});
+
+/** 動きを止める設定（matches）を差し替える。PC の幅の問い合わせは false */
+function stubReducedMotion(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((q: string) => ({ matches: q === "(prefers-reduced-motion: reduce)" ? matches : false, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+  );
+}
+
+/** 詳細のシートの見出しのバッジ */
+const badge = () => screen.getByRole("dialog").querySelector<HTMLElement>("[data-tone]");
+/** 返答・決定のボタン群を包む Collapse */
+const collapseOf = (name: string) => screen.getByRole("button", { name }).closest(".kh-collapse");
+const deferred = () => {
+  let resolve: (r: Response) => void = () => {};
+  const route = () => new Promise<Response>((r) => (resolve = r));
+  return { route, respond: (body: unknown, status = 200) => resolve(new Response(body === null ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })) };
+};
+
+describe("成立の瞬間に足す部分（docs/specs/T-56-motion.md「M-04」）", () => {
+  it("「行く」を押すと、楽観的更新のときに返答のボタン群が Collapse の閉じる側になり、バッジに kh-badge-pop が1回付く", async () => {
+    stubReducedMotion(false);
+    const responses = deferred();
+    open(`/invites/${INVITE_ID}`, {
+      [`/api/v1/direct-invites/${INVITE_ID}`]: [json(invite()), json(invite({ status: "confirmed", meetupId: MEETUP_ID }))],
+      [`/api/v1/direct-invites/${INVITE_ID}/responses`]: responses.route,
+      [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup()),
+    });
+    renderApp();
+    await screen.findByRole("button", { name: "行く" });
+    expect(badge()).not.toHaveClass("animate-kh-badge-pop");
+    const group = collapseOf("行く");
+    expect(group).not.toHaveAttribute("data-closed");
+    await userEvent.click(screen.getByRole("button", { name: "行く" }));
+    // 応答を待たずに（楽観的更新のとき）
+    await waitFor(() => expect(badge()).toHaveClass("animate-kh-badge-pop"));
+    expect(badge()).toHaveAttribute("data-tone", "meet");
+    expect(group).toHaveAttribute("data-closed");
+    expect(group?.querySelector(".kh-collapse-shrink")).not.toBeNull();
+    responses.respond(invite({ status: "confirmed", meetupId: MEETUP_ID }));
+    await screen.findByRole("region", { name: "決まった！" });
+    // 閉じ終わるとボタン群は消える。ぽんの印は1つ（同じ要素のまま）
+    await waitFor(() => expect(screen.queryByRole("button", { name: "行く" })).toBeNull());
+    expect(screen.getByRole("dialog").querySelectorAll(".animate-kh-badge-pop")).toHaveLength(1);
+  });
+
+  it("送れなかったとき（閉じる動きより早く失敗しても）は、ボタン群が戻って消えず、静かな文言が出て、バッジは動かない", async () => {
+    stubReducedMotion(false);
+    const responses = deferred();
+    open(`/invites/${INVITE_ID}`, {
+      [`/api/v1/direct-invites/${INVITE_ID}`]: json(invite()),
+      [`/api/v1/direct-invites/${INVITE_ID}/responses`]: responses.route,
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "行く" }));
+    await waitFor(() => expect(collapseOf("行く")).toHaveAttribute("data-closed"));
+    responses.respond(null, 503);
+    expect(await screen.findByText("送れませんでした。もう一度お試しください")).toBeVisible();
+    await waitFor(() => expect(collapseOf("行く")).not.toHaveAttribute("data-closed"));
+    expect(badge()).not.toHaveClass("animate-kh-badge-pop");
+    expect(badge()).not.toHaveAttribute("data-tone", "meet");
+    // 閉じる動きの保険のタイマー（160＋50ms）が過ぎても、ボタン群は消えない
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getByRole("button", { name: "行く" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "今回は難しい" })).toBeVisible();
+  });
+
+  it("「今回は難しい」では、ボタン群は同じ静かな動きで消え、バッジは動かない", async () => {
+    stubReducedMotion(false);
+    open(`/invites/${INVITE_ID}`, {
+      [`/api/v1/direct-invites/${INVITE_ID}`]: [json(invite()), json(invite({ status: "declined" }))],
+      [`/api/v1/direct-invites/${INVITE_ID}/responses`]: json(invite({ status: "declined" })),
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "今回は難しい" }));
+    expect(await screen.findByText("今回は難しいと返しました")).toBeVisible();
+    expect(badge()).not.toHaveClass("animate-kh-badge-pop");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "今回は難しい" })).toBeNull());
+  });
+
+  it("詳細を開いたまま、取り直しで相手の操作により成立に変わったときは、バッジに kh-badge-pop が付かない", async () => {
+    stubReducedMotion(false);
+    // 演出はもう見た（演出の条件に当たらない）
+    markMeetMomentSeen(MEETUP_ID);
+    open(`/invites/${INVITE_ID}`, {
+      [`/api/v1/direct-invites/${INVITE_ID}`]: [
+        json(invite({ direction: "sent" })),
+        json(invite({ direction: "sent", status: "confirmed", meetupId: MEETUP_ID })),
+      ],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderApp(client);
+    await screen.findByRole("dialog", { name: "あきさんへの誘い" });
+    await waitFor(() => expect(badge()).not.toBeNull());
+    await act(() => client.refetchQueries());
+    await waitFor(() => expect(badge()).toHaveAttribute("data-tone", "meet"));
+    expect(badge()).not.toHaveClass("animate-kh-badge-pop");
+    expect(moment()).toBeNull();
+  });
+
+  it("「成立した予定を見る」は meet の塗りのボタン（bg-meet）で1つだけ（誘いの詳細）", async () => {
+    open(`/invites/${INVITE_ID}`, {
+      [`/api/v1/direct-invites/${INVITE_ID}`]: json(invite({ status: "confirmed", meetupId: MEETUP_ID })),
+      [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup()),
+    });
+    renderApp();
+    const links = await screen.findAllByRole("link", { name: "成立した予定を見る" });
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", `/meetups/${MEETUP_ID}`);
+    expect(links[0]?.className).toContain("bg-meet");
+    expect(links[0]?.className).toContain("w-full");
+    expect(links[0]?.className).not.toMatch(/(?<!no-)underline|text-action/);
+    // 演出が流れる最初の描画では、バッジがぽんとする
+    await screen.findByRole("region", { name: "決まった！" });
+    expect(badge()).toHaveClass("animate-kh-badge-pop");
+  });
+
+  it("募集で自分が決めると、バッジがぽんとし、「成立した予定を見る」は meet の塗りのボタンで1つだけ", async () => {
+    markMeetMomentSeen(MEETUP_ID);
+    open(`/broadcasts/${BROADCAST_ID}`, {
+      [`/api/v1/broadcasts/${BROADCAST_ID}`]: [json(broadcast()), json(broadcast({ status: "decided", meetupId: MEETUP_ID }))],
+      [`/api/v1/broadcasts/${BROADCAST_ID}/decide`]: json(broadcast({ status: "decided", meetupId: MEETUP_ID })),
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "決める" }));
+    const links = await screen.findAllByRole("link", { name: "成立した予定を見る" });
+    expect(links).toHaveLength(1);
+    expect(links[0]?.className).toContain("bg-meet");
+    expect(badge()).toHaveClass("animate-kh-badge-pop");
+  });
+
+  it("募集の宛先の人で予定の参加者でない人には、ぽんも予定を見るボタンも出ない", async () => {
+    open(`/broadcasts/${BROADCAST_ID}`, {
+      [`/api/v1/broadcasts/${BROADCAST_ID}`]: json(
+        broadcast({ direction: "received", owner: friend, recipients: null, responseCount: null, respondedByMe: false, status: "closed", meetupId: null }),
+      ),
+    });
+    renderApp();
+    await screen.findByRole("dialog", { name: "あきさんの募集" });
+    await waitFor(() => expect(badge()).not.toBeNull());
+    expect(badge()).not.toHaveClass("animate-kh-badge-pop");
+    expect(screen.queryByRole("link", { name: "成立した予定を見る" })).toBeNull();
+  });
+
+  it("一覧のカードのバッジは動かさない（ぽんを付けるのは詳細だけ）", () => {
+    const card = readFileSync(join(import.meta.dirname, "../ui/InviteCard.tsx"), "utf8");
+    expect(card).not.toMatch(/\bpop\b|kh-badge-pop/);
   });
 });
 

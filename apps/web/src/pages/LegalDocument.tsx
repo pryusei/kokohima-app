@@ -53,9 +53,10 @@ export function Clause({ title, children }: { title: string; children: ReactNode
   );
 }
 
-export function SubClause({ title, children }: { title: string; children: ReactNode }) {
+/** lang：中の言語が本文（日本語）と違うときだけ付ける（プライバシー ポリシーの11.の英語の段落。docs/specs/T-44-landing.md「7.」） */
+export function SubClause({ title, lang, children }: { title: string; lang?: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex flex-col gap-2" lang={lang}>
       <h3 className="font-bold">{title}</h3>
       {children}
     </section>

@@ -26,6 +26,8 @@ async function watchViolations(page: Page) {
 
 // /invite は未ログインでも InvitePage を描画する（トークンがないので「使えません」）。/privacy・/terms は本文。ほかは未ログインなのでログインの画面
 const pages: { path: string; rendered: (page: Page) => ReturnType<Page["getByRole"]> }[] = [
+  // 未ログインの / は、JavaScript なしの紹介のページ（docs/specs/T-44-landing.md）
+  { path: "/", rendered: (page) => page.getByRole("heading", { name: "ここ暇", level: 1 }) },
   { path: "/login", rendered: (page) => page.getByRole("link", { name: "Googleでログイン" }) },
   { path: "/invites/00000000-0000-4000-8000-000000000000", rendered: (page) => page.getByRole("link", { name: "Googleでログイン" }) },
   { path: "/invite", rendered: (page) => page.getByRole("status").filter({ hasText: "このリンクは使えません" }) },
@@ -74,4 +76,55 @@ test("本番と同じ形では、画面の側の POST は405で、テスト用�
   const api = await request.get("/api/v1/health");
   expect(api.status()).toBe(200);
   expect(api.headers()["content-security-policy"]).toBe("default-src 'none'; frame-ancestors 'none'");
+});
+
+// 紹介のページ（docs/specs/T-44-landing.md「テスト計画」）。Google の審査のホームページ
+test.describe("JavaScript を切って / を開く", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("見出し・3つの手順・3つの約束・ログインとポリシーと規約へのリンクが読める", async ({ page }) => {
+    const res = await page.goto("/");
+    expect(res?.status()).toBe(200);
+    await expect(page).toHaveTitle("ここ暇");
+    await expect(page.getByRole("heading", { name: "ここ暇", level: 1 })).toBeVisible();
+    const how = page.getByRole("region", { name: "どう使うの？" });
+    await expect(how.getByRole("listitem")).toHaveCount(3);
+    await expect(how).toContainText("誘われてもいい時間に「ここ暇」を置きます。");
+    const promise = page.getByRole("region", { name: "3つの約束" });
+    await expect(promise.getByRole("listitem")).toHaveCount(3);
+    for (const text of ["いる場所は出しません。", "予定の中身は見ません。", "広告はありません。"]) await expect(promise).toContainText(text);
+    await expect(page.getByRole("link", { name: "はじめる・ログイン" })).toHaveAttribute("href", "/login");
+    await expect(page.getByRole("link", { name: "プライバシー ポリシー" })).toHaveAttribute("href", "/privacy");
+    await expect(page.getByRole("link", { name: "利用規約" })).toHaveAttribute("href", "/terms");
+    await expect(page.getByRole("link", { name: "ops@kokohima.app" })).toHaveAttribute("href", "mailto:ops@kokohima.app");
+  });
+});
+
+test("JavaScript ありでも / は紹介のページで、「はじめる・ログイン」からログインの画面に進む", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "ここ暇", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "はじめる・ログイン" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("link", { name: "Googleでログイン" })).toBeVisible();
+});
+
+test("ログインの Cookie があると / は SPA で、Cookie が無効ならログインの画面に移る", async ({ page }) => {
+  // 値は偽物（テスト用ログインの経路は本番のエントリにないため）。届くことだけで SPA を返すことを確かめる。
+  // http://localhost には __Host- の Cookie を置けないので、要求のヘッダーで送る
+  await page.setExtraHTTPHeaders({ Cookie: "__Host-kh_rt=not-a-real-token" });
+  const res = await page.goto("/");
+  expect(res?.status()).toBe(200);
+  expect(res?.headers()["vary"]).toContain("Cookie");
+  expect(await res?.text()).toContain('<div id="root">');
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("link", { name: "Googleでログイン" })).toBeVisible();
+});
+
+test("紹介のページからホーム画面に追加しても、start_url の / が開く（manifest は SPA と同じ）", async ({ page, request }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "ここ暇", level: 1 })).toBeVisible();
+  const href = await page.locator('link[rel="manifest"]').getAttribute("href");
+  expect(href).toBe("/manifest.webmanifest");
+  const manifest = await (await request.get(href as string)).json();
+  expect(manifest).toMatchObject({ start_url: "/", scope: "/", id: "/" });
 });

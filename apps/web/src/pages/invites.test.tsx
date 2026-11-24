@@ -41,6 +41,14 @@ beforeEach(() => {
   tokenStore.clear();
 });
 
+/** 動きを止める設定（matches）を差し替える。PC の幅の問い合わせは false */
+function stubReducedMotion(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((q: string) => ({ matches: q === "(prefers-reduced-motion: reduce)" ? matches : false, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+  );
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -197,6 +205,46 @@ describe("誘いの作成", () => {
       url: null,
       expiresIn: "until_start",
     });
+  });
+
+  it("送ると「送っています…」（押せない・灰色にしない）のあと、「✓ 送りました」を見せてから詳細へ置き換わる（シートは1つだけ。T-56 M-03）", async () => {
+    stubReducedMotion(false);
+    let respond: (r: Response) => void = () => {};
+    newPage(`?friend=${FRIEND_ID}&startsAt=2026-10-10T10:00:00.000Z&endsAt=2026-10-10T14:00:00.000Z`, {
+      "/api/v1/direct-invites": () => new Promise<Response>((resolve) => (respond = resolve)),
+      [`/api/v1/direct-invites/${INVITE_ID}`]: json(invite({ direction: "sent" })),
+    });
+    renderApp();
+    expect(await screen.findByText("あそぼ")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "誘う" }));
+    const sending = await screen.findByRole("button", { name: "送っています…" });
+    expect(sending).toBeEnabled();
+    expect(sending).toHaveAttribute("aria-disabled", "true");
+    expect(sending.className).toContain("bg-action");
+    expect(sending.className).toContain("opacity-70");
+    respond(new Response(JSON.stringify(invite({ direction: "sent" })), { status: 201, headers: { "Content-Type": "application/json" } }));
+    expect(await screen.findByRole("button", { name: "送りました" })).toHaveTextContent("✓送りました");
+    expect(window.location.pathname).toBe("/invites/new");
+    await waitFor(() => expect(window.location.pathname).toBe(`/invites/${INVITE_ID}`));
+    expect(await screen.findByRole("dialog", { name: "あきさんへの誘い" })).toBeVisible();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  });
+
+  it("「✓ 送りました」のあいだにシートを閉じたら、詳細へ移らない", async () => {
+    stubReducedMotion(false);
+    newPage(`?friend=${FRIEND_ID}&startsAt=2026-10-10T10:00:00.000Z&endsAt=2026-10-10T14:00:00.000Z`, {
+      "/api/v1/direct-invites": json(invite({ direction: "sent" }), 201),
+      "/api/v1/availabilities/everyone": json({ items: [], nextCursor: null }),
+    });
+    renderApp();
+    expect(await screen.findByText("あそぼ")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "誘う" }));
+    await screen.findByRole("button", { name: "送りました" });
+    await userEvent.click(screen.getByRole("button", { name: "閉じる" }));
+    // 閉じる動き（240＋50ms）と「✓ 送りました」の 500ms が過ぎても、詳細へは移らない
+    await new Promise((r) => setTimeout(r, 700));
+    expect(window.location.pathname).not.toBe(`/invites/${INVITE_ID}`);
+    expect(window.location.pathname).not.toBe("/invites/new");
   });
 
   it("友達の詳細から開くと相手だけが入り、重ならない時間は「ここどう？」", async () => {

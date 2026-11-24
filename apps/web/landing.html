@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  紹介のページ（docs/specs/T-44-landing.md「3.」「4.」）。未ログインで / を開いた人に Worker が返す。
+  JavaScript を置かない（script・インラインの style・style 属性・外のオリジンのものを入れない。check-web-dist.mjs で確かめる）。
+  文はプライバシー ポリシーの本文と同じことを言う。保存する情報・外に渡すもの・カレンダーで読むもの・書くものを変えたら、同じ PR で直す
+-->
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ここ暇</title>
+    <meta name="description" content="友達を誘う気まずさをなくす、友達どうしのアプリ。誘っていい時間を先に置いておくと、友達がそこに誘えます。" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#fcd34d" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1b1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-title" content="ここ暇" />
+    <link rel="stylesheet" href="/src/landing.css" />
+  </head>
+  <body class="bg-bg text-ink">
+    <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-8 px-4 py-10">
+      <header class="flex flex-col items-center gap-3 text-center">
+        <img src="/icon.svg" alt="" width="64" height="64" class="rounded-l" />
+        <h1 class="text-xxl font-bold">ここ暇</h1>
+        <p class="text-l font-bold">「誘っていいよ」の時間を、先に置いておく。</p>
+        <p class="text-ink-muted">ここ暇は、友達を誘う気まずさをなくす、友達どうしのアプリです。</p>
+      </header>
+
+      <main class="flex flex-col gap-8">
+        <section aria-labelledby="how" class="flex flex-col gap-3 rounded-l bg-surface p-4 shadow-card">
+          <h2 id="how" class="text-l font-bold">どう使うの？</h2>
+          <ol class="flex list-decimal flex-col gap-2 pl-6">
+            <li>誘われてもいい時間に「ここ暇」を置きます。見せる友達は自分で選べます。</li>
+            <li>友達はその時間に誘えます。返事は「行く」「この時間なら」「今回は難しい」の3つだけ。理由はいりません。</li>
+            <li>決まったら予定になります。Google カレンダーを連携していれば、「ここ暇」という名前のカレンダーに入ります。</li>
+          </ol>
+        </section>
+
+        <section aria-labelledby="promise" class="flex flex-col gap-3 rounded-l bg-surface p-4 shadow-card">
+          <h2 id="promise" class="text-l font-bold">3つの約束</h2>
+          <ul class="flex list-disc flex-col gap-2 pl-6">
+            <li><strong>いる場所は出しません。</strong>位置情報は使いません。</li>
+            <li><strong>予定の中身は見ません。</strong>カレンダーから読むのは、空いているか埋まっているかだけ。予定の名前・場所・参加者は読みません。</li>
+            <li><strong>広告はありません。</strong>広告も、アクセス解析の仕組みも入れていません。</li>
+          </ul>
+        </section>
+
+        <p>
+          <a
+            href="/login"
+            class="inline-flex min-h-11 w-full items-center justify-center rounded-m border border-transparent bg-action px-4 font-bold text-on-action hover:bg-action-hover"
+            >はじめる・ログイン</a
+          >
+        </p>
+        <p class="text-s text-ink-muted">13歳以上の人が使えます。18歳未満の人は、保護者の同意を得てから使ってください。</p>
+      </main>
+
+      <footer class="mt-auto flex flex-col gap-2 border-t border-line pt-4 text-s text-ink-muted">
+        <ul class="flex flex-wrap gap-x-4">
+          <li><a href="/privacy" class="inline-flex min-h-11 items-center underline">プライバシー ポリシー</a></li>
+          <li><a href="/terms" class="inline-flex min-h-11 items-center underline">利用規約</a></li>
+          <li class="inline-flex min-h-11 items-center">問い合わせ：<a href="mailto:ops@kokohima.app" class="underline">ops@kokohima.app</a></li>
+        </ul>
+        <p>ここ暇 運営</p>
+      </footer>
+    </div>
+  </body>
+</html>

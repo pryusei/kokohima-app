@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 // HTTPS で出すとき（iphone の E2E）は、Origin を https://localhost:5174 にした別の API（:8789）へ中継する（docs/specs/T-21-webkit-e2e.md）
@@ -16,6 +17,15 @@ export default defineConfig({
   define: {
     __CONTACT_FORCE_OPEN__: JSON.stringify(process.env.E2E === "1"),
     __SAFETY_FORCE_OPEN__: JSON.stringify(process.env.E2E === "1"),
+  },
+  // 入口は SPA（index.html）と、JavaScript なしの紹介のページ（landing.html。docs/specs/T-44-landing.md「5.」）の2つ
+  build: {
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL("./index.html", import.meta.url)),
+        landing: fileURLToPath(new URL("./landing.html", import.meta.url)),
+      },
+    },
   },
   server: {
     port: 5173,

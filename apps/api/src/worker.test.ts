@@ -53,6 +53,11 @@ function fakeAssets() {
       if (path === "/sw.js")
         return new Response("self", { headers: { "Content-Type": "text/javascript", "Cache-Control": "public, max-age=3600" } });
       if (req.headers.get("If-None-Match")) return new Response(null, { status: 304, headers: { ETag: '"a"' } });
+      // 紹介のページ（docs/specs/T-44-landing.md）。もとの Vary を付けて返す（Worker が Cookie を足しても残ることを確かめる）
+      if (path === "/landing")
+        return new Response("<!doctype html><h1>ここ暇</h1>", {
+          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=600", Vary: "Accept-Encoding" },
+        });
       // SPA：見つからない経路も index.html
       return new Response("<!doctype html><div id=root></div>", {
         headers: {
@@ -62,6 +67,21 @@ function fakeAssets() {
           "X-Frame-Options": "ALLOWALL",
         },
       });
+    },
+  };
+  return { seen, assets: assets as unknown as Fetcher };
+}
+
+/** 静的アセットに渡った要求（パス・クエリ・メソッド・Cookie）を記録する偽物。`/` の振り分けを確かめる */
+function recordingAssets() {
+  const seen: { method: string; path: string; search: string; cookie: string | null }[] = [];
+  const inner = fakeAssets();
+  const assets = {
+    fetch: async (input: RequestInfo) => {
+      const req = new Request(input);
+      const url = new URL(req.url);
+      seen.push({ method: req.method, path: url.pathname, search: url.search, cookie: req.headers.get("Cookie") });
+      return inner.assets.fetch(req);
     },
   };
   return { seen, assets: assets as unknown as Fetcher };
@@ -85,7 +105,8 @@ describe("振り分け", () => {
     const { app, assets, call } = setup();
     expect((await call("/api/v1/health")).status).toBe(200);
     expect(app.seen).toEqual(["/api/v1/health"]);
-    for (const path of ["/", "/invites/abc", "/login"]) {
+    // `/` は Cookie の有無で分ける（下の「/ の振り分け」）
+    for (const path of ["/invites/abc", "/login"]) {
       const res = await call(path);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain("<div id=root>");
@@ -224,5 +245,105 @@ describe("セキュリティのヘッダー", () => {
     expect(res.status).toBe(200);
     expectCommon(res);
     expect(res.headers.get("Content-Security-Policy")).toBe(API_CSP);
+  });
+});
+
+// 紹介のページ（docs/specs/T-44-landing.md「1.」）。`/` だけを、ログインの Cookie の有無で紹介のページと SPA に分ける
+describe("/ の振り分け（紹介のページ）", () => {
+  function home() {
+    const app = fakeApp();
+    const a = recordingAssets();
+    const bindings = { ...env, ASSETS: a.assets } as Bindings;
+    const call = (path: string, init: RequestInit = {}) =>
+      routeRequest(app, new Request(`https://kokohima.app${path}`, init), bindings, ctx);
+    return { app, assets: a, call };
+  }
+
+  it("Cookie がない GET・HEAD の / は、/landing を静的アセットから取って返す", async () => {
+    const { app, assets, call } = home();
+    const res = await call("/");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("<h1>ここ暇</h1>");
+    const head = await call("/", { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(assets.seen.map((s) => [s.method, s.path])).toEqual([
+      ["GET", "/landing"],
+      ["HEAD", "/landing"],
+    ]);
+    expect(app.seen).toEqual([]);
+  });
+
+  it("値のある __Host-kh_rt の Cookie があると、もとの / の要求をそのまま渡す（SPA の index.html）", async () => {
+    const { assets, call } = home();
+    for (const cookie of ["__Host-kh_rt=x", "a=1; __Host-kh_rt=abc.def; b=2", " __Host-kh_rt = x "]) {
+      const res = await call("/", { headers: { Cookie: cookie } });
+      expect(await res.text(), cookie).toContain("<div id=root>");
+    }
+    expect(assets.seen.map((s) => s.path)).toEqual(["/", "/", "/"]);
+    // Cookie はそのまま渡る（値を読み替えない）
+    expect(assets.seen[0]?.cookie).toBe("__Host-kh_rt=x");
+  });
+
+  it("ほかの Cookie・接頭辞のない kh_rt・値が空の __Host-kh_rt は、Cookie がないのと同じ", async () => {
+    const { assets, call } = home();
+    for (const cookie of ["__Host-kh_oauth=x", "kh_rt=x", "__Host-kh_rt=", "__Host-kh_rt", "x__Host-kh_rt=1", "__Host-kh_rtx=1"]) {
+      const res = await call("/", { headers: { Cookie: cookie } });
+      expect(await res.text(), cookie).toContain("<h1>ここ暇</h1>");
+    }
+    expect(new Set(assets.seen.map((s) => s.path))).toEqual(new Set(["/landing"]));
+  });
+
+  it("クエリつきの / も同じ（クエリは残す）", async () => {
+    const { assets, call } = home();
+    await call("/?src=x");
+    await call("/?openExternalBrowser=1", { headers: { Cookie: "__Host-kh_rt=x" } });
+    expect(assets.seen.map((s) => [s.path, s.search])).toEqual([
+      ["/landing", "?src=x"],
+      ["/", "?openExternalBrowser=1"],
+    ]);
+  });
+
+  it("/ 以外（/login・/invite・/invites/abc・/privacy・/landing）は、Cookie によらず今までどおり", async () => {
+    const { assets, call } = home();
+    const paths = ["/login", "/invite", "/invites/abc", "/privacy", "/landing"];
+    for (const path of paths) {
+      await call(path);
+      await call(path, { headers: { Cookie: "__Host-kh_rt=x" } });
+    }
+    expect(assets.seen.map((s) => s.path)).toEqual(paths.flatMap((p) => [p, p]));
+    const other = await call("/login");
+    expect(other.headers.get("Vary")).toBeNull();
+  });
+
+  it("/ の応答は、Cookie の有無どちらでも Vary: Cookie・画面の CSP・共通のヘッダー・no-cache を持つ", async () => {
+    const { call } = home();
+    for (const init of [{}, { headers: { Cookie: "__Host-kh_rt=x" } }]) {
+      const res = await call("/", init);
+      expect(res.headers.get("Vary")).toContain("Cookie");
+      expect(res.headers.get("Content-Security-Policy")).toBe(PAGE_CSP);
+      expectCommon(res);
+      expect(res.headers.get("Cache-Control")).toBe("no-cache");
+    }
+  });
+
+  it("静的アセットが Vary: Accept-Encoding を返しても、Cookie を足して両方が残る", async () => {
+    const { call } = home();
+    const res = await call("/");
+    const vary = (res.headers.get("Vary") ?? "").split(",").map((v) => v.trim());
+    expect(vary).toEqual(expect.arrayContaining(["Accept-Encoding", "Cookie"]));
+  });
+
+  it("POST / は今までどおり405で、静的アセットを呼ばない", async () => {
+    const { assets, call } = home();
+    const res = await call("/", { method: "POST", headers: { Cookie: "__Host-kh_rt=x" } });
+    expect(res.status).toBe(405);
+    expect(assets.seen).toEqual([]);
+  });
+
+  it("ASSETS がない環境では、/ は今までどおり API のアプリが受ける", async () => {
+    const { app, call } = setup(false);
+    expect((await call("/")).status).toBe(404);
+    expect((await call("/", { headers: { Cookie: "__Host-kh_rt=x" } })).status).toBe(404);
+    expect(app.seen).toEqual(["/", "/"]);
   });
 });

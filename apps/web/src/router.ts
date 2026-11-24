@@ -47,6 +47,12 @@ function remember(from: Entry) {
   if (isTabPath(from.path)) tabPositions = rememberTabScroll(tabPositions, from.path, y);
 }
 
+/**
+ * シートの差し替え（docs/specs/T-56-motion.md「M-03」）で覚えた、移る前のシートの高さ（px）。
+ * 読んでも消さない（StrictMode で初期化が2回走っても同じ値を読めるように）。次の navigate・swapSheet・ブラウザの popstate で上書きする
+ */
+let swapped: { to: string; height: number } | null = null;
+
 /** 描いたあとに戻すスクロールの位置（null なら動かさない） */
 let pendingScroll: number | null = null;
 /** navigate が出す合成の popstate か（向きは進む。位置は navigate の中で覚えた） */
@@ -109,6 +115,8 @@ function runTransition(kind: TransitionKind) {
 }
 
 function onPopState(e: PopStateEvent) {
+  // ブラウザの戻る・進む（isTrusted）では、シートの差し替えで覚えた高さを消す。navigate が自分で出す合成の popstate では消さない（M-03）
+  if (e.isTrusted) swapped = null;
   const synthetic = navigating;
   navigating = false;
   const to = entryNow();
@@ -148,7 +156,27 @@ export function useNavigationScroll() {
   }, [href]);
 }
 
+/** 今の URL が swapSheet で移った先なら、移る前のシートの高さ（px）。それ以外は null */
+export function swappedSheetHeight(): number | null {
+  if (!swapped) return null;
+  return swapped.to === window.location.pathname + window.location.search ? swapped.height : null;
+}
+
+/** 今のシートを、別の URL のシートへ置き換える（作成 → 詳細）。移る前に今のシートの高さを覚える */
+export function swapSheet(to: string) {
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+  const height = dialog?.offsetHeight ?? 0;
+  // 移った先の描画より先に覚える
+  swapped = height > 0 ? { to, height } : null;
+  go(to, true);
+}
+
 export function navigate(to: string, { replace = false } = {}) {
+  swapped = null;
+  go(to, replace);
+}
+
+function go(to: string, replace: boolean) {
   const from = entryNow();
   remember(from);
   if (replace) {

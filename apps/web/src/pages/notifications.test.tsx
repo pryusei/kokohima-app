@@ -167,7 +167,11 @@ describe("お知らせ一覧", () => {
     renderApp();
     expect(await screen.findByRole("link", { name: "あきさんと友達になりました" })).toHaveAttribute("href", `/friends/${FRIEND}`);
     await userEvent.click(screen.getByRole("button", { name: "この人に見せない" }));
-    expect((await screen.findByText("見せないにしました")).className).not.toMatch(/red|rose/);
+    // 結果の帯に出し、本文の流れ（お知らせの行の中）には置かない（docs/specs/T-56-motion.md「M-09」）
+    const band = screen.getByTestId("result-band");
+    expect(await within(band).findByText("見せないにしました")).toBeVisible();
+    expect(band.innerHTML).not.toMatch(/red|rose/);
+    expect(within(screen.getByRole("main")).queryByText("見せないにしました")).toBeNull();
     const patch = calls.find((c) => c.url === `/api/v1/friends/${FRIEND}`);
     expect(patch?.init.method).toBe("PATCH");
     expect(JSON.parse(String(patch?.init.body))).toEqual({ sharesMyAvailability: false });

@@ -3,7 +3,7 @@ import { Button } from "./Button";
 import { Collapse, useAppear } from "./Collapse";
 import { useOnline } from "./online";
 
-// 空の状態・読み込み中・読み込めない・オフライン・操作の結果（デザインシステム「EmptyState」「StatusStates」「Toast」）
+// 空の状態・読み込み中・読み込めない・オフライン（デザインシステム「EmptyState」「StatusStates」）。操作の結果は ResultBand.tsx
 // どれも赤や警告の印を使わず、surface-sunken の静かな帯で出す
 
 /** 空の状態。出るときに下から8pxのフェードで入る（docs/specs/T-56-motion.md「M-19」。止まった形が最終形） */
@@ -125,15 +125,6 @@ function OfflineBannerBody({ online, onHidden }: { online: boolean; onHidden: ()
         </p>
       </div>
     </Collapse>
-  );
-}
-
-/** 操作の結果の一文。成功も失敗も同じ見た目 */
-export function Toast({ children }: { children: ReactNode }) {
-  return (
-    <p role="status" className="self-start rounded-m bg-ink px-4 py-3 text-surface shadow-float">
-      {children}
-    </p>
   );
 }
 

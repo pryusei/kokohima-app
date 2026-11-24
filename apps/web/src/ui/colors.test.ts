@@ -41,6 +41,13 @@ describe("色", () => {
     expect(found).toEqual([]);
   });
 
+  it("紹介のページ（landing.html。docs/specs/T-44-landing.md「3.」）も、既定の色を使わずトークンで書く", () => {
+    const landing = readFileSync(join(import.meta.dirname, "../../landing.html"), "utf8");
+    expect(landing.match(DEFAULT_COLOR_CLASS) ?? []).toEqual([]);
+    expect(landing).toMatch(/\bbg-bg\b/);
+    expect(landing).toMatch(/\bbg-action\b/);
+  });
+
   it("トークンに赤の色相の値がない", () => {
     const hexes = css.match(/#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\b/g) ?? [];
     expect(hexes.length).toBeGreaterThan(20);
