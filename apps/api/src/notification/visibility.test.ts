@@ -222,6 +222,42 @@ describe("プッシュの本文", () => {
     expect(push?.headers["content-encoding"]).toBeUndefined();
   });
 
+  it("購読の鍵が読めない（壊れた・別の AAD）ときは、本文なしで送り、結果は sent", async () => {
+    const { a, b } = await pair();
+    const { endpoint } = await subscribeWithKeys(b);
+    const broken = "v1.push-1.broken";
+    await env.DB.prepare("UPDATE push_subscriptions SET keys_enc = ?2 WHERE user_id = ?1").bind(b.id, broken).run();
+    await flush(await invite(a, b));
+    const push = h.delivery.state.pushes.find((p) => p.url === endpoint);
+    expect(push?.bodyLength).toBe(0);
+    expect(push?.headers["content-length"]).toBe("0");
+    expect(push?.headers["content-encoding"]).toBeUndefined();
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ kind: "invite_received", channel: "push", outcome: "sent" });
+  });
+
+  it("購読の鍵が別の人の AAD で暗号化されていても、本文なしで送る", async () => {
+    const { a, b } = await pair();
+    await subscribeWithKeys(a);
+    const { endpoint } = await subscribeWithKeys(b);
+    const aKeys = await env.DB.prepare("SELECT keys_enc FROM push_subscriptions WHERE user_id = ?1")
+      .bind(a.id)
+      .first<{ keys_enc: string }>();
+    await env.DB.prepare("UPDATE push_subscriptions SET keys_enc = ?2 WHERE user_id = ?1").bind(b.id, aKeys?.keys_enc).run();
+    await flush(await invite(a, b));
+    const push = h.delivery.state.pushes.find((p) => p.url === endpoint);
+    expect(push?.bodyLength).toBe(0);
+    expect((await rowsOf(b)).at(-1)).toMatchObject({ kind: "invite_received", channel: "push", outcome: "sent" });
+  });
+
+  it("名前つきの文が詰め物の長さに入らなければ、種類だけの文にする（画面からは入らない長さの表示名で確かめる）", async () => {
+    const { a, b } = await pair();
+    await env.DB.prepare("UPDATE users SET display_name = ?2 WHERE id = ?1").bind(a.id, "あ".repeat(400)).run();
+    const { endpoint, keys } = await subscribeWithKeys(b);
+    await setLockScreen(b, "detailed");
+    await flush(await invite(a, b));
+    expect((await pushesTo(endpoint, keys)).map((p) => p.body)).toEqual(["誘いが届きました"]);
+  });
+
   it("他人の設定や鍵で送らない：同じ誘いでも、受け取り手それぞれの見え方と鍵で暗号化する", async () => {
     const a = await person("あき");
     const b = await person("べに");
