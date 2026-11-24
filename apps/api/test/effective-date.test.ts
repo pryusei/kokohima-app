@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   contactStartProblems,
+  safetyStartProblems,
   countEffectiveDateLines,
   countOldRevisionDateLines,
   countRealEffectiveDates,
@@ -307,5 +308,31 @@ describe("問い合わせの公開の日の検査", () => {
 
   it("今の contactStart.json の値は、いつもの検査を通る", () => {
     expect(contactStartProblems([announced], { startDate: contactStart.startDate, deploy: false })).toEqual([]);
+  });
+});
+
+// ブロックと通報を始める日（docs/specs/T-33-block-report.md「振る舞い 8.」「テスト計画」）
+describe("ブロックと通報を始める日の検査", () => {
+  const dated = withDate("2026年11月23日");
+  const announced = `${dated}${rev("2026年12月8日")}${notice("2026年12月1日")}`;
+  const check = (texts: string[], startDate: unknown, today: CalendarDay) => safetyStartProblems(texts, { startDate, deploy: true, today });
+
+  it("始める日より前：改定日が始める日と同じで、予告の行があれば通る", () => {
+    expect(check([announced], "2026-12-08", day(2026, 12, 1))).toEqual([]);
+  });
+
+  it("始める日より前：改定日が違う・予告の行がないと止まる", () => {
+    expect(check([announced], "2026-12-09", day(2026, 12, 1))).toHaveLength(1);
+    expect(check([`${dated}${rev("2026年12月8日")}`], "2026-12-08", day(2026, 12, 1))).toHaveLength(1);
+    expect(check([dated], "2026-12-08", day(2026, 12, 1))).toHaveLength(2);
+  });
+
+  it("始める日以後・null・いつもの検査は条件を見ない。日付でない値はいつも止まる", () => {
+    expect(check([dated], "2026-12-08", day(2026, 12, 8))).toEqual([]);
+    expect(check([dated], null, day(2026, 12, 1))).toEqual([]);
+    expect(safetyStartProblems([dated], { startDate: "2026-12-08", deploy: false })).toEqual([]);
+    expect(safetyStartProblems([dated], { startDate: "2026-02-30", deploy: false })).toHaveLength(1);
+    expect(safetyStartProblems([dated], { startDate: 20261208, deploy: false })).toHaveLength(1);
+    expect(check([announced], "2026-12-08", undefined as unknown as CalendarDay)).toHaveLength(1);
   });
 });
