@@ -91,7 +91,7 @@ const refreshStates: [string, Route][] = [
   ["ログインしている（authenticated）", json(tokenBody())],
 ];
 
-describe.each(pages)("$path", ({ path, title, section, sections, changes }) => {
+describe.each(pages)("$path", ({ path, title, section, sections }) => {
   it("見出し：h1 は SubScreen の題の1つだけ、h2 は文案のすべての節（順も同じ）", async () => {
     window.history.replaceState(null, "", path);
     mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
@@ -112,6 +112,61 @@ describe.each(pages)("$path", ({ path, title, section, sections, changes }) => {
     expect(Array.from(dates.children).map((p) => p.textContent)).toEqual([EFFECTIVE_DATE_LINE, REVISION_DATE_LINE]);
     expect(screen.queryByText(/^公表日：/)).toBeNull();
     expect(screen.queryByRole("heading", { name: CHANGES })).toBeNull();
+  });
+
+  it("連絡先は mailto: のリンク", async () => {
+    window.history.replaceState(null, "", path);
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await screen.findByRole("heading", { name: title, level: 1 });
+    const links = screen.getAllByRole("link", { name: "ops@kokohima.app" });
+    expect(links.length).toBeGreaterThanOrEqual(2);
+    for (const link of links) expect(link).toHaveAttribute("href", "mailto:ops@kokohima.app");
+  });
+
+  it.each(refreshStates)("%s でも本文を出し、別の画面に移らない", async (_, refresh) => {
+    window.history.replaceState(null, "", path);
+    const { calls } = mockFetch({ "/api/v1/auth/refresh": refresh });
+    renderApp();
+    expect(await screen.findByRole("heading", { name: title, level: 1 })).toBeVisible();
+    expect(screen.getByRole("heading", { name: section, level: 2 })).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByText(EFFECTIVE_DATE_LINE)).toBeVisible();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(window.location.pathname).toBe(path);
+    // AuthProvider の refresh のほかに、API を呼ばない
+    expect(calls.map((c) => c.url)).toEqual(["/api/v1/auth/refresh"]);
+  });
+
+  it("タブの題を変え、離れたら「ここ暇」に戻す", async () => {
+    window.history.replaceState(null, "", "/login");
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await userEvent.click(await screen.findByRole("link", { name: title }));
+    expect(await screen.findByRole("heading", { name: title, level: 1 })).toBeVisible();
+    expect(document.title).toBe(`${title}｜ここ暇`);
+    // 「戻る」でログインの画面へ（アプリの中から開いたので1つ前に戻る）
+    await userEvent.click(screen.getByRole("button", { name: "戻る" }));
+    expect(await screen.findByRole("link", { name: "Googleでログイン" })).toBeVisible();
+    expect(window.location.pathname).toBe("/login");
+    expect(document.title).toBe("ここ暇");
+  });
+
+  it("外から直接開いた「戻る」は / に移る（ログインしていなければログインの画面）", async () => {
+    window.history.replaceState(null, "", path);
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "戻る" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+  });
+
+  it("オフラインの帯が出ていても、本文を出す", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    window.history.replaceState(null, "", path);
+    mockFetch({ "/api/v1/auth/refresh": json({}, 401) });
+    renderApp();
+    expect(await screen.findByText(/オフラインです/)).toBeVisible();
+    expect(screen.getByRole("heading", { name: section, level: 2 })).toBeVisible();
   });
 });
 
