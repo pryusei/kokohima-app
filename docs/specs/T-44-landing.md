@@ -1,6 +1,6 @@
 # T-44 仕様書：ログインなしで読める紹介のページ
 
-- 状態：実装済み（実装PR。仕様書PR pryusei/kokohima-app#219。マージ前なので、台帳 docs/tasks/REGISTRY.md では「作業中」）
+- 状態：実装済み（実装PR pryusei/kokohima-app#222。仕様書PR pryusei/kokohima-app#219。マージ前なので、台帳 docs/tasks/REGISTRY.md では「作業中」）
 - タスク票：docs/tasks/T-44-landing.md
 - 関係する要件：要求定義書「残りの論点」（Google の審査）、T-12 人が行う作業3（同意画面のブランディング）、T-19 決めたこと10（ホームページは審査のときに見直す）・決めたこと17（本格稼働までは予告なしで改定）。issue pryusei/kokohima-app#192・#199（親 #178）
 
