@@ -36,4 +36,5 @@
 ## DNS の例外
 - `kokohima.app` のカスタムドメインの記録は、Workers（`custom_domain: true`）が作り、管理する。Terraform の DNS の管理の例外（T-12 決定事項6）。
 - ほかの DNS の記録（Resend の SPF・DKIM、DMARC など）は Terraform で持つ（`infra/terraform/envs/prod/dns.tf`）。
+- `kokohima.app`（頂点）の TXT `google-site-verification=…` は、Google Search Console の所有権の確認（Google の OAuth のブランドの確認に要る。pryusei/kokohima-app#199）のため、Search Console の「Cloudflare で確認」で Cloudflare の画面から足した（2026-11-24）。Terraform では持たない例外。消すと所有権の確認が外れる。同じ記録を `dns.tf` に書くと重複して apply が失敗するので書かない。
 - CI の plan は、GitHub の秘密 `CLOUDFLARE_ZONE_ID` を `TF_VAR_zone_id` として渡す。
