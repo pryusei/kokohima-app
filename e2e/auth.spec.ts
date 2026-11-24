@@ -45,6 +45,29 @@ test("未ログインで / を開くとログイン画面になる", async ({ pa
   await expect(page).toHaveURL(/\/login$/);
 });
 
+// LINE ログイン（docs/specs/T-32-line-login.md「E2Eテスト」）。LINE は偽物（E2E のエントリの /__e2e__/line/authorize）
+test("ログイン画面の最初のボタンは「LINEでログイン」。押すと名前の画面になり、決めると「みんな」が開き、再読み込みしても続く", async ({ page }) => {
+  await page.goto("/login");
+  const buttons = page.getByRole("link", { name: /でログイン$/ });
+  await expect(buttons.first()).toHaveText("LINEでログイン");
+  await expect(buttons.nth(1)).toHaveText("Googleでログイン");
+  // LINE の認可画面へ、state・nonce・PKCE（S256）・scope=openid つきで移る
+  const authorize = page.waitForRequest((req) => req.url().includes("/__e2e__/line/authorize"));
+  await buttons.first().click();
+  const url = new URL((await authorize).url());
+  expect(url.searchParams.get("scope")).toBe("openid");
+  expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+  expect(url.searchParams.get("state")).toBeTruthy();
+  expect(url.searchParams.get("nonce")).toBeTruthy();
+  // メールアドレスも名前も受け取らないので、名前の画面（T-31）で決める
+  await expect(page.getByRole("heading", { name: "表示名を決めてください" })).toBeVisible();
+  await page.getByLabel("表示名").fill(`L${crypto.randomUUID().slice(0, 6)}`);
+  await page.getByRole("button", { name: "これで始める" }).click();
+  await expect(page.getByRole("heading", { name: "みんな" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "みんな" })).toBeVisible();
+});
+
 for (const name of ["プライバシー ポリシー", "利用規約"]) {
   test(`未ログインで、ログイン画面から「${name}」を開き、「戻る」でログイン画面に戻る`, async ({ page }) => {
     // docs/specs/T-19-privacy-terms.md「E2Eテスト」

@@ -162,6 +162,8 @@ test("LINEのアプリ内ブラウザで招待リンクを開くと、発行者�
     "href",
     `/invite?openExternalBrowser=1#t=${token}`,
   );
+  // LINE の中でもそのままログインできる「LINEでログイン」を最初に出す（T-32）
+  await expect(page.getByRole("link", { name: /でログイン$/ }).first()).toHaveText("LINEでログイン");
   // URLからはトークンが消えている
   expect(new URL(page.url()).hash).toBe("");
   await context.close();

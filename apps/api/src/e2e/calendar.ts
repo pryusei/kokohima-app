@@ -11,6 +11,7 @@ import { TransientError } from "../link-preview/domain/url";
 import { e2eOgpFetch } from "./linkPreview";
 import { e2eClaudeFetch } from "./claude";
 import { e2eContactFetch } from "./contact";
+import { e2eLineFetch } from "./line";
 import { e2eDeliverPending, e2eNotificationFetch } from "./notifications";
 
 // E2E用の偽の Google（docs/specs/T-06-calendar.md「E2E用の偽のGoogle」）。src/e2e/entry.ts からだけ読み込む
@@ -68,10 +69,13 @@ async function fakeGoogle(url: URL, init: RequestInit | undefined): Promise<Resp
   return json({}, 404);
 }
 
-/** E2E のエントリの fetch。偽の Google・偽のメール配信・偽のプッシュ・偽のサイトの宛先だけをここで受ける */
+/** E2E のエントリの fetch。偽の Google・偽の LINE・偽のメール配信・偽のプッシュ・偽のサイトの宛先だけをここで受ける */
 export const e2eFetch: typeof fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url);
   if (url.host === FAKE_HOST) return fakeGoogle(url, init);
+  // 偽の LINE ログイン（T-32）
+  const line = e2eLineFetch(url, init, env.LINE_CHANNEL_ID ?? "", Date.now());
+  if (line) return line;
   const delivery = await e2eNotificationFetch(url, init);
   if (delivery) return delivery;
   const ogp = e2eOgpFetch(url);
