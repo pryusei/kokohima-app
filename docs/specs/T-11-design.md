@@ -81,7 +81,7 @@
   | `/friends/{id}` | 友達の詳細 | 友達 |
 
   - URL は今のまま変えない（お知らせ・メール・E2E から直接開ける）。
-  - ここ暇の追加・くり返しの追加・招待リンクの発行は、URL を持たないシートにする（今は画面の中のフォーム）。
+  - ここ暇の追加・くり返しの追加・招待リンクの発行は、URL を持たないシートにする（今は画面の中のフォーム）。ここ暇タブのシートは T-55 で「時間を決めて入れる」「くり返し」と、マスに2つ以上あるときの一覧にした。
 - シートを閉じる操作：右上の「閉じる」のボタン、つまみを下に引く、後ろの暗い部分を押す、`Esc`。
   - 「閉じる」のボタン：タイトルの行の右に、✕の印のボタン（44px、`aria-label="閉じる"`）を出す。つまみ・暗い部分・Esc だけでは閉じ方に気づけず、スマホでは作成のシートから戻れなかったため（利用者の報告）。
   - シートの中をスクロールしても、つまみとタイトルの行（「閉じる」のボタンを含む）は上に残す。オフラインの帯も、つまみとタイトルの間に置いて一緒に上に残す。
@@ -125,10 +125,10 @@
   | 1 招待リンクの受け口 | `InvitePage` |
   | 2 ログイン | `LoginPage`（「Appleでログイン」は `VITE_APPLE_LOGIN_ENABLED` が `"1"` のときだけ出す。T-12。招待の受け口も同じ） |
   | 4 みんな | `EveryonePage` |
-  | 5 ここ暇 | `AvailabilityPage` |
+  | 5 ここ暇 | `AvailabilityPage`（T-55 で週の帯に作り直した。docs/specs/T-55-availability-week-grid.md） |
   | 6 誘い | `InvitesPage` |
   | 7 友達 | `FriendsPage` |
-  | 8 ここ暇の追加・9 くり返しの追加 | `AvailabilityPage` の中のフォーム |
+  | 8 ここ暇の追加・9 くり返しの追加 | `AvailabilityPage` の中のフォーム（T-55 で、昼・夕方・夜は週の帯のマス、開始・終了は「時間を決めて入れる」のシート、くり返しは「くり返し」のシートにした） |
   | 10 誘いの作成・11 募集の作成 | `InviteNewPage`・`BroadcastNewPage` |
   | 12・13 誘いの詳細 | `InviteDetailPage` |
   | 14 募集の詳細 | `BroadcastDetailPage` |
@@ -242,3 +242,4 @@
 | 2026-11-23 | 「みんな」の「誰を誘う？」の顔の列で、見せない相手と暇がない相手を同じ形で出すことを足した | T-34（docs/specs/T-34-kokodou-entry.md） |
 | 2026-11-24 | `Button` に variant `line`・`apple` を足し、色を variant の中だけで決める決まりを書いた | T-32 の実装PRのレビュー（pryusei/kokohima-app#212） |
 | 2026-11-24 | `Button` に variant `saved` と、共通の部品の保存のボタン（`SaveButton`・`useSaveState`）を足した | T-54（docs/specs/T-54-save-and-goodbye-copy.md） |
+| 2026-11-24 | ここ暇タブ（キャンバス5・8・9）を週の帯に作り直したことを注記した。共通の部品に下に数秒出す `UndoToast` と、`LinkCard` の `compact` を足した | T-55（docs/specs/T-55-availability-week-grid.md） |
