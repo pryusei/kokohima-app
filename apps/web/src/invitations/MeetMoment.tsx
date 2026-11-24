@@ -2,27 +2,33 @@ import type { Meetup } from "@kokohima/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
 import { meQuery, nameOfProfile } from "../account/me";
+import { avatarInitial, useAvatarImage } from "../ui/Avatar";
 import { formatRange } from "./format";
 import { hasSeenMeetMoment, markMeetMomentSeen } from "./meetMomentSeen";
 import { meetupQuery } from "./queries";
 
 // 成立の演出「ふたつの灯りが重なる」（docs/specs/T-43-meet-moment.md）。
 // 灯り（lamp）の色の丸が寄って重なり、成立の青緑（meet）に変わる。動きは CSS だけ（index.css の kh-meet-*）で、
-// prefers-reduced-motion では index.css の共通の決まりで止まり、重なった丸の一枚絵になる
+// prefers-reduced-motion では index.css の共通の決まりで止まり、重なった丸の一枚絵になる。
+// 丸の中はアイコンの画像（なければ・読めるまでは1文字め）。色の意味は、画像のまわりの3pxの輪（丸の地の色）で運ぶ（docs/specs/T-58-meet-moment-avatars.md）
 
 /** 並べる丸の数の上限（自分を含む）。ほかの参加者が多いときは、最後の丸を「+n」にする */
 export const MEET_MOMENT_MAX_DOTS = 4;
 
-type Dot = { key: string; label: string };
+/** 丸1つ。src はアイコンの画像の URL（API の avatarUrl そのまま。退会した人と「+n」は null） */
+export type MeetMomentDot = { key: string; label: string; src: string | null };
+
+type Self = { displayName: string | null; avatarUrl: string | null };
 
 /** 丸の並び：自分を左に、ほかの参加者は予定の参加者の順。5人以上は「自分・2人・+n」 */
-export function meetMomentDots(me: string | null, others: Meetup["participants"]): Dot[] {
-  const initial = (name: string | null) => (name ? (Array.from(name.trim())[0] ?? "？") : "？");
-  const self: Dot = { key: "me", label: initial(me) };
-  const people = others.map((p) => ({ key: p.id, label: p.withdrawn ? "？" : initial(p.displayName) }));
+export function meetMomentDots(me: Self | null, others: Meetup["participants"]): MeetMomentDot[] {
+  const self: MeetMomentDot = { key: "me", label: avatarInitial(me?.displayName ?? null), src: me?.avatarUrl ?? null };
+  const people = others.map((p) =>
+    p.withdrawn ? { key: p.id, label: "？", src: null } : { key: p.id, label: avatarInitial(p.displayName), src: p.avatarUrl },
+  );
   if (people.length + 1 <= MEET_MOMENT_MAX_DOTS) return [self, ...people];
   const shown = people.slice(0, MEET_MOMENT_MAX_DOTS - 2);
-  return [self, ...shown, { key: "more", label: `+${people.length - shown.length}` }];
+  return [self, ...shown, { key: "more", label: `+${people.length - shown.length}`, src: null }];
 }
 
 /** 「〇〇と会える」の名前の部分。3人以上は「a・bほかn人」 */
@@ -66,7 +72,7 @@ export function useMeetMoment(meetupId: string | null): Meetup | null {
 /** 成立の演出と「決まった！」。children に、その画面にまだない成立後の操作を置く */
 export function MeetMoment({ meetup, children }: { meetup: Meetup; children?: ReactNode }) {
   const me = useQuery(meQuery());
-  const dots = meetMomentDots(me.data?.displayName ?? null, meetup.participants);
+  const dots = meetMomentDots(me.data ?? null, meetup.participants);
   const reveal = (i: number) => ({ "--kh-meet-i": i }) as CSSProperties;
   const titleId = useId();
   return (
@@ -76,14 +82,7 @@ export function MeetMoment({ meetup, children }: { meetup: Meetup; children?: Re
     >
       <div aria-hidden="true" className="kh-meet-pair flex h-24 items-center justify-center">
         {dots.map((dot, i) => (
-          <span
-            key={dot.key}
-            data-testid="meet-dot"
-            style={{ "--kh-meet-from": `${meetMomentOffset(i, dots.length)}px`, zIndex: dots.length - i } as CSSProperties}
-            className={`kh-meet-dot relative grid size-18 place-items-center rounded-full border-3 border-meet-soft bg-meet text-xl font-bold text-on-meet ${i > 0 ? "-ml-5" : ""}`}
-          >
-            {dot.label}
-          </span>
+          <MeetDot key={dot.key} dot={dot} index={i} count={dots.length} />
         ))}
       </div>
       <h3 id={titleId} className="kh-meet-reveal text-xxl font-bold" style={reveal(0)}>
@@ -108,5 +107,38 @@ export function MeetMoment({ meetup, children }: { meetup: Meetup; children?: Re
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * 丸1つ。外径72px（size-18）・meet-soft の3pxの縁・その内側の3pxが色の輪（丸の地の色。灯り→成立）・中身60px（size-15）。
+ * 画像は待たずに1文字めを出し、読めた時点（load）で動きなしで差し替える。画像の大きさはクラスで決め、読み込みに頼らない
+ */
+function MeetDot({ dot, index, count }: { dot: MeetMomentDot; index: number; count: number }) {
+  const { showImage, onError } = useAvatarImage(dot.src);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const loaded = showImage && loadedSrc === dot.src;
+  return (
+    <span
+      data-testid="meet-dot"
+      style={{ "--kh-meet-from": `${meetMomentOffset(index, count)}px`, zIndex: count - index } as CSSProperties}
+      className={`kh-meet-dot relative grid size-18 shrink-0 place-items-center rounded-full border-3 border-meet-soft bg-meet text-xl font-bold text-on-meet ${index > 0 ? "-ml-5" : ""}`}
+    >
+      {!loaded && dot.label}
+      {showImage && (
+        <img
+          src={dot.src ?? undefined}
+          alt=""
+          width={60}
+          height={60}
+          loading="eager"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          className={`absolute inset-[3px] size-15 rounded-full object-cover ${loaded ? "" : "invisible"}`}
+          onLoad={() => setLoadedSrc(dot.src)}
+          onError={onError}
+        />
+      )}
+    </span>
   );
 }

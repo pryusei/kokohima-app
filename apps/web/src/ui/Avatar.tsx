@@ -7,8 +7,16 @@ import { useOnline } from "./online";
 
 const SIZE = { s: "size-7 text-s", m: "size-10", l: "size-16 text-xl" } as const;
 
-export function Avatar({ name, src = null, size = "m" }: { name: string | null; src?: string | null; size?: keyof typeof SIZE }) {
-  // 読めなかった URL を覚えておく（URL が変われば、もう一度読む）
+/** 表示名の1文字め。名前がなければ「？」 */
+export function avatarInitial(name: string | null): string {
+  return name ? (Array.from(name.trim())[0] ?? "？") : "？";
+}
+
+/**
+ * アイコンの画像を出すか（Avatar と成立の演出の丸で共有する。docs/specs/T-58-meet-moment-avatars.md「5.」）。
+ * 読めなかった URL を覚えておき（URL が変われば、もう一度読む）、オンラインに戻ったら読み直す
+ */
+export function useAvatarImage(src: string | null): { showImage: boolean; onError: () => void } {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   // 通信の失敗と404を区別できないので、オンラインに戻ったら読み直す
   // （effect の中で setState しないよう、描画の中で前の値と比べる）
@@ -18,8 +26,11 @@ export function Avatar({ name, src = null, size = "m" }: { name: string | null; 
     setPrevOnline(online);
     if (online) setFailedSrc(null);
   }
-  const initial = name ? Array.from(name.trim())[0] ?? "？" : "？";
-  const showImage = src !== null && src !== failedSrc;
+  return { showImage: src !== null && src !== failedSrc, onError: () => setFailedSrc(src) };
+}
+
+export function Avatar({ name, src = null, size = "m" }: { name: string | null; src?: string | null; size?: keyof typeof SIZE }) {
+  const { showImage, onError } = useAvatarImage(src);
   return (
     <span
       aria-hidden="true"
@@ -27,16 +38,16 @@ export function Avatar({ name, src = null, size = "m" }: { name: string | null; 
     >
       {showImage ? (
         <img
-          src={src}
+          src={src ?? undefined}
           alt=""
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
           className="size-full object-cover"
-          onError={() => setFailedSrc(src)}
+          onError={onError}
         />
       ) : (
-        initial
+        avatarInitial(name)
       )}
     </span>
   );
