@@ -10,7 +10,7 @@ import { useOnline } from "./online";
 export type ButtonVariant = "primary" | "lamp" | "secondary" | "ghost" | "line" | "apple" | "saved";
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-m border px-4 font-bold transition-transform active:scale-[.98] disabled:cursor-default disabled:active:scale-100";
+  "inline-flex items-center justify-center gap-2 rounded-m border px-4 font-bold transition-transform duration-(--duration-press) ease-out active:scale-[.98] disabled:cursor-default disabled:active:scale-100";
 
 // 押せないときの色。saved は押せないあいだも成立の色を見せたいので付けない
 // （disabled: の色は地の色のクラスより後に出て必ず勝つので、saved の側からは上書きできない）

@@ -15,6 +15,8 @@ function stubMatchMedia() {
   standalone = { matches: false, listeners: new Set() };
   vi.stubGlobal("matchMedia", (query: string) => ({
     get matches() {
+      // 動きを止める設定の問い合わせには true（docs/specs/T-56-motion.md「0-3.」）
+      if (query === "(prefers-reduced-motion: reduce)") return true;
       return query === "(display-mode: standalone)" && standalone.matches;
     },
     addEventListener: (_: string, cb: () => void) => standalone.listeners.add(cb),
