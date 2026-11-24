@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BottomSheet } from "./BottomSheet";
 import { RESULT_BAND_MS, ResultBandProvider, UNDO_TOAST_MS, useResultBand, type BandMessage } from "./ResultBand";
@@ -18,14 +18,16 @@ function stubReducedMotion(matches: boolean) {
   );
 }
 
-let renders = 0;
+const rendered = vi.fn();
 let showBand: (m: BandMessage) => void = () => {};
 
 /** 帯を出す画面。描いた回数を数える */
 function Screen() {
   const show = useResultBand();
-  showBand = show;
-  renders++;
+  rendered();
+  useEffect(() => {
+    showBand = show;
+  }, [show]);
   return <button type="button">マス</button>;
 }
 
@@ -34,7 +36,7 @@ const show = (m: BandMessage) => act(() => showBand(m));
 
 beforeEach(() => {
   vi.useFakeTimers();
-  renders = 0;
+  rendered.mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -182,11 +184,11 @@ describe("結果の帯", () => {
         <Screen />
       </ResultBandProvider>,
     );
-    const before = renders;
+    const before = rendered.mock.calls.length;
     show({ text: "見せないにしました" });
     show({ text: "連携しました", undo: () => {} });
     act(() => vi.advanceTimersByTime(UNDO_TOAST_MS));
-    expect(renders).toBe(before);
+    expect(rendered).toHaveBeenCalledTimes(before);
   });
 
   it("シートを開いているときも、シートより上に重ねて出す（body の直下。後ろの #root の外）", () => {
