@@ -5,6 +5,9 @@ import { ApiError } from "./client";
 // - 同じ内容で送り直すとき（通信できなかった・5xx のあと）は同じキー
 // - 4xx・成功・内容の変更のあとは新しいキー（4xx は24時間同じ答えが保存されるため）
 
+/** 通信できなかった・5xx（同じ内容で送り直すときは同じキー） */
+const isRetryable = (error: unknown) => error instanceof ApiError && (error.status === 0 || error.status >= 500);
+
 export function useIdempotencyKey() {
   const current = useRef<{ signature: string; key: string } | null>(null);
   return useMemo(
@@ -16,13 +19,38 @@ export function useIdempotencyKey() {
       },
       /** 送り終えたら呼ぶ。通信できなかった・5xx のときだけキーを残す */
       settle(error: unknown) {
-        const retryable = error instanceof ApiError && (error.status === 0 || error.status >= 500);
-        if (!retryable) current.current = null;
+        if (!isRetryable(error)) current.current = null;
       },
     }),
     [],
   );
 }
+
+/**
+ * 送る内容ごとに別のキーを同時に持つ。1つの useMutation で、別々の内容を続けて（前の応答を待たずに）送るとき（週の帯のマス）。
+ * 決まりは useIdempotencyKey と同じで、内容ごとに覚える
+ */
+export function useIdempotencyKeys() {
+  const current = useRef(new Map<string, string>());
+  return useMemo(
+    () => ({
+      keyFor(signature: string) {
+        let key = current.current.get(signature);
+        if (!key) {
+          key = crypto.randomUUID();
+          current.current.set(signature, key);
+        }
+        return key;
+      },
+      /** その内容を送り終えたら呼ぶ。通信できなかった・5xx のときだけキーを残す */
+      settle(signature: string, error: unknown) {
+        if (!isRetryable(error)) current.current.delete(signature);
+      },
+    }),
+    [],
+  );
+}
+
 
 /** 経路と本文から、キーを分ける目印を作る */
 export const signatureOf = (path: string, body: unknown) => `${path}\n${body === undefined ? "" : JSON.stringify(body)}`;

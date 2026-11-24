@@ -5,10 +5,26 @@ import { linkLabel } from "../invitations/format";
 // status が ok ならプレビューあり、それ以外（pending・failed・null）はドメインだけ。pending に「読み込み中」は出さない。
 // ドメインは必ず linkHostname（punycode）で出し、siteName で置き換えない。文字列はテキストとして出す
 
-export function LinkCard({ url, preview }: { url: string | null; preview: LinkPreview | null }) {
+// compact：横にめくるカード（ここ暇タブの行きたい。docs/specs/T-55-availability-week-grid.md）では、高さをそろえるため
+// 画像を出さず、ドメインだけの形にタイトルを1行で添える
+
+export function LinkCard({ url, preview, compact = false }: { url: string | null; preview: LinkPreview | null; compact?: boolean }) {
   const host = linkLabel(url);
   if (!url || !host) return null;
   const link = { href: url, target: "_blank", rel: "noopener noreferrer nofollow" } as const;
+  const title = preview?.status === "ok" ? preview.title : null;
+  if (compact) {
+    return (
+      <a
+        {...link}
+        className="flex min-w-0 flex-col rounded-l border border-line bg-surface px-3 py-2 text-s no-underline"
+        aria-label={title ? `${title}（${host}）` : undefined}
+      >
+        {title && <span className="truncate font-bold text-ink">{title}</span>}
+        <span className="truncate text-ink-muted">{host}</span>
+      </a>
+    );
+  }
   if (preview?.status !== "ok") {
     return (
       <a {...link} className="flex items-center gap-2 rounded-l border border-line bg-surface px-4 py-3 text-s text-ink-muted no-underline">

@@ -51,12 +51,12 @@ test("Aが行きたいを置く（Cを外す）→ Bの「みんな」に出てC
 });
 
 // T-29 行きたいのAI提案（docs/specs/T-29-wish-suggestion.md「E2Eテスト」）。Claude は偽の実装（apps/api/src/e2e/claude.ts）
-test("「AIで探す」→ 候補が出る（検索の結果にない URL の候補は出ない）→「行きたいに置く」→ 値が入った置くシートから置ける", async ({
+test("「AIでお店を探す」→ 候補が出る（検索の結果にない URL の候補は出ない）→「行きたいに置く」→ 値が入った置くシートから置ける", async ({
   browser,
 }) => {
   const a = await newUser(browser, "A");
   await a.page.goto("/availability");
-  await a.page.getByRole("button", { name: "AIで探す" }).click();
+  await a.page.getByRole("button", { name: "AIでお店を探す" }).click();
   const search = sheet(a.page, "行きたいを探す");
   await search.getByLabel("どのあたり？").fill("渋谷");
   await search.getByLabel("何をしたい？").fill("ラーメン");
@@ -82,7 +82,7 @@ test("「AIで探す」→ 候補が出る（検索の結果にない URL の候
 test("見つからない言葉で探すと、静かな「候補が見つかりませんでした」が出て、探せる回数が減らない", async ({ browser }) => {
   const a = await newUser(browser, "A");
   await a.page.goto("/availability");
-  await a.page.getByRole("button", { name: "AIで探す" }).click();
+  await a.page.getByRole("button", { name: "AIでお店を探す" }).click();
   const search = sheet(a.page, "行きたいを探す");
   await search.getByLabel("どのあたり？").fill("湘南");
   await search.getByLabel("何をしたい？").fill("__empty__");

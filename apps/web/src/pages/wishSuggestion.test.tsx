@@ -69,7 +69,7 @@ const availabilityTab = (over: Routes = {}) => {
 
 async function openSheet() {
   renderApp();
-  await userEvent.click(await screen.findByRole("button", { name: "AIで探す" }));
+  await userEvent.click(await screen.findByRole("button", { name: "AIでお店を探す" }));
   return screen.findByRole("dialog", { name: "行きたいを探す" });
 }
 
@@ -93,11 +93,11 @@ describe("部品", () => {
 });
 
 describe("AIで探す", () => {
-  it("limit が0（設定がない）・読めないときは「AIで探す」を出さない", async () => {
+  it("limit が0（設定がない）・読めないときは「AIでお店を探す」を出さない", async () => {
     availabilityTab({ "/api/v1/wish-suggestions/quota": quota(0, 0) });
     renderApp();
     expect(await screen.findByRole("button", { name: "＋ 行きたいを置く" })).toBeVisible();
-    await waitFor(() => expect(screen.queryByRole("button", { name: "AIで探す" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "AIでお店を探す" })).toBeNull());
   });
 
   it("入力とチップ、残りの回数。エリアと言葉がそろうまで押せない", async () => {
