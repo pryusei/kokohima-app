@@ -3,19 +3,26 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiSend } from "../api/client";
 import { keys } from "../api/keys";
-import { SendButton } from "../ui/Button";
 import { Note } from "../ui/feedback";
 import { inputClass } from "../ui/form";
+import { SaveButton, useSaveState } from "../ui/SaveButton";
 import { asEnd, PRESET_LABELS, PRESET_NAMES } from "./format";
 
-/** 時間帯プリセットの境界の変更（設定の「時間帯プリセット」で使う） */
+/** 時間帯プリセットの境界の変更（設定の「時間帯プリセット」で使う。保存のボタンは T-54） */
 export function PresetForm({ initial }: { initial: Presets }) {
   const queryClient = useQueryClient();
   const [value, setValue] = useState(initial);
+  const [savedValue, setSavedValue] = useState(initial);
   const save = useMutation({
-    mutationFn: () => apiSend("PUT", "/api/v1/me/presets", value, presetsSchema),
-    onSuccess: (presets) => queryClient.setQueryData(keys.availability.presets(), presets),
+    mutationFn: (sent: Presets) => apiSend("PUT", "/api/v1/me/presets", sent, presetsSchema),
+    onSuccess: (presets, sent) => {
+      queryClient.setQueryData(keys.availability.presets(), presets);
+      setSavedValue(presets ?? sent);
+      markSaved();
+    },
   });
+  const changed = PRESET_NAMES.some((n) => value[n].start !== savedValue[n].start || value[n].end !== savedValue[n].end);
+  const { state, markSaved } = useSaveState({ changed, pending: save.isPending });
   const set = (name: PresetName, field: "start" | "end", hhmm: string) =>
     setValue((v) => ({ ...v, [name]: { ...v[name], [field]: field === "end" ? asEnd(hhmm) : hhmm } }));
 
@@ -24,7 +31,7 @@ export function PresetForm({ initial }: { initial: Presets }) {
       className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate();
+        save.mutate(value);
       }}
     >
       {PRESET_NAMES.map((name) => (
@@ -51,15 +58,14 @@ export function PresetForm({ initial }: { initial: Presets }) {
         </fieldset>
       ))}
       <Note>変えても、すでにあるここ暇とくり返しの時刻は変わりません。</Note>
-      <SendButton type="submit" variant="primary" block disabled={save.isPending}>
+      <SaveButton state={state} block>
         時間帯を保存
-      </SendButton>
+      </SaveButton>
       {save.isError && (
         <p role="status" className="text-s text-ink-muted">
           保存できませんでした。15分単位で、30分以上、日をまたがない時間を選んでください。
         </p>
       )}
-      {save.isSuccess && <p role="status" className="text-s text-ink-muted">保存しました</p>}
     </form>
   );
 }
