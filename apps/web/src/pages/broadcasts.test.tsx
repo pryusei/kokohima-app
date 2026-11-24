@@ -48,6 +48,14 @@ beforeEach(() => {
   tokenStore.clear();
 });
 
+/** 動きを止める設定（matches）を差し替える。PC の幅の問い合わせは false */
+function stubReducedMotion(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((q: string) => ({ matches: q === "(prefers-reduced-motion: reduce)" ? matches : false, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+  );
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -83,6 +91,23 @@ describe("募集の作成", () => {
       endsAt: "2026-10-10T03:15:00.000Z",
       expiresIn: "until_start",
     });
+  });
+
+  it("送ると「募っています…」、「✓ 募りました」を見せてから詳細へ置き換わる（送る操作のボタンと同じ部品。T-56 M-03）", async () => {
+    stubReducedMotion(false);
+    newPage("", [friend(1), friend(2)], {
+      "/api/v1/broadcasts": json(broadcast(), 201),
+      [`/api/v1/broadcasts/${ID}`]: json(broadcast()),
+    });
+    renderApp();
+    await screen.findByRole("list", { name: "宛先" });
+    await userEvent.click(screen.getByRole("button", { name: "募集する" }));
+    const done = await screen.findByRole("button", { name: "募りました" });
+    expect(done).toHaveTextContent("✓募りました");
+    expect(done.className).toContain("text-action");
+    expect(window.location.pathname).toBe("/broadcasts/new");
+    await waitFor(() => expect(window.location.pathname).toBe(`/broadcasts/${ID}`));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 
   it("1人以下では送れず、100人を超える友達がいるときは100人まで選んだ状態で開く", async () => {

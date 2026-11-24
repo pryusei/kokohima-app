@@ -71,13 +71,19 @@ test("AがBの見えている枠から誘う（あそぼ）→ Bが「行く」�
   await expect(sheet(a.page).getByText("あそぼ", { exact: true })).toBeVisible();
   await a.page.getByLabel("ひとこと（任意）").fill("ごはんどう？");
   await a.page.getByRole("button", { name: "誘う", exact: true }).click();
+  // 作成のシートが詳細に差し替わる（シートは1つだけ。docs/specs/T-56-motion.md「M-03」）
   await expect(sheet(a.page).getByText("返事待ち")).toBeVisible();
+  await expect(sheet(a.page)).toHaveCount(1);
 
   await openReceived(b.page, a);
   await expect(sheet(b.page).getByText("あそぼ", { exact: true })).toBeVisible();
   await expect(sheet(b.page).getByText("ごはんどう？")).toBeVisible();
   await b.page.getByRole("button", { name: "行く" }).click();
   await expect(sheet(b.page).getByText("成立", { exact: true })).toBeVisible();
+  // 「成立した予定を見る」は meet の塗りのボタンで、そこから予定を開ける（M-04）
+  await sheet(b.page).getByRole("link", { name: "成立した予定を見る" }).click();
+  await expect(b.page).toHaveURL(/\/meetups\/[0-9a-f-]+$/);
+  await expect(sheet(b.page, "成立した予定")).toBeVisible();
 
   await expect((await meetupsOf(a.page)).getByText(b.displayName)).toBeVisible();
   await expect((await meetupsOf(b.page)).getByText(a.displayName)).toBeVisible();
