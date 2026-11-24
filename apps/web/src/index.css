@@ -89,6 +89,33 @@
   --text-l: 1.2rem;
   --text-xl: 1.5rem;
   --text-xxl: 2rem;
+  /* 動きの曲線（docs/specs/T-56-motion.md「0-2. 動きのトークン」）。Tailwind の既定の ease-out・ease-in を上書きし、ease-spring を足す */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: linear(0, 0.13 4%, 0.44 10%, 0.75 17%, 0.94 25%, 1.03 34%, 1.045 40%, 1.03 50%, 1.01 62%, 1 75%, 1);
+}
+
+/* 動きの長さ（docs/specs/T-56-motion.md「0-2.」）。Tailwind v4 に名前空間がないので、使っていなくても CSS 変数として出し、
+   duration-(--duration-fast) のように使う。値は apps/web/src/ui/motion.ts の MOTION_MS と同じ。
+   出る動きは、入る動きの1段下（約7割）を使う：sheet で入るものは base、base は fast、fast は press で出る */
+@theme static {
+  --duration-press: 100ms;
+  --duration-fast: 160ms;
+  --duration-base: 240ms;
+  --duration-sheet: 360ms;
+}
+
+/* 入る動き（animation）のトークン。animate-kh-pop のように使う（T-55 の週の帯。docs/specs/T-56-motion.md「0-1. の5」・M-09） */
+@theme {
+  --animate-kh-pop: kh-pop var(--duration-sheet) var(--ease-out) backwards;
+  --animate-kh-rise: kh-rise var(--duration-base) var(--ease-out) backwards;
+}
+
+/* linear() を使えない端末では、ばねの曲線をただの ease-out にする */
+@supports not (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: var(--ease-out);
+  }
 }
 
 @theme inline {
@@ -156,6 +183,95 @@
       transition: none !important;
       animation: none !important;
     }
+  }
+}
+
+/* シートの出入り（docs/specs/T-56-motion.md「M-01」「M-02」）。
+   入る動きは @starting-style で書くので、普段の指定が最終形（動きを止める設定でも、そのまま見える）。
+   出る動きは data-exiting（useExitAnimation）。引いている間は data-drag="dragging"（transition なし。transform は直接当てる）、
+   離して元へ戻すときは data-drag="settling"。暗い背景は暗幕（.kh-sheet-scrim）の中の別の層（.kh-sheet-backdrop）で、シートの親ではない */
+@layer components {
+  .kh-sheet {
+    transition: transform var(--duration-sheet) var(--ease-spring);
+  }
+  .kh-sheet-backdrop {
+    transition: opacity var(--duration-fast) var(--ease-out);
+  }
+  .kh-sheet-scrim[data-exiting] {
+    pointer-events: none;
+  }
+  .kh-sheet-scrim[data-exiting] > .kh-sheet {
+    transform: translateY(100%);
+    transition: transform var(--duration-base) var(--ease-in);
+  }
+  .kh-sheet-scrim[data-exiting] > .kh-sheet-backdrop {
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-in);
+  }
+  .kh-sheet-scrim[data-drag="dragging"]:not([data-exiting]) > .kh-sheet,
+  .kh-sheet-scrim[data-drag="dragging"]:not([data-exiting]) > .kh-sheet-backdrop {
+    transition: none;
+  }
+  .kh-sheet-scrim[data-drag="settling"]:not([data-exiting]) > .kh-sheet {
+    transition: transform var(--duration-base) var(--ease-spring);
+  }
+  .kh-sheet-scrim[data-drag="settling"]:not([data-exiting]) > .kh-sheet-backdrop {
+    transition: opacity var(--duration-base) var(--ease-out);
+  }
+  /* PC（幅1024px以上。T-20）の中央のダイアログは、下からではなく、小さく縮んだところからフェードで出る */
+  @media (min-width: 64rem) {
+    .kh-sheet {
+      transition:
+        transform var(--duration-base) var(--ease-out),
+        opacity var(--duration-base) var(--ease-out);
+    }
+    .kh-sheet-scrim[data-exiting] > .kh-sheet {
+      transform: scale(0.96);
+      opacity: 0;
+      transition:
+        transform var(--duration-fast) var(--ease-in),
+        opacity var(--duration-fast) var(--ease-in);
+    }
+  }
+}
+
+@starting-style {
+  .kh-sheet {
+    transform: translateY(100%);
+  }
+  .kh-sheet-backdrop {
+    opacity: 0;
+  }
+}
+
+@media (min-width: 64rem) {
+  @starting-style {
+    .kh-sheet {
+      transform: scale(0.96);
+      opacity: 0;
+    }
+  }
+}
+
+/* 高さの開閉（docs/specs/T-56-motion.md「0-4.」、apps/web/src/ui/Collapse.tsx）。開く：base・ease-out、閉じる：fast・ease-in */
+@layer components {
+  .kh-collapse {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--duration-base) var(--ease-out);
+  }
+  .kh-collapse > * {
+    min-height: 0;
+    overflow: hidden;
+    transition: opacity var(--duration-base) var(--ease-out);
+  }
+  .kh-collapse[data-closed] {
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--duration-fast) var(--ease-in);
+  }
+  .kh-collapse[data-closed] > * {
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-in);
   }
 }
 

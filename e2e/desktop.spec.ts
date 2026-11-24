@@ -84,7 +84,9 @@ test("誘いのカードから詳細が中央のダイアログで開き、Esc �
   const detail = sheet(b.page, `${a.displayName}さんからの誘い`);
   await expect(detail).toBeVisible();
 
-  // 画面の中央（左右の余白が同じ・下に付けない）
+  // 画面の中央（左右の余白が同じ・下に付けない）。入る動き（scale(.96) → 1。docs/specs/T-56-motion.md「M-01」）の途中は
+  // transform のぶん小さく測れるので、動きが終わってから測る
+  await expect.poll(() => detail.evaluate((el) => el.getAnimations().length)).toBe(0);
   const viewport = b.page.viewportSize();
   const box = await detail.boundingBox();
   if (!viewport || !box) throw new Error("サイズが取れない");

@@ -48,18 +48,18 @@
 | T-29 | 行きたいの AI 提案 | 済み | docs/specs/T-29-wish-suggestion.md | |
 | T-30 | CI の見直し | 済み | docs/specs/T-30-ci-review.md | #175・#177 |
 | T-31 | 表示名の必須化と友達になった直後の画面 | 済み | docs/specs/T-31-display-name-first-step.md | #179・#203 |
-| T-32 | LINE ログイン | 作業中 | docs/specs/T-32-line-login.md | #180 |
+| T-32 | LINE ログイン | 済み | docs/specs/T-32-line-login.md | #180 |
 | T-33 | ブロックと通報 | 済み | docs/specs/T-33-block-report.md | #181 |
 | T-34 | 「ここどう？」の入口 | 済み | docs/specs/T-34-kokodou-entry.md | #182・#202 |
-| T-35 | 通知の見え方を本人が選ぶ | 作業中 | docs/specs/T-35-notification-visibility.md | #183 |
+| T-35 | 通知の見え方を本人が選ぶ | 済み | docs/specs/T-35-notification-visibility.md | #183 |
 | T-36 | プライバシー ポリシーと規約の改定 | 予約 | | #184 |
 | T-37 | 誘いから始まる招待 | 予約 | | #185 |
 | T-38 | 輪のリンク | 予約 | | #186 |
 | T-39 | LINE グループに貼る募集 | 予約 | | #187 |
-| T-40 | 「今ひま」ワンタップ | 作業中 | docs/specs/T-40-ima-hima.md | #188 |
+| T-40 | 「今ひま」ワンタップ | 済み | docs/specs/T-40-ima-hima.md | #188 |
 | T-41 | 学生向けの時間帯プリセット | 予約 | | #189 |
 | T-42 | すべての断りに同じ一文 | 予約 | | #190 |
-| T-43 | 成立の演出（思い出カードは別に再検討） | 作業中 | docs/specs/T-43-meet-moment.md | #191 |
+| T-43 | 成立の演出（思い出カードは別に再検討） | 済み | docs/specs/T-43-meet-moment.md | #191 |
 | T-44 | ログインなしで読める紹介のページ | 予約 | | #192 |
 | T-45 | インスタのストーリーズ・DM への共有 | 予約 | | #193 |
 | T-46 | 「この時間なら」のカードとフォーカスの輪 | 済み | docs/specs/T-46-countered-card-focus-ring.md | #194・#204 |
@@ -70,9 +70,9 @@
 | T-51 | BIMI（通知メールにロゴを出す） | 作業中（旧 T-26） | | #153 |
 | T-52 | バージョンの管理とリリースのタグ | 作業中（旧 T-28） | | #136 |
 | T-53 | 公式の X と Instagram | 作業中（旧 T-30） | | #176 |
-| T-54 | 保存できたことをボタンで伝える・退会のあとの一文 | 作業中 | docs/specs/T-54-save-and-goodbye-copy.md | |
-| T-55 | ここ暇タブを週の帯に作り直す | 作業中 | docs/specs/T-55-availability-week-grid.md | #217 |
-| T-56 | 画面の動きと手触り | 仕様書 | docs/specs/T-56-motion.md | |
+| T-54 | 保存できたことをボタンで伝える・退会のあとの一文 | 済み | docs/specs/T-54-save-and-goodbye-copy.md | |
+| T-55 | ここ暇タブを週の帯に作り直す | 済み | docs/specs/T-55-availability-week-grid.md | #217 |
+| T-56 | 画面の動きと手触り | 作業中 | docs/specs/T-56-motion.md | 仕様書 #216。実装PR①（土台とシート）が作業中 |
 
 ## 重なり（番号が2回使われたもの）
 

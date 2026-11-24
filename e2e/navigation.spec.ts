@@ -100,3 +100,26 @@ test("お知らせのリンクのように誘いの URL を直接開いて閉じ
   await expect(b.page).toHaveURL(/\/invites$/);
   await expect(b.page.getByRole("heading", { name: "誘い", level: 1 })).toBeVisible();
 });
+
+test("動きを止めない設定でも、シートは閉じる動きのあとに消え、開いたボタンにフォーカスが戻る（docs/specs/T-56-motion.md「M-01」）", async ({ browser }) => {
+  const { page } = await newUser(browser, "A");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/friends");
+  expect(await page.evaluate('matchMedia("(prefers-reduced-motion: reduce)").matches')).toBe(false);
+  const opener = page.getByRole("button", { name: "招待リンクを作る" });
+  await opener.click();
+  const dialog = sheet(page, "招待リンクを作る");
+  await expect(dialog).toBeFocused();
+  // 「閉じる」を押した20ms後には、まだシートがある（出る動きの途中。即時に消えていない）
+  const stillThere = await dialog.evaluate(
+    (el) =>
+      new Promise<boolean>((resolve) => {
+        (el.querySelector('button[aria-label="閉じる"]') as { click(): void } | null)?.click();
+        setTimeout(() => resolve(el.isConnected), 20);
+      }),
+  );
+  expect(stillThere).toBe(true);
+  await expect(sheet(page)).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { presetsQuery } from "../availability/queries";
 import { useAuth } from "../auth/AuthProvider";
+import { prefersReducedMotion } from "../ui/motion";
 import { BottomSheet } from "../ui/BottomSheet";
 import { connectionsQuery } from "../calendar/queries";
 import { Avatar } from "../ui/Avatar";
@@ -179,8 +180,7 @@ export function AccountSettingsPage({ search = "" }: { search?: string }) {
   const logoutSection = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!fromNewLogin) return;
-    const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    logoutSection.current?.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    logoutSection.current?.scrollIntoView?.({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [fromNewLogin]);
   return (
     <SubScreen title="アカウント" back="/settings">

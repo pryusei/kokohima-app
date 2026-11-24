@@ -138,10 +138,13 @@ describe("設定", () => {
   describe("アカウント：新しい端末のログインのお知らせから開いたとき（docs/specs/T-11-design.md「画面のつながり」）", () => {
     const NOTICE = "新しい端末でのログインのお知らせから開きました。心当たりがなければ、「すべての端末からログアウト」を押してください。";
     let scrolled: HTMLElement[] = [];
+    let scrollArgs: unknown[] = [];
     beforeEach(() => {
       scrolled = [];
-      Element.prototype.scrollIntoView = vi.fn(function (this: HTMLElement) {
+      scrollArgs = [];
+      Element.prototype.scrollIntoView = vi.fn(function (this: HTMLElement, arg?: unknown) {
         scrolled.push(this);
+        scrollArgs.push(arg);
       });
     });
     afterEach(() => {
@@ -161,6 +164,17 @@ describe("設定", () => {
       expect(section).not.toContainElement(document.activeElement as HTMLElement);
       // 説明は静かな文で、警告の色を使わない
       expect(within(section).getByText(NOTICE).className).not.toMatch(/red|rose|error|danger|warn/);
+    });
+
+    it("スクロールの動きは prefersReducedMotion() で決まる：matchMedia がなければ auto、動きを止めない設定なら smooth（docs/specs/T-56-motion.md「0-3.」）", async () => {
+      open("/settings/account?from=new_login");
+      await waitFor(() => expect(scrollArgs).toEqual([{ block: "start", behavior: "auto" }]));
+    });
+
+    it("動きを止めない設定では smooth でスクロールする", async () => {
+      vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }));
+      open("/settings/account?from=new_login");
+      await waitFor(() => expect(scrollArgs).toEqual([{ block: "start", behavior: "smooth" }]));
     });
 
     it.each(["/settings/account", "/settings/account?from=other"])("%s では説明を出さず、スクロールしない", async (url) => {

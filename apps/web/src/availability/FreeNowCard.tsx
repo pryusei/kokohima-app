@@ -192,7 +192,7 @@ export function FreeNowCard() {
         type="button"
         disabled={light.isPending || stop.isPending || restore.isPending || mine.isPending || !online}
         onClick={() => light.mutate()}
-        className="flex w-full items-center gap-4 rounded-l bg-lamp px-4 py-4 text-left text-on-lamp shadow-lamp transition-transform active:scale-[.98] disabled:cursor-default disabled:bg-surface-sunken disabled:text-ink-disabled disabled:shadow-none disabled:active:scale-100"
+        className="flex w-full items-center gap-4 rounded-l bg-lamp px-4 py-4 text-left text-on-lamp shadow-lamp transition-transform duration-(--duration-press) ease-out active:scale-[.98] disabled:cursor-default disabled:bg-surface-sunken disabled:text-ink-disabled disabled:shadow-none disabled:active:scale-100"
       >
         <span aria-hidden="true" className="size-12 shrink-0 rounded-full border-4 border-lamp-soft bg-surface" />
         <span className="flex min-w-0 flex-col">

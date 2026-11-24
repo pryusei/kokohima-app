@@ -86,7 +86,8 @@ describe("入口と画面の枠", () => {
   it("PC の配置では、左のナビの「設定」に aria-current=\"page\" が付く", async () => {
     vi.stubGlobal(
       "matchMedia",
-      vi.fn((q: string) => ({ matches: q === DESKTOP_QUERY, media: q, addEventListener: () => {}, removeEventListener: () => {} })),
+      // 動きを止める設定の問い合わせにも true（docs/specs/T-56-motion.md「0-3.」）
+      vi.fn((q: string) => ({ matches: q === DESKTOP_QUERY || q === "(prefers-reduced-motion: reduce)", media: q, addEventListener: () => {}, removeEventListener: () => {} })),
     );
     open();
     expect(await screen.findByRole("link", { name: "設定" })).toHaveAttribute("aria-current", "page");

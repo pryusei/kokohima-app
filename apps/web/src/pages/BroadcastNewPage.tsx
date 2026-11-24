@@ -16,7 +16,7 @@ import { signatureOf, useIdempotencyKey } from "../api/idempotency";
 import { keys } from "../api/keys";
 import { formatTime, localDateOf, PRESET_LABELS, PRESET_NAMES } from "../availability/format";
 import { presetsQuery, today } from "../availability/queries";
-import { SheetScreen } from "../ui/BottomSheet";
+import { SheetScreen, useSheetLeaving } from "../ui/BottomSheet";
 import { buttonClass, SendButton } from "../ui/Button";
 import { LoadError, Loading, Note } from "../ui/feedback";
 import { inputClass, labelClass } from "../ui/form";
@@ -74,6 +74,7 @@ function createErrorText(error: unknown) {
 
 function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initial }) {
   const queryClient = useQueryClient();
+  const sheetLeaving = useSheetLeaving();
   const [recipientIds, setRecipientIds] = useState(initial.recipientIds);
   const [date, setDate] = useState(initial.date);
   const [start, setStart] = useState(initial.start);
@@ -109,8 +110,8 @@ function BroadcastForm({ friends, initial }: { friends: Friend[]; initial: Initi
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: keys.broadcasts.all() });
-      // 送信中にシートを閉じていたら（Esc など）、戻った先の画面を詳細で置き換えない
-      if (created && window.location.pathname === "/broadcasts/new") navigate(`/broadcasts/${created.id}`, { replace: true });
+      // 送信中にシートを閉じていたら（Esc など。閉じる出る動きの途中を含む）、戻った先の画面を詳細で置き換えない
+      if (created && !sheetLeaving() && window.location.pathname === "/broadcasts/new") navigate(`/broadcasts/${created.id}`, { replace: true });
     },
   });
 

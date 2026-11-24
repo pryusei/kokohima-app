@@ -20,7 +20,7 @@ import { friendSlotsQuery, presetsQuery, today } from "../availability/queries";
 import { EXPIRES, rangeOf, sendErrorText } from "../invitations/form";
 import { KIND_LABELS, nextQuarter } from "../invitations/format";
 import { navigate, useLocation } from "../router";
-import { SheetScreen } from "../ui/BottomSheet";
+import { SheetScreen, useSheetLeaving } from "../ui/BottomSheet";
 import { Badge } from "../ui/Badge";
 import { buttonClass, SendButton } from "../ui/Button";
 import { inputClass, labelClass } from "../ui/form";
@@ -77,6 +77,7 @@ function KindPreview({ friendId, date, startsAt, endsAt }: { friendId: string; d
 
 function InviteForm({ initial }: { initial: Initial }) {
   const queryClient = useQueryClient();
+  const sheetLeaving = useSheetLeaving();
   const [friendId, setFriendId] = useState(initial.friendId);
   const [date, setDate] = useState(initial.date);
   const [start, setStart] = useState(initial.start);
@@ -111,8 +112,8 @@ function InviteForm({ initial }: { initial: Initial }) {
     onSettled: (_data, error) => idempotency.settle(error),
     onSuccess: async (invite) => {
       await queryClient.invalidateQueries({ queryKey: keys.invites.all() });
-      // 送信中にシートを閉じていたら（Esc など）、戻った先の画面を詳細で置き換えない
-      if (invite && window.location.pathname === "/invites/new") navigate(`/invites/${invite.id}`, { replace: true });
+      // 送信中にシートを閉じていたら（Esc など。閉じる出る動きの途中を含む）、戻った先の画面を詳細で置き換えない
+      if (invite && !sheetLeaving() && window.location.pathname === "/invites/new") navigate(`/invites/${invite.id}`, { replace: true });
     },
   });
 

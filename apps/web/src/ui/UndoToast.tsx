@@ -55,7 +55,7 @@ export function UndoToast({ message, onDone, inline = false }: { message: ToastM
     >
       {message && (
         <div
-          className={`pointer-events-auto mx-auto flex max-w-md items-center justify-between gap-2 rounded-l bg-ink py-1 pr-1 pl-4 text-s text-surface shadow-float motion-safe:animate-[kh-rise_.2s_ease-out] ${
+          className={`pointer-events-auto mx-auto flex max-w-md items-center justify-between gap-2 rounded-l bg-ink py-1 pr-1 pl-4 text-s text-surface shadow-float motion-safe:animate-kh-rise ${
             inline ? "" : "lg:mx-0"
           }`}
           onPointerEnter={() => setHeld(true)}

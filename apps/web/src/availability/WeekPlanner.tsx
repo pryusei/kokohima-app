@@ -240,7 +240,7 @@ const CellButton = memo(function CellButton({
       }}
       className={`relative grid h-12 w-full place-items-center rounded-m border text-xs tabular-nums ${CELL_LOOK[state.kind]} ${
         recurring ? "border-dashed" : ""
-      } ${pop && on ? "motion-safe:animate-[kh-pop_.35s_ease-out]" : ""}`}
+      } ${pop && on ? "motion-safe:animate-kh-pop" : ""}`}
     >
       <span aria-hidden="true">{cellText(cell, state)}</span>
       {state.kind === "empty" && state.free && <span aria-hidden="true" className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-meet" />}

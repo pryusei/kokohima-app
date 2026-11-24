@@ -1,6 +1,6 @@
 # T-56 仕様書：UIの「動き」と「手触り」
 
-- 状態：仕様書
+- 状態：合意済み（仕様書PRマージ。pryusei/kokohima-app#216）。実装PR①（土台とシート）を実装した。実装PR②・③は T-55 の main 入りを待つ
 - タスク票：docs/tasks/T-56-motion.md
 - 関係する要件：要求定義書「デザイン原則」（断り・期限切れ・キャンセルを赤やエラー色で出さない）、アクセシビリティ（動き・フォーカス）
 - 関係する仕様書：T-11（docs/specs/T-11-design.md。画面のつながり・シート・読み込み中）、T-20（docs/specs/T-20-desktop-layout.md。PC のナビとダイアログ）、T-43（docs/specs/T-43-meet-moment.md。成立の演出）、T-54（docs/specs/T-54-save-and-goodbye-copy.md。保存のボタン）、T-40（docs/specs/T-40-ima-hima.md。今ひまの「元に戻す」）、T-55（ここ暇タブの週の帯。作業中のブランチ `feat/T-55-availability-week-grid`）、T-46（フォーカスの輪）
@@ -38,6 +38,7 @@
    - `@starting-style` で書く入る動き（M-01 のシートなど）は、もともと普段の指定が最終形なので、この形になっている。
 5. 色・角丸・影はトークン（`bg-surface`、`shadow-sheet` など）だけ。Tailwind の既定の色は書かない（`apps/web/src/ui/colors.test.ts` の検査のまま）。長さと曲線は下の動きのトークンだけで書き、`duration-300` などの直書きを散らさない。
    - 今あるものも移す：`Button` と今ひまのボタン（`availability/FreeNowCard.tsx`）の `transition-transform`（Tailwind の既定の 150ms と曲線）は `duration-(--duration-press) ease-out` にする。`Switch` は M-18。T-55 の `kh-pop`・`kh-rise`（`animate-[kh-pop_.35s_ease-out]` など）は M-09 のとおりトークンにする。
+   - `Switch`（`ui/Switch.tsx`）の `transition-colors`・`after:transition-transform` は、M-18（実装PR③）でトークンにするまで、Tailwind の既定の長さのまま残す。直書きの検査は、それまで `Switch.tsx` だけを除く（実装PR③で除くのをやめる）。
    - **例外**：T-43 の成立の演出（`index.css` の `.kh-meet-dot`・`.kh-meet-pair`・`.kh-meet-reveal` と `kh-meet-*` のキーフレーム。1200ms・1300ms・`cubic-bezier(.45,0,.25,1)` など）は、T-43 の決めた長さと曲線のまま残し、トークンに置き換えない（M-04「変えないこと」）。直書きの検査（下のテスト計画）では、この3つのクラスとキーフレームだけを除く。
 6. 依存を増やさない（「判断してほしいこと」1）。CSS（`@starting-style`、`transition-behavior: allow-discrete`、`linear()` のばねの曲線）と View Transitions API（Chrome 111 以降・Safari 18 以降）で作る。使えない端末では即時に切り替わるだけでよい。指につく引っぱり（M-02）だけは小さな自前のフックで書く。
    - `height: auto` への transition（`interpolate-size`）は Chromium にしかなく、Safari・Firefox では動かず元の高さのまま止まってから一気に変わるので、**使わない**。高さを動かすところは、`Collapse`（`grid-template-rows`）か、JavaScript で測った px から px への transition（M-03）で書く。
@@ -97,29 +98,33 @@
     - スマホ：シートは下へ抜ける（`translateY(100%)`、`--duration-base`・`--ease-in`）。暗い背景の層は先に薄くなる（`opacity → 0`、`--duration-fast`・`--ease-in`）。
     - PC：`scale(.96)`＋`opacity 0`（`--duration-fast`・`--ease-in`）。
     - `useExitAnimation` の `ref` は**シート（`role="dialog"`）に付ける**（暗い背景の層の160msの `transitionend` で、シートが抜け切る前に閉じないように）。保険のタイマーは一番長い出る動き＝`--duration-base`（240ms）＋50ms。PC でも同じ値でよい（PC のシートの `transitionend` が160msで先に届く）。
-    - 出る動きの途中は、シートと暗幕に `pointer-events: none` を付け、もう一度閉じる操作が届いても何もしない（`useExitAnimation` の二度押しの決まり）。
+    - 出る動きの途中は、シートと暗幕に `pointer-events: none` を付け、もう一度閉じる操作が届いても何もしない（`useExitAnimation` の二度押しの決まり）。`onClose` を呼んだあと外れるまで（`goBack` の `popstate` を待つあいだ。動きを止める設定では閉じた直後から）に届いた閉じる操作（`Esc` は文書全体で受けるので `pointer-events: none` では止まらない）も、`BottomSheet` が何もしない（`history.back()` が2回にならない）。
+    - 引いている途中・離して戻している途中（M-02）に「閉じる」・暗幕・`Esc` で閉じたときも、出る動きの前に引いている見た目（`data-drag`・直接当てた `transform` と濃さ）を外し、引いたあとに離して閉じたときと同じ出る動きにする。`index.css` の `data-drag` の指定は `:not([data-exiting])` にして、出る動きの指定に勝たないようにする。
     - `prefersReducedMotion()` が true（jsdom を含む）なら即時（今と同じ）。
+    - `onClose` を呼んだあと、シートが外れる（アンマウントされる）までは、出た形（`data-exiting`）のまま描く（`SheetScreen` の `goBack` は `popstate` が後から届くので、その間にシートが元の位置へ戻って見えないように）。
   - ブラウザの戻る（popstate）と Android の戻るで閉じたときは、URL が先に変わってシートが即座に消える今のまま（**即時**。「判断してほしいこと」6）。View Transitions で下へ抜く動きは付けない（戻るの反応が遅れるため）。
   - 誘い・募集の作成のあと詳細へ置き換えて移るとき（M-03）は、出入りの動きを走らせない（M-03 の「シートの差し替え」）。
   - URL を持たないシート（ここ暇の追加・くり返し・招待リンク・行きたいの作成など、`BottomSheet` を直接使うもの）も同じ動き。呼び出し側の `onClose`（状態を `null` にするなど）は、出る動きのあとで1回だけ呼ばれる。
   - フォーカスの扱い（開いたらシートへ、閉じたら開いたボタンへ。開いたボタンは最初の描画で覚える）と、本体（`#root`）の `inert` は今の順序のまま。出る動きのあいだも `inert` とフォーカスの閉じ込めは続け、`onClose` のあとのアンマウントで戻す。
-  - 誘い・募集の作成の送信中に閉じたら、成功しても詳細へ移らない（T-11 の決まり）は今のまま。
+  - 誘い・募集の作成の送信中に閉じたら、成功しても詳細へ移らない（T-11 の決まり）は今のまま。出る動きのあいだ（閉じる操作のあと、`goBack` の前）に成功の応答が来ても移らないように、`BottomSheet` はシートの中へ「閉じる操作のあとか」を返す関数（`useSheetLeaving()`。シートの外では常に false）を渡し、作成の画面は今の URL の確かめに加えてこれを確かめる。
 
 #### M-02 つまみと見出しの行を引くと、シートが指についてくる（スマホだけ）
 - **今**：`BottomSheet.tsx` の `onGripDown`/`onGripUp` は、離した位置が60px（`DRAG_CLOSE_PX`）以上下なら閉じ、10px（`TAP_SLOP_PX`）未満ならタップとして閉じる。引いている間シートは動かない。反応するのは幅64pxのつまみだけ。
 - **振る舞い**：
   - つかめる範囲を、つまみ＋見出しの行（`sticky` の帯。タイトル・オフラインの帯を含む）に広げる。帯の中の押せるもの（`button`・`a[href]`・`[role="button"]`・`input`・`select`・`textarea`。`closest()` で起点から見る。「閉じる」・「…」など）から始めた押し込みは、引っぱりにしない（今までどおりボタン・リンクとして働く）。帯には `touch-action: none` を付ける。
-  - 引いている間は、シートに `transform: translateY(移動量)` を直接当てる（transition なし）。上方向（移動量が負）は、移動量を1/3にする（ゴムのような抵抗）。暗い背景の層（M-01）の濃さは `1 - clamp(移動量 / シートの高さ, 0, 1)` にする。
+  - 引いている間は、シートに `transform: translateY(移動量)` を直接当てる（transition なし。指の動きごとに React で描き直さず、要素に直接当てる。暗幕に `data-drag="dragging"`、離して戻す間は `data-drag="settling"`）。上方向（移動量が負）は、移動量を1/3にする（ゴムのような抵抗）。暗い背景の層（M-01）の濃さは `1 - clamp(移動量 / シートの高さ, 0, 1)` にする。
   - 離したときは、下の判定の関数で決める：
     - 閉じる：M-01 の出る動きを、今の位置から続ける。
     - 戻る：`translateY(0)` へ `--duration-base`・`--ease-spring` で戻す。暗い背景も元の濃さへ。
     - タップ：**つまみ（`data-testid="sheet-grip"`）から始めたときだけ**閉じる（今のまま）。見出しの行（タイトル・アバター・バッジ・オフラインの帯）から始めたタップは何もしない（「戻る」と同じ扱い。今は見出しを触っても閉じないので、軽く触っただけで閉じることを増やさない）。
   - `pointercancel` では、閉じずに戻す。
+  - 引っぱりにするのは、最初に押した1本の指（マウスでは左のボタン）だけ。引いている間に触れた2本めの指と、右クリックなど左以外のボタンは無視する（動き・離し・cancel は、押し始めた `pointerId` のものだけを見る）。
   - PC の幅（つまみを隠している）では効かない（今と同じ）。見出しの行を引いても何もしない。
   - 中身のスクロールが一番上のときに中身から下へ引いてシートごと下げる操作は、ブラウザのスクロールとぶつかる（`touchmove` を止める作りが要る）ので、このタスクではやらない（スコープ外。指示書は「やる（後回しも可）」としていたので「判断してほしいこと」12 に並べる）。
 - **判定の関数**（`apps/web/src/ui/sheetDrag.ts`。純粋な関数）：
   - `sheetDragOutcome({ origin, moved, maxMoved, velocity, height }): "tap" | "close" | "settle"`
-    - `origin`：押し始めた場所（`"grip"`＝つまみ、`"header"`＝見出しの行のそれ以外）。`moved`：離した位置 − 押した位置（px。下が正）。`maxMoved`：押してから離すまでで、押した位置から一番離れた距離（px。絶対値）。`velocity`：離す直前の100msの下向きの速さ（px/ms。下が正）。`height`：シートの高さ（px）。
+    - `origin`：押し始めた場所（`"grip"`＝つまみ、`"header"`＝見出しの行のそれ以外）。`moved`：離した位置 − 押した位置（px。下が正）。`maxMoved`：押してから離すまでで、押した位置から一番離れた距離（px。絶対値）。`velocity`：離す直前の100msの下向きの速さ（px/ms。下が正）。`height`：シートの高さ（px。`offsetHeight`＝引いた transform を含まない高さ）。
+    - 速さは `dragVelocity(samples, now, y)`（同じファイル）で測る：押した位置と `pointermove` の位置（時刻つき）のうち、離す直前の100msの中で一番古いものから、離した位置までの速さ。100msの中に位置がない・時間が経っていないときは0。
     - `maxMoved < 10`（`TAP_SLOP_PX`）なら、`origin` が `"grip"` のとき `"tap"`、`"header"` のとき `"settle"`。
     - それ以外で、`moved >= height * 0.3`、または `moved > 0` かつ `velocity >= 0.5` なら `"close"`。
     - それ以外は `"settle"`。
@@ -368,22 +373,23 @@
 ### 単体テスト（実装PRで必須）
 
 #### 実装PR①：土台とシート
-- [ ] 動きのトークン：`index.css` の `--duration-*`・`--ease-*` と `MOTION_MS` の値が一致する。出る動きのトークンが入る動きの1段下（7割前後）になっている（`apps/web/src/ui/motion.test.ts`）
-- [ ] `prefersReducedMotion`：`matchMedia` がないと true、`matches` で true・false を返す
-- [ ] `matchMedia` を差し替えている既存のテスト（`navigation.test.tsx` の `stubMatchMedia`、`contact.test.tsx`、`install.test.tsx` の `stubMatchMedia`）を、`(prefers-reduced-motion: reduce)` には `matches: true` を返すように直す（0-3）。とくに navigation.test.tsx の PC の配置の `BottomSheet` のテスト（「PC の配置では、つまみを隠し（lg:hidden）、右上の『閉じる』で閉じる」など、閉じた直後に `onClose` を確かめるもの）が、直したあとも今のまま通る
-- [ ] `SettingsPage`：新しい端末のログインから開いたときの `scrollIntoView` が `prefersReducedMotion()` で決まる（`matchMedia` がないと `behavior: "auto"`）
-- [ ] `useExitAnimation`（`vi.useFakeTimers()`）：動きを止める設定（`matchMedia` の `matches: true`）では `start` の中で即時に `done` を1回呼ぶ。止めない設定では、長さ＋50msまでは呼ばず、＋50msで1回だけ呼ぶ。要素自身の `transitionend` が先に来たらそこで1回だけ呼び、タイマーでは呼ばない。子から泡立った `transitionend` では呼ばない。途中で `start` をもう一度呼んでも1回だけ。途中でアンマウントしたら呼ばない。`done` のあと `exiting` が false に戻り、もう一度 `start` すると、また1回だけ `done` を呼ぶ（閉じて開いてもう一度閉じる）。途中で `cancel()` すると `done` は呼ばれず（タイマーが過ぎても）、`exiting` が false に戻る
-- [ ] `Collapse`：閉じる途中で `show` が true に戻ると、中身が残り（保険のタイマーが過ぎても消えない）、開いた見た目に戻る。閉じて・開いて・もう一度閉じても、閉じ終わると中身が消える
-- [ ] `BottomSheet`（`apps/web/src/ui/navigation.test.tsx` に足す）：止めない設定で「閉じる」・暗幕・Esc・つまみのどれでも、すぐには `onClose` を呼ばず、出る動きの印（`data-exiting`）が付き、保険のタイマー（240＋50ms）のあとに1回だけ呼ぶ。暗い背景の層（`sheet-backdrop`）の `transitionend` が先に来ても、`onClose` は呼ばない（`ref` はシート）。**閉じる動きの途中でもう一度「閉じる」・Esc・暗幕を押しても `onClose`（`goBack`）は1回だけ**。動きを止める設定では即時（既存のテストのまま通る）
-- [ ] `BottomSheet`：暗い背景は暗幕の要素とは別の層で、シートはその層の子ではない（暗い背景の `opacity` でシートが薄くならない）
-- [ ] `BottomSheet`：出る動きの途中もフォーカスがシートの外に出ず、`onClose` のあと開いたボタンにフォーカスが戻る（既存のテストのまま）
-- [ ] `BottomSheet`：PC の幅では、入る・出る動きのクラスが下からではなく縮みとフェードの側になる
-- [ ] `sheetDragOutcome`（`apps/web/src/ui/sheetDrag.test.ts`）：つまみから始めて `maxMoved` 9px は tap、10px は tap でない。見出しの行から始めて `maxMoved` 9px は settle（tap にならない）。高さ600pxで `moved` 179px・速さ0.4は settle、180px は close。`moved` 30px・速さ0.5は close、0.49は settle。上へ引いて（`moved` 負）速さが大きくても close にしない
-- [ ] `sheetDragOffset`：下はそのまま、上は1/3
-- [ ] つまみと見出しの行：引いている間 `transform` が付き、離すと判定どおりに閉じる・戻る。「閉じる」のボタン・リンク（`a[href]`）・`[role="button"]` から始めた押し込みは引っぱりにならない。**シートのタイトル（見出しの文字）を押して離しても閉じない**（つまみを押して離すと閉じる）。`pointercancel` では閉じない。PC の幅では効かない
-- [ ] シートに `overscroll-behavior: contain` が付いている（M-16）
-- [ ] 色の直書きがない（`colors.test.ts` のまま）。動きの長さと曲線の直書きがない検査を足す（`apps/web/src` の `.tsx`・`.ts` と `index.css`）：クラスの `duration-[0-9]`・`duration-\[`・`ease-\[`・`animate-\[`・`delay-\[`、Tailwind の既定の `transition`・`transition-*` で長さを付けていないもの、CSS の `[0-9.]+m?s` の秒・ミリ秒の数（`@theme` の `--duration-*` の定義と、`kh-breathe` の 1.4s、T-43 の `.kh-meet-dot`・`.kh-meet-pair`・`.kh-meet-reveal` と `kh-meet-*` のキーフレームだけを除く。0-1 の5）
-- [ ] `Button` と今ひまのボタンの `transition-transform` が `--duration-press` で書かれている
+- [x] 動きのトークン：`index.css` の `--duration-*`・`--ease-*` と `MOTION_MS` の値が一致する。出る動きのトークンが入る動きの1段下（7割前後）になっている（`apps/web/src/ui/motion.test.ts`）
+- [x] `prefersReducedMotion`：`matchMedia` がないと true、`matches` で true・false を返す
+- [x] `matchMedia` を差し替えている既存のテスト（`navigation.test.tsx` の `stubMatchMedia`、`contact.test.tsx`、`install.test.tsx` の `stubMatchMedia`）を、`(prefers-reduced-motion: reduce)` には `matches: true` を返すように直す（0-3）。とくに navigation.test.tsx の PC の配置の `BottomSheet` のテスト（「PC の配置では、つまみを隠し（lg:hidden）、右上の『閉じる』で閉じる」など、閉じた直後に `onClose` を確かめるもの）が、直したあとも今のまま通る
+- [x] `SettingsPage`：新しい端末のログインから開いたときの `scrollIntoView` が `prefersReducedMotion()` で決まる（`matchMedia` がないと `behavior: "auto"`）
+- [x] `useExitAnimation`（`vi.useFakeTimers()`）：動きを止める設定（`matchMedia` の `matches: true`）では `start` の中で即時に `done` を1回呼ぶ。止めない設定では、長さ＋50msまでは呼ばず、＋50msで1回だけ呼ぶ。要素自身の `transitionend` が先に来たらそこで1回だけ呼び、タイマーでは呼ばない。子から泡立った `transitionend` では呼ばない。途中で `start` をもう一度呼んでも1回だけ。途中でアンマウントしたら呼ばない。`done` のあと `exiting` が false に戻り、もう一度 `start` すると、また1回だけ `done` を呼ぶ（閉じて開いてもう一度閉じる）。途中で `cancel()` すると `done` は呼ばれず（タイマーが過ぎても）、`exiting` が false に戻る
+- [x] `Collapse`：閉じる途中で `show` が true に戻ると、中身が残り（保険のタイマーが過ぎても消えない）、開いた見た目に戻る。閉じて・開いて・もう一度閉じても、閉じ終わると中身が消える
+- [x] `BottomSheet`（`apps/web/src/ui/navigation.test.tsx` に足す）：止めない設定で「閉じる」・暗幕・Esc・つまみのどれでも、すぐには `onClose` を呼ばず、出る動きの印（`data-exiting`）が付き、保険のタイマー（240＋50ms）のあとに1回だけ呼ぶ。暗い背景の層（`sheet-backdrop`）の `transitionend` が先に来ても、`onClose` は呼ばない（`ref` はシート）。**閉じる動きの途中でもう一度「閉じる」・Esc・暗幕を押しても `onClose`（`goBack`）は1回だけ**。動きを止める設定では即時（既存のテストのまま通る）
+- [x] `BottomSheet`：暗い背景は暗幕の要素とは別の層で、シートはその層の子ではない（暗い背景の `opacity` でシートが薄くならない）
+- [x] `BottomSheet`：出る動きの途中は `useSheetLeaving()` が true（シートの外では false）
+- [x] `BottomSheet`：出る動きの途中もフォーカスがシートの外に出ず、`onClose` のあと開いたボタンにフォーカスが戻る（既存のテストのまま）
+- [x] `BottomSheet`：PC の幅では、入る・出る動きのクラスが下からではなく縮みとフェードの側になる
+- [x] `sheetDragOutcome`（`apps/web/src/ui/sheetDrag.test.ts`）：つまみから始めて `maxMoved` 9px は tap、10px は tap でない。見出しの行から始めて `maxMoved` 9px は settle（tap にならない）。高さ600pxで `moved` 179px・速さ0.4は settle、180px は close。`moved` 30px・速さ0.5は close、0.49は settle。上へ引いて（`moved` 負）速さが大きくても close にしない
+- [x] `sheetDragOffset`：下はそのまま、上は1/3
+- [x] つまみと見出しの行：引いている間 `transform` が付き、離すと判定どおりに閉じる・戻る。「閉じる」のボタン・リンク（`a[href]`）・`[role="button"]` から始めた押し込みは引っぱりにならない。**シートのタイトル（見出しの文字）を押して離しても閉じない**（つまみを押して離すと閉じる）。`pointercancel` では閉じない。PC の幅では効かない
+- [x] シートに `overscroll-behavior: contain` が付いている（M-16）
+- [x] 色の直書きがない（`colors.test.ts` のまま）。動きの長さと曲線の直書きがない検査を足す（`apps/web/src` の `.tsx`・`.ts` と `index.css`）：クラスの `duration-[0-9]`・`duration-\[`・`ease-\[`・`animate-\[`・`delay-\[`、Tailwind の既定の `transition`・`transition-*` で長さを付けていないもの、CSS の `[0-9.]+m?s` の秒・ミリ秒の数（`@theme` の `--duration-*` の定義と、`kh-breathe` の 1.4s、T-43 の `.kh-meet-dot`・`.kh-meet-pair`・`.kh-meet-reveal` と `kh-meet-*` のキーフレームだけを除く。0-1 の5）。M-18 までは `Switch.tsx` も除く（実装PR③で除くのをやめる）
+- [x] `Button` と今ひまのボタンの `transition-transform` が `--duration-press` で書かれている
 - 他人のIDでは取得・更新できない：API を変えないので対象外
 
 #### 実装PR②：送る・成立・結果
@@ -419,9 +425,10 @@
 - 他人のIDでは取得・更新できない：API を変えないので対象外
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 実装PR①：既存の E2E（`e2e/navigation.spec.ts` ほか、`toHaveCount(0)` でシートが閉じたことを見ているもの）が、動きを付けたまま通る。通らなければ待ち方を直すのではなく、動きの長さを見直す。
+- [x] 実装PR①：既存の E2E（`e2e/navigation.spec.ts` ほか、`toHaveCount(0)` でシートが閉じたことを見ているもの）が、動きを付けたまま通る。通らなければ待ち方を直すのではなく、動きの長さを見直す。
   - **例外**：`e2e/desktop.spec.ts` の PC の中央のダイアログの大きさの確かめ（シートが見えた直後に `boundingBox()` を取り、幅が512pxかを見ている）は、入る動き（`scale(.96) → 1`）の途中だと `transform` のぶん幅が小さく測れるので、長さを変えても直らない。ここだけは、入る動きが終わってから測るように直す（`await expect.poll(async () => (await detail.boundingBox())?.width).toBe(512)`、または `detail.evaluate((el) => el.getAnimations().length === 0)` を待ってから測る）。ほかに見つかった大きさ・位置の確かめも同じ扱いにし、実装PRの説明に挙げる。
   - `e2e/navigation.spec.ts` に、シートを「閉じる」で閉じたあと開いたボタンにフォーカスが戻ることを、動きのある設定で確かめる（今のテストが動きを止めていないことを確かめる）
+  - 実装PR①で直した大きさ・位置の確かめは `e2e/desktop.spec.ts` の中央のダイアログの1か所だけ（入る動きが終わる＝`getAnimations()` が0になるのを待ってから測る）。`e2e/navigation.spec.ts` の入力欄の右端の確かめは、スマホの入る動きが `translateY` だけで横の位置と幅が変わらないので、そのまま。
 - [ ] 実装PR②：`e2e/invites.spec.ts` の誘い〜成立の流れで、「誘う」のあと詳細のシートが開き（シートが1つだけ）、「行く」のあと「成立した予定を見る」のボタン（`getByRole("link", { name: "成立した予定を見る" })`）から予定を開ける。既存の T-43 の演出の確かめはそのまま
 - [ ] 実装PR③：`e2e/navigation.spec.ts` に、みんなタブを下へスクロールして誘いタブへ移り、みんなタブに戻ると位置が戻ること、今いるタブを押すと一番上に戻ることを足す。ログインの確認中（`page.route` で確認の応答を遅らせる）に、ヘッダーと下のタブが出ていることと、確認中と確認後でヘッダーと下のタブの `boundingBox()`（x・y・幅・高さ）が同じこと（M-05 の「1pxも動かない」。スマホの幅と PC の幅の左のナビの両方）を足す
 - WebKit（`@iphone`）では新しく回さない（動きは CSS と View Transitions で、対応しない端末では即時になるだけ。ブラウザごとの差は単体テストと Chromium で足りる）
@@ -459,4 +466,7 @@
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-24 | 初版 | 持ち主の指示書「ここ暇のUIの『動き』と『手触り』を、よくできたアプリの水準に上げる」 |
+| 2026-11-24 | 実装PR①：`Switch` の動きは M-18（実装PR③）までトークンにしないので、直書きの検査で除く（0-1 の5）。`onClose` のあと外れるまで出た形のまま描く・出る動きの途中に作成の成功が来ても詳細へ移らない（`useSheetLeaving`）を足した（M-01）。速さの測り方（`dragVelocity`）と高さ（`offsetHeight`）を書いた（M-02）。E2E で直した大きさの確かめを書いた | 実装で決めたこと |
 | 2026-11-24 | 仕様書PRのレビューで直した：`matchMedia` を差し替えている既存のテストと SettingsPage の判定を `prefersReducedMotion` にそろえる（0-3）。`useExitAnimation` に `cancel()` と、`done` のあとまた `start` できることを足した。シートの `ref` はシートに付け、暗い背景を別の層にした（M-01）。見出しの行からのタップでは閉じない・リンクも引っぱりにしない（M-02）。差し替えの高さは px から px で、読み込み中は高さを保つ・`StrictMode` で2回読んでも同じ（M-03）。入る動きは普段の指定を最終形にし、骨組みは動きを止める設定ですぐ見える（0-1 の4・M-06）。バッジのぽんは自分の操作のときだけ（M-04）。結果の帯の context は `show` だけ（M-09）。スクロールの位置を履歴のエントリごとにも戻す（M-07・M-13）。`hasUAVisualTransition` では動かさない・ナビは動かさない（M-13）。トークンへ移す今の動きと T-43 の例外、直書きの検査を広げた（0-1 の5）。E2E の大きさの確かめと M-05 の位置の確かめを足した。判断してほしいこと 11・12 を足した。T-11・T-54 に T-56 で変わるところの注記を足した | 仕様書PRのレビュー（pryusei/kokohima-app#216） |
+| 2026-11-24 | 実装PR①のレビューで直した：`onClose` のあと外れるまでの閉じる操作（`Esc` など）も何もしない。引いている・戻している途中に閉じても `data-drag` を外してから出る（M-01）。2本めの指と左以外のボタンでは引っぱりにしない（M-02） | 実装PR①のレビュー（pryusei/kokohima-app#218） |
+| 2026-11-24 | main の取り込み（T-55）で入った `animate-[kh-pop_.35s_ease-out]`・`animate-[kh-rise_.2s_ease-out]` を、`@theme` の `--animate-kh-pop`（sheet・ease-out）・`--animate-kh-rise`（base・ease-out）に移した（「0-1. の5」の直書きの検査を通すため。M-09 の結果の帯の作り直しは実装PR②のまま） | 実装PR①（#218）に main を取り込んだとき |
