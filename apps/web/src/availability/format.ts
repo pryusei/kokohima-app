@@ -83,9 +83,9 @@ export function freeNowRange(now: number) {
   return { startsAt, endsAt: startsAt + FREE_NOW_LENGTH_MS };
 }
 
-/** 終わりの時刻。開始と日付が違えば「翌」を付ける（22:15〜翌01:15） */
-export function formatUntil(startsAt: number | string, endsAt: number | string) {
-  const next = localDateOf(endsAt) !== localDateOf(startsAt);
+/** 終わりの時刻。基準（ボタンの目安では開始、灯っている間は今）と日付が違えば「翌」を付ける（22:15〜翌01:15。0:00 を過ぎたら「〜01:15」） */
+export function formatUntil(base: number | string, endsAt: number | string) {
+  const next = localDateOf(endsAt) !== localDateOf(base);
   return `${next ? "翌" : ""}${formatTime(endsAt)}`;
 }
 

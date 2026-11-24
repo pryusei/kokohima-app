@@ -82,8 +82,11 @@ function WhoToInvite({ friends }: { friends: Friend[] }) {
   );
 }
 
-/** 「今」の印（今ひま。T-40）。見えている枠のうち、今を15分で切り上げた時刻までに始まり、まだ終わっていない枠にだけ付ける */
-function NowMark() {
+/** 「今」の印（今ひま。T-40）。見えている枠のうち、今を15分で切り上げた時刻までに始まり、まだ終わっていない枠にだけ付ける。
+ * 時刻はこの部品の中で30秒ごとに取り直す（「みんな」全体を描き直さない） */
+function NowMark({ slot }: { slot: FriendAvailability }) {
+  const now = useNow();
+  if (!isNow(slot, now)) return null;
   return (
     <span className="rounded-full bg-lamp px-1.5 text-xs font-bold text-on-lamp">
       今<span className="sr-only">ひま</span>
@@ -93,7 +96,6 @@ function NowMark() {
 
 export function EveryonePage() {
   const date = today();
-  const now = useNow();
   // 友達とここ暇は並列に読む（取得の連鎖を作らない。data-fetching スキル）
   const friends = useQuery(everyFriendQuery());
   const everyone = useQuery(everyoneQuery(date));
@@ -119,7 +121,7 @@ export function EveryonePage() {
 
   return (
     <TabScreen title="みんな">
-      <FreeNowCard now={now} />
+      <FreeNowCard />
       {friends.data && <WhoToInvite friends={friends.data} />}
       {friends.isError && <LoadError text="友達を読み込めませんでした" retry={() => void friends.refetch()} />}
       <ButtonLink to="/broadcasts/new" variant="lamp" block>
@@ -153,7 +155,7 @@ export function EveryonePage() {
                         <Link to={`/friends/${item.friend.id}`} className="font-bold text-ink no-underline">
                           {displayNameOf(item.friend.displayName)}
                         </Link>
-                        {isNow(item, now) && <NowMark />}
+                        <NowMark slot={item} />
                       </span>
                       <AvailabilityChip text={formatSlot(item)} overlaps={item.overlapsMine} />
                       <InviteFromSlot item={item} />

@@ -8,6 +8,7 @@ import { SendButton } from "../ui/Button";
 import { useOnline } from "../ui/online";
 import { formatTime, formatUntil, freeNowRange } from "./format";
 import { mineQuery, today } from "./queries";
+import { useNow } from "./useNow";
 
 // 今ひま（docs/specs/T-40-ima-hima.md）。「みんな」の一番上の大きな灯りのボタン（モックの案A）。
 // 押すと確認なしで、今（15分で切り上げ）から3時間のここ暇を作る。友達へ通知はしない。
@@ -33,20 +34,26 @@ function lightErrorText(error: unknown) {
   return "灯せませんでした。通信状態を確認して、もう一度お試しください";
 }
 
-export function FreeNowCard({ now }: { now: number }) {
+export function FreeNowCard() {
   const queryClient = useQueryClient();
-  const date = today();
+  // 時刻は30秒ごとに描き直す（灯りのボタンの目安の時刻。この部品の中だけで持ち、「みんな」全体を描き直さない）
+  const now = useNow();
+  // 自分の一覧の日付は開いたときのまま持つ。0:00 をまたいでキーが変わると、日付をまたぐ今ひまが消えて見えるため
+  const [date] = useState(today);
   const mineKey = keys.availability.mine(date);
   const mine = useQuery(mineQuery(date));
   const online = useOnline();
   const [notice, setNotice] = useState<Notice | null>(null);
+  // 終わりの時刻が来た今ひまのID。「おしまい」の表示が消えたあとも覚えておき、
+  // 取り直しが遅れた・失敗した・端末の時計が進んでいるときに、終わった今ひまを灯った表示に戻さない
+  const [endedIds, setEndedIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const active = mine.data?.items.find(
     (i) =>
       i.source === "manual" &&
       i.freeNow &&
       Date.parse(i.endsAt) > now &&
-      !(notice?.kind === "ended" && notice.id === i.id),
+      !endedIds.has(i.id),
   );
 
   // 作った枠はすぐ一覧のキャッシュに入れ（ボタンをすぐ「今ひま」に変える）、「みんな」の重なりの印は取り直す
@@ -113,21 +120,26 @@ export function FreeNowCard({ now }: { now: number }) {
     if (!activeId || !activeEnd) return;
     const id = setTimeout(
       () => {
+        setEndedIds((ids) => new Set(ids).add(activeId));
         setNotice({ kind: "ended", id: activeId, endsAt: activeEnd });
+        // 終わった枠は自分の一覧のキャッシュからも外す（取り直しを待たずに灯りのボタンへ戻せるように）
+        queryClient.setQueryData<MyList>(keys.availability.mine(date), (list) => list && { ...list, items: list.items.filter((i) => i.id !== activeId) });
         void queryClient.invalidateQueries({ queryKey: keys.availability.all() });
       },
       msUntil(activeEnd),
     );
     return () => clearTimeout(id);
-  }, [activeId, activeEnd, queryClient]);
+  }, [activeId, activeEnd, queryClient, date]);
 
-  // 「元に戻す」と「おしまい」は数秒で消し、灯りのボタンに戻す
+  // 「元に戻す」と「おしまい」は数秒で消し、灯りのボタンに戻す。元に戻す送信の途中は消さない（結果を待つ）
   const noticeKind = notice?.kind;
+  const restoring = restore.isPending;
   useEffect(() => {
     if (noticeKind !== "stopped" && noticeKind !== "ended") return;
+    if (restoring) return;
     const id = setTimeout(() => setNotice(null), FREE_NOW_NOTICE_MS);
     return () => clearTimeout(id);
-  }, [notice, noticeKind]);
+  }, [notice, noticeKind, restoring]);
 
   const message = notice?.kind === "message" && (
     <p role="status" className="text-s text-ink-muted">
@@ -141,7 +153,7 @@ export function FreeNowCard({ now }: { now: number }) {
         <div className="flex items-center gap-3 rounded-l border border-lamp-line bg-lamp-soft px-4 py-3">
           <span aria-hidden="true" className="size-3 shrink-0 rounded-full bg-lamp shadow-lamp" />
           <div className="flex min-w-0 flex-1 flex-col">
-            <p className="font-bold tabular-nums">今ひま 〜{formatUntil(active.startsAt, active.endsAt)}まで</p>
+            <p className="font-bold tabular-nums">今ひま 〜{formatUntil(now, active.endsAt)}まで</p>
             <p className="text-s text-ink-muted">見せている友達に、時刻だけ出ています。通知はしていません</p>
           </div>
           <SendButton size="s" disabled={stop.isPending} onClick={() => stop.mutate(active)}>
@@ -178,7 +190,7 @@ export function FreeNowCard({ now }: { now: number }) {
     <section aria-label="今ひま" className="flex flex-col gap-2">
       <button
         type="button"
-        disabled={light.isPending || mine.isPending || !online}
+        disabled={light.isPending || stop.isPending || restore.isPending || mine.isPending || !online}
         onClick={() => light.mutate()}
         className="flex w-full items-center gap-4 rounded-l bg-lamp px-4 py-4 text-left text-on-lamp shadow-lamp transition-transform active:scale-[.98] disabled:cursor-default disabled:bg-surface-sunken disabled:text-ink-disabled disabled:shadow-none disabled:active:scale-100"
       >

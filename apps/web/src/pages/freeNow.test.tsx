@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -73,6 +73,19 @@ const lightRoute = (created: unknown): Route => {
     return json(created, 201)();
   };
 };
+
+/** setTimeout・setInterval も偽にする（5秒・30秒の振る舞いを実時間を待たずに確かめる）。実時間でも少しずつ進める */
+const fakeAllTimers = (at: string) => {
+  vi.useRealTimers();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date(at));
+  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+};
+const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+/** 返さない応答（通信が止まっている・送信の途中） */
+const never: Route = () => new Promise<Response>(() => {});
+const gets = (calls: { url: string; init: RequestInit }[]) =>
+  calls.filter((c) => c.url.startsWith("/api/v1/availabilities?") && (c.init.method ?? "GET") === "GET").length;
 
 const card = () => screen.findByRole("region", { name: "今ひま" });
 const lightButton = async () => within(await card()).findByRole("button", { name: /今から3時間ひま/ });
@@ -194,6 +207,7 @@ describe("やめる・元に戻す・おしまい", () => {
   });
 
   it("「元に戻す」は5秒で消え、灯りのボタンに戻る", async () => {
+    const user = fakeAllTimers(NOW);
     const item = mineItem();
     let list = [item];
     everyoneTab({
@@ -204,11 +218,115 @@ describe("やめる・元に戻す・おしまい", () => {
       },
     });
     renderApp();
-    await userEvent.click(await within(await card()).findByRole("button", { name: "やめる" }));
+    await user.click(await within(await card()).findByRole("button", { name: "やめる" }));
     expect(await screen.findByRole("button", { name: "元に戻す" })).toBeVisible();
-    await waitFor(() => expect(screen.queryByRole("button", { name: "元に戻す" })).toBeNull(), { timeout: 7000 });
+    await advance(4_000);
+    expect(screen.getByRole("button", { name: "元に戻す" })).toBeVisible();
+    await advance(1_500);
+    expect(screen.queryByRole("button", { name: "元に戻す" })).toBeNull();
     expect(await lightButton()).toBeVisible();
-  }, 10_000);
+  });
+
+  it("「元に戻す」が送信の途中なら5秒たっても消さず、その間は灯りのボタンも押せない", async () => {
+    const user = fakeAllTimers(NOW);
+    const item = mineItem();
+    let list = [item];
+    everyoneTab({
+      "/api/v1/availabilities": (req) => (req.init.method === "POST" ? never(req) : json({ items: list, nextCursor: null })()),
+      [`/api/v1/availabilities/${item.id}`]: () => {
+        list = [];
+        return new Response(null, { status: 204 });
+      },
+    });
+    renderApp();
+    await user.click(await within(await card()).findByRole("button", { name: "やめる" }));
+    const undo = await screen.findByRole("button", { name: "元に戻す" });
+    await waitFor(() => expect(undo).toBeEnabled());
+    await user.click(undo);
+    await advance(6_000);
+    expect(screen.getByText("今ひまをやめました")).toBeVisible();
+    expect(screen.getByRole("button", { name: "元に戻す" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /今から3時間ひま/ })).toBeNull();
+  });
+
+  it("元に戻せなかったら（500）、静かな「元に戻せませんでした」", async () => {
+    const item = mineItem();
+    let list = [item];
+    everyoneTab({
+      "/api/v1/availabilities": (req) =>
+        req.init.method === "POST"
+          ? json({ type: "about:blank", title: "Internal Server Error", status: 500 }, 500)()
+          : json({ items: list, nextCursor: null })(),
+      [`/api/v1/availabilities/${item.id}`]: () => {
+        list = [];
+        return new Response(null, { status: 204 });
+      },
+    });
+    renderApp();
+    await userEvent.click(await within(await card()).findByRole("button", { name: "やめる" }));
+    const undo = await screen.findByRole("button", { name: "元に戻す" });
+    await waitFor(() => expect(undo).toBeEnabled());
+    await userEvent.click(undo);
+    const text = await within(await card()).findByText("元に戻せませんでした");
+    expect(text.className).not.toMatch(/red|rose|danger/);
+  });
+
+  it("やめる送信の途中は「元に戻す」を押せない", async () => {
+    const item = mineItem();
+    everyoneTab({
+      "/api/v1/availabilities": json({ items: [item], nextCursor: null }),
+      [`/api/v1/availabilities/${item.id}`]: never,
+    });
+    renderApp();
+    await userEvent.click(await within(await card()).findByRole("button", { name: "やめる" }));
+    expect(await screen.findByRole("button", { name: "元に戻す" })).toBeDisabled();
+  });
+
+  it("オフラインの間は、灯りのボタンも「元に戻す」も押せない", async () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    const goOffline = () => {
+      onLine.mockReturnValue(false);
+      act(() => {
+        window.dispatchEvent(new Event("offline"));
+      });
+    };
+    // TanStack Query のオンラインの判定もイベントで戻す（ほかのテストに残さない）
+    const goOnline = () => {
+      onLine.mockReturnValue(true);
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+    };
+    const item = mineItem();
+    let list: unknown[] = [];
+    everyoneTab({ "/api/v1/availabilities": () => json({ items: list, nextCursor: null })() });
+    const view = renderApp();
+    const button = await lightButton();
+    await waitFor(() => expect(button).toBeEnabled());
+    goOffline();
+    expect(await lightButton()).toBeDisabled();
+    // 戻してから外す（外したあとはイベントが TanStack Query に届かない）
+    goOnline();
+    view.unmount();
+
+    // 今ひまがあるとき：オンラインのうちにやめ、そのあとオフラインになる
+    list = [item];
+    everyoneTab({
+      "/api/v1/availabilities": () => json({ items: list, nextCursor: null })(),
+      [`/api/v1/availabilities/${item.id}`]: () => {
+        list = [];
+        return new Response(null, { status: 204 });
+      },
+    });
+    renderApp();
+    await userEvent.click(await within(await card()).findByRole("button", { name: "やめる" }));
+    const undo = await screen.findByRole("button", { name: "元に戻す" });
+    await waitFor(() => expect(undo).toBeEnabled());
+    goOffline();
+    expect(screen.getByRole("button", { name: "元に戻す" })).toBeDisabled();
+    goOnline();
+    onLine.mockRestore();
+  });
 
   it("やめられなかったら（500）、今ひまを元に戻して静かな文言", async () => {
     const item = mineItem();
@@ -232,6 +350,52 @@ describe("やめる・元に戻す・おしまい", () => {
     const ended = await screen.findByText("15:20で今ひまはおしまい", undefined, { timeout: 3000 });
     expect(ended.closest("section")?.className).toContain("bg-quiet-bg");
     expect(ended.closest("section")?.className).not.toMatch(/red|rose|danger/);
+  });
+
+  it("「おしまい」は5秒で消え、取り直して灯りのボタンに戻る。サーバーがまだ終わった枠を返しても灯った表示に戻さない", async () => {
+    fakeAllTimers(NOW);
+    const item = mineItem({ startsAt: "2026-10-10T03:30:00.000Z", endsAt: new Date(Date.now() + 1000).toISOString() });
+    // 端末の時計が進んでいるなどで、取り直してもまだ同じ枠が返る
+    const { calls } = everyoneTab({ "/api/v1/availabilities": json({ items: [item], nextCursor: null }) });
+    renderApp();
+    expect(await within(await card()).findByText("今ひま 〜15:20まで")).toBeVisible();
+    const before = gets(calls);
+    await advance(1_000);
+    expect(await screen.findByText("15:20で今ひまはおしまい")).toBeVisible();
+    await waitFor(() => expect(gets(calls)).toBeGreaterThan(before));
+    await advance(5_000);
+    expect(screen.queryByText("15:20で今ひまはおしまい")).toBeNull();
+    expect(await lightButton()).toBeVisible();
+    // 30秒の描き直しのあとも、終わった今ひまを灯った表示に戻さない
+    await advance(30_000);
+    expect(screen.queryByText(/今ひま 〜/)).toBeNull();
+    expect(screen.queryByText(/おしまい/)).toBeNull();
+    expect(await lightButton()).toBeVisible();
+  });
+});
+
+describe("日付をまたぐ今ひま", () => {
+  it("0:00 を過ぎても今ひまは消えない（取り直しが返らなくても）。過ぎたら「翌」を付けない", async () => {
+    fakeAllTimers("2026-10-10T14:59:50Z"); // 東京 23:59:50
+    const item = mineItem({ startsAt: "2026-10-10T13:15:00.000Z", endsAt: "2026-10-10T16:15:00.000Z" });
+    everyoneTab({
+      // 開いたときの日付（10/10）の一覧だけ返し、ほかの日付の取得は返さない（オフラインで止まっているのと同じ）
+      "/api/v1/availabilities": (req) =>
+        req.url.includes(encodeURIComponent("2026-10-09T15:00:00.000Z")) ? json({ items: [item], nextCursor: null })() : never(req),
+    });
+    renderApp();
+    expect(await within(await card()).findByText("今ひま 〜翌01:15まで")).toBeVisible();
+    await advance(30_000); // 東京 0:00:20
+    expect(within(await card()).getByText("今ひま 〜01:15まで")).toBeVisible();
+    expect(within(await card()).getByRole("button", { name: "やめる" })).toBeVisible();
+  });
+
+  it("0:00 を過ぎてから開いたときも「翌」を付けない（00:30 に 〜01:15）", async () => {
+    vi.setSystemTime(new Date("2026-10-10T15:30:00Z")); // 東京 10/11 0:30
+    const item = mineItem({ startsAt: "2026-10-10T13:15:00.000Z", endsAt: "2026-10-10T16:15:00.000Z" });
+    everyoneTab({ "/api/v1/availabilities": json({ items: [item], nextCursor: null }) });
+    renderApp();
+    expect(await within(await card()).findByText("今ひま 〜01:15まで")).toBeVisible();
   });
 });
 
@@ -258,5 +422,25 @@ describe("友達の一覧の「今」の印", () => {
     // 読み上げは「今ひま」。印は灯りの色（赤を使わない）
     expect(within(row("あき")).getByText("今").textContent).toBe("今ひま");
     expect(within(row("あき")).getByText("今").className).toContain("bg-lamp");
+  });
+
+  it("30秒ごとに描き直し、「今」の印と灯りのボタンの目安の時刻が変わる（API は呼ばない）", async () => {
+    fakeAllTimers("2026-10-10T06:29:50Z"); // 東京 15:29:50
+    const { calls } = everyoneTab({
+      "/api/v1/friend-availabilities": json({
+        items: [friendSlot(2, "ゆう", "2026-10-10T06:45:00.000Z", "2026-10-10T09:45:00.000Z")], // 15:45〜18:45
+        nextCursor: null,
+      }),
+    });
+    renderApp();
+    const list = await screen.findByRole("region", { name: "みんなのここ暇" });
+    await within(list).findByText("15:45〜18:45");
+    expect(within(list).queryByText("今")).toBeNull();
+    expect(await lightButton()).toHaveTextContent("15:30〜18:30");
+    const before = calls.length;
+    await advance(30_000); // 15:30:20 → 切り上げると 15:45
+    expect(within(list).getByText("今")).toBeVisible();
+    expect(await lightButton()).toHaveTextContent("15:45〜18:45");
+    expect(calls.length).toBe(before);
   });
 });
