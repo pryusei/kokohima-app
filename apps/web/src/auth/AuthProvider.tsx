@@ -4,6 +4,7 @@ import { ApiError, apiFetch, setUnauthenticatedHandler } from "../api/client";
 import { removeSubscriptionBeforeLogout, resendSubscription, unsubscribeLocally } from "../notifications/push";
 import { navigate } from "../router";
 import { broadcastLogout, onAuthMessage, refreshAccessToken, type RefreshOutcome } from "./refresh";
+import { clearMeetMomentSeen } from "../invitations/meetMomentSeen";
 import { tokenStore } from "./tokenStore";
 
 // ログイン状態。起動時に更新用トークンでアクセストークンを取り直す
@@ -42,6 +43,8 @@ export function AuthProvider({ children, skipInitialRefresh = false }: { childre
   const becomeAnonymous = useCallback(() => {
     tokenStore.clear();
     queryClient.clear();
+    // 成立の演出を見た予定の記録も、同じ端末の次の人に残さない（docs/specs/T-43-meet-moment.md「2.」）
+    clearMeetMomentSeen();
     setStatus("anonymous");
   }, [queryClient]);
 
