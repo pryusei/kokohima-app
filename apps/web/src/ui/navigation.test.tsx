@@ -288,14 +288,14 @@ describe("オフライン", () => {
     const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     window.history.replaceState(null, "", "/availability");
     renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "ここ暇を追加" }));
-    const sheet = screen.getByRole("dialog", { name: "ここ暇を追加" });
-    const night = await within(sheet).findByRole("button", { name: /^夜/ });
-    expect(night).toBeEnabled();
+    // 週の帯のマス（docs/specs/T-55-availability-week-grid.md）
+    // 時計は進めていないので、日付によらず7日めの夜のマスを使う
+    const night = (await screen.findAllByRole("button", { name: / 夜 .*押すとここ暇にする$/ })).at(-1) as HTMLElement;
+    await waitFor(() => expect(night).toBeEnabled());
     onLine.mockReturnValue(false);
     act(() => window.dispatchEvent(new Event("offline")));
     await waitFor(() => expect(night).toBeDisabled());
-    expect(within(sheet).getByText("オフラインです。つながると最新の内容になります")).toBeVisible();
+    expect(screen.getByText("オフラインです。つながると最新の内容になります")).toBeVisible();
     onLine.mockReturnValue(true);
     act(() => window.dispatchEvent(new Event("online")));
     await waitFor(() => expect(night).toBeEnabled());
@@ -405,7 +405,7 @@ describe("レビューの指摘（pryusei/kokohima-app#95）", () => {
       }),
     });
     renderApp();
-    expect(await screen.findByRole("button", { name: "取り消す" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: / 夜 ここ暇 / })).toBeDisabled();
     onLine.mockRestore();
     const view = render(<Switch checked onChange={() => {}}>自分の暇を見せる</Switch>);
     expect(within(view.container).getByRole("switch")).toBeEnabled();

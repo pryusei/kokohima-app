@@ -404,3 +404,41 @@ describe("作成画面の ?wish=<id>", () => {
     expect(calls.some((c) => c.url.startsWith("/api/v1/wishes"))).toBe(false);
   });
 });
+
+describe("ここ暇タブの行きたいの並べ方（docs/specs/T-55-availability-week-grid.md「振る舞い 5.」）", () => {
+  it("横にめくるカード。各カードに「誘う」「募集する」「見せる相手」「消す」を2列で置く。頭に「AIでお店を探す」と何を探すか", async () => {
+    availabilityTab({
+      "/api/v1/wishes": json({
+        items: [
+          wish(),
+          wish({
+            id: uuid(501),
+            message: "紅葉見に散歩したい",
+            area: null,
+            url: "https://example.com/a",
+            linkPreview: { status: "ok", title: "紅葉の名所", description: "説明", imageUrl: "https://img.example.com/a.jpg", siteName: null },
+          }),
+        ],
+        nextCursor: null,
+      }),
+      "/api/v1/wish-suggestions/quota": json({ limit: 5, remaining: 4 }),
+    });
+    renderApp();
+    const list = await screen.findByRole("list", { name: "自分の行きたい" });
+    expect(list.className).toMatch(/overflow-x-auto/);
+    const cards = within(list).getAllByRole("listitem");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      const actions = [...within(card).getAllByRole("button"), ...within(card).getAllByRole("link").filter((l) => !l.getAttribute("target"))];
+      expect(actions.map((b) => b.textContent).sort()).toEqual(["募集する", "消す", "見せる相手", "誘う"].sort());
+      expect(card.querySelector(".grid-cols-2")).not.toBeNull();
+    }
+    // 横のカードでは画像を出さず、タイトルとドメインを1行ずつ（高さをそろえる）
+    expect(within(cards[1] as HTMLElement).getByRole("link", { name: "紅葉の名所（example.com）" })).toBeVisible();
+    expect(cards[1]?.querySelector("img")).toBeNull();
+    const ai = await screen.findByRole("button", { name: "AIでお店を探す" });
+    expect(ai).toHaveAccessibleDescription("エリアとしたいことから、お店や場所の候補を探します");
+    // 行きたいの欄の頭（一覧より前）
+    expect(ai.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

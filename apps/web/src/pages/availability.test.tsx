@@ -2,7 +2,6 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { focusManager } from "@tanstack/react-query";
 import { ApiError } from "../api/client";
 import { everyoneQuery } from "../availability/queries";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
 import { formatSlot } from "../availability/format";
@@ -10,30 +9,7 @@ import { json, mockFetch, renderApp, tokenBody } from "../test/helpers";
 
 // 時計は 2026-10-10T00:00:00Z（東京は土曜 09:00）
 const FRIEND_ID = "22222222-2222-4222-8222-222222222222";
-const SLOT_ID = "33333333-3333-4333-8333-333333333333";
-const RULE_ID = "44444444-4444-4444-8444-444444444444";
 const empty = json({ items: [], nextCursor: null });
-const presets = json({
-  day: { start: "11:00", end: "15:00" },
-  evening: { start: "16:00", end: "19:00" },
-  night: { start: "19:00", end: "23:00" },
-});
-const manual = {
-  source: "manual",
-  id: SLOT_ID,
-  date: null,
-  startsAt: "2026-10-10T10:00:00.000Z",
-  endsAt: "2026-10-10T14:00:00.000Z",
-  label: "night",
-};
-const repeated = {
-  source: "recurrence",
-  id: RULE_ID,
-  date: "2026-10-11",
-  startsAt: "2026-10-11T02:00:00.000Z",
-  endsAt: "2026-10-11T06:00:00.000Z",
-  label: "day",
-};
 const friend = { id: FRIEND_ID, displayName: "あき", avatarUrl: null };
 // 「みんな」の顔の列（T-34）で読む友達の一覧
 const friends = json({
@@ -52,18 +28,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-
-const availabilityTab = (over: Record<string, Parameters<typeof mockFetch>[0][string]> = {}) => {
-  window.history.replaceState(null, "", "/availability");
-  return mockFetch({
-    "/api/v1/auth/refresh": json(tokenBody()),
-    "/api/v1/me/presets": presets,
-    "/api/v1/availabilities": json({ items: [manual, repeated], nextCursor: null }),
-    "/api/v1/recurrence-rules": empty,
-    "/api/v1/calendar/connections": json({ google: { status: "none", connectedAt: null } }),
-    ...over,
-  });
-};
 
 describe("表示", () => {
   it("「夜 19:00〜23:00」のように時刻を併記し、プリセット名がなければ時刻だけ。翌日の0:00は24:00", () => {
@@ -189,65 +153,7 @@ describe("みんな：回数の上限（docs/specs/T-14-friend-availabilities-ra
   });
 });
 
-describe("ここ暇タブ", () => {
-  it("「夜」のボタンを押すと、選んだ日付とプリセット名で作る", async () => {
-    const { calls } = availabilityTab({
-      "/api/v1/availabilities": [empty, json(manual, 201), json({ items: [manual], nextCursor: null })],
-    });
-    renderApp();
-    // ここ暇の追加はシートで開く（docs/specs/T-11-design.md）。プリセットのボタンには時刻を添える
-    await userEvent.click(await screen.findByRole("button", { name: "ここ暇を追加" }));
-    const sheet = screen.getByRole("dialog", { name: "ここ暇を追加" });
-    expect(await within(sheet).findByRole("button", { name: "昼11:00〜15:00" })).toBeVisible();
-    expect(within(sheet).getByRole("button", { name: "夕方16:00〜19:00" })).toBeVisible();
-    await userEvent.click(within(sheet).getByRole("button", { name: "夜19:00〜23:00" }));
-    const post = await waitFor(() => {
-      const c = calls.find((x) => x.url === "/api/v1/availabilities" && x.init.method === "POST");
-      expect(c).toBeDefined();
-      return c;
-    });
-    expect(JSON.parse(String(post?.init.body))).toEqual({ date: "2026-10-10", preset: "night" });
-    expect(await within(screen.getByRole("list", { name: "自分のここ暇" })).findByText(/夜 19:00〜23:00/)).toBeVisible();
-  });
-
-  it("重なりで作れなければ静かな文言（赤を使わない）", async () => {
-    availabilityTab({ "/api/v1/availabilities": [empty, json({}, 409)] });
-    renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "ここ暇を追加" }));
-    await userEvent.click(await screen.findByRole("button", { name: /^昼/ }));
-    const message = await screen.findByText(/自分のほかのここ暇と重なっているか/);
-    expect(message.className).not.toMatch(/red/);
-  });
-
-  it("取り消しは押したらすぐ消え、失敗したら元に戻して静かな文言を出す", async () => {
-    let fail: (r: Response) => void = () => {};
-    availabilityTab({
-      [`/api/v1/availabilities/${SLOT_ID}`]: () => new Promise<Response>((resolve) => (fail = resolve)),
-    });
-    renderApp();
-    const list = await screen.findByRole("list", { name: "自分のここ暇" });
-    const row = (await within(list).findByText(/夜 19:00〜23:00/)).closest("li") as HTMLElement;
-    await userEvent.click(within(row).getByRole("button", { name: "取り消す" }));
-    await waitFor(() => expect(within(list).queryByText(/夜 19:00〜23:00/)).toBeNull());
-    expect(within(list).getByText(/昼 11:00〜15:00/)).toBeVisible();
-    fail(new Response(null, { status: 503 }));
-    expect(await screen.findByText("変更できませんでした。もう一度お試しください。")).toBeVisible();
-    expect(await within(list).findByText(/夜 19:00〜23:00/)).toBeVisible();
-  });
-
-  it("くり返しの枠は「この日だけ外す」で、その日付を例外に送る", async () => {
-    const { calls } = availabilityTab({
-      [`/api/v1/recurrence-rules/${RULE_ID}/exceptions`]: () => new Response(null, { status: 204 }),
-    });
-    renderApp();
-    const list = await screen.findByRole("list", { name: "自分のここ暇" });
-    const row = (await within(list).findByText(/昼 11:00〜15:00/)).closest("li") as HTMLElement;
-    await userEvent.click(within(row).getByRole("button", { name: "この日だけ外す" }));
-    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/exceptions"))).toBe(true));
-    const call = calls.find((c) => c.url.endsWith("/exceptions"));
-    expect(JSON.parse(String(call?.init.body))).toEqual({ date: "2026-10-11" });
-  });
-});
+// ここ暇タブ（週の帯）は availabilityWeek.test.tsx
 
 describe("友達の詳細", () => {
   const detail = (slots: unknown[], status = 200) => {

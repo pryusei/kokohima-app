@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { addAvailability, befriend, expect, friendList, newUser, sheet, test, type E2EUser } from "./fixtures";
+import { addAvailability, availabilityCell, befriend, expect, friendList, newUser, sheet, test, type E2EUser } from "./fixtures";
 
 // T-04 個別の誘い（docs/specs/T-04-direct-invite.md「E2Eテスト」）
 // 夜の枠が過去にならないよう、日付は明日（Asia/Tokyo）を使う
@@ -10,7 +10,7 @@ function tomorrow() {
 
 async function addNight(page: Page, date: string) {
   await addAvailability(page, date, "夜");
-  await expect(page.getByRole("list", { name: "自分のここ暇" }).getByText(/夜 19:00〜23:00/)).toBeVisible();
+  await expect(availabilityCell(page, date, "夜")).toHaveAccessibleName(/ ここ暇 19:00〜23:00/);
 }
 
 /** 受信した誘いのうち、相手の名前のものを開く */

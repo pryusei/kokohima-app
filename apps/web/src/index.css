@@ -105,6 +105,12 @@
   --duration-sheet: 360ms;
 }
 
+/* 入る動き（animation）のトークン。animate-kh-pop のように使う（T-55 の週の帯。docs/specs/T-56-motion.md「0-1. の5」・M-09） */
+@theme {
+  --animate-kh-pop: kh-pop var(--duration-sheet) var(--ease-out) backwards;
+  --animate-kh-rise: kh-rise var(--duration-base) var(--ease-out) backwards;
+}
+
 /* linear() を使えない端末では、ばねの曲線をただの ease-out にする */
 @supports not (transition-timing-function: linear(0, 1)) {
   :root {
@@ -332,5 +338,30 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* ここ暇タブの週の帯（docs/specs/T-55-availability-week-grid.md）。動きを減らす設定では上の指定で止まる */
+@keyframes kh-pop {
+  0% {
+    transform: scale(0.85);
+    box-shadow: var(--kh-shadow-lamp);
+  }
+  60% {
+    transform: scale(1.05);
+    box-shadow: var(--kh-shadow-lamp);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes kh-rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
   }
 }
