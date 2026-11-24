@@ -30,6 +30,7 @@ const created = (date: string) =>
   );
 
 /** 説明の文（ui/feedback の Note）の数。操作の結果（role="status"）は数えない */
+const PREFS = { invites: true, broadcasts: true, meetups: true, friends: true, calendar: true, lockScreen: "hidden" };
 const notes = () => screen.getAllByText((_, el) => el?.tagName === "P" && el.className === "text-s text-ink-muted" && !el.getAttribute("role"));
 
 beforeEach(() => {
@@ -46,11 +47,13 @@ afterEach(() => {
   Reflect.deleteProperty(navigator, "serviceWorker");
 });
 
+const KEYS = { p256dh: "BP".padEnd(87, "A"), auth: "au".padEnd(22, "A") };
 /** プッシュが使えるブラウザのふり（notifications.test.tsx と同じ形） */
 function stubPush(opts: { permission?: NotificationPermission; endpoint?: string | null; grant?: NotificationPermission } = {}) {
   const endpoint = opts.endpoint === undefined ? "https://fcm.googleapis.com/fcm/send/abc" : opts.endpoint;
-  let current = endpoint ? { endpoint, unsubscribe: vi.fn(async () => true) } : null;
-  const subscribe = vi.fn(async () => (current = { endpoint: "https://fcm.googleapis.com/fcm/send/new", unsubscribe: vi.fn(async () => true) }));
+  const sub = (url: string) => ({ endpoint: url, unsubscribe: vi.fn(async () => true), toJSON: () => ({ endpoint: url, keys: KEYS }) });
+  let current = endpoint ? sub(endpoint) : null;
+  const subscribe = vi.fn(async () => (current = sub("https://fcm.googleapis.com/fcm/send/new")));
   const registration = { pushManager: { getSubscription: async () => current, subscribe } };
   const requestPermission = vi.fn(async () => opts.grant ?? ("granted" as NotificationPermission));
   vi.stubGlobal("PushManager", function PushManager() {});
@@ -161,6 +164,7 @@ describe("友達になった直後の1画面（/welcome）", () => {
       "/api/v1/auth/refresh": json(tokenBody()),
       "/api/v1/me": json(me("ゆう")),
       "/api/v1/me/presets": presets,
+      "/api/v1/me/notification-preferences": json(PREFS),
       ...routes,
     });
   };
@@ -228,7 +232,31 @@ describe("友達になった直後の1画面（/welcome）", () => {
     expect(await screen.findByText("この端末で受け取ります")).toBeVisible();
     expect(push.requestPermission).toHaveBeenCalled();
     const post = calls.find((c) => c.url === "/api/v1/push/subscriptions" && c.init.method === "POST");
-    expect(JSON.parse(String(post?.init.body))).toEqual({ endpoint: "https://fcm.googleapis.com/fcm/send/new" });
+    expect(JSON.parse(String(post?.init.body))).toEqual({ endpoint: "https://fcm.googleapis.com/fcm/send/new", keys: KEYS });
+  });
+
+  it("許可を取る前に、ロック画面の見本を2つ並べて選べる。初期値は「出さない」で、選ぶとすぐ保存する（T-35）", async () => {
+    stubPush({ permission: "default", endpoint: null });
+    let saved: Record<string, unknown> = PREFS;
+    const { calls } = welcome({
+      "/api/v1/me/notification-preferences": ({ init }) => {
+        if (init.method === "PATCH") saved = { ...saved, ...(JSON.parse(String(init.body)) as object) };
+        return json(saved)();
+      },
+    });
+    renderApp();
+    const group = await screen.findByRole("group", { name: "ロック画面に出す中身" });
+    const hidden = within(group).getByRole("radio", { name: "出さない" });
+    const detailed = within(group).getByRole("radio", { name: "名前と日時を出す" });
+    await waitFor(() => expect(hidden).toBeChecked());
+    expect(detailed).toHaveAccessibleDescription("見本：ゆいさんから誘いが届きました 11月28日(土) 19:00〜");
+    await userEvent.click(detailed);
+    await waitFor(() => expect(detailed).toBeChecked());
+    const patch = calls.find((c) => c.url === "/api/v1/me/notification-preferences" && c.init.method === "PATCH");
+    expect(JSON.parse(String(patch?.init.body))).toEqual({ lockScreen: "detailed" });
+    // 選んでも、許可はボタンを押すまで求めない
+    expect(screen.getByRole("button", { name: "お知らせを受け取る" })).toBeVisible();
+    expect(notes()).toHaveLength(1);
   });
 
   it("許可されなければ、静かな文言を出す", async () => {

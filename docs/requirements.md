@@ -41,7 +41,7 @@
 | 成立した予定 | Meetup | 会うことが決まった予定 |
 | やっぱり難しい | MeetupCancel ／ MeetupLeave | 成立後の定型のキャンセル。募集の予定では押した人だけが抜ける（MeetupLeave） |
 | 見せる／見せない | SharingPolicy | 自分のここ暇を友達ごとに見せるかどうか |
-| お知らせ | Notification | アプリの中で読む通知の1件。プッシュとメールは「お知らせがある」ことだけを伝える（docs/specs/T-07-notification.md） |
+| お知らせ | Notification | アプリの中で読む通知の1件。メールは種類だけを、プッシュは種類（本人が選んだときは相手の名前と日時も）を伝える。断り・見送り・取り消し・抜けたは鳴らさない（docs/specs/T-07-notification.md、docs/specs/T-35-notification-visibility.md） |
 | 招待リンク | InviteLink | 期限と人数上限つきの友達追加リンク |
 | 行きたい | Wish | 行きたい店やしたいことを、日時を決めずに置いておくリスト。友達はそれを見て、その店で誘える（docs/specs/T-22-wishlist.md） |
 | 見せない相手（行きたいの） | WishExclusion | その行きたいを見せない友達。行きたいごとに選ぶ。ここ暇の見せる／見せないとは別 |
@@ -65,7 +65,7 @@
 | F-13 | 成立 | GoogleとAppleの双方に自動登録。Apple未連携の人は.icsで保存（Google への登録と .ics は T-06、Apple への登録は T-09）。成立したとき、参加者それぞれに1回だけ、ふたつの灯りが重なる短い演出を出す（「見た」は端末の中だけに記録する。docs/specs/T-43-meet-moment.md） |
 | F-14 | 成立後のキャンセル | 定型の「やっぱり難しい」を送るのみ。再調整はしない |
 | F-15 | リンクとOGPプレビュー | 誘い・募集・行きたい（F-18）にURLを1件添付。送信時（行きたいは置いたとき）にOGPを取得・保存し、カードで表示。失敗時はドメインのみ |
-| F-16 | 通知 | Webプッシュとメール |
+| F-16 | 通知 | Webプッシュとメール。ロック画面に名前と日時を出すかは本人が選ぶ（初期値は出さない）。断り・見送り・取り消し・抜けたはプッシュもメールも送らず、夜（日本時間の22時〜7時）はプッシュを鳴らさない（docs/specs/T-35-notification-visibility.md） |
 | F-17 | 退会 | 直前のログインを求め、すぐに消す（取り消し・猶予なし）。利用者の行は ID だけ残し、本人のデータ（名前・アイコン・ここ暇・友達・連携・お知らせ・書いたひとこと・エリア・リンク・行きたい）を削除（アイコンの画像は1時間で R2 から消す。T-27）。進行中の予定・誘い・募集は本人の「やっぱり難しい」と同じ扱い。相手側の履歴は「退会したユーザー」と表示（docs/specs/T-16-withdrawal.md） |
 | F-18 | 行きたいを置く | ひとこと（必須。「〇〇のラーメン行きたい」）、リンク1件（任意。F-15 の OGP カード）、エリア（任意）。期限はなく、本人が消すまで残る。1人が同時に置けるのは10件まで。置いても友達に通知しない（docs/specs/T-22-wishlist.md） |
 | F-19 | 行きたいの見える相手 | 友達だけ。行きたいごとに見せない相手を選ぶ（初期値は友達全員で、外す人を選ぶ。あとから友達になった人にも見える。置いたあとでも変えられる）。ここ暇の見せる／見せない（F-07）とは切り離す。外された相手には「何も置いていない」のと区別できない（戻すと外されていたと気づかれうるのは受け入れる。T-22 決めたこと11）。公開範囲は、あとでグループ（Phase 2）を足せる形にする |
@@ -212,15 +212,15 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | CalendarReauthRequired | Calendar | Google 側で連携が失効した。本人に通知（T-07） |
 | SessionStarted | Identity | その人の2つめ以降のセッションなら、新しい端末でのログインを本人にメールで通知（T-07） |
 | DirectInviteSent | Invitation | 受信者に通知（T-07） |
-| DirectInviteDeclined・DirectInviteCounterProposed | Invitation | 送信者に通知（T-07） |
-| DirectInviteSkipped | Invitation | 受信者に通知（T-07） |
+| DirectInviteDeclined・DirectInviteCounterProposed | Invitation | 送信者に通知（T-07。断りはお知らせ一覧にだけ残し、プッシュもメールも送らない。T-35） |
+| DirectInviteSkipped | Invitation | 受信者に通知（T-07。お知らせ一覧にだけ残す。T-35） |
 | MeetupConfirmed | Invitation | Calendarが双方に書き込む／直接の誘いの成立は、成立させた人でない方に通知（T-07。募集の成立は BroadcastDecided で通知する） |
 | BroadcastSent | Invitation | 宛先ごとに通知（T-07） |
 | LinkAttached | Invitation・Wish | リンク付きの誘い・募集・行きたいを作った。Link Preview がページを取得して OGP と画像を保存する（T-08。payload は ID だけ） |
 | BroadcastDecided | Invitation | Meetupを作成し、募集者を除く参加者に名前を開示して通知（T-07。カレンダーへの書き込みは同時に書く MeetupConfirmed で行う） |
 | （期限切れ） | Invitation | 状態を保存せず、読むときに期限で決める。通知しないので、イベントは作らない（docs/specs/T-05-broadcast.md） |
-| MeetupLeft | Invitation | 募集の予定から1人が抜けた。残った参加者に定型文で通知（T-07） |
-| MeetupCancelled | Invitation | カレンダーから削除し、押した人を除く参加者に定型文で通知（T-07） |
+| MeetupLeft | Invitation | 募集の予定から1人が抜けた。残った参加者に定型文で通知（T-07。お知らせ一覧にだけ残す。T-35） |
+| MeetupCancelled | Invitation | カレンダーから削除し、押した人を除く参加者に定型文で通知（T-07。お知らせ一覧にだけ残す。T-35） |
 | FriendshipEstablished | Social | 2人の両方に通知し、公開オフの導線を出す（T-07） |
 | ContactMessageSubmitted | Contact | Slack の問い合わせのチャンネルに届ける。Queue のメッセージは受付番号（outbox の行の ID）だけで、consumer が D1 の行を読む。届けたら内容を消す（T-24） |
 | UserReported | Contact | 通報を同じ Slack のチャンネルに届ける。Queue のメッセージは受付番号だけ。届けたら内容を消す。通報された人には何も送らない（T-33） |
@@ -249,7 +249,7 @@ Cloudflare Workersを基盤に、フロントとAPIで型と入力検証のス�
 | Apple CalDAVの接続性・手間 | MVPの遅延、登録時の離脱 | 着手前に検証。Apple連携は任意とし、未連携者は.icsで代替 |
 | 友達が使わない | 誘いが成立しない | 「ここどう？」、Webで返答可能、LINEに貼れる招待リンク |
 | ここ暇を設定しない | 一覧が空になる | 空きの候補表示、ワンタップ設定、くり返し |
-| 断りの気まずさ | 利用が止まる | 定型の返答、募集の匿名性、期限切れは無通知 |
+| 断りの気まずさ | 利用が止まる | 定型の返答、募集の匿名性、期限切れは無通知、断り・見送り・取り消しはプッシュもメールも送らない（T-35） |
 | リンク流出 | 意図しない相手にここ暇が見える | リンクの期限・人数上限・無効化、追加通知から公開オフ |
 | iOSのWebプッシュが届かない | 誘いに気づかない | メール通知を併用 |
 | Googleのセンシティブスコープ審査 | 公開の遅延 | 最小スコープ、ログインと連携の分離、早めの準備 |

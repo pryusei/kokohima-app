@@ -2,7 +2,7 @@ import { vapidKeySchema } from "@kokohima/shared";
 import { apiGet, apiSend } from "../api/client";
 
 // プッシュの購読（docs/specs/T-07-notification.md「プッシュの購読と Service Worker」）
-// サーバーに送るのは endpoint だけ。Service Worker にはアクセストークンを渡さない
+// サーバーに送るのは endpoint と、中身の暗号化の鍵（p256dh・auth。T-35）だけ。Service Worker にはアクセストークンを渡さない
 
 export const pushSupported = () =>
   typeof navigator !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -23,17 +23,25 @@ const decodeKey = (base64url: string) => {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 };
 
+/** 登録の本文：endpoint と暗号化の鍵（docs/specs/T-35-notification-visibility.md）。鍵が取れなければ endpoint だけ */
+export function subscriptionBody(subscription: PushSubscription) {
+  const keys = subscription.toJSON().keys;
+  return keys?.p256dh && keys.auth
+    ? { endpoint: subscription.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } }
+    : { endpoint: subscription.endpoint };
+}
+
 /** この端末がプッシュを受け取る状態か */
 export async function pushEnabled() {
   return pushSupported() && Notification.permission === "granted" && (await currentSubscription()) !== null;
 }
 
-/** アプリを開いたとき：許可済みで購読があれば、endpoint を送り直す（冪等）。失敗しても何もしない */
+/** アプリを開いたとき：許可済みで購読があれば、endpoint と鍵を送り直す（冪等。T-35 より前の購読にも鍵が付く）。失敗しても何もしない */
 export async function resendSubscription() {
   try {
     if (!pushSupported() || Notification.permission !== "granted") return;
     const subscription = await currentSubscription();
-    if (subscription) await apiSend("POST", "/api/v1/push/subscriptions", { endpoint: subscription.endpoint });
+    if (subscription) await apiSend("POST", "/api/v1/push/subscriptions", subscriptionBody(subscription));
   } catch {
     // 次に開いたときに送り直す
   }
@@ -49,7 +57,7 @@ export async function enablePush() {
     userVisibleOnly: true,
     applicationServerKey: decodeKey(publicKey),
   });
-  await apiSend("POST", "/api/v1/push/subscriptions", { endpoint: subscription.endpoint });
+  await apiSend("POST", "/api/v1/push/subscriptions", subscriptionBody(subscription));
   return true;
 }
 

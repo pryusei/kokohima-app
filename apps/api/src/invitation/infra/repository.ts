@@ -592,6 +592,24 @@ export async function findInviteActor(d1: D1Database, inviteId: string) {
   return row.decided_at !== null ? row.sender_id : row.recipient_id;
 }
 
+/**
+ * お知らせのプッシュに出す日時（T-35。ロック画面に中身を出すと選んだ人だけ）。開始の時刻だけを返す。
+ * counter は「この時間なら」の代わりの時間。行がなければ null
+ */
+export async function findSlotStart(
+  d1: D1Database,
+  subject: { type: "direct_invite" | "counter" | "broadcast" | "meetup"; id: string },
+) {
+  const sql = {
+    direct_invite: "SELECT starts_at AS s FROM direct_invites WHERE id = ?1",
+    counter: "SELECT counter_starts_at AS s FROM direct_invites WHERE id = ?1",
+    broadcast: "SELECT starts_at AS s FROM broadcasts WHERE id = ?1",
+    meetup: "SELECT starts_at AS s FROM meetups WHERE id = ?1",
+  }[subject.type];
+  const row = await d1.prepare(sql).bind(subject.id).first<{ s: number | null }>();
+  return row?.s ?? null;
+}
+
 // ---- 退会の後始末（T-16） ----
 
 async function idsOf(d1: D1Database, sql: string, ...binds: unknown[]) {

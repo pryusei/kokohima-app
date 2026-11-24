@@ -107,3 +107,24 @@ export type Draft = {
   count: number | null;
   device: string | null;
 };
+
+/**
+ * どちらの見え方を選んでも、プッシュもメールも送らない種類（T-35。お知らせ一覧にだけ残す）。
+ * 断り・見送り・予定の取り消し・予定から抜けた。体験の芯「嬉しい瞬間は鳴らし、気まずい瞬間は黙る」
+ * （期限切れはもともとお知らせを作らない）
+ */
+export const SILENT_KINDS: ReadonlySet<NotificationKind> = new Set<NotificationKind>([
+  "invite_declined",
+  "invite_skipped",
+  "meetup_cancelled",
+  "meetup_left",
+]);
+
+/** 夜のプッシュを鳴らさない時間（日本時間の22時〜翌7時。T-35）。日本時間に夏時間はないので、UTC に9時間を足して決める */
+export const QUIET_HOURS = { from: 22, until: 7 } as const;
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+export function isQuietHours(now: number): boolean {
+  const hour = new Date(now + JST_OFFSET_MS).getUTCHours();
+  return hour >= QUIET_HOURS.from || hour < QUIET_HOURS.until;
+}

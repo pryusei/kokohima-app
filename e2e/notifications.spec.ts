@@ -1,7 +1,8 @@
 import type { Browser } from "@playwright/test";
 import { addAvailability, befriend, expect, loginAs, newUser, test, uniqueName, type E2EUser } from "./fixtures";
 
-// T-07 通知（docs/specs/T-07-notification.md「E2Eテスト」）。メール配信とプッシュは E2E のエントリの偽の実装に向く
+// T-07 通知（docs/specs/T-07-notification.md「E2Eテスト」）、T-35 見え方（docs/specs/T-35-notification-visibility.md「E2Eテスト」）。
+// メール配信とプッシュは E2E のエントリの偽の実装に向く
 
 const ORIGIN = "http://localhost:5173";
 type Sent = { mails: { subject: string; body: string }[]; pushes: { bodyLength: number }[] };
@@ -62,16 +63,54 @@ test("誘いのお知らせ（メール）：未読が出て、一覧から誘�
   expect(sent.pushes).toHaveLength(0);
 });
 
-test("誘いのお知らせ（プッシュ）：購読があれば、本文なしのプッシュが1件で、メールは届かない", async ({ browser }) => {
+/** ブラウザの購読の鍵と同じ形（非圧縮の P-256 の公開鍵と、16バイトの auth。base64url） */
+async function browserKeys() {
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const b64url = (b: ArrayBuffer | Uint8Array) => Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString("base64url");
+  return { p256dh: b64url(await crypto.subtle.exportKey("raw", pair.publicKey)), auth: b64url(crypto.getRandomValues(new Uint8Array(16))) };
+}
+
+/** 暗号化したプッシュの本文の長さ（ヘッダー86＋詰め物をそろえた1024＋認証タグ16。種類や名前にかかわらず同じ） */
+const ENCRYPTED_LENGTH = 1126;
+
+test("誘いのお知らせ（プッシュ）：購読があれば、暗号化した同じ長さの本文のプッシュが1件で、メールは届かない", async ({ browser }) => {
   const { a, b: c } = await friends(browser);
   await deliverTo(c);
-  await api(c, "POST", "/api/v1/push/subscriptions", { endpoint: `https://push.e2e.invalid/send/${crypto.randomUUID()}` });
+  await api(c, "POST", "/api/v1/push/subscriptions", {
+    endpoint: `https://push.e2e.invalid/send/${crypto.randomUUID()}`,
+    keys: await browserKeys(),
+  });
   await invite(a, c);
   await deliverTo(c);
 
   const sent = await sentTo(c);
-  expect(sent.pushes).toEqual([{ bodyLength: 0 }]);
+  expect(sent.pushes).toEqual([{ bodyLength: ENCRYPTED_LENGTH }]);
   expect(sent.mails.filter((m) => INVITE_MAIL.test(m.body))).toHaveLength(0);
+});
+
+test("ロック画面の見え方：設定で見本から選ぶと保存される。初期値は「出さない」", async ({ browser }) => {
+  const { b } = await friends(browser);
+  await b.page.goto("/settings/notifications");
+  const group = b.page.getByRole("group", { name: "ロック画面に出す中身" });
+  await expect(group.getByRole("radio", { name: "出さない" })).toBeChecked();
+  await group.getByText("名前と日時を出す").click();
+  await expect(group.getByRole("radio", { name: "名前と日時を出す" })).toBeChecked();
+  await b.page.reload();
+  await expect(b.page.getByRole("group", { name: "ロック画面に出す中身" }).getByRole("radio", { name: "名前と日時を出す" })).toBeChecked();
+});
+
+test("断りは鳴らさない：「今回は難しい」はお知らせ一覧にだけ出て、送った人にメールもプッシュも届かない", async ({ browser }) => {
+  const { a, b } = await friends(browser);
+  await deliverTo(a);
+  const inviteId = await invite(a, b);
+  await api(b, "POST", `/api/v1/direct-invites/${inviteId}/responses`, { response: "decline" });
+  await deliverTo(a);
+
+  await a.page.goto("/notifications");
+  await expect(a.page.getByRole("link", { name: `${b.displayName}さんは今回は難しいみたい` })).toBeVisible();
+  const sent = await sentTo(a);
+  expect(sent.mails.filter((m) => /返事がありました/.test(m.body))).toHaveLength(0);
+  expect(sent.pushes).toHaveLength(0);
 });
 
 test("友達追加と「見せない」：お知らせ一覧の「この人に見せない」で、相手の「みんな」から自分のここ暇が消える", async ({ browser }) => {
