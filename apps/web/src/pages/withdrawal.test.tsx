@@ -60,7 +60,7 @@ describe("退会", () => {
     expect(calls.some((c) => c.url === "/api/v1/me/withdrawal")).toBe(false);
   });
 
-  it("204：確認の値を送り、プッシュの購読を解除し、トークンを消してログインの画面に「退会しました」", async () => {
+  it("204：確認の値を送り、プッシュの購読を解除し、トークンを消してログインの画面に「今まで使ってくれてありがとう。」", async () => {
     window.history.replaceState(null, "", "/settings/account");
     const { unsubscribe } = stubPush();
     const { calls } = mockFetch({
@@ -72,7 +72,14 @@ describe("退会", () => {
     renderApp();
     const dialog = await openConfirm();
     await userEvent.click(within(dialog).getByRole("button", { name: "退会する" }));
-    expect(await screen.findByText("退会しました。")).toBeVisible();
+    // 別れの一文は静かな表示のまま（赤を使わない）で、表示名は出さない（T-54）
+    const bye = await screen.findByRole("status");
+    expect(bye).toHaveTextContent("今まで使ってくれてありがとう。またいつでも待ってるね。");
+    expect(bye).toBeVisible();
+    expect(bye.className).toContain("bg-surface-sunken");
+    expect(bye.className).not.toMatch(/red|danger|error/);
+    expect(screen.queryByText(/退会しました/)).toBeNull();
+    expect(screen.queryByText(/ゆう/)).toBeNull();
     expect(window.location.pathname).toBe("/login");
     const sent = calls.find((c) => c.url === "/api/v1/me/withdrawal");
     expect(sent?.init.method).toBe("POST");
@@ -147,7 +154,7 @@ describe("退会", () => {
     expect(failed.className).not.toMatch(/red|danger|error/);
     await userEvent.click(within(dialog).getByRole("button", { name: "退会する" }));
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
-    expect(screen.queryByText("退会しました。")).toBeNull();
+    expect(screen.queryByText("今まで使ってくれてありがとう。またいつでも待ってるね。")).toBeNull();
   });
 
   it("誘いの一覧でも、退会した相手は「退会したユーザー」（さんを付けない）", async () => {

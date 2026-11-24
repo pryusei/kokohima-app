@@ -47,7 +47,7 @@ test("設定から退会すると、相手の予定は「やっぱり難しい�
   await expect(confirm.getByText("取り消せません", { exact: false })).toBeVisible();
   await confirm.getByRole("button", { name: "退会する" }).click();
   await expect(a.page).toHaveURL(/\/login\?withdrawn=1$/);
-  await expect(a.page.getByText("退会しました。")).toBeVisible();
+  await expect(a.page.getByText("今まで使ってくれてありがとう。またいつでも待ってるね。")).toBeVisible();
 
   // 後始末の段を流す（B の要求で outbox を処理する）
   await api(b.context, "POST", "/__e2e__/outbox/drain");

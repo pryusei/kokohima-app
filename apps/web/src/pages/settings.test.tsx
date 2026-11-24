@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "../auth/tokenStore";
@@ -52,12 +52,54 @@ describe("設定", () => {
     });
     renderApp();
     const start = await screen.findByLabelText("夜の開始");
+    // 変えるまでは押せない（T-54）
+    expect(screen.getByRole("button", { name: "時間帯を保存" })).toBeDisabled();
     await userEvent.clear(start);
     await userEvent.type(start, "20:00");
     await userEvent.click(screen.getByRole("button", { name: "時間帯を保存" }));
-    expect(await screen.findByText("保存しました")).toBeVisible();
+    // ボタンそのものが「✓ 保存しました」になる。読み上げはボタンの外の status
+    expect(await screen.findByRole("button", { name: "保存しました" })).toBeDisabled();
+    expect(screen.getByText("保存しました", { selector: "[role=status]" })).toBeInTheDocument();
     const put = calls.find((c) => c.init.method === "PUT");
     expect(JSON.parse(String(put?.init.body))).toEqual(changed);
+  });
+
+  describe("保存のボタンが約2秒で元に戻る（T-54）", () => {
+    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+    afterEach(() => vi.useRealTimers());
+
+    it("時間帯プリセット：元に戻ると、保存した値が今の値なので押せない", async () => {
+      window.history.replaceState(null, "", "/settings/presets");
+      const changed = { ...presets, night: { start: "20:00", end: "23:00" } };
+      mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/me/presets": [json(presets), json(changed)] });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderApp();
+      const start = await screen.findByLabelText("夜の開始");
+      await user.clear(start);
+      await user.type(start, "20:00");
+      await user.click(screen.getByRole("button", { name: "時間帯を保存" }));
+      expect(await screen.findByRole("button", { name: "保存しました" })).toBeVisible();
+      act(() => vi.advanceTimersByTime(2000));
+      expect(screen.getByRole("button", { name: "時間帯を保存" })).toBeDisabled();
+      expect(screen.queryByText("保存しました")).toBeNull();
+    });
+
+    it("表示名：元に戻ると押せない。また変えると押せる", async () => {
+      window.history.replaceState(null, "", "/settings/account");
+      mockFetch({ "/api/v1/auth/refresh": json(tokenBody()), "/api/v1/me": [json(me("ゆう")), json(me("ゆうき"))] });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderApp();
+      const section = (await screen.findByRole("heading", { name: "表示名" })).closest("section") as HTMLElement;
+      const input = await within(section).findByLabelText("表示名");
+      await user.clear(input);
+      await user.type(input, "ゆうき");
+      await user.click(within(section).getByRole("button", { name: "保存する" }));
+      expect(await within(section).findByRole("button", { name: "保存しました" })).toBeVisible();
+      act(() => vi.advanceTimersByTime(2000));
+      expect(within(section).getByRole("button", { name: "保存する" })).toBeDisabled();
+      await user.type(input, "ち");
+      expect(within(section).getByRole("button", { name: "保存する" })).toBeEnabled();
+    });
   });
 
   it("アカウント：表示名を変える（友達タブから移した）", async () => {
@@ -70,14 +112,26 @@ describe("設定", () => {
     const section = (await screen.findByRole("heading", { name: "表示名" })).closest("section") as HTMLElement;
     const input = await within(section).findByLabelText("表示名");
     expect(input).toHaveValue("ゆう");
+    // 今の名前のまま・前後に空白を足しただけ・空白だけのあいだは押せない（T-54、T-31）
+    const button = within(section).getByRole("button", { name: "保存する" });
+    expect(button).toBeDisabled();
+    await userEvent.type(input, "  ");
+    expect(button).toBeDisabled();
+    await userEvent.clear(input);
+    await userEvent.type(input, "   ");
+    expect(button).toBeDisabled();
     await userEvent.clear(input);
     await userEvent.type(input, "ゆうき");
-    await userEvent.click(within(section).getByRole("button", { name: "保存する" }));
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
     await waitFor(() => expect(calls.some((c) => c.url === "/api/v1/me" && c.init.method === "PATCH")).toBe(true));
     const patch = calls.find((c) => c.init.method === "PATCH");
     expect(JSON.parse(String(patch?.init.body))).toEqual({ displayName: "ゆうき" });
-    // 保存してもフォームは作り直されず、「保存しました」と入力した値が残る
-    expect(await within(section).findByText("保存しました")).toBeVisible();
+    // 保存してもフォームは作り直されず、ボタンが「✓ 保存しました」になり、入力した値が残る
+    const saved = await within(section).findByRole("button", { name: "保存しました" });
+    expect(saved).toBeDisabled();
+    expect(saved.className).toContain("bg-meet-soft");
+    expect(within(section).getByText("保存しました", { selector: "[role=status]" })).toBeInTheDocument();
     expect(within(section).getByLabelText("表示名")).toHaveValue("ゆうき");
   });
 

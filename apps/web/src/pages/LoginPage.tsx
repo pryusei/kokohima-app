@@ -24,7 +24,7 @@ export function LoginPage({ search }: { search: string }) {
       <h2 className="sr-only">ログイン</h2>
       {withdrawn && (
         <p role="status" className="rounded-m bg-surface-sunken px-4 py-3">
-          退会しました。
+          今まで使ってくれてありがとう。またいつでも待ってるね。
         </p>
       )}
       {failed && (
