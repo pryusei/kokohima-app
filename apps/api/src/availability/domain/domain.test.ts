@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { selectForCancel } from "./calendarCancel";
 import { expandRule, type RecurrenceRule } from "./recurrence";
 import { buildFriendSlots, inRange, mergeSlots, overlaps, pageAfter, type Slot } from "./slots";
-import { checkLocalRange, checkManualSlot } from "./validation";
+import { ceilQuarter, checkLocalRange, checkManualSlot, freeNowSlot } from "./validation";
 import { addDays, DAY_MS, localDateOf, localToUtc, parseHhmm, weekdayOf } from "./zonedTime";
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -176,5 +176,42 @@ describe("カレンダーの自動取り消しの対象（T-06）", () => {
 
   it("新しい埋まりがなければ何も選ばない", () => {
     expect(selectForCancel([item("a", 10, 12, 0)], [], 5 * H, 0)).toEqual([]);
+  });
+});
+
+describe("freeNowSlot（今ひま。docs/specs/T-40-ima-hima.md）", () => {
+  const H = 60 * 60 * 1000;
+  it("今を15分で切り上げた時刻から3時間。ちょうど区切りならそのまま", () => {
+    expect(freeNowSlot(at("2026-11-24T06:20:00Z"))).toEqual({
+      startsAt: at("2026-11-24T06:30:00Z"),
+      endsAt: at("2026-11-24T09:30:00Z"),
+    });
+    expect(freeNowSlot(at("2026-11-24T06:30:00Z"))?.startsAt).toBe(at("2026-11-24T06:30:00Z"));
+    expect(freeNowSlot(at("2026-11-24T06:30:00.001Z"))?.startsAt).toBe(at("2026-11-24T06:45:00Z"));
+    expect(ceilQuarter(at("2026-11-24T06:44:59Z"))).toBe(at("2026-11-24T06:45:00Z"));
+  });
+
+  it("日付をまたいでも切らない（東京 22:10 → 22:15〜翌 1:15）", () => {
+    const slot = freeNowSlot(at("2026-11-24T13:10:00Z"));
+    expect(slot).toEqual({ startsAt: at("2026-11-24T13:15:00Z"), endsAt: at("2026-11-24T16:15:00Z") });
+    expect(slot && slot.endsAt - slot.startsAt).toBe(3 * H);
+  });
+
+  it("元に戻す：開始を渡すとその時刻から。先の時刻・区切りでない・終わった時刻は null", () => {
+    const now = at("2026-11-24T06:20:00Z");
+    expect(freeNowSlot(now, at("2026-11-24T06:00:00Z"))).toEqual({
+      startsAt: at("2026-11-24T06:00:00Z"),
+      endsAt: at("2026-11-24T09:00:00Z"),
+    });
+    expect(freeNowSlot(now, at("2026-11-24T06:45:00Z"))).toBeNull();
+    expect(freeNowSlot(now, at("2026-11-24T06:10:00Z"))).toBeNull();
+    expect(freeNowSlot(now, at("2026-11-24T03:15:00Z"))).toBeNull(); // 06:15 に終わっている
+    expect(freeNowSlot(now, at("2026-11-24T03:30:00Z"))).not.toBeNull();
+  });
+
+  it("できた枠は手動の枠の検証を通る", () => {
+    const now = at("2026-11-24T13:10:00Z");
+    const slot = freeNowSlot(now);
+    expect(slot && checkManualSlot(slot.startsAt, slot.endsAt, now)).toBeNull();
   });
 });
