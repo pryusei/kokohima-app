@@ -5,7 +5,7 @@
 - 関係する要件：F-01、NF-04、要求定義書「セキュリティ設計 › 認証とセッション」「テスト環境の認証」
 
 ## 概要
-GoogleまたはSign in with Appleでログインし、再読み込みしてもログインが続くようにする。最初のリリースでは Apple を設定値 `APPLE_LOGIN_ENABLED` で止め、Google だけにする（docs/specs/T-12-release.md）。
+GoogleまたはSign in with Appleでログインし、再読み込みしてもログインが続くようにする。最初のリリースでは Apple を設定値 `APPLE_LOGIN_ENABLED` で止め、Google だけにする（docs/specs/T-12-release.md）。LINE ログインは T-32 で足した（docs/specs/T-32-line-login.md。同じ流れで、IDトークンは LINE の verify で確かめる）。
 API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を処理し、短命のアクセストークン（JWT、メモリのみ）と、ローテーションする更新用トークン（HttpOnly Cookie、D1にはハッシュのみ）を発行する。
 以降のすべてのAPIが、認証済みの閲覧者IDを安全に受け取れるミドルウェアを用意する。
 
@@ -22,6 +22,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | GET | `/api/v1/auth/google/callback` | なし（state＋結びつけCookie） | query：`code`、`state`（またはGoogleの `error`） | 303：`/auth/complete#code=<完了コード>`（失敗時は `/login?error=login_failed`） | 画面へのリダイレクトのみ（JSONは返さない） |
 | GET | `/api/v1/auth/apple/start` | なし | query：`authStartQuerySchema` | 302：Appleの認可画面へ | なし |
 | POST | `/api/v1/auth/apple/callback` | なし（state＋結びつけCookie） | form（`application/x-www-form-urlencoded`）：`code`、`state`（またはAppleの `error`） | 303：同上 | 同上 |
+| GET | `/api/v1/auth/line/start`・`/api/v1/auth/line/callback` | なし | T-32（docs/specs/T-32-line-login.md「API」） | Google と同じ | 同上 |
 | POST | `/api/v1/auth/complete` | 完了コード＋Origin | JSON：`authCompleteRequestSchema` `{ code }` | 200：`authCompleteResponseSchema` `{ accessToken, expiresAt, returnTo }`（更新用トークンCookieを発行） | 401 `unauthenticated` |
 | POST | `/api/v1/auth/refresh` | 更新用トークンCookie＋Origin | なし | 200：`refreshResponseSchema` `{ accessToken, expiresAt }` | 401 `unauthenticated` |
 | POST | `/api/v1/auth/logout` | 更新用トークンCookie＋Origin | なし | 204（Cookieを消す） | 401 `unauthenticated`（Origin不一致のみ。Cookieがない・無効でも204） |
@@ -48,7 +49,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | テーブル | 列 | 備考 |
 | --- | --- | --- |
 | `users` | `id`（UUID、PK）、`display_name`（null可）、`avatar_url`（null可）、`email`（null可）、`timezone`（既定 `Asia/Tokyo`）、`created_at`、`updated_at` | `email` は通知用（決定事項4） |
-| `user_identities` | `id`（UUID、PK）、`user_id`（FK）、`provider`（`google` ／ `apple` ／ `e2e`）、`subject`（IDトークンの `sub`）、`created_at` | UNIQUE(`provider`, `subject`)。ユーザーの特定は `sub` で行い、メールアドレスでは行わない |
+| `user_identities` | `id`（UUID、PK）、`user_id`（FK）、`provider`（`google` ／ `apple` ／ `line`（T-32） ／ `e2e`）、`subject`（IDトークンの `sub`）、`created_at` | UNIQUE(`provider`, `subject`)。ユーザーの特定は `sub` で行い、メールアドレスでは行わない |
 | `sessions` | `id`（UUID、PK＝更新用トークンの系列）、`user_id`（FK）、`created_at`、`last_used_at`、`expires_at`（系列の絶対期限）、`revoked_at`（null可） | INDEX(`user_id`) |
 | `refresh_tokens` | `id`（UUID、PK）、`session_id`（FK）、`token_hash`（SHA-256、base64url、UNIQUE）、`created_at`、`expires_at`、`used_at`（null可）、`replaced_by`（null可。交換で作った次のトークンの `id`）、`rescued_at`（null可。救済で使用済みにした時刻） | INDEX(`session_id`)。生の値は保存しない |
 | `oauth_transactions` | `state_hash`（PK）、`provider`、`nonce`、`code_verifier`、`binding_hash`、`return_to`、`expires_at` | 認可の開始からコールバックまでの一時データ。10分で失効。使ったら削除 |
@@ -168,6 +169,7 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | `GOOGLE_CLIENT_ID`、`APPLE_CLIENT_ID`（Services ID）、`APPLE_TEAM_ID`、`APPLE_KEY_ID` | vars | 公開されてよい識別子 |
 | `GOOGLE_CLIENT_SECRET`、`APPLE_PRIVATE_KEY`、`JWT_SIGNING_KEYS` | secret | `wrangler secret` でのみ設定。ローカルは `.dev.vars`（コミットしない） |
 | `JWT_CURRENT_KID` | vars | 署名に使う鍵ID |
+| `LINE_CHANNEL_ID`、`LINE_CHANNEL_SECRET` | secret | LINE ログイン（T-32）。両方があるときだけ LINE の経路が動く（docs/specs/T-32-line-login.md「8.」） |
 | `APPLE_LOGIN_ENABLED` | vars | `"1"` のときだけ Apple の経路が動く。ほかの値は止める（start は `/login?error=login_failed` への303、callback は404。docs/specs/T-12-release.md）。prod は `"0"` |
 
 - ローカルの `http://localhost` では、ChromeとFirefoxがSecure Cookieと `__Host-` を許可するため、本番と同じCookie設定のまま動かす。Safari（WebKit）は許可しないため、ローカルの確認とE2EはChromium（とFirefox）で行い、Safariは本番（staging は作らない。T-12）で人が確認する
@@ -276,3 +278,4 @@ API側でOpenID Connectの認可コードフロー（state・nonce・PKCE）を�
 | 2026-11-21 | 画面の最終デザイン（T-11）に合わせ、画面の節に注記を足し、置き場所が変わった画面（お知らせ・設定・ログアウト・プリセット・招待リンクの発行など）を直した | T-11 実装PR |
 | 2026-11-23 | ログインでセッションを作る batch で休眠中のカレンダーの連携を戻すこと、休眠の判定に `last_used_at` を使うことを足した | T-17 実装PR（docs/specs/T-17-retention.md） |
 | 2026-11-23 | ログイン画面に、利用規約とプライバシー ポリシーへの同意の1行を足した | T-19 実装PR（docs/specs/T-19-privacy-terms.md） |
+| 2026-11-24 | LINE ログインの経路・`provider` の値・設定値を足した（詳しくは T-32） | T-32 実装PR（docs/specs/T-32-line-login.md） |
