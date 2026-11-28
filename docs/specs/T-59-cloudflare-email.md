@@ -45,26 +45,34 @@
 
 ### 1. 送る口を1つにする（実装PR①）
 - `apps/api/src/notification/infra/` に、メールを送る口を1つ置く（`mail-sender.ts`）。
-  - 形：`send({ to, mail, idempotencyKey }) → { outcome: "sent" | "rejected"; code: string }`。一時的な失敗は `MailUnavailable` を投げる（今の `resend.ts` と同じ分け方）。`code` はログに出す短い記号（Resend は状態コードの文字列、Cloudflare は `E_...`）。
+  - 形：`send({ to, mail, idempotencyKey }) → { outcome: "sent" | "rejected" | "limited"; code: string }`。一時的な失敗は `MailUnavailable` を投げる（今の `resend.ts` と同じ分け方）。`code` はログに出す短い記号（Resend は状態コードの文字列、Cloudflare は `E_...`・`invalid_argument`・`invalid_from`）。`limited` は Cloudflare の1日の枠に当たったときだけ返す（Resend の実装は返さない）。
+  - `application/delivery.ts` の `sendByEmail` は、`sent` なら `'sent'`、`limited` なら `notification_mail_provider_limit`（種類だけ）をログに出して `'limited'`、`rejected` なら今の `notification_mail_rejected`（種類と `code`）をログに出して `'failed'` を返す。
   - Resend の実装（今の `resend.ts`）と Cloudflare の実装（`cloudflare-email.ts`）の2つを置く。
   - `application/delivery.ts` は口だけを呼び、どちらで送るかを知らない。
 - どちらで送るかは設定値 `MAIL_PROVIDER`（vars）で決める。`"cloudflare"` なら Cloudflare、それ以外（空・未設定を含む）なら Resend。①では、どの環境も今のまま Resend。
   - 切り替えのために、口を選ぶ関数を1つ置く（`mailSenderFor(env, deps)`）。テストと E2E は `deps.notification` から偽の口を渡せる。
+  - E2E の偽の口（`e2eMailSender`。`apps/api/src/e2e/notifications.ts`）は、呼ばれるたびに1行を `e2e_sent_mails` に書き、冪等キーでまとめない（二重送信を隠さない）。
+  - E2E の偽の口の名前（`e2eMailSender`）を `apps/api/scripts/check-api-dist.mjs` の禁止パターンに足し、本番のビルドに入らないことを確かめる。
 - `domain/` は変えない（`mailFor` の中身・上限の計算はそのまま）。
 
 ### 2. Cloudflare の実装
 - `env.EMAIL.send()` を呼ぶ。
-  - `from`：`MAIL_FROM`（今の `ここ暇 <notify@kokohima.app>`）を `{ email, name }` に分けて渡す。分けられない値なら、送らずに一時的でない失敗（`code: "invalid_from"`）にし、設定の誤りとしてログに出す。分ける関数は `domain/` の純粋な関数にして単体テストを書く。
+  - `from`：`MAIL_FROM`（今の `ここ暇 <notify@kokohima.app>`）を `{ email, name }` に分けて渡す。表示名のないアドレスだけの値（`notify@kokohima.app`）なら、文字列の `from` で渡す（`EmailAddress` は `email` と `name` の両方が要るので、`name` を空にして渡さない）。どちらの形でもない値（`<` `>` が欠けた、空など）なら、送らずに一時的でない失敗（`code: "invalid_from"`）にし、設定の誤りとしてログに出す。分ける関数は `domain/` の純粋な関数にして単体テストを書く。
   - `to`：宛先1つ。`subject`・`text`・`html`：`mailFor` の結果そのまま（T-23 の HTML とテキストの両方）。
   - `replyTo`・独自のヘッダー・添付：付けない（今の Resend と同じ）。
 - 失敗の分け方（公式に区分がないので、説明から決める。確認事項2）
-  - 一時的な失敗（`MailUnavailable` を投げ、Queue の再試行に任せる）：`E_RATE_LIMIT_EXCEEDED`・`E_INTERNAL_SERVER_ERROR`・`E_EMAIL_SENDING_NOT_READY`・`code` のない例外（通信の途切れなど）。
+  - 一時的な失敗（`MailUnavailable` を投げ、Queue の再試行に任せる）：`E_RATE_LIMIT_EXCEEDED`・`E_INTERNAL_SERVER_ERROR`・`E_EMAIL_SENDING_NOT_READY`・`TypeError` でなく `code` もない例外（通信の途切れなど）。
+  - 引数の形の誤り（`code` のない `TypeError`。宛先がない、`EmailAddress` の項目が欠けたなど）：再試行しても直らないので、一時的でない失敗（`outcome = 'failed'`、`code: "invalid_argument"`）。
   - 1日の枠（`E_DAILY_LIMIT_EXCEEDED`）：再試行しても同じ日は通らないので、送らずに `outcome = 'limited'` を書く（サービス全体の上限で止めたときと同じ扱い）。ログは `notification_mail_provider_limit`（種類だけ）。
   - それ以外の `code`（宛先が止められている `E_RECIPIENT_SUPPRESSED`、差出人・ドメインの設定の誤り、中身の誤りなど）：一時的でない失敗（`outcome = 'failed'`）。ログは今の `notification_mail_rejected` に `code` を出す。
-- 二重に送らないこと：Cloudflare には冪等キーがない。
+- 二重に送らないこと：Cloudflare には冪等キーがない（今は Resend が `Idempotency-Key`（お知らせの ID）で1通にまとめている）。
   - 一時的な失敗のうち、送れていないことが確かな `E_RATE_LIMIT_EXCEEDED`・`E_EMAIL_SENDING_NOT_READY` は、そのまま再試行する。
-  - 送れたか分からない失敗（`E_INTERNAL_SERVER_ERROR`・`code` のない例外）も再試行する。まれに同じメールが2通届くことを受け入れる（届かないことより害が小さい。新しい端末でのログインの知らせを落とさない）。判断してほしいこと1。
-  - 送れたあとは今のとおり `delivered_at` を書くので、Queue のメッセージが2回届いても2通めは送らない（今の `deliver` の判定のまま）。
+  - 送れたか分からない失敗（`E_INTERNAL_SERVER_ERROR`・`code` のない例外）も再試行する。
+  - 今の `deliver` は、`delivered_at IS NULL` を読んでから送り、送ったあとに `markDelivered` を書く。このため、次の場合も2通になる。
+    - (a) Queues の at-least-once で、同じお知らせのメッセージが同時に2回走る（どちらも `delivered_at IS NULL` を読んでから送る）。
+    - (b) 送れたあと、`markDelivered` かその前後の D1 の書き込みが落ちて、メッセージが再試行になる。
+  - 上の3つ（送れたか分からない失敗・(a)・(b)）では、まれに同じメールが2通届くことを受け入れる（届かないことより害が小さい。新しい端末でのログインの知らせを落とさない）。送る前の印（条件付きの UPDATE）は足さない（マイグレーションが要り、印を立てたあとに落ちると届かなくなる）。判断してほしいこと1。
+  - 順に2回届いた場合は、今のとおり2回目は `delivered_at` を見て送らない。
 - ログ：宛先・件名・本文・`messageId` は出さない（T-07・T-13 のまま）。出すのは種類・`code`・結果だけ。
 
 ### 3. wrangler の設定（実装PR①）
@@ -78,8 +86,8 @@
 
 ### 4. 上限
 - 1日・1人の上限（T-07 決定事項8）と、サービス全体の1日の上限 `MAIL_DAILY_LIMIT`（prod は90）は変えない。Cloudflare の1日の枠の数が分かるまで今のまま保つ。
-  - 90通×30日＝2,700通で、有料プランに含まれる月3,000通に収まる。
-- Cloudflare の枠に当たったとき（`E_DAILY_LIMIT_EXCEEDED`）は、2.のとおり `limited` にして一覧にだけ残す。
+  - 新しい端末でのログインの知らせは、`MAIL_DAILY_LIMIT` の外（`globalEmailLimitFor` が `null`）で、超えていても送る。このため月の通数は 90通×日数（30日で2,700通）を超えうる。有料プランに含まれる月3,000通を超えた分は、1,000通ごとに $0.35 の従量の課金になる（一般公開の前の今の数では超えない見込み）。
+- Cloudflare の枠に当たったとき（`E_DAILY_LIMIT_EXCEEDED`）は、2.のとおり `limited` にして一覧にだけ残す。サービスの上限の外にある新しい端末でのログインの知らせも、Cloudflare の枠では `limited` になり届かない（今の Resend では、429 は再試行になる）。
 - T-07 の `MAIL_DAILY_LIMIT` の説明（「Resend の無料枠の1日100通より少し下」）は、実装PR④で「Cloudflare の月の枠に収まる値」に直す。
 
 ### 5. 差出人と中身
@@ -88,8 +96,8 @@
 
 ### 6. DNS（実装PR②。Terraform）
 - 持ち主が管理画面で `kokohima.app` を送信ドメインに登録する（下の「人が行う作業」1）。このとき Cloudflare が `cf-bounce` の MX・SPF・DKIM を足す（DKIM の値は登録してから決まるので、先に Terraform では書けない）。DMARC は今の記録（`p=none`）があるので Cloudflare は触らない。
-- 足された記録を、`infra/terraform/envs/prod/dns.tf` に `cloudflare_dns_record` で書き、`import` ブロックで取り込む（Terraform で DNS を持つ決まりを保つ。infra/README.md「DNS の例外」）。`plan` で差分がないことを確かめて PR に貼る。
-  - 記録の ID と値は、持ち主から受け取る（Claude は管理画面に入らない）。リソースは Resend と別の `local`（`cloudflare_email_records`）と別の `resource`（`cloudflare_dns_record.cloudflare_email`）にする。
+- 足された記録を、`infra/terraform/envs/prod/dns.tf` に `cloudflare_dns_record` で書き、`import` ブロックで取り込む（Terraform で DNS を持つ決まりを保つ。infra/README.md「DNS の例外」）。`plan` で、置き換え・削除がなく、変わるのが `comment` だけ（Cloudflare が足した記録には、今の Resend の記録と同じ「…dns.tf で管理」の `comment` がない）であることを確かめて PR に貼る。
+  - 記録の ID・値・TTL と、MX の `priority`（v5 の `cloudflare_dns_record` では MX に必須）は、持ち主から受け取る（Claude は管理画面に入らない）。`ttl` と `priority` は受け取った値をそのまま書く。リソースは Resend と別の `local`（`cloudflare_email_records`）と別の `resource`（`cloudflare_dns_record.cloudflare_email`）にする。
   - Resend の記録（`resend._domainkey`・`send`・`rsend`）は移行が終わるまで残す。名前が重ならないので共存できる（DKIM のセレクターも SPF の名前も別）。
   - DMARC は今のまま（`p=none`）。
 - ①より先に持ち主が登録を済ませていれば、②を①と同じ PR にしてよい。
@@ -98,13 +106,14 @@
 ### 7. 切り替え（実装PR③）
 - prod の `MAIL_PROVIDER` を `"cloudflare"` にする（コードの既定も Cloudflare にし、空・未設定を Cloudflare として扱う）。
 - 同じ PR で、プライバシー ポリシーの本文の5.の Cloudflare の「任せること」に「メールの配信」を足す（T-19「9.」。渡すものは今も「このサービスのすべての情報」）。Resend の節は、まだ残す（戻すことがあるのと、Resend に送信の記録が残っているため）。改定日はマージしてデプロイする日（T-19 決めたこと17。予告なし）。`legal.test.tsx` の文の検査も直す。
+  - `legal.test.tsx` はページが T-19 の仕様書の6節の文案と全文で同じことを確かめるので、同じ PR で `docs/specs/T-19-privacy-terms.md` の本文の文案の5.の Cloudflare の「任せること」も同じ文に直す。
 - デプロイのあと、持ち主が届くことを確かめる（下の「人が行う作業」3）。届かなければ `MAIL_PROVIDER` を `"resend"` に戻す1行の PR で戻す（判断してほしいこと2）。
 - 要求定義書（`docs/requirements.md`）の図の「メール配信（Resend）」と技術選定の「メール配信」の行も、この PR で Cloudflare Email Service に直す（「Cloudflareのメール機能は任意宛先の通知向きではない」は事実でなくなったので消す）。
 
 ### 8. Resend を外す（実装PR④。③を確かめたあと）
-- コード：`resend.ts`、口の Resend の実装と `MAIL_PROVIDER` の分岐（`MAIL_PROVIDER` も消す）、`env.ts` の `RESEND_API_KEY`・`deps.notification.resendUrl`、`app.ts`、`test/fake-delivery.ts` の偽の Resend、`e2e/notifications.ts` の偽のホスト（偽の口に置き換え済み）、`vitest.config.ts` の `RESEND_API_KEY`、wrangler の設定のコメント。
+- コード：`resend.ts`、口の Resend の実装と `MAIL_PROVIDER` の分岐（`MAIL_PROVIDER` も消す）、`env.ts` の `RESEND_API_KEY`・`deps.notification.resendUrl`、`app.ts`、`test/fake-delivery.ts` の偽の Resend、`apps/api/src/e2e/notifications.ts` の偽のホスト `resend.e2e.invalid`（偽の口に置き換え済み）、`vitest.config.ts` の `RESEND_API_KEY`、wrangler の設定のコメント、`apps/api/dev-vars.example` の `RESEND_API_KEY`、`apps/api/scripts/write-e2e-dev-vars.mjs` の `RESEND_API_KEY=e2e-unused`、`apps/api/scripts/check-api-dist.mjs`・`check-web-dist.mjs` の禁止パターンの `resend.e2e.invalid`（`e2eMailSender` は残す）。
 - DNS：`dns.tf` から Resend の記録を外す。DMARC は同じ `for_each` の中にあるので、`moved` ブロックで Resend と別のリソースに移し、消して作り直さない（`plan` で DMARC の削除が出ないことを確かめる）。
-- プライバシー ポリシー：本文の5.の Resend の節、7.の事業者の並び・外国の名称・確かめ方の「Resend」を外す。`legal.test.tsx` を直す。改定日はデプロイする日（予告なし）。
+- プライバシー ポリシー：本文の5.の Resend の節、7.の事業者の並び・外国の名称・確かめ方の「Resend」を外す。`legal.test.tsx` を直す。同じ PR で、`docs/specs/T-19-privacy-terms.md` の本文の文案（5.の Resend の節、7.の事業者の並び・外国の名称・確かめ方の Resend の行）も同じに直す。改定日はデプロイする日（予告なし）。
 - 仕様書・文書：T-07（「外部とのつなぎ方」「メールの中身」の送信の行、「設定値」、決定事項1 の注記）、T-23（「API」の送信の行）、T-12（「人が行う作業」4 の注記）、T-16（「スコープ外」の外部サービス）、T-08（外部呼び出しの一覧）、T-19（本文の出典の表、確認事項5 の注記）、`docs/runbooks/monitoring.md`（Resend の管理画面→Cloudflare の Email Sending の画面、`code`）、`infra/README.md`「DNS の例外」。どれも書き換えた日と T-59 を変更履歴に足す。
 - 秘密情報：持ち主が `wrangler secret delete RESEND_API_KEY --env prod` を行い、Resend の API キーを失効させる。
 - Resend のアカウント：持ち主が送信ドメインを外し、アカウントを消すかを決める（送信の記録が残る期間は T-19 確認事項5・#89）。
@@ -115,8 +124,8 @@
 | --- | --- | --- | --- |
 | ① 実装 | 送る口、Cloudflare の実装、`EMAIL`・`MAIL_PROVIDER`（全環境 Resend）、偽の口、単体テスト | T-07 の「外部とのつなぎ方」に送る口と2つの実装、「設定値」に `MAIL_PROVIDER`・`EMAIL`。`docs/runbooks/monitoring.md` に `notification_mail_provider_limit` と `code` | 直さない（送る先は変わらない） |
 | ② インフラ | `dns.tf` に Cloudflare の記録（`import`） | `infra/README.md`「DNS の例外」の例に Cloudflare Email Service を足す | 直さない |
-| ③ 切り替え | prod とコードの既定を Cloudflare に | `docs/requirements.md`（図・技術選定）、T-07 決定事項1 に「T-59 で Cloudflare に移した」の注記 | 5.の Cloudflare に「メールの配信」を足す |
-| ④ 後片付け | Resend のコード・秘密・DNS を外す | 8.の一覧 | 5.・7.から Resend を外す |
+| ③ 切り替え | prod とコードの既定を Cloudflare に | `docs/requirements.md`（図・技術選定）、T-07 決定事項1 に「T-59 で Cloudflare に移した」の注記、T-19 本文の文案の5.の Cloudflare | 5.の Cloudflare に「メールの配信」を足す |
+| ④ 後片付け | Resend のコード・秘密・DNS を外す | 8.の一覧（T-19 本文の文案の5.の Resend の節、7.の並び・外国の名称・確かめ方を含む） | 5.・7.から Resend を外す |
 
 - T-59 の仕様書は①で「実装中」にし、④で「実装済み」にする。各 PR の変更履歴に足す。
 
@@ -133,19 +142,22 @@
 ### 単体テスト（実装PRで必須）
 - [ ] 正常系：`MAIL_PROVIDER = "cloudflare"` で、偽のバインディングの `send` に `from: { email: "notify@…", name: "ここ暇" }`・宛先1つ・件名・`text`・`html` が渡り、`outcome = 'sent'` になる
 - [ ] 正常系：`MAIL_PROVIDER` が `"resend"`（①）なら今のテスト（偽の Resend）のまま通る
-- [ ] 失敗の分け方：`E_RATE_LIMIT_EXCEEDED`・`E_INTERNAL_SERVER_ERROR`・`E_EMAIL_SENDING_NOT_READY`・`code` のない例外は再試行（`MailUnavailable`）。再試行で送れたら `sent` で1通
-- [ ] 失敗の分け方：`E_DAILY_LIMIT_EXCEEDED` は `limited`、日ごとの数は戻さない
+- [ ] 口の選び方（`mailSenderFor`）：`MAIL_PROVIDER` が `"cloudflare"`・`"resend"`・空・未設定のとき。①では `"cloudflare"` だけ Cloudflare、ほかは Resend。③では `"resend"` だけ Resend、ほかは Cloudflare
+- [ ] 失敗の分け方：`E_RATE_LIMIT_EXCEEDED`・`E_INTERNAL_SERVER_ERROR`・`E_EMAIL_SENDING_NOT_READY`・`TypeError` でない `code` のない例外は再試行（`MailUnavailable`）。再試行で送れたら `sent` で1通
+- [ ] 失敗の分け方：`code` のない `TypeError` は `failed`（`code: "invalid_argument"`）で、再試行しない
+- [ ] 失敗の分け方：`E_DAILY_LIMIT_EXCEEDED` は `limited`、`notification_mail_provider_limit` がログに出る、日ごとの数は戻さない。新しい端末でのログインの知らせも `limited`
 - [ ] 失敗の分け方：`E_RECIPIENT_SUPPRESSED`・`E_SENDER_NOT_VERIFIED` は `failed`、ログに `code` が出て宛先・件名が出ない
-- [ ] 入力検証：`MAIL_FROM` を分ける関数（表示名つき・アドレスだけ・`<` `>` が欠けた値・空）
+- [ ] 入力検証：`MAIL_FROM` を分ける関数。表示名つき（`ここ暇 <notify@…>`）は `{ email, name }`、アドレスだけは文字列の `from`、`<` `>` が欠けた値・空は `invalid_from`（`send` を呼ばず `failed`）
 - [ ] 境界値：届け終えたお知らせを2回目に受けても `send` を呼ばない
+- [ ] 境界値：同じお知らせの `deliver` を並行して2回呼んだとき、`send` は2回まで呼ばれてよい（2通を許す。2.の (a)）。お知らせの行の `outcome` は `sent` で、エラーにならない
 - [ ] 他人のIDでは取得できない：API を足さないので既存のテストのまま。宛先が受け取り手本人のアドレスだけであることを確かめる
 - [ ] 上限：今の上限のテスト（1人・全体）が Cloudflare の口でも通る
 
 ### E2Eテスト（対象にする利用者の流れ）
-- [ ] 既存の「誘いのお知らせ（メール）」「新端末のログイン」を、偽の口（`e2e_sent_mails` に書く）で通す。E2E の偽のメールは送る口の手前で差し替えるので、Resend か Cloudflare かによらない。新しい流れは足さない（利用者の流れは変わらない）
+- [ ] 既存の「誘いのお知らせ（メール）」「新端末のログイン」を、偽の口（`e2e_sent_mails` に書く）で通す。E2E の偽のメールは送る口の手前で差し替えるので、Resend か Cloudflare かによらない。偽の口は冪等キーでまとめないので、二重に送れば2行になる。新しい流れは足さない（利用者の流れは変わらない）
 
 ## 人が行う作業（持ち主）
-1. 送信ドメインの登録（②の前）：管理画面の Compute → Email Service → Email Sending → Onboard Domain で `kokohima.app` を選ぶ。足す前に記録を確かめ、DMARC を足そうとしていないこと（今の `p=none` を残すこと）を見る。登録のあと、DNS の画面で `cf-bounce` の MX 3つ・SPF・DKIM の記録の ID と値を Claude に渡す。
+1. 送信ドメインの登録（②の前）：管理画面の Compute → Email Service → Email Sending → Onboard Domain で `kokohima.app` を選ぶ。足す前に記録を確かめ、DMARC を足そうとしていないこと（今の `p=none` を残すこと）を見る。登録のあと、DNS の画面で `cf-bounce` の MX 3つ・SPF・DKIM の記録の ID・値・TTL と、MX の priority を Claude に渡す。
 2. 「Email preview」を切る（③の前）：送った本文の控えを Cloudflare に残さない。
 3. 届くかの確認（③のデプロイのあと）：持ち主の手元のアドレスで、Gmail・iCloud（iOS のメール）・Outlook.com・キャリアのメール（docomo・au・SoftBank のどれか）と、Apple の中継アドレス（Sign in with Apple を使う人の宛先。今は Apple のログインを止めているので、使えるときだけ）に、次の2つを送って確かめる。
    - 新しい端末でのログイン（別のブラウザでログインする）
@@ -175,3 +187,4 @@
 | 日付 | 変更内容 | 理由 |
 | --- | --- | --- |
 | 2026-11-28 | 初版 | 持ち主の依頼（メールを Cloudflare Email Service に移す） |
+| 2026-11-28 | 二重送信の経路（同時の2回・送ったあとの書き込みの失敗）と偽の口がまとめないこと、口の型に `limited`、`TypeError` と `MAIL_FROM` の扱い、T-19 の文案を直す PR、④のファイルの一覧と `e2eMailSender` の検査、DNS の取り込み（priority・TTL・comment）、上限とログインの知らせ、`mailSenderFor` のテストを書き足した | PR #234 のレビュー |
