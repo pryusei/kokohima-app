@@ -41,7 +41,8 @@ describe("設定のカレンダー連携", () => {
     renderApp();
     expect(await screen.findByText("連携していません")).toBeVisible();
     expect(screen.getByText(/予定のタイトル・場所・参加者は読みません/)).toBeVisible();
-    expect(screen.getByText("Appleカレンダーは準備中です。成立した予定は .ics で追加できます")).toBeVisible();
+    expect(screen.getByText("Appleカレンダーとの連携は準備中です。成立した予定は、予定の画面の「カレンダーに追加」から入れられます")).toBeVisible();
+    expect(screen.getByText(/成立した予定は、予定の画面から自分で追加できます/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "連携をやめる" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Googleカレンダーと連携" }));
     await waitFor(() => expect(go).toHaveBeenCalledWith("https://accounts.google.com/o/oauth2/v2/auth?x=1"));
@@ -220,7 +221,8 @@ describe("予定の詳細の .ics", () => {
       [`/api/v1/meetups/${MEETUP_ID}/ics-links`]: json({ url: link, expiresAt: "2026-10-10T00:05:00.000Z" }),
     });
     renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "カレンダーに追加（.ics）" }));
+    await userEvent.click(await screen.findByRole("button", { name: "カレンダーに追加" }));
+    await userEvent.click(screen.getByRole("button", { name: "ほかのカレンダーに追加" }));
     await waitFor(() => expect(go).toHaveBeenCalledWith(link));
     expect(calls.find((c) => c.url.endsWith("/ics-links"))?.init.method).toBe("POST");
   });
@@ -248,7 +250,8 @@ describe("予定の詳細の .ics の上限", () => {
       [`/api/v1/meetups/${MEETUP_ID}/ics-links`]: json({ type: "about:blank", title: "x", status: 429, code: "rate_limited", requestId: "r" }, 429),
     });
     renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "カレンダーに追加（.ics）" }));
+    await userEvent.click(await screen.findByRole("button", { name: "カレンダーに追加" }));
+    await userEvent.click(screen.getByRole("button", { name: "ほかのカレンダーに追加" }));
     const text = await screen.findByText("少し待ってから、もう一度お試しください");
     expect(text.className).not.toMatch(/red|rose/);
   });

@@ -9,10 +9,7 @@ export type GoogleRequest = { method: string; url: string; path: string; body: s
 export function createFakeGoogle() {
   const state = {
     /** 次の認可コードの交換が返すスコープ */
-    grantedScopes: [
-      "https://www.googleapis.com/auth/calendar.freebusy",
-      "https://www.googleapis.com/auth/calendar.app.created",
-    ],
+    grantedScopes: ["https://www.googleapis.com/auth/calendar.freebusy"],
     /** 失効させた更新用トークン（invalid_grant を返す） */
     revoked: new Set<string>(),
     refreshCounter: 0,
@@ -137,6 +134,17 @@ export function createFakeGoogle() {
       return false;
     },
     handle,
+    /**
+     * 前に（T-59 より前に）アプリが作った「ここ暇」カレンダーと、そこに書いた予定を用意する。
+     * 予定のIDは T-06 の決まり（kh ＋ UUID の16進）
+     */
+    seedLegacyCalendar(calendarId: string, meetupIds: string[]) {
+      state.calendars.set(calendarId, { summary: "ここ暇", timeZone: "Asia/Tokyo" });
+      for (const meetupId of meetupIds) {
+        const id = `kh${meetupId.replace(/-/g, "")}`;
+        state.events.set(eventKey(calendarId, id), { calendarId, id, status: "confirmed", body: { id } });
+      }
+    },
     /** 生きている（キャンセルされていない）予定 */
     liveEvents() {
       return [...state.events.values()].filter((e) => e.status === "confirmed");

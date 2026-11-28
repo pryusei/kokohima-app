@@ -46,7 +46,7 @@ async function fakeGoogle(url: URL, init: RequestInit | undefined): Promise<Resp
       return json({
         access_token: `e2e-access-${userId}`,
         refresh_token: `e2e-refresh-${userId}`,
-        scope: "https://www.googleapis.com/auth/calendar.freebusy https://www.googleapis.com/auth/calendar.app.created",
+        scope: "https://www.googleapis.com/auth/calendar.freebusy",
       });
     }
     const userId = (form.get("refresh_token") ?? "").replace(/^e2e-refresh-/, "");

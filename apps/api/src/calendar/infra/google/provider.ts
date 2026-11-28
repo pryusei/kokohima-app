@@ -3,19 +3,17 @@ import type { Interval } from "../../domain/busy";
 import {
   ProviderUnavailable,
   ReauthRequired,
-  type CalendarEvent,
   type CalendarProvider,
   type GrantedTokens,
 } from "../../domain/provider";
 
 // Google カレンダーの実装（docs/specs/T-06-calendar.md「Googleのスコープ」）
-// 呼ぶのはトークン・失効・freeBusy・カレンダーと予定の作成・更新・削除だけ。予定の一覧・取得、カレンダーの一覧は呼ばない
+// 呼ぶのはトークン・失効・freeBusy・前に作ったカレンダーと予定の削除だけ。予定の一覧・取得・作成、カレンダーの一覧・作成は呼ばない
 // 応答の本文はログにもエラーにも出さない
 
-export const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/calendar.freebusy",
-  "https://www.googleapis.com/auth/calendar.app.created",
-] as const;
+// 求めるのは空き／埋まりだけ（docs/specs/T-59-choose-calendar-add.md「5.」）。前に calendar.app.created も許可した人の
+// トークンはそのまま使い、前に作った「ここ暇」カレンダーの予定の削除と、退会のときのカレンダーの削除にだけ使う
+export const GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar.freebusy"] as const;
 
 const TIMEOUT_MS = 5000;
 const RATE_LIMIT_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "dailyLimitExceeded"]);
@@ -131,50 +129,9 @@ export function googleProvider(env: Bindings, deps: AppDeps): CalendarProvider {
       });
     },
 
-    async createCalendar(accessToken, name, timezone) {
-      const res = await api(accessToken, "/calendars", {
-        method: "POST",
-        body: JSON.stringify({ summary: name, timeZone: timezone }),
-      });
-      const json = (await res.json().catch(() => null)) as { id?: unknown } | null;
-      if (!res.ok || typeof json?.id !== "string") throw new ProviderUnavailable("calendar_create_error");
-      return json.id;
-    },
-
     async deleteCalendar(accessToken, calendarId) {
       const res = await api(accessToken, calendarPath(calendarId), { method: "DELETE" });
       if (!res.ok && res.status !== 404 && res.status !== 410) throw new ProviderUnavailable("calendar_delete_error");
-    },
-
-    async putEvent(accessToken, calendarId, event: CalendarEvent) {
-      const body = {
-        id: event.id,
-        status: "confirmed",
-        summary: event.title,
-        location: event.location,
-        description: event.description,
-        start: { dateTime: iso(event.startsAt), timeZone: event.timezone },
-        end: { dateTime: iso(event.endsAt), timeZone: event.timezone },
-      };
-      const created = await api(accessToken, `${calendarPath(calendarId)}/events`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      if (created.ok) return "ok";
-      if (created.status === 409) {
-        // すでにある（削除済みも含む）。更新で中身をそろえ、status: confirmed に戻す
-        const updated = await api(accessToken, `${calendarPath(calendarId)}/events/${encodeURIComponent(event.id)}`, {
-          method: "PUT",
-          body: JSON.stringify(body),
-        });
-        if (updated.ok) return "ok";
-        if (updated.status === 404) return "calendar_missing";
-        if (updated.status === 403 && !(await isRateLimited(updated))) return "calendar_missing";
-        throw new ProviderUnavailable("event_update_error");
-      }
-      if (created.status === 404) return "calendar_missing";
-      if (created.status === 403 && !(await isRateLimited(created))) return "calendar_missing";
-      throw new ProviderUnavailable("event_create_error");
     },
 
     async deleteEvent(accessToken, calendarId, eventId) {

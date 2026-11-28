@@ -24,6 +24,8 @@ async function e2e(user: E2EUser, path: string, data?: unknown) {
 const setBusy = (user: E2EUser, busy: { startsAt: string; endsAt: string }[]) => e2e(user, "/__e2e__/calendar/busy", { busy });
 const sync = (user: E2EUser) => e2e(user, "/__e2e__/calendar/sync");
 const drain = (user: E2EUser) => e2e(user, "/__e2e__/outbox/drain");
+/** 端末のカレンダーのボタン（Chromium は「ほかの」、WebKit は「Macの」など。端末で名前が変わる。T-59） */
+const DEVICE_CALENDAR = /^(?:iPhone|iPad|Mac|ほか)のカレンダーに追加$/;
 
 async function connect(page: Page) {
   await page.goto("/settings/calendar");
@@ -114,8 +116,9 @@ test(".ics：成立した予定の詳細から .ics を開くと、中身に予�
   await befriend(a, b);
   const date = await openMeetupFromInvite(a, b);
   const downloading = a.page.waitForEvent("download");
-  // 連携していない人には、Google の行の下に .ics（docs/specs/T-57-meetup-google-calendar.md）
-  await a.page.getByRole("button", { name: "ほかのカレンダーに追加（.ics）" }).click();
+  // 「カレンダーに追加」で開く、端末のカレンダーのボタン（名前は端末で変わる。docs/specs/T-59-choose-calendar-add.md「振る舞い 1.」）
+  await sheet(a.page).getByRole("button", { name: "カレンダーに追加", exact: true }).click();
+  await sheet(a.page).getByRole("button", { name: DEVICE_CALENDAR }).click();
   const download = await downloading;
   const text = await readFile((await download.path()) ?? "", "utf8");
   const start = at(date, "19:00").replace(/[-:]/g, "").replace(/\.\d{3}/, "");
@@ -124,18 +127,27 @@ test(".ics：成立した予定の詳細から .ics を開くと、中身に予�
   expect(text).toContain(`SUMMARY:ここ暇：${b.displayName}`);
 });
 
-test("成立した予定から連携（T-57）：「Googleカレンダーに自動で入れる」→ 偽の認可画面 → 同じ予定の画面に戻り、「自動で入ります」", async ({ browser }) => {
-  // docs/specs/T-57-meetup-google-calendar.md「E2Eテスト」。予定が Google に書かれることは単体テスト（calendar.test.ts）で確かめる
+test("成立した予定からカレンダーに追加（T-59）：連携していなくても「カレンダーに追加」で Google の追加画面のリンクと端末のカレンダーが開く", async ({ browser }) => {
+  // docs/specs/T-59-choose-calendar-add.md「E2Eテスト」。Google の画面は外のサイトなので開かず、リンクの中身を確かめる
   const a = await newUser(browser, "A");
   const b = await newUser(browser, "B");
   await befriend(a, b);
-  await openMeetupFromInvite(a, b);
-  const meetupPath = new URL(a.page.url()).pathname;
-  expect(meetupPath).toMatch(/^\/meetups\/[0-9a-f-]{36}$/);
+  const date = await openMeetupFromInvite(a, b);
 
-  await sheet(a.page).getByRole("button", { name: "Googleカレンダーに自動で入れる" }).click();
-  await expect(a.page.getByText("連携しました。Googleカレンダーの『ここ暇』に入ります")).toBeVisible();
-  expect(new URL(a.page.url()).pathname).toBe(meetupPath);
-  await expect(sheet(a.page).getByText("連携中なので、Googleカレンダーの『ここ暇』に自動で入ります")).toBeVisible();
-  await expect(sheet(a.page).getByRole("button", { name: "ほかのカレンダーに追加（.ics）" })).toBeVisible();
+  const add = sheet(a.page).getByRole("button", { name: "カレンダーに追加", exact: true });
+  await expect(add).toHaveAttribute("aria-expanded", "false");
+  await add.click();
+  await expect(add).toHaveAttribute("aria-expanded", "true");
+  const google = sheet(a.page).getByRole("link", { name: "Googleカレンダーに追加" });
+  await expect(google).toBeVisible();
+  await expect(google).toHaveAttribute("target", "_blank");
+  const url = new URL((await google.getAttribute("href")) ?? "");
+  expect(`${url.origin}${url.pathname}`).toBe("https://calendar.google.com/calendar/render");
+  expect(url.searchParams.get("text")).toBe(`ここ暇：${b.displayName}`);
+  const stamp = (hhmm: string) => at(date, hhmm).replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  expect(url.searchParams.get("dates")).toBe(`${stamp("19:00")}/${stamp("23:00")}`);
+  await expect(sheet(a.page).getByRole("button", { name: DEVICE_CALENDAR })).toBeVisible();
+  await expect(sheet(a.page).getByText("押した予定だけが入ります")).toBeVisible();
+  // 自動で入れる話・連携のボタンは出さない
+  await expect(sheet(a.page).getByText(/自動で入/)).toHaveCount(0);
 });

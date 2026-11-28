@@ -38,11 +38,6 @@ export function linkOfSubject(ctx: Ctx, subject: { type: "direct_invite" | "broa
   return repo.linkOf(ctx.env.DB, subject);
 }
 
-/** その人が参加者（抜けた人を含む）で、これからの予定の ID */
-export function upcomingMeetupIdsOf(ctx: Ctx, userId: string, limit: number, after: string) {
-  return repo.upcomingMeetupIdsOf(ctx.env.DB, userId, ctx.deps.now(), limit, after);
-}
-
 /** 閲覧者が抜けていない参加者の予定（.ics）。それ以外は null */
 export async function meetupForActiveParticipant(ctx: Ctx, viewerId: string, meetupId: string) {
   const row = await repo.findMeetupForActiveParticipant(ctx.env.DB, viewerId, meetupId);

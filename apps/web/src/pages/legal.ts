@@ -21,7 +21,7 @@ export const EFFECTIVE_DATE_LINE = "制定日：2026年11月23日";
  * 改定日の行。「改定日（効力が生じる日）：YYYY年M月D日」の1つの文字列（行は1つだけ。2回めからは日付を書き換える）。
  * 改定していなければ null。入れたら、制定日と同じく deploy:prod で本物の日付かを検査する
  */
-export const REVISION_DATE_LINE: string | null = "改定日（効力が生じる日）：2026年11月24日";
+export const REVISION_DATE_LINE: string | null = "改定日（効力が生じる日）：2026年11月28日";
 
 /**
  * 予告の行。予告の間（公表日から改定日まで）だけ入れ、ほかのときは null（決めたこと14）。

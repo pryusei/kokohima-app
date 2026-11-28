@@ -1,7 +1,7 @@
 import * as z from "zod";
 import type { AppDeps, Bindings, JobMessage } from "../env";
 import { syncConnection } from "../calendar/application/sync";
-import { reconcileMeetup, reconcileUpcomingOf } from "../calendar/application/writes";
+import { removeFromCalendars } from "../calendar/application/writes";
 import { declineForCancelledAvailability } from "../invitation/application/calendarFacing";
 import { handleLinkAttached } from "../link-preview/application/fetchPreview";
 import { createFromEvent, deliver } from "../notification/application/delivery";
@@ -18,7 +18,6 @@ type Ctx = { env: Bindings; deps: AppDeps };
 export const MAX_RETRIES = 5;
 
 const meetupPayload = z.object({ meetupId: z.string() });
-const connectedPayload = z.object({ userId: z.string(), after: z.string().optional() });
 const cancelledPayload = z.object({
   userId: z.string(),
   ranges: z.array(z.object({ startsAt: z.iso.datetime(), endsAt: z.iso.datetime() })),
@@ -49,16 +48,12 @@ async function handleCalendarSide(ctx: Ctx, id: string, type: string, payload: u
       await handleLinkAttached(ctx, { type: p.subjectType, id: p.subjectId }, attempts !== undefined && attempts > MAX_RETRIES);
       return;
     }
-    case "MeetupConfirmed":
+    // 成立した予定を Google に自動で書くのはやめた。前に書いた予定の、キャンセル・抜けたときの削除だけ（T-59「振る舞い 4.」）。
+    // MeetupConfirmed・CalendarConnected では何もしない（default）
     case "MeetupCancelled":
     case "MeetupLeft":
-      await reconcileMeetup(ctx, meetupPayload.parse(payload).meetupId);
+      await removeFromCalendars(ctx, meetupPayload.parse(payload).meetupId);
       return;
-    case "CalendarConnected": {
-      const p = connectedPayload.parse(payload);
-      await reconcileUpcomingOf(ctx, p.userId, p.after ?? "");
-      return;
-    }
     case "AvailabilityCancelledByCalendar": {
       const p = cancelledPayload.parse(payload);
       await declineForCancelledAvailability(ctx, {

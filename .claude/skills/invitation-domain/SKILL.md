@@ -75,13 +75,13 @@ open →（募集者が退会：退会による打ち切りで期限を今にす
 | DirectInviteDeclined・DirectInviteCounterProposed | 送信者に通知（T-07。断りはお知らせ一覧にだけ残し、鳴らさない。T-35） |
 | DirectInviteSkipped | 受信者に通知（T-07。鳴らさない。T-35） |
 | AvailabilityCancelledByCalendar | 取り消しの前に作られた pending の誘いのうち、送信者が受信者のここ暇を取り消しの時点からずっと見られたものだけを、手で断ったときと同じ遷移で declined にする（T-06 決定事項15。判定は availability の `viewersWhoCanSee`）。本人に通知（T-07） |
-| MeetupConfirmed | カレンダーへ書き込み（T-06）。直接の誘いの成立は、成立させた人でない方に通知（T-07。募集の成立は BroadcastDecided で通知する） |
+| MeetupConfirmed | 直接の誘いの成立は、成立させた人でない方に通知（T-07。募集の成立は BroadcastDecided で通知する）。カレンダーには書かない（本人が「カレンダーに追加」で入れる。T-59） |
 | BroadcastSent | 宛先ごとに通知（T-07） |
 | LinkAttached | リンク付きの誘い・募集・行きたい（T-22）を作ったときに、作成と同じ batch で書く。link-preview がページを取得して保存する（T-08。payload は ID だけ。送信が拒否されたら書かない） |
 | BroadcastDecided | Meetup作成、募集者を除く参加者に名前を開示して通知（T-07。同時に MeetupConfirmed も書く） |
 | （期限切れ） | 保存せず読むときに決める。通知しないのでイベントは作らない |
-| MeetupLeft | 募集の予定から1人が抜けた。抜けた人のカレンダーから消し、残りの人のタイトルを直す（T-06）。残った参加者に通知（T-07。鳴らさない。T-35） |
-| MeetupCancelled | カレンダーから削除（T-06）、押した人を除く参加者に定型文で通知（T-07。鳴らさない。T-35） |
+| MeetupLeft | 募集の予定から1人が抜けた。前に「ここ暇」カレンダーに書いた予定を、抜けた人のカレンダーから消す（T-59。残りの人のタイトルは直さない）。残った参加者に通知（T-07。鳴らさない。T-35） |
+| MeetupCancelled | 前に「ここ暇」カレンダーに書いた予定を削除（T-59）、押した人を除く参加者に定型文で通知（T-07。鳴らさない。T-35） |
 | UserWithdrew | 退会の後始末（T-16）。これからの予定は本人の「やっぱり難しい」、受けた pending は「今回は難しい」、送った pending と open の募集は退会による打ち切り、送った counter_proposed は skipped、書いた内容を消す。相手への知らせは MeetupCancelled・MeetupLeft・DirectInviteDeclined で行う |
 | ContactMessageSubmitted | 問い合わせを受け付けた。Slack の問い合わせのチャンネルに届ける（T-24。Queue のメッセージは受付番号だけ） |
 | UserReported | 通報を受け付けた。同じ Slack のチャンネルに届ける（T-33。Queue のメッセージは受付番号だけ。通報された人には何も送らない） |

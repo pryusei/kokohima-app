@@ -176,18 +176,6 @@ export async function markNeedsReauth(
 
 // ---- 「ここ暇」カレンダー ----
 
-/** まだなければ書く。書けたら true（同時に別の処理が書いていたら false） */
-export async function setCalendarIdIfEmpty(d1: D1Database, userId: string, provider: Provider, calendarId: string) {
-  const result = await d1
-    .prepare(
-      `UPDATE calendar_connections SET calendar_id = ?3
-       WHERE user_id = ?1 AND provider = ?2 AND calendar_id IS NULL AND status = 'active'`,
-    )
-    .bind(userId, provider, calendarId)
-    .run();
-  return result.meta.changes === 1;
-}
-
 /** 使えなかったカレンダーを外す（同じ ID のときだけ） */
 export async function clearCalendarId(d1: D1Database, userId: string, provider: Provider, calendarId: string) {
   await d1

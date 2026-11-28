@@ -112,7 +112,7 @@ afterEach(() => {
 });
 
 describe("誘いの「行く」", () => {
-  it("押すと、ふたつの丸・「決まった！」・日時・相手・.ics を出し、この予定を見たと端末に記録する", async () => {
+  it("押すと、ふたつの丸・「決まった！」・日時・相手・「カレンダーに追加」を出し、この予定を見たと端末に記録する", async () => {
     open(`/invites/${INVITE_ID}`, {
       [`/api/v1/direct-invites/${INVITE_ID}`]: [json(invite()), json(invite({ status: "confirmed", meetupId: MEETUP_ID }))],
       [`/api/v1/direct-invites/${INVITE_ID}/responses`]: json(invite({ status: "confirmed", meetupId: MEETUP_ID })),
@@ -125,7 +125,7 @@ describe("誘いの「行く」", () => {
     expect(within(region).getByText("10/10（土） 19:00〜23:00")).toBeVisible();
     expect(within(region).getByText("エリア：渋谷")).toBeVisible();
     expect(within(region).getByText("あきと会える")).toBeVisible();
-    expect(within(region).getByRole("button", { name: "カレンダーに追加（.ics）" })).toBeVisible();
+    expect(within(region).getByRole("button", { name: "カレンダーに追加" })).toBeVisible();
     // 丸は自分（左）と相手。動きの前の位置は外側から、止まった形は青緑（meet）
     const dots = region.querySelectorAll("[data-testid=meet-dot]");
     expect([...dots].map((d) => d.textContent)).toEqual(["は", "あ"]);
@@ -223,12 +223,12 @@ describe("誘った側（成立を知って最初に開いた1回だけ）", () 
     expect(moment()).toBeNull();
   });
 
-  it("お知らせから成立した予定を開くと、時間の欄の代わりに演出を出し、.ics は今までの1つだけ", async () => {
+  it("お知らせから成立した予定を開くと、時間の欄の代わりに演出を出し、「カレンダーに追加」は今までの1つだけ", async () => {
     open(`/meetups/${MEETUP_ID}`, { [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup()) });
     const first = renderApp();
     const region = await screen.findByRole("region", { name: "決まった！" });
     expect(within(region).getByText("あきと会える")).toBeVisible();
-    expect(screen.getAllByRole("button", { name: "カレンダーに追加（.ics）" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "カレンダーに追加" })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "やっぱり難しい" })).toBeVisible();
     first.unmount();
 
@@ -442,37 +442,33 @@ describe("成立の瞬間に足す部分（docs/specs/T-56-motion.md「M-04」�
   });
 });
 
-describe("演出の中のカレンダーへの入れ方（docs/specs/T-57-meetup-google-calendar.md）", () => {
-  const none = json({ google: { status: "none", connectedAt: null } });
-  const connected = json({ google: { status: "connected", connectedAt: "2026-10-01T00:00:00.000Z" } });
-
-  it("誘いの「行く」：連携していなければ、演出の中に Google のボタンと「ほかのカレンダーに追加（.ics）」。予定を見るは1つだけ", async () => {
-    open(`/invites/${INVITE_ID}`, {
+describe("演出の中のカレンダーへの入れ方（docs/specs/T-59-choose-calendar-add.md）", () => {
+  it("誘いの「行く」：演出の中に「カレンダーに追加」。押すと Google と端末のカレンダーが開く。連携の状態は読まない", async () => {
+    const { calls } = open(`/invites/${INVITE_ID}`, {
       [`/api/v1/direct-invites/${INVITE_ID}`]: [json(invite()), json(invite({ status: "confirmed", meetupId: MEETUP_ID }))],
       [`/api/v1/direct-invites/${INVITE_ID}/responses`]: json(invite({ status: "confirmed", meetupId: MEETUP_ID })),
       [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup()),
-      "/api/v1/calendar/connections": none,
     });
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: "行く" }));
     const region = await screen.findByRole("region", { name: "決まった！" });
-    expect(await within(region).findByRole("button", { name: "Googleカレンダーに自動で入れる" })).toBeVisible();
-    expect(within(region).getByRole("button", { name: "ほかのカレンダーに追加（.ics）" })).toBeVisible();
+    await userEvent.click(within(region).getByRole("button", { name: "カレンダーに追加" }));
+    expect(within(region).getByRole("link", { name: "Googleカレンダーに追加" })).toBeVisible();
+    expect(within(region).getByRole("button", { name: "ほかのカレンダーに追加" })).toBeVisible();
     expect(screen.getAllByRole("link", { name: "成立した予定を見る" })).toHaveLength(1);
+    expect(calls.some((c) => c.url === "/api/v1/calendar/connections")).toBe(false);
   });
 
-  it("募集で決めたとき：連携中なら演出の中に「自動で入ります」の1行", async () => {
+  it("募集で決めたとき：演出の中に「カレンダーに追加」", async () => {
     open(`/broadcasts/${BROADCAST_ID}`, {
       [`/api/v1/broadcasts/${BROADCAST_ID}`]: [json(broadcast()), json(broadcast({ status: "decided", meetupId: MEETUP_ID }))],
       [`/api/v1/broadcasts/${BROADCAST_ID}/decide`]: json(broadcast({ status: "decided", meetupId: MEETUP_ID })),
       [`/api/v1/meetups/${MEETUP_ID}`]: json(meetup({ directInviteId: null, broadcastId: BROADCAST_ID })),
-      "/api/v1/calendar/connections": connected,
     });
     renderApp();
     await userEvent.click(await screen.findByRole("button", { name: "決める" }));
     const region = await screen.findByRole("region", { name: "決まった！" });
-    expect(await within(region).findByText("連携中なので、Googleカレンダーの『ここ暇』に自動で入ります")).toBeVisible();
-    expect(within(region).getByRole("button", { name: "ほかのカレンダーに追加（.ics）" })).toBeVisible();
+    expect(await within(region).findByRole("button", { name: "カレンダーに追加" })).toBeVisible();
     expect(screen.getAllByRole("link", { name: "成立した予定を見る" })).toHaveLength(1);
   });
 });
