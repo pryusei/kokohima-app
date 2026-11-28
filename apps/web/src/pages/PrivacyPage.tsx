@@ -54,7 +54,7 @@ export function PrivacyPage() {
           <Bullets>
             <li>Google カレンダーの、空き／埋まりの時刻だけ。予定のタイトル・場所・参加者・説明は、取得も保存もしません。</li>
             <li>Google から受け取る許可（更新用のトークン）。暗号化して保存します。</li>
-            <li>このサービスがあなたの Google カレンダーに作った「ここ暇」カレンダーの識別子</li>
+            <li>このサービスが前にあなたの Google カレンダーに作った「ここ暇」カレンダーの識別子（作った人だけ。今は新しく作りません）</li>
           </Bullets>
         </SubClause>
         <SubClause title="通知のためのもの">
@@ -75,7 +75,7 @@ export function PrivacyPage() {
             <li>
               動作の記録（ログ）：障害や不正に気づくための記録です。利用者を区別する番号が入ることがありますが、メールアドレス・名前・ひとこと・トークン・カレンダーの認証情報は入れません。
             </li>
-            <li>処理の記録：通知やカレンダーへの書き込みなど、あとで行う処理の記録です。誰がどの誘いに返事をしたかなどが入ります。</li>
+            <li>処理の記録：通知など、あとで行う処理の記録です。誰がどの誘いに返事をしたかなどが入ります。</li>
             <li>
               二重の送信を防ぐための記録：同じ操作が2回届いたときに、1回目と同じ結果を返すための記録です。送った誘いなどの内容が入ります。
             </li>
@@ -87,7 +87,7 @@ export function PrivacyPage() {
         <Numbered>
           <li>ログインと、本人の確認のため</li>
           <li>友達どうしで「ここ暇」を見せ合い、誘い・募集・返事をやりとりするため</li>
-          <li>成立した予定を、連携したカレンダーに書き込み、カレンダーのファイル（.ics）で渡すため</li>
+          <li>成立した予定を、あなたが選んだときに、Google カレンダーの追加の画面やカレンダーのファイル（.ics）で渡すため</li>
           <li>連携したカレンダーに予定が入ったとき、重なる「ここ暇」を自動で取り消し、空いている時間を候補として出すため</li>
           <li>
             誘い・予定・友達の追加などを、お知らせ・プッシュ通知・メールで知らせるため。新しい端末でのログインを、メールで知らせるため（メールアドレスがない人には、お知らせ一覧にだけ出します）
@@ -120,9 +120,9 @@ export function PrivacyPage() {
           </li>
           <li>招待リンクを開いた人には、リンクを発行した人の表示名とアイコンの画像が見えます。</li>
           <li>
-            予定が成立すると、Google カレンダーを連携している参加者の「ここ暇」カレンダーに、ほかの参加者の表示名・日時・エリアを書き込みます。.ics
-            のファイルにも同じ内容が入ります。書き込んだ予定は、その参加者の Google
-            アカウントの中にあります。終わった予定は消さないので、あとから運営が消すことはできません。
+            成立した予定の「Googleカレンダーに追加」を押すと、ほかの参加者の表示名・日時・エリア・アプリと誘いのリンクを入れた Google
+            カレンダーの追加の画面を開きます。保存するかは、その参加者が Google の画面で決めます。.ics
+            のファイルにも同じ内容が入ります。保存した予定はその参加者の Google アカウントやカレンダーの中にあり、運営は消せません。
           </li>
           <li>退会すると、相手の履歴には「退会したユーザー」と出ます。</li>
           <li>
@@ -145,7 +145,7 @@ export function PrivacyPage() {
           <Bullets>
             <li>任せること：ログインと、カレンダーの連携</li>
             <li>
-              渡すもの：ログインの手続き。連携した人のカレンダーへの、空き／埋まりの問い合わせ。成立した予定の書き込み（ほかの参加者の表示名、日時、エリア、アプリと誘いのリンク。ひとことは書きません）
+              渡すもの：ログインの手続き。連携した人のカレンダーへの、空き／埋まりの問い合わせ。前に「ここ暇」カレンダーに書いた予定の、キャンセル・抜けたときの削除（予定を区別する番号だけ）
             </li>
           </Bullets>
         </SubClause>
@@ -323,7 +323,7 @@ export function PrivacyPage() {
           <li>プッシュ通知の宛先と暗号化の鍵：ログアウトしたとき、届けられなくなったとき、ログインが切れたとき、退会したときに消します。</li>
           <li>カレンダーの許可：連携を解除したとき、Google 側で許可が取り消されたとき、退会したときに消します。</li>
           <li>
-            カレンダーの連携の記録（連携したことと、その状態）と、「ここ暇」カレンダーの識別子：連携を解除しても残し、退会したときに消します（もう一度連携したときに、同じ「ここ暇」カレンダーを使うため）。
+            カレンダーの連携の記録（連携したことと、その状態）と、「ここ暇」カレンダーの識別子：連携を解除しても残し、退会したときに消します（もう一度連携したときに、前に書いた予定をキャンセル・抜けたときに消せるようにするため）。
           </li>
           <li>
             カレンダーの空き／埋まりの記録：連携を解除したとき、{R.dormantAfterDays}日アプリを開かなかったとき、退会したときに消します。
@@ -442,8 +442,8 @@ export function PrivacyPage() {
             （限定使用の要件を含みます）に従います。
           </li>
           <li>
-            カレンダーの情報とカレンダーへの書き込みの許可は、「3.」の3と4のためだけに使います。広告、情報の販売、汎用の AI
-            のモデルの学習には使いません。
+            カレンダーの情報は、「3.」の4のためだけに使います。前に「ここ暇」カレンダーへの書き込みを許可した人の許可は、そこに書いた予定をキャンセル・抜けたときに消すためと、退会したときに「ここ暇」カレンダーを消すためだけに使います。広告、情報の販売、汎用の
+            AI のモデルの学習には使いません。
           </li>
           <li>運営の人がカレンダーの情報を読むのは、あなたの同意があるとき、セキュリティの調査、法令に従うときだけです。</li>
         </Bullets>
@@ -468,21 +468,24 @@ export function PrivacyPage() {
               calendar. We never read event titles, locations, descriptions or attendees.
             </li>
             <li>
-              We write only to a calendar named &quot;ここ暇&quot; that the app creates in your Google Calendar, and only to add, update
-              and delete plans confirmed in the app. We never read, create or change events in any other calendar.
+              We do not write plans to your Google Calendar automatically. &quot;Googleカレンダーに追加&quot; (Add to Google Calendar)
+              only opens Google Calendar&apos;s own add-event screen with the plan filled in, and you decide whether to save it there. If you
+              connected before we stopped writing, we use the permission you gave for the &quot;ここ暇&quot; calendar the app created only
+              to delete plans already written there when they are cancelled or you leave them, and to delete that calendar when you delete
+              your account. We never read, create or change events in any other calendar.
             </li>
             <li>
-              Calendar data (free/busy times and the permission to write to the &quot;ここ暇&quot; calendar) is used only to provide
-              these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or
+              Calendar data (free/busy times and, for earlier connections, the permission for the &quot;ここ暇&quot; calendar) is used
+              only to provide these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or
               machine learning models. Our staff read calendar data only with your consent, for security purposes, or to comply with the
               law.
             </li>
             <li>
               You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). When you disconnect, we delete the
               stored token and the stored free/busy data (a temporary cache expires within {R.freeBusyCacheMinutes} minutes). We keep
-              only the record that you connected and the ID of the &quot;ここ暇&quot; calendar until you delete your account, so that
-              reconnecting uses the same calendar. The &quot;ここ暇&quot; calendar and the plans already written to it stay in your
-              Google Calendar. You can also remove access in your Google Account.
+              only the record that you connected and the ID of the &quot;ここ暇&quot; calendar (if the app created one) until you delete
+              your account, so that plans already written there can be deleted if you reconnect. The &quot;ここ暇&quot; calendar and the
+              plans already written to it stay in your Google Calendar. You can also remove access in your Google Account.
             </li>
           </Bullets>
         </SubClause>

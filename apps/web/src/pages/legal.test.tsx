@@ -268,11 +268,13 @@ describe("プライバシー ポリシーの本文", () => {
     expect(policy).toHaveAttribute("href", "https://developers.google.com/terms/api-services-user-data-policy");
     expect(policy).toHaveAttribute("rel", "noopener noreferrer");
     expect(text).toContain("The Japanese text above is the authoritative version.");
-    // 空き／埋まりだけを読む・書き込みは「ここ暇」カレンダーだけ
+    // 空き／埋まりだけを読む。自動では書かず、「Googleカレンダーに追加」は Google の追加画面を開くだけ（T-59）
     expect(text).toContain("we read only free/busy times");
-    expect(text).toContain('We write only to a calendar named "ここ暇"');
+    expect(text).toContain("We do not write plans to your Google Calendar automatically.");
+    expect(text).toContain("only opens Google Calendar's own add-event screen");
+    expect(text).not.toContain("We write only to a calendar");
     // 使い道と運営が読む場面は、日本語の 11. と同じくカレンダーの情報に絞る。メールアドレスは日本語の 3. と同じ使い道
-    expect(text).toContain("Calendar data (free/busy times and the permission to write to the \"ここ暇\" calendar) is used only");
+    expect(text).toContain('Calendar data (free/busy times and, for earlier connections, the permission for the "ここ暇" calendar) is used');
     expect(text).toContain("Our staff read calendar data only");
     expect(text).not.toMatch(/We use this data only/);
     expect(text).toContain("We use your email address only for notification emails");
