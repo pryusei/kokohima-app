@@ -385,7 +385,7 @@ describe("戻す", () => {
 });
 
 describe("休眠中も止まらないもの", () => {
-  it("成立した予定は、休眠中の人のカレンダーにも書く", async () => {
+  it("前に書いた予定は、休眠中の人のカレンダーからもキャンセルで消す（T-59「振る舞い 4.」）", async () => {
     const a = await person();
     const b = await person("べに");
     await connect(a);
@@ -401,11 +401,15 @@ describe("休眠中も止まらないもの", () => {
       body: { response: "accept" },
     });
     const meetupId = ((await accepted.json()) as { meetupId: string }).meetupId;
-    const ev = await env.DB.prepare("SELECT id, payload FROM outbox WHERE type = 'MeetupConfirmed' AND payload LIKE ?1")
+    h.google.seedLegacyCalendar("cal-legacy", [meetupId]);
+    await env.DB.prepare("UPDATE calendar_connections SET calendar_id = 'cal-legacy' WHERE user_id = ?1").bind(a.id).run();
+    expect(h.google.liveEvents()).toHaveLength(1);
+    await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
+    const ev = await env.DB.prepare("SELECT id, payload FROM outbox WHERE type = 'MeetupCancelled' AND payload LIKE ?1")
       .bind(`%${meetupId}%`)
       .first<{ id: string; payload: string }>();
-    await handleJob(h.ctx, { kind: "outbox", id: ev?.id ?? "", type: "MeetupConfirmed", payload: ev?.payload ?? "{}" });
-    expect(h.google.liveEvents()).toHaveLength(1);
+    await handleJob(h.ctx, { kind: "outbox", id: ev?.id ?? "", type: "MeetupCancelled", payload: ev?.payload ?? "{}" });
+    expect(h.google.liveEvents()).toHaveLength(0);
     expect((await row(a))?.dormant_since).toBe(h.clock.now);
   });
 });

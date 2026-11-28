@@ -323,9 +323,10 @@ describe("後始末の段", () => {
       });
       await u.befriend(a, b);
       const meetupId = await meetupOf(b, a);
-      await deliver("MeetupConfirmed", meetupId);
-      const calendarId = (await env.DB.prepare("SELECT calendar_id FROM calendar_connections WHERE user_id = ?").bind(a.id).first<{ calendar_id: string }>())?.calendar_id ?? "";
-      expect(h.google.state.calendars.has(calendarId)).toBe(true);
+      // 前に（T-59 より前に）作った「ここ暇」カレンダーがある連携
+      const calendarId = `cal-legacy-${a.id}`;
+      h.google.seedLegacyCalendar(calendarId, [meetupId]);
+      await env.DB.prepare("UPDATE calendar_connections SET calendar_id = ?2 WHERE user_id = ?1").bind(a.id, calendarId).run();
       if (fail) {
         h.google.state.failNext.set(`DELETE /calendar/v3/calendars/${calendarId}`, 500);
         h.google.state.failNext.set("POST /revoke", 500);

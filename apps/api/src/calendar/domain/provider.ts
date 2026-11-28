@@ -17,17 +17,6 @@ export class ReauthRequired extends Error {
   }
 }
 
-/** 書き込む予定（アプリが作った「ここ暇」カレンダーに書く） */
-export type CalendarEvent = {
-  id: string;
-  title: string;
-  startsAt: number;
-  endsAt: number;
-  location: string;
-  description: string;
-  timezone: string;
-};
-
 export type GrantedTokens = { refreshToken: string; accessToken: string; scopes: string[] };
 
 export interface CalendarProvider {
@@ -39,10 +28,7 @@ export interface CalendarProvider {
   accessToken(refreshToken: string): Promise<string>;
   /** メインのカレンダーの [from, to) の埋まり */
   busy(accessToken: string, from: number, to: number): Promise<Interval[]>;
-  createCalendar(accessToken: string, name: string, timezone: string): Promise<string>;
   deleteCalendar(accessToken: string, calendarId: string): Promise<void>;
-  /** 書き込む（なければ作る、あれば更新する）。カレンダーが使えなければ "calendar_missing" */
-  putEvent(accessToken: string, calendarId: string, event: CalendarEvent): Promise<"ok" | "calendar_missing">;
   /** 消す（もうなければ成功）。カレンダーが使えなければ "calendar_missing" */
   deleteEvent(accessToken: string, calendarId: string, eventId: string): Promise<"ok" | "calendar_missing">;
   /** 失効させる（失敗しても投げない） */

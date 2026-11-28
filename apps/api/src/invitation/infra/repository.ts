@@ -524,18 +524,6 @@ export async function allParticipantsOf(d1: D1Database, meetupId: string) {
   return results;
 }
 
-/** その人が参加者（抜けた人を含む）で、終了が now より後の予定の ID。id の昇順で after より後を limit 件 */
-export async function upcomingMeetupIdsOf(d1: D1Database, userId: string, now: number, limit: number, after: string) {
-  const { results } = await d1
-    .prepare(
-      `SELECT m.id FROM meetups m JOIN meetup_participants p ON p.meetup_id = m.id AND p.user_id = ?1
-       WHERE m.ends_at > ?2 AND m.id > ?3 ORDER BY m.id LIMIT ?4`,
-    )
-    .bind(userId, now, after, limit)
-    .all<{ id: string }>();
-  return results.map((r) => r.id);
-}
-
 /** 閲覧者が抜けていない参加者の予定だけ（.ics） */
 export async function findMeetupForActiveParticipant(d1: D1Database, viewerId: string, meetupId: string) {
   return d1

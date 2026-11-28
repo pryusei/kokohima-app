@@ -89,9 +89,8 @@ describe("連携の開始", () => {
     const { url, res } = await authorize(a);
     expect(url.origin + url.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
     const p = url.searchParams;
-    expect(p.get("scope")).toBe(
-      "https://www.googleapis.com/auth/calendar.freebusy https://www.googleapis.com/auth/calendar.app.created",
-    );
+    // 求めるのは空き／埋まりだけ（T-59「5.」）
+    expect(p.get("scope")).toBe("https://www.googleapis.com/auth/calendar.freebusy");
     expect(p.get("access_type")).toBe("offline");
     expect(p.get("prompt")).toBe("consent");
     expect(p.get("code_challenge_method")).toBe("S256");
@@ -172,9 +171,20 @@ describe("コールバック", () => {
     expect((await callback({ code: "c" })).headers.get("Location")).toBe(failed);
   });
 
+  it("前に許可した calendar.app.created が付いて返っても成功（T-59「5.」）", async () => {
+    const a = await authenticated();
+    h.google.state.grantedScopes = [
+      "https://www.googleapis.com/auth/calendar.freebusy",
+      "https://www.googleapis.com/auth/calendar.app.created",
+    ];
+    await connect(a);
+    expect((await connectionRow(a))?.status).toBe("active");
+    expect((await connectionRow(a))?.calendar_id).toBeNull();
+  });
+
   it("スコープ不足：連携していなければ受け取ったトークンを失効させる", async () => {
     const a = await authenticated();
-    h.google.state.grantedScopes = ["https://www.googleapis.com/auth/calendar.freebusy"];
+    h.google.state.grantedScopes = ["https://www.googleapis.com/auth/calendar.app.created"];
     const s = await authorize(a);
     const res = await callback({ code: "c", state: s.state }, s.binding);
     expect(res.headers.get("Location")).toBe("https://app.test/settings/calendar?calendar=failed");
@@ -186,7 +196,7 @@ describe("コールバック", () => {
     const a = await authenticated();
     await connect(a);
     const before = await connectionRow(a);
-    h.google.state.grantedScopes = ["https://www.googleapis.com/auth/calendar.freebusy"];
+    h.google.state.grantedScopes = ["https://www.googleapis.com/auth/calendar.app.created"];
     const s = await authorize(a);
     expect((await callback({ code: "c", state: s.state }, s.binding)).headers.get("Location")).toContain("failed");
     expect(h.google.state.requests.filter((r) => r.path === "/revoke")).toHaveLength(0);
@@ -265,7 +275,7 @@ describe("成立した予定からの連携（T-57）", () => {
     expect((await callback({ code: "c", state: otherCookie.state }, "x".repeat(43))).headers.get("Location")).toBe(toMeetup("failed"));
     const denied = await authorize(a, { meetupId: MEETUP });
     expect((await callback({ error: "access_denied", state: denied.state }, denied.binding)).headers.get("Location")).toBe(toMeetup("failed"));
-    h.google.state.grantedScopes = ["https://www.googleapis.com/auth/calendar.freebusy"];
+    h.google.state.grantedScopes = ["https://www.googleapis.com/auth/calendar.app.created"];
     const scope = await authorize(a, { meetupId: MEETUP });
     expect((await callback({ code: "c", state: scope.state }, scope.binding)).headers.get("Location")).toBe(toMeetup("failed"));
     expect(await connectionRow(a)).toBeNull();
@@ -1001,7 +1011,7 @@ describe("自動の「今回は難しい」", () => {
   });
 });
 
-describe("成立した予定の書き込み", () => {
+describe("成立した予定は Google に自動で書かない。前に書いた予定の後始末だけ（T-59「振る舞い 4.」）", () => {
   /** a と b の成立した予定（誘いの「行く」） */
   async function meetupOf(a: User, b: User, startsAt = T("11:00", "11"), endsAt = T("13:00", "11")) {
     await u.befriend(a, b);
@@ -1014,142 +1024,67 @@ describe("成立した予定の書き込み", () => {
     return ((await accepted.json()) as { meetupId: string }).meetupId;
   }
 
-  it("連携している参加者だけに書く。タイトル・場所・説明、ひとことは書かない。2回届いても同じ", async () => {
-    const a = await authenticated();
-    const b = await authenticated("べに");
-    await connect(a);
-    const meetupId = await meetupOf(a, b);
-    await deliver("MeetupConfirmed", meetupId);
-    await deliver("MeetupConfirmed", meetupId);
-    const events = h.google.liveEvents();
-    expect(events).toHaveLength(1);
-    const body = events[0]?.body as Record<string, unknown>;
-    expect(body.id).toBe(`kh${meetupId.replace(/-/g, "")}`);
-    expect(body.summary).toBe("ここ暇：べに");
-    expect(body.location).toBe("渋谷");
-    expect(body.description).toBe(`https://app.test/meetups/${meetupId}`);
-    expect(JSON.stringify(body)).not.toContain("ひみつ");
-    expect([...h.google.state.calendars.values()]).toEqual([{ summary: "ここ暇", timeZone: "Asia/Tokyo" }]);
-  });
+  /** 前に「ここ暇」カレンダーを作り、予定を書いていた連携にする */
+  async function legacyCalendar(who: User, meetupIds: string[]) {
+    const calendarId = `cal-legacy-${who.id}`;
+    h.google.seedLegacyCalendar(calendarId, meetupIds);
+    await env.DB.prepare("UPDATE calendar_connections SET calendar_id = ?2 WHERE user_id = ?1").bind(who.id, calendarId).run();
+    return calendarId;
+  }
 
-  it("キャンセルで消す。解除した人には何もしない", async () => {
+  const eventId = (meetupId: string) => `kh${meetupId.replace(/-/g, "")}`;
+  const calendarCalls = () => h.google.state.requests.filter((r) => r.path.startsWith("/calendar/v3/calendars"));
+
+  it("MeetupConfirmed・CalendarConnected では Google を呼ばず、カレンダーも作らない", async () => {
     const a = await authenticated();
     const b = await authenticated("べに");
     await connect(a);
     await connect(b);
     const meetupId = await meetupOf(a, b);
+    h.google.state.requests.length = 0;
     await deliver("MeetupConfirmed", meetupId);
-    expect(h.google.liveEvents()).toHaveLength(2);
+    await deliver("CalendarConnected", a.id);
+    expect(h.google.state.requests).toHaveLength(0);
+    expect(h.google.state.calendars.size).toBe(0);
+    expect((await connectionRow(a))?.calendar_id).toBeNull();
+  });
+
+  it("キャンセル：calendar_id のある人だけ、その予定を消す。ない人には何もしない。2回届いても同じ", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    await connect(b);
+    const meetupId = await meetupOf(a, b);
+    const calendarId = await legacyCalendar(a, [meetupId]);
+    h.google.state.requests.length = 0;
+    await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
+    await deliver("MeetupCancelled", meetupId);
+    await deliver("MeetupCancelled", meetupId);
+    expect(h.google.liveEvents()).toHaveLength(0);
+    const calls = calendarCalls();
+    expect(calls).toHaveLength(2);
+    for (const r of calls) {
+      expect(r.method).toBe("DELETE");
+      expect(r.path).toBe(`/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId(meetupId)}`);
+    }
+  });
+
+  it("書いていない予定の削除（410）は成功。解除した人には何もしない", async () => {
+    const a = await authenticated();
+    const b = await authenticated("べに");
+    await connect(a);
+    await connect(b);
+    const meetupId = await meetupOf(a, b);
+    await legacyCalendar(a, []);
+    await legacyCalendar(b, [meetupId]);
     await u.call("DELETE", "/api/v1/calendar/connections/google", { token: b.token });
     await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
-    await deliver("MeetupCancelled", meetupId);
-    // a の分は消え、解除した b の分は残る（解除後はこちらから消さない）
-    expect(h.google.liveEvents()).toHaveLength(1);
-  });
-
-  it("確定とキャンセルが入れ違っても、書いた後の読み直しで消す", async () => {
-    const a = await authenticated();
-    const b = await authenticated("べに");
-    await connect(a);
-    const meetupId = await meetupOf(a, b);
-    await deliver("MeetupConfirmed", meetupId); // カレンダーを作る
-    h.google.state.events.clear();
-    // 予定の書き込みの応答の間にキャンセルされる
-    const original = h.google.handle;
-    let cancelled = false;
-    vi.spyOn(h.google, "handle").mockImplementation(async (url, init) => {
-      const res = await original(url, init);
-      if (!cancelled && (init?.method ?? "GET") === "POST" && url.pathname.endsWith("/events")) {
-        cancelled = true;
-        await env.DB.prepare("UPDATE meetups SET status = 'cancelled' WHERE id = ?1").bind(meetupId).run();
-      }
-      return res;
-    });
-    await deliver("MeetupConfirmed", meetupId);
-    expect(h.google.liveEvents()).toHaveLength(0);
-  });
-
-  it("カレンダーがなければ作り、同時に作ったら片方を消す。404 なら作り直して書き直す", async () => {
-    const a = await authenticated();
-    const b = await authenticated("べに");
-    await connect(a);
-    const meetupId = await meetupOf(a, b);
-    await Promise.all([deliver("MeetupConfirmed", meetupId), deliver("MeetupConfirmed", meetupId)]);
-    expect(h.google.state.calendars.size).toBe(1);
-    const calendarId = (await connectionRow(a))?.calendar_id;
-    expect(calendarId && h.google.state.calendars.has(calendarId)).toBe(true);
-
-    // 利用者がカレンダーを消した
-    h.google.state.calendars.clear();
-    h.jobs.length = 0;
-    await deliver("MeetupConfirmed", meetupId);
-    expect((await connectionRow(a))?.calendar_id).toBeNull();
-    const rewrite = h.jobs.find((j) => j.kind === "outbox" && j.type === "CalendarConnected");
-    expect(rewrite).toBeDefined();
-    if (rewrite) await handleJob(h.ctx, rewrite);
-    expect(h.google.liveEvents().filter((e) => e.calendarId !== calendarId)).toHaveLength(1);
-  });
-
-  it("作ったばかりのカレンダーにも書けなければ投げ、カレンダーを作り直し続けない", async () => {
-    const a = await authenticated();
-    const b = await authenticated("べに");
-    await connect(a);
-    const meetupIds = [await meetupOf(a, b)];
-    const c = await authenticated("ちさ");
-    meetupIds.push(await meetupOf(a, c, T("11:00", "12"), T("13:00", "12")));
-    await deliver("MeetupConfirmed", meetupIds[0] ?? "");
-    expect(h.google.state.calendars.size).toBe(1);
-    // 書けなくなる（上限以外の 403）
-    h.google.state.forbidEventWrites = true;
-    h.jobs.length = 0;
-    await deliver("MeetupConfirmed", meetupIds[1] ?? "");
-    const rewrite = h.jobs.find((j) => j.kind === "outbox" && j.type === "CalendarConnected");
-    expect(rewrite).toBeDefined();
-    h.jobs.length = 0;
-    if (rewrite) await expect(handleJob(h.ctx, rewrite)).rejects.toThrow();
-    // 作り直しは1回だけで、新しいメッセージも送らない
-    expect(h.google.state.calendarCounter).toBe(2);
-    expect(h.jobs).toHaveLength(0);
-  });
-
-  it("削除済みの予定は「すでにある」から更新で戻る。もうない予定の削除（404・410）は成功", async () => {
-    const a = await authenticated();
-    const b = await authenticated("べに");
-    await connect(a);
-    const meetupId = await meetupOf(a, b);
-    await deliver("MeetupConfirmed", meetupId);
-    const [event] = h.google.liveEvents();
-    if (event) event.status = "cancelled";
-    expect(h.google.liveEvents()).toHaveLength(0);
-    await deliver("MeetupConfirmed", meetupId);
-    expect(h.google.liveEvents()).toHaveLength(1);
-    expect(h.google.state.requests.some((r) => r.method === "PUT")).toBe(true);
-    // 予定を消してからキャンセルを2回届ける（2回目は 410）。どちらも投げない
-    await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
-    await deliver("MeetupCancelled", meetupId);
-    await deliver("MeetupCancelled", meetupId);
-    h.google.state.events.clear();
     await expect(deliver("MeetupCancelled", meetupId)).resolves.toBeUndefined();
-    expect(h.google.liveEvents()).toHaveLength(0);
+    // 解除した b の分は残る（解除後はこちらから消さない）
+    expect(h.google.liveEvents()).toHaveLength(1);
   });
 
-  it("書き込みが上限以外の403なら、カレンダーを作り直して書き直す。上限の403は一時的な失敗", async () => {
-    const a = await authenticated();
-    const b = await authenticated("べに");
-    await connect(a);
-    const meetupId = await meetupOf(a, b);
-    await deliver("MeetupConfirmed", meetupId);
-    const calendarId = (await connectionRow(a))?.calendar_id ?? "";
-    const path = `POST /calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
-    h.google.state.events.clear();
-    h.google.state.failNext.set(path, 403);
-    h.jobs.length = 0;
-    await deliver("MeetupConfirmed", meetupId);
-    expect((await connectionRow(a))?.calendar_id).toBeNull();
-    expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "CalendarConnected")).toBe(true);
-  });
-
-  it("募集の予定で抜けた人の予定を消し、残りの人のタイトルを直す", async () => {
+  it("募集の予定から抜けた人の予定だけを消し、残りの人の予定は触らない（タイトルを書き直さない）", async () => {
     const owner = await authenticated("あき");
     const f1 = await authenticated("べに");
     const f2 = await authenticated("ちさ");
@@ -1165,34 +1100,42 @@ describe("成立した予定の書き込み", () => {
     await u.call("POST", `/api/v1/broadcasts/${broadcastId}/responses`, { token: f2.token });
     const decided = await u.call("POST", `/api/v1/broadcasts/${broadcastId}/decide`, { token: owner.token });
     const meetupId = ((await decided.json()) as { meetupId: string }).meetupId;
-    await deliver("MeetupConfirmed", meetupId);
-    expect(h.google.liveEvents()).toHaveLength(3);
+    for (const who of [owner, f1, f2]) await legacyCalendar(who, [meetupId]);
+    h.google.state.requests.length = 0;
     await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: f2.token });
     await deliver("MeetupLeft", meetupId);
-    const live = h.google.liveEvents();
-    expect(live).toHaveLength(2);
-    expect(live.map((e) => (e.body as { summary: string }).summary).sort()).toEqual(["ここ暇：あき", "ここ暇：べに"]);
+    expect(h.google.liveEvents().map((e) => e.calendarId).sort()).toEqual([`cal-legacy-${owner.id}`, `cal-legacy-${f1.id}`].sort());
+    expect(calendarCalls()).toHaveLength(1);
+    expect(calendarCalls()[0]?.method).toBe("DELETE");
   });
 
-  it("CalendarConnected で、これからの予定を書き、解除中にキャンセルされた予定を消す", async () => {
+  it("上限以外の403なら calendar_id を外し、カレンダーを作り直さない。上限の403は一時的な失敗", async () => {
     const a = await authenticated();
     const b = await authenticated("べに");
     await connect(a);
-    const keep = await meetupOf(a, b);
-    await deliver("MeetupConfirmed", keep);
-    const c = await authenticated("ちさ");
-    const gone = await meetupOf(a, c, T("11:00", "12"), T("13:00", "12"));
-    await deliver("MeetupConfirmed", gone);
-    expect(h.google.liveEvents()).toHaveLength(2);
-    await u.call("DELETE", "/api/v1/calendar/connections/google", { token: a.token });
-    await u.call("POST", `/api/v1/meetups/${gone}/cancel`, { token: a.token });
-    await deliver("MeetupCancelled", gone);
-    expect(h.google.liveEvents()).toHaveLength(2);
-    await connect(a);
-    await deliver("CalendarConnected", a.id);
-    const live = h.google.liveEvents();
-    expect(live).toHaveLength(1);
-    expect((live[0]?.body as { id: string }).id).toBe(`kh${keep.replace(/-/g, "")}`);
+    const meetupId = await meetupOf(a, b);
+    const calendarId = await legacyCalendar(a, [meetupId]);
+    await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
+    const path = `DELETE /calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId(meetupId)}`;
+
+    const original = h.google.handle;
+    const limited = vi.spyOn(h.google, "handle").mockImplementation(async (url, init) =>
+      (init?.method ?? "GET") === "DELETE"
+        ? Response.json({ error: { errors: [{ reason: "rateLimitExceeded" }] } }, { status: 403 })
+        : original(url, init),
+    );
+    await expect(deliver("MeetupCancelled", meetupId)).rejects.toThrow();
+    expect((await connectionRow(a))?.calendar_id).toBe(calendarId);
+    limited.mockRestore();
+
+    h.google.state.failNext.set(path, 403);
+    h.google.state.requests.length = 0;
+    h.jobs.length = 0;
+    await deliver("MeetupCancelled", meetupId);
+    expect((await connectionRow(a))?.calendar_id).toBeNull();
+    expect(h.google.state.requests.some((r) => r.method === "POST" && r.path.startsWith("/calendar/v3/calendars"))).toBe(false);
+    // 書き直しのメッセージ（CalendarConnected）を送らない
+    expect(h.jobs.some((j) => j.kind === "outbox" && j.type === "CalendarConnected")).toBe(false);
   });
 });
 
@@ -1369,7 +1312,7 @@ describe(".ics", () => {
 });
 
 describe("ログ", () => {
-  it("確認・書き込み・解除・consumer の失敗のログに、トークン・payload の中身が出ない", async () => {
+  it("確認・解除・consumer の失敗のログに、トークン・payload の中身が出ない", async () => {
     const log = vi.spyOn(console, "log");
     const err = vi.spyOn(console, "error");
     // job_failed・job_dead_lettered は warn で出す（docs/specs/T-13-monitoring.md「3.」）
@@ -1402,7 +1345,7 @@ describe("ログ", () => {
 });
 
 describe("Google へのリクエスト", () => {
-  it("呼ぶのは許可した経路だけ（予定の一覧・取得、カレンダーの一覧を呼ばない）", async () => {
+  it("呼ぶのは許可した経路だけ（予定の一覧・取得・作成・更新、カレンダーの一覧・作成を呼ばない。T-59）", async () => {
     const a = await authenticated();
     const b = await authenticated("べに");
     await connect(a);
@@ -1417,6 +1360,9 @@ describe("Google へのリクエスト", () => {
     const id = ((await res.json()) as { id: string }).id;
     const accepted = await u.call("POST", `/api/v1/direct-invites/${id}/responses`, { token: a.token, body: { response: "accept" } });
     const meetupId = ((await accepted.json()) as { meetupId: string }).meetupId;
+    // 前に作った「ここ暇」カレンダーがある人（T-59 より前の連携）
+    h.google.seedLegacyCalendar("cal-legacy", [meetupId]);
+    await env.DB.prepare("UPDATE calendar_connections SET calendar_id = 'cal-legacy' WHERE user_id = ?1").bind(a.id).run();
     await deliver("MeetupConfirmed", meetupId);
     await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
     await deliver("MeetupCancelled", meetupId);
@@ -1426,10 +1372,8 @@ describe("Google へのリクエスト", () => {
       /^POST oauth2\.googleapis\.com\/token$/,
       /^POST oauth2\.googleapis\.com\/revoke$/,
       /^POST www\.googleapis\.com\/calendar\/v3\/freeBusy$/,
-      /^POST www\.googleapis\.com\/calendar\/v3\/calendars$/,
       /^DELETE www\.googleapis\.com\/calendar\/v3\/calendars\/[^/]+$/,
-      /^(POST) www\.googleapis\.com\/calendar\/v3\/calendars\/[^/]+\/events$/,
-      /^(PUT|DELETE) www\.googleapis\.com\/calendar\/v3\/calendars\/[^/]+\/events\/kh[0-9a-v]+$/,
+      /^DELETE www\.googleapis\.com\/calendar\/v3\/calendars\/[^/]+\/events\/kh[0-9a-v]+$/,
     ];
     const seen = h.google.state.requests.map((r) => `${r.method} ${new URL(r.url).host}${r.path}`);
     expect(seen.length).toBeGreaterThan(0);

@@ -409,17 +409,21 @@ describe("重複と再試行", () => {
   });
 
   it("カレンダーの処理が失敗しても、通知は届けたうえで投げる", async () => {
+    // カレンダー側で処理するのは、前に書いた予定の削除（キャンセル・抜けた）だけ（T-59「振る舞い 4.」）
     const { a, b } = await pair();
     const id = await invite(a, b);
-    await respond(b, id, { response: "accept" });
-    const row = await env.DB.prepare("SELECT id, payload FROM outbox WHERE type = 'MeetupConfirmed' AND payload LIKE ?1")
-      .bind(`%${id}%`)
+    const accepted = await respond(b, id, { response: "accept" });
+    const meetupId = ((await accepted.json()) as { meetupId: string }).meetupId;
+    await flush(id);
+    await u.call("POST", `/api/v1/meetups/${meetupId}/cancel`, { token: a.token });
+    const row = await env.DB.prepare("SELECT id, payload FROM outbox WHERE type = 'MeetupCancelled' AND payload LIKE ?1")
+      .bind(`%${meetupId}%`)
       .first<{ id: string; payload: string }>();
     // 予定の ID を壊して、カレンダー側だけを失敗させる
     const broken = JSON.stringify({ ...(JSON.parse(row?.payload ?? "{}") as object), meetupId: 123 });
-    await expect(handleJob(h.ctx, { kind: "outbox", id: row?.id ?? "", type: "MeetupConfirmed", payload: broken })).rejects.toThrow();
+    await expect(handleJob(h.ctx, { kind: "outbox", id: row?.id ?? "", type: "MeetupCancelled", payload: broken })).rejects.toThrow();
     await drain();
-    expect((await rowsOf(a)).some((r) => r.kind === "meetup_confirmed")).toBe(true);
+    expect((await rowsOf(b)).some((r) => r.kind === "meetup_cancelled")).toBe(true);
   });
 
   it("自動の断りが失敗しても通知は届けたうえで投げる。古い行（NOTIFICATION_START_AT より前）でも断りは行い、お知らせだけ作らない", async () => {
