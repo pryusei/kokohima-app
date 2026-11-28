@@ -1,7 +1,7 @@
-# T-59 仕様書：メールの送信を Cloudflare Email Service に移す
+# T-60 仕様書：メールの送信を Cloudflare Email Service に移す
 
 - 状態：仕様書
-- タスク票：docs/tasks/T-59-cloudflare-email.md
+- タスク票：docs/tasks/T-60-cloudflare-email.md
 - 関係する要件：NF-01、NF-02、NF-07、技術選定の「メール配信」
 - 関係する仕様書：T-07（docs/specs/T-07-notification.md「外部とのつなぎ方」「設定値」決定事項1・8）、T-23（docs/specs/T-23-rich-mail.md）、T-12（docs/specs/T-12-release.md「人が行う作業」4）、T-13（docs/runbooks/monitoring.md）、T-16（docs/specs/T-16-withdrawal.md「スコープ外」）、T-19（docs/specs/T-19-privacy-terms.md 本文の5.・7.・8.、決めたこと17）
 
@@ -114,7 +114,7 @@
 - コード：`resend.ts`、口の Resend の実装と `MAIL_PROVIDER` の分岐（`MAIL_PROVIDER` も消す）、`env.ts` の `RESEND_API_KEY`・`deps.notification.resendUrl`、`app.ts`、`test/fake-delivery.ts` の偽の Resend、`apps/api/src/e2e/notifications.ts` の偽のホスト `resend.e2e.invalid`（偽の口に置き換え済み）、`vitest.config.ts` の `RESEND_API_KEY`、wrangler の設定のコメント、`apps/api/dev-vars.example` の `RESEND_API_KEY`、`apps/api/scripts/write-e2e-dev-vars.mjs` の `RESEND_API_KEY=e2e-unused`、`apps/api/scripts/check-api-dist.mjs`・`check-web-dist.mjs` の禁止パターンの `resend.e2e.invalid`（`e2eMailSender` は残す）。
 - DNS：`dns.tf` から Resend の記録を外す。DMARC は同じ `for_each` の中にあるので、`moved` ブロックで Resend と別のリソースに移し、消して作り直さない（`plan` で DMARC の削除が出ないことを確かめる）。
 - プライバシー ポリシー：本文の5.の Resend の節、7.の事業者の並び・外国の名称・確かめ方の「Resend」を外す。`legal.test.tsx` を直す。同じ PR で、`docs/specs/T-19-privacy-terms.md` の本文の文案（5.の Resend の節、7.の事業者の並び・外国の名称・確かめ方の Resend の行）も同じに直す。改定日はデプロイする日（予告なし）。
-- 仕様書・文書：T-07（「外部とのつなぎ方」「メールの中身」の送信の行、「設定値」、決定事項1 の注記）、T-23（「API」の送信の行）、T-12（「人が行う作業」4 の注記）、T-16（「スコープ外」の外部サービス）、T-08（外部呼び出しの一覧）、T-19（本文の出典の表、確認事項5 の注記）、`docs/runbooks/monitoring.md`（Resend の管理画面→Cloudflare の Email Sending の画面、`code`）、`infra/README.md`「DNS の例外」。どれも書き換えた日と T-59 を変更履歴に足す。
+- 仕様書・文書：T-07（「外部とのつなぎ方」「メールの中身」の送信の行、「設定値」、決定事項1 の注記）、T-23（「API」の送信の行）、T-12（「人が行う作業」4 の注記）、T-16（「スコープ外」の外部サービス）、T-08（外部呼び出しの一覧）、T-19（本文の出典の表、確認事項5 の注記）、`docs/runbooks/monitoring.md`（Resend の管理画面→Cloudflare の Email Sending の画面、`code`）、`infra/README.md`「DNS の例外」。どれも書き換えた日と T-60 を変更履歴に足す。
 - 秘密情報：持ち主が `wrangler secret delete RESEND_API_KEY --env prod` を行い、Resend の API キーを失効させる。
 - Resend のアカウント：持ち主が送信ドメインを外し、アカウントを消すかを決める（送信の記録が残る期間は T-19 確認事項5・#89）。
 
@@ -124,10 +124,10 @@
 | --- | --- | --- | --- |
 | ① 実装 | 送る口、Cloudflare の実装、`EMAIL`・`MAIL_PROVIDER`（全環境 Resend）、偽の口、単体テスト | T-07 の「外部とのつなぎ方」に送る口と2つの実装、「設定値」に `MAIL_PROVIDER`・`EMAIL`。`docs/runbooks/monitoring.md` に `notification_mail_provider_limit` と `code` | 直さない（送る先は変わらない） |
 | ② インフラ | `dns.tf` に Cloudflare の記録（`import`） | `infra/README.md`「DNS の例外」の例に Cloudflare Email Service を足す | 直さない |
-| ③ 切り替え | prod とコードの既定を Cloudflare に | `docs/requirements.md`（図・技術選定）、T-07 決定事項1 に「T-59 で Cloudflare に移した」の注記、T-19 本文の文案の5.の Cloudflare | 5.の Cloudflare に「メールの配信」を足す |
+| ③ 切り替え | prod とコードの既定を Cloudflare に | `docs/requirements.md`（図・技術選定）、T-07 決定事項1 に「T-60 で Cloudflare に移した」の注記、T-19 本文の文案の5.の Cloudflare | 5.の Cloudflare に「メールの配信」を足す |
 | ④ 後片付け | Resend のコード・秘密・DNS を外す | 8.の一覧（T-19 本文の文案の5.の Resend の節、7.の並び・外国の名称・確かめ方を含む） | 5.・7.から Resend を外す |
 
-- T-59 の仕様書は①で「実装中」にし、④で「実装済み」にする。各 PR の変更履歴に足す。
+- T-60 の仕様書は①で「実装中」にし、④で「実装済み」にする。各 PR の変更履歴に足す。
 
 ## 認可と秘匿
 - 閲覧者IDの使い方：変えない（お知らせの受け取り手は T-07 のとおり）。
@@ -188,3 +188,4 @@
 | --- | --- | --- |
 | 2026-11-28 | 初版 | 持ち主の依頼（メールを Cloudflare Email Service に移す） |
 | 2026-11-28 | 二重送信の経路（同時の2回・送ったあとの書き込みの失敗）と偽の口がまとめないこと、口の型に `limited`、`TypeError` と `MAIL_FROM` の扱い、T-19 の文案を直す PR、④のファイルの一覧と `e2eMailSender` の検査、DNS の取り込み（priority・TTL・comment）、上限とログインの知らせ、`mailSenderFor` のテストを書き足した | PR #234 のレビュー |
+| 2026-11-28 | タスクIDを T-59 から T-60 に変えた（T-59 は別の仕様書（成立した予定は本人が選んでカレンダーに入れる、#235）が先に使った） | 台帳の番号の重なり |

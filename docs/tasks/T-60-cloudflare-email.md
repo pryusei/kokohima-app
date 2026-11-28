@@ -1,11 +1,11 @@
-# T-59 メールの送信を Cloudflare Email Service に移す
+# T-60 メールの送信を Cloudflare Email Service に移す
 
 ## 目的
 今 Resend で送っているメール（T-07 のお知らせのメール、新しい端末でのログインの知らせ、T-23 の HTML のメール）を、Workers の `send_email` バインディングで送る Cloudflare Email Service に移す。外部の事業者と秘密情報（`RESEND_API_KEY`）を1つずつ減らす（持ち主の依頼）。
 
 ## 関係する要件
 - NF-01・NF-02・NF-07、技術選定の「メール配信」
-- 仕様書：docs/specs/T-59-cloudflare-email.md
+- 仕様書：docs/specs/T-60-cloudflare-email.md
 - T-07（docs/specs/T-07-notification.md）、T-23（docs/specs/T-23-rich-mail.md）、T-12（docs/specs/T-12-release.md）、T-13（docs/runbooks/monitoring.md）、T-16（docs/specs/T-16-withdrawal.md）、T-19（docs/specs/T-19-privacy-terms.md）
 
 ## スコープ
@@ -30,7 +30,7 @@
 - [ ] typecheck・lint・関係するテスト・本番のビルドが通る
 
 ## 仕様書
-- docs/specs/T-59-cloudflare-email.md
+- docs/specs/T-60-cloudflare-email.md
 
 ## 参考
 - 関係するスキル：infra-change
