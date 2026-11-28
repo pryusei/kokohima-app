@@ -88,7 +88,7 @@ Google の OAuth の審査（#199。使うスコープはすべて機微でな�
     <ol>
       <li>誘われてもいい時間に「ここ暇」を置きます。見せる友達は自分で選べます。</li>
       <li>友達はその時間に誘えます。返事は「行く」「この時間なら」「今回は難しい」の3つだけ。理由はいりません。</li>
-      <li>決まったら予定になります。Google カレンダーを連携していれば、「ここ暇」という名前のカレンダーに入ります。</li>
+      <li>決まったら予定になります。ボタンひとつで、Google カレンダーやほかのカレンダーに入れられます。</li>
     </ol>
   </section>
 
@@ -144,6 +144,8 @@ Google の OAuth の審査（#199。使うスコープはすべて機微でな�
 > - We write only to a calendar named "ここ暇" that the app creates in your Google Calendar, and only to add, update and delete plans confirmed in the app. We never read, create or change events in any other calendar.
 > - Calendar data (free/busy times and the permission to write to the "ここ暇" calendar) is used only to provide these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or machine learning models. Our staff read calendar data only with your consent, for security purposes, or to comply with the law.
 > - You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). When you disconnect, we delete the stored token and the stored free/busy data (a temporary cache expires within 5 minutes). We keep only the record that you connected and the ID of the "ここ暇" calendar until you delete your account, so that reconnecting uses the same calendar. The "ここ暇" calendar and the plans already written to it stay in your Google Calendar. You can also remove access in your Google Account.
+
+（T-59 でカレンダーの2つの行を直した。今の文は docs/specs/T-19-privacy-terms.md の6節の11.）
 
 - 1文めは、Google の User Data Policy が示す限定使用の開示の文（"[App]'s use and transfer to any other app of information received from Google APIs will adhere to Google API Services User Data Policy, including the Limited Use requirements."）の形のまま、アプリ名を入れたもの（語順を変えない。公式の文で探しても見つかるように）。
 - 使い道と運営が読む場面（4つめ）は、日本語の 11. の2・3項めと同じく「カレンダーの情報」に絞る。メールアドレスの使い道（1つめ）は、日本語の 3. の終わりの段落（5.・8.・12.）と同じことを書く。解除で消えるもの・残るもの（5つめ）は、日本語の 8. と T-06 決定事項4 と同じことを書く。「5 minutes」は `RETENTION.freeBusyCacheMinutes` から出す。
@@ -220,3 +222,4 @@ Google の OAuth の審査（#199。使うスコープはすべて機微でな�
 | 2026-11-24 | 作成 | Google の OAuth の審査（#199）にホームページが要るため。#192 のうち審査に足りる最小の範囲 |
 | 2026-11-24 | 実装：前提を「スコープはすべて機微でなく、ブランドの確認だけ」に直した。「7.」の英文を公式の形にし、使い道をカレンダーの情報に絞り、メールアドレスの使い道と解除で残るものを日本語の本文に合わせた。「1.」の `Vary` は追加（もとの値を残す）。「5.」の検査を `landingProblems` に切り出した。E2E を JavaScript ありと切ったものに分けた。「実装PRで直すもの」に T-12 と要求定義書の審査の記述を足した | 実装PR。仕様書PR #219 のレビュー、持ち主が Google Cloud Console で確かめたスコープの区分 |
 | 2026-11-24 | ビルドの検査に「landing.html に HTML のコメントがない」を足した（vite は HTML を圧縮しないので、内部の説明が本番に出るため）。説明は landing.css の冒頭へ移した | T-44 実装PR（#222）のセキュリティのレビュー |
+| 2026-11-28 | 紹介のページの「どう使うの？」の3つめと、引いている11.の英語の段落を、自動で書かないことに合わせた | T-59 実装PR（docs/specs/T-59-choose-calendar-add.md「振る舞い 6.」） |

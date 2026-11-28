@@ -76,7 +76,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 | ここ暇・くり返しと例外・時間帯プリセット・公開設定 | T-03 |
 | 友達・招待リンク（トークンはハッシュ） | T-02 |
 | 誘い・募集・返事・成立した予定。募集の応じた人は「決める」まで人数だけ、決めたら参加者どうしは友達でなくても公開プロフィールが見える | T-04、T-05（9行目・179行目） |
-| カレンダー：空き／埋まりだけ、更新用トークンは暗号化、「ここ暇」カレンダーに書く内容（ほかの参加者の表示名・時刻・エリア・アプリと誘いのリンク。ひとことは書かない）、.ics | T-06（決定事項1・8、「書く内容」） |
+| カレンダー：空き／埋まりだけ、更新用トークンは暗号化、成立した予定は自動で書かず本人が Google の追加画面か .ics で入れる（中身はほかの参加者の表示名・時刻・エリア・アプリと誘いのリンク。ひとことは入れない）、前に書いた予定の削除 | T-06（決定事項1・8、「書く内容」）、T-59 |
 | 埋まりのキャッシュ（KV、5分） | T-10 |
 | 冪等キー（24時間。1回目の応答の本文を持つ） | T-10（`idempotency_keys.body`） |
 | 通知：お知らせ・設定・購読（endpoint と鍵は暗号化）、プッシュの中身は暗号化（種類だけ、選んだ人は名前と日時も）、Resend に渡すもの | T-07（「外部に渡すもの」）・T-35 |
@@ -219,7 +219,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 ### カレンダーを連携した人から受け取るもの
 - Google カレンダーの、空き／埋まりの時刻だけ。予定のタイトル・場所・参加者・説明は、取得も保存もしません。
 - Google から受け取る許可（更新用のトークン）。暗号化して保存します。
-- このサービスがあなたの Google カレンダーに作った「ここ暇」カレンダーの識別子
+- このサービスが前にあなたの Google カレンダーに作った「ここ暇」カレンダーの識別子（作った人だけ。今は新しく作りません）
 
 ### 通知のためのもの
 - お知らせ（アプリの中で読む通知）と、通知の設定（ロック画面に名前と日時を出すかを含みます）
@@ -230,13 +230,13 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - 新しい端末でのログインに気づくための、ブラウザ名と OS 名の要約（例：「Safari / iOS」）。新しい端末でのログインのお知らせと、その処理の記録に入ります。ブラウザが送る情報（User-Agent）の全文と IP アドレスは保存しません。
 - IP アドレス：短い時間に同じ操作がくり返されていないかの判定に使います。このサービスのデータベースには保存しません。
 - 動作の記録（ログ）：障害や不正に気づくための記録です。利用者を区別する番号が入ることがありますが、メールアドレス・名前・ひとこと・トークン・カレンダーの認証情報は入れません。
-- 処理の記録：通知やカレンダーへの書き込みなど、あとで行う処理の記録です。誰がどの誘いに返事をしたかなどが入ります。
+- 処理の記録：通知など、あとで行う処理の記録です。誰がどの誘いに返事をしたかなどが入ります。
 - 二重の送信を防ぐための記録：同じ操作が2回届いたときに、1回目と同じ結果を返すための記録です。送った誘いなどの内容が入ります。
 
 ## 3. 使う目的
 1. ログインと、本人の確認のため
 2. 友達どうしで「ここ暇」を見せ合い、誘い・募集・返事をやりとりするため
-3. 成立した予定を、連携したカレンダーに書き込み、カレンダーのファイル（.ics）で渡すため
+3. 成立した予定を、あなたが選んだときに、Google カレンダーの追加の画面やカレンダーのファイル（.ics）で渡すため
 4. 連携したカレンダーに予定が入ったとき、重なる「ここ暇」を自動で取り消し、空いている時間を候補として出すため
 5. 誘い・予定・友達の追加などを、お知らせ・プッシュ通知・メールで知らせるため。新しい端末でのログインを、メールで知らせるため（メールアドレスがない人には、お知らせ一覧にだけ出します）
 6. 誘い・募集に付けたリンクの、タイトルと画像のプレビューを作るため
@@ -256,7 +256,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - 行きたいは、外した友達を除く友達に見えます（あとから友達になった人にも見えます）。誰を外したかは、外された人にも、ほかの友達にも見せません。
 - 募集では、募集した人に見えるのは、応じた人の数だけです。応じた人の名前は、募集した人が「決める」まで、誰にも見せません。「決める」と、成立した予定の参加者どうしには、友達でなくても、おたがいの表示名が見えます（アイコンの画像は、友達どうしにだけ見えます）。
 - 招待リンクを開いた人には、リンクを発行した人の表示名とアイコンの画像が見えます。
-- 予定が成立すると、Google カレンダーを連携している参加者の「ここ暇」カレンダーに、ほかの参加者の表示名・日時・エリアを書き込みます。.ics のファイルにも同じ内容が入ります。書き込んだ予定は、その参加者の Google アカウントの中にあります。終わった予定は消さないので、あとから運営が消すことはできません。
+- 成立した予定の「Googleカレンダーに追加」を押すと、ほかの参加者の表示名・日時・エリア・アプリと誘いのリンクを入れた Google カレンダーの追加の画面を開きます。保存するかは、その参加者が Google の画面で決めます。.ics のファイルにも同じ内容が入ります。保存した予定はその参加者の Google アカウントやカレンダーの中にあり、運営は消せません。
 - 退会すると、相手の履歴には「退会したユーザー」と出ます。
 - ブロックや通報をしたことは、相手に知らせません。ブロックした相手には、友達を解除したときと同じに見えます。ブロックしている間は、どちらの招待リンクからも友達になれません。ログインして開くと、使えないリンクと同じ表示になります（ログインせずに開くと、ほかの招待リンクと同じく、発行した人の表示名とアイコンの画像が見えます）。
 
@@ -269,7 +269,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 
 ### Google LLC（米国）
 - 任せること：ログインと、カレンダーの連携
-- 渡すもの：ログインの手続き。連携した人のカレンダーへの、空き／埋まりの問い合わせ。成立した予定の書き込み（ほかの参加者の表示名、日時、エリア、アプリと誘いのリンク。ひとことは書きません）
+- 渡すもの：ログインの手続き。連携した人のカレンダーへの、空き／埋まりの問い合わせ。前に「ここ暇」カレンダーに書いた予定の、キャンセル・抜けたときの削除（予定を区別する番号だけ）
 
 ### LINEヤフー株式会社（日本）
 - 任せること：LINE でのログイン
@@ -355,7 +355,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 - ログインの記録：使えなくなってから30日で消します。新しい端末でのログインに気づくため、最初のログインの記録だけは退会まで残します。
 - プッシュ通知の宛先と暗号化の鍵：ログアウトしたとき、届けられなくなったとき、ログインが切れたとき、退会したときに消します。
 - カレンダーの許可：連携を解除したとき、Google 側で許可が取り消されたとき、退会したときに消します。
-- カレンダーの連携の記録（連携したことと、その状態）と、「ここ暇」カレンダーの識別子：連携を解除しても残し、退会したときに消します（もう一度連携したときに、同じ「ここ暇」カレンダーを使うため）。
+- カレンダーの連携の記録（連携したことと、その状態）と、「ここ暇」カレンダーの識別子：連携を解除しても残し、退会したときに消します（もう一度連携したときに、前に書いた予定をキャンセル・抜けたときに消せるようにするため）。
 - カレンダーの空き／埋まりの記録：連携を解除したとき、30日アプリを開かなかったとき、退会したときに消します。
 - カレンダーの空き／埋まりの一時的な記録：5分で消えます。連携を解除しても、最長5分は残ります。
 - リンクのプレビュー：使う誘い・募集がなくなり、取ってから30日を過ぎたら消します。
@@ -408,7 +408,7 @@ Google の OAuth は、審査を受けずに本番の公開ステータスにす
 
 ## 11. Google から受け取った情報の扱い
 - このサービスが Google API から受け取った情報の使い方と、ほかのアプリへの転送は、[Google API サービスのユーザーデータに関するポリシー](https://developers.google.com/terms/api-services-user-data-policy)（限定使用の要件を含みます）に従います。
-- カレンダーの情報とカレンダーへの書き込みの許可は、「3.」の3と4のためだけに使います。広告、情報の販売、汎用の AI のモデルの学習には使いません。
+- カレンダーの情報は、「3.」の4のためだけに使います。前に「ここ暇」カレンダーへの書き込みを許可した人の許可は、そこに書いた予定をキャンセル・抜けたときに消すためと、退会したときに「ここ暇」カレンダーを消すためだけに使います。広告、情報の販売、汎用の AI のモデルの学習には使いません。
 - 運営の人がカレンダーの情報を読むのは、あなたの同意があるとき、セキュリティの調査、法令に従うときだけです。
 
 ### In English
@@ -420,9 +420,9 @@ The Japanese text above is the authoritative version. This section summarizes ho
 
 - Sign-in: we receive only your Google account ID and email address (scopes openid and email). We use your email address only for notification emails (sent via our email provider), for important notices from us and replies to your inquiries (when you contact us, it is delivered to our support Slack as the reply address), and to verify your identity when you make a request about your personal information.
 - Google Calendar (only if you connect it): we read only free/busy times (the start and end of busy periods) on your primary calendar. We never read event titles, locations, descriptions or attendees.
-- We write only to a calendar named "ここ暇" that the app creates in your Google Calendar, and only to add, update and delete plans confirmed in the app. We never read, create or change events in any other calendar.
-- Calendar data (free/busy times and the permission to write to the "ここ暇" calendar) is used only to provide these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or machine learning models. Our staff read calendar data only with your consent, for security purposes, or to comply with the law.
-- You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). When you disconnect, we delete the stored token and the stored free/busy data (a temporary cache expires within 5 minutes). We keep only the record that you connected and the ID of the "ここ暇" calendar until you delete your account, so that reconnecting uses the same calendar. The "ここ暇" calendar and the plans already written to it stay in your Google Calendar. You can also remove access in your Google Account.
+- We do not write plans to your Google Calendar automatically. "Googleカレンダーに追加" (Add to Google Calendar) only opens Google Calendar's own add-event screen with the plan filled in, and you decide whether to save it there. If you connected before we stopped writing, we use the permission you gave for the "ここ暇" calendar the app created only to delete plans already written there when they are cancelled or you leave them, and to delete that calendar when you delete your account. We never read, create or change events in any other calendar.
+- Calendar data (free/busy times and, for earlier connections, the permission for the "ここ暇" calendar) is used only to provide these calendar features. We do not use it for advertising, do not sell it, and do not use it to train generalized AI or machine learning models. Our staff read calendar data only with your consent, for security purposes, or to comply with the law.
+- You can disconnect Google Calendar at any time in the app (設定 → カレンダー連携). When you disconnect, we delete the stored token and the stored free/busy data (a temporary cache expires within 5 minutes). We keep only the record that you connected and the ID of the "ここ暇" calendar (if the app created one) until you delete your account, so that plans already written there can be deleted if you reconnect. The "ここ暇" calendar and the plans already written to it stay in your Google Calendar. You can also remove access in your Google Account.
 
 ## 12. 開示・訂正・削除などの求め
 - 本人は、運営が持つあなたの個人情報について、利用目的の通知、開示（第三者に提供した記録を含みます）、訂正・追加・削除、利用の停止・消去、第三者への提供の停止、外国の事業者に任せることについての情報（「7.」）の提供を求められます。
@@ -476,7 +476,7 @@ The Japanese text above is the authoritative version. This section summarizes ho
 
 ## 第5条（あなたが入力する内容）
 1. 表示名・ひとこと・エリア・リンクなど、あなたが入力した内容の責任は、あなたにあります。
-2. 入力した内容の権利は、あなたに残ります。運営は、このサービスを提供するのに必要な範囲（相手への表示、通知、カレンダーへの書き込み、リンクのプレビュー）でだけ使います。
+2. 入力した内容の権利は、あなたに残ります。運営は、このサービスを提供するのに必要な範囲（相手への表示、通知、カレンダーへの追加、リンクのプレビュー）でだけ使います。
 3. 誘い・募集に付けたリンクのプレビューの画像は、運営がリンク先のページから写して、相手に配ります。写した画像の権利を持つ人などが削除を求めるときは、ops@kokohima.app に知らせてください。内容を確かめ、必要と判断したときは、その画像を配るのをやめて消します。消したあとも、すでに表示した端末には、しばらく残ることがあります。
 4. アイコンの画像に写っている人や、画像の権利を持つ人などが削除を求めるときは、ops@kokohima.app に知らせてください。内容を確かめ、必要と判断したときは、そのアイコンを外して画像を消します。消したあとも、すでに表示した端末には、しばらく残ることがあります。
 
@@ -716,3 +716,4 @@ The Japanese text above is the authoritative version. This section summarizes ho
 | 2026-11-24 | 本文の文案の10.に、成立の演出を見た予定の番号（50件まで）をブラウザのストレージに置くことを足した（同じ改定日。予告なし。決めたこと17） | T-43 実装PR（docs/specs/T-43-meet-moment.md「2.」） |
 | 2026-11-24 | 決めたこと18：本文の11.に Google のユーザーデータの扱いの英語の段落（6節の文案）を足す。決めたこと5・10とスコープ外を T-44 の紹介のページに合わせた。予告なし（決めたこと17）、改定日は T-44 の実装PRをデプロイする日 | T-44 仕様書PR（docs/specs/T-44-landing.md）。Google の審査（#199） |
 | 2026-11-24 | 6節の11.の英語の段落を実装した。限定使用の文を公式の形のままにし、使い道と運営が読む場面をカレンダーの情報に絞り、メールアドレスの使い道（3.）と解除で消えるもの・残るもの（8.）を日本語の本文に合わせた。改定日は 2026年11月24日のまま（T-33 と同じ日。予告なし） | T-44 実装PR（docs/specs/T-44-landing.md「7.」）。仕様書PR #219 のレビュー |
+| 2026-11-28 | 成立した予定の自動の書き込みをやめたことを本文に合わせた（予告なし。決めたこと17。改定日はマージしてデプロイする日）：本文の2.（「ここ暇」カレンダーの識別子・処理の記録）・3.の3・4.・5.（Google に渡すもの）・8.（識別子を残す理由）・11.（日本語と英語の段落）、利用規約の第5条、紹介のページの「どう使うの？」 | T-59 実装PR（docs/specs/T-59-choose-calendar-add.md「振る舞い 6.」） |

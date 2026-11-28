@@ -152,7 +152,7 @@
 - **休眠中**：
   - 定期の確認の割り当て（`connectionsDueForSync`）は `dormant_since IS NULL` の行だけ（「データ」のインデックスの範囲で外れる）。Google の埋まりの取得、ここ暇の自動の取り消し（T-06）、そこからの自動の「今回は難しい」が止まる。
   - 休眠にする前に割り当てた確認が、あとから届いても書かない。確認の権利を取る `takeSyncLease`、記録を進める `advanceSnapshotStatement`、保留の `holdLargeChange`（どれも `apps/api/src/calendar/infra/repository.ts`。呼ぶのは `apps/api/src/calendar/application/sync.ts` の `syncConnection`）の WHERE に `dormant_since IS NULL` を足す。休眠中は権利が取れず（`skipped`）、休眠にする前に権利を取っていた確認は、権利の値が NULL になっているうえ休眠の条件でも外れて、記録を進められない。取り消しの文は同じ batch の `syncGuard`（記録を進めたときの `sync_id`）の条件付きなので、走らない。
-  - 止まらないもの：成立した予定の書き込み（`activeConnectionsOf`。友達が休眠中の人と予定を作れば、その人のカレンダーに書く）。そのとき Google の更新用トークンが切れていれば、今の扱い（`needs_reauth`。T-06）になる。
+  - 止まらないもの：前に「ここ暇」カレンダーに書いた予定の、キャンセル・抜けたときの削除（`activeConnectionsOf`。T-59 で、成立した予定の書き込みはやめた）。そのとき Google の更新用トークンが切れていれば、今の扱い（`needs_reauth`。T-06）になる。
   - 受け入れること：休眠中は、カレンダーで埋まった時間のここ暇（くり返しは毎週展開されるので、とくに）が、友達に空いているように見えることがある。誘いは届くが、本人はアプリを開いていない。
 - **戻す（ログイン）**：ログインでセッションを作る batch（`apps/api/src/identity/infra/repository.ts` の `createSessionRows`）で、セッションの INSERT の直後に、その利用者の連携を戻す文を入れる。セッションの行ができたときだけ書く（退会した人にはセッションを作らないので、戻さない）。文は calendar の application が返す（`wakeConnectionsStatement(d1, userId, sessionId, now)`。`now` は `updated_at` に書く。identity の application が `createSessionRows` の `afterSession` に渡す）。
   ```sql
@@ -271,3 +271,4 @@
 | 2026-11-23 | 表にアイコンの画像（`avatarImageGraceHours`）を足した | T-27 実装PR（docs/specs/T-27-avatar-upload.md） |
 | 2026-11-23 | 表に行きたいのAI提案の回数の記録（`wishSuggestionAttemptsDaysBefore`）を足した | T-29 実装PR（docs/specs/T-29-wish-suggestion.md） |
 | 2026-11-24 | 保持期間の一覧にブロックと通報を足した（Slack のメッセージは問い合わせと同じ行。`retention.ts` の値は増やさない） | T-33 実装PR（docs/specs/T-33-block-report.md） |
+| 2026-11-28 | 休眠中も止まらないものを「前に書いた予定の削除」にした（成立した予定の書き込みはやめた） | T-59 実装PR（docs/specs/T-59-choose-calendar-add.md） |
