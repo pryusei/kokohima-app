@@ -65,7 +65,7 @@ export function CalendarSettingsPage({ search }: { search: string }) {
 
   return (
     <SubScreen title="カレンダー連携" back="/settings">
-      <p>読むのは空き／埋まりだけで、予定のタイトル・場所・参加者は読みません。成立した予定は「ここ暇」カレンダーに書き込みます。</p>
+      <p>読むのは空き／埋まりだけで、予定のタイトル・場所・参加者は読みません。成立した予定は、予定の画面から自分で追加できます。</p>
       <Section title="Googleカレンダー">
         <div className="flex flex-col gap-3 rounded-l bg-surface p-4 shadow-card">
           {status && (
@@ -92,7 +92,7 @@ export function CalendarSettingsPage({ search }: { search: string }) {
         </div>
       </Section>
       <Section title="Appleカレンダー">
-        <Note>Appleカレンダーは準備中です。成立した予定は .ics で追加できます</Note>
+        <Note>Appleカレンダーとの連携は準備中です。成立した予定は、予定の画面の「カレンダーに追加」から入れられます</Note>
       </Section>
     </SubScreen>
   );

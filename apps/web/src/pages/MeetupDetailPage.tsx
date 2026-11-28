@@ -20,9 +20,9 @@ import { useResultBand } from "../ui/ResultBand";
 // 成立した予定（docs/specs/T-04-direct-invite.md「画面」、キャンバス「15 成立した予定」）。「やっぱり難しい」は確認なしで送る
 // 後ろに誘いタブを出したシートで開く（docs/specs/T-11-design.md「画面のつながり」）
 
-/** Google カレンダーの連携から戻ってきたときの結果（docs/specs/T-57-meetup-google-calendar.md「5.」） */
+/** Google カレンダーの連携から戻ってきたときの結果（docs/specs/T-57-meetup-google-calendar.md「5.」。文言は T-59「振る舞い 3.」） */
 const CALENDAR_RESULT_TEXT: Record<string, string> = {
-  connected: "連携しました。Googleカレンダーの『ここ暇』に入ります",
+  connected: "連携しました",
   failed: "連携できませんでした。もう一度お試しください",
 };
 
